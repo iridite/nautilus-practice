@@ -1,0 +1,23 @@
+[project]
+name = "nautilus-practice"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "ccxt>=4.5.28",
+    "jupyterlab>=4.5.1",
+    "nautilus-trader>=1.222.0a20251219",
+    "plotly>=6.5.0",
+    "python-dotenv>=1.2.1",
+]
+
+[tool.uv]
+prerelease = "allow"
+
+[[tool.uv.index]]
+name = "nautilus"
+url = "https://packages.nautechsystems.io/simple"
+
+[tool.uv.sources]
+nautilus-trader = { index = "nautilus" }
