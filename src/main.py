@@ -35,6 +35,7 @@ from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.objects import Money
 from nautilus_trader.persistence.wranglers import TradeTickDataWrangler
+from nautilus_trader.persistence.wranglers import BarDataWrangler
 from nautilus_trader.test_kit.providers import TestDataProvider
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 
@@ -58,7 +59,7 @@ if __name__ == "__main__":
         venue=BINANCE_VENUE,
         oms_type=OmsType.NETTING,
         book_type=BookType.L1_MBP,
-        account_type=AccountType.CASH,  # Spot CASH account (not for perpetuals or futures)
+        account_type=AccountType.MARGIN,  # Spot MARGIN account (not for perpetuals or futures)
         base_currency=None,  # Multi-currency account
         starting_balances=[Money(1_000_000.0, USDT), Money(10.0, ETH)],
         trade_execution=True,  # Only use with L1_MBP book type or throttled book data
@@ -70,14 +71,16 @@ if __name__ == "__main__":
 
     # Add data
     provider = TestDataProvider()
-    wrangler = TradeTickDataWrangler(instrument=ETHUSDT_BINANCE)
-    ticks = wrangler.process(provider.read_csv_ticks("binance/ethusdt-trades.csv"))
-    engine.add_data(ticks)
+    # wrangler = TradeTickDataWrangler(instrument=ETHUSDT_BINANCE)
+    wrangler_bar = BarDataWrangler(bar_type=BarType.from_str("ETHUSDT.BINANCE-1-MINUTE-LAST-EXTERNAL"), instrument=ETHUSDT_BINANCE)
+    # ticks = wrangler.process(provider.read_csv_ticks("binance/ethusdt-trades.csv"))
+    data = wrangler_bar.process(provider.read_csv_bars("/home/yixian/Projs/quantifiy-trading/nautilus-practice/data/binance-ETHUSDT-5m-2025-01-01_2025-12-20.csv"))
+    engine.add_data(data)
 
     # Configure your strategy
     strategy_config = EMACrossTWAPConfig(
         instrument_id=ETHUSDT_BINANCE.id,
-        bar_type=BarType.from_str("ETHUSDT.BINANCE-250-TICK-LAST-INTERNAL"),
+        bar_type=BarType.from_str("ETHUSDT.BINANCE-1-MINUTE-LAST-EXTERNAL"),
         trade_size=Decimal("0.10"),
         fast_ema_period=10,
         slow_ema_period=20,
@@ -102,7 +105,7 @@ if __name__ == "__main__":
     # Optionally view reports
     with pd.option_context(
         "display.max_rows",
-        100,
+        10,
         "display.max_columns",
         None,
         "display.width",
