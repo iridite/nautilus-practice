@@ -17,13 +17,16 @@ from nautilus_trader.model.enums import OmsType, BookType, AccountType
 # 交易所适配器配置 (这里只用作 Venue 的标识符)
 from nautilus_trader.adapters.binance import BINANCE_VENUE
 
+from pathlib import Path
+BASE_DIR = Path(__file__).resolve().parent
+
 # 配置回测引擎
 config = BacktestEngineConfig(
     trader_id=TraderId("BACKTESTER-001"),
     logging=LoggingConfig(
         log_level="WARNING",  # 减少日志输出，只看警告及以上，提高回测速度
         log_colors=True,
-        use_pyo3=False,       # 是否使用 Rust 优化的日志组件
+        use_pyo3=True,       # 是否使用 Rust 优化的日志组件
     ),
 )
 
@@ -32,7 +35,6 @@ engine = BacktestEngine(config)
 
 # %% [markdown]
 # # 2. 配置 Venue (交易场所)与 OMS
-# 这里对应了我们之前讨论的 **OMS** 概念。
 # - `oms_type`: 决定了持仓是合并(Netting)还是独立(Hedging)。
 # - `account_type`: 定义账户性质（现货、保证金、期货等）。
 
@@ -86,7 +88,7 @@ from nautilus_trader.persistence.wranglers import BarDataWrangler
 
 # 定义数据类型：Binance 交易所的 5分钟 K线
 # 格式解析: [INSTRUMENT]-[TIMEFRAME]-[BAR_AGGREGATION]-[SOURCE]
-bar_type = BarType.from_str("ETHUSDT-PERP.BINANCE-5-MINUTE-LAST-EXTERNAL")
+bar_type = BarType.from_str(f"{inst.id}-5-MINUTE-LAST-EXTERNAL")
 
 # 初始化数据转换器 (Wrangler)
 wrangler = BarDataWrangler(bar_type, inst)
@@ -94,7 +96,7 @@ wrangler = BarDataWrangler(bar_type, inst)
 # 读取 CSV 数据
 # 假设 CSV 路径正确，且包含 timestamp, open, high, low, close, volume 列
 try:
-    df = pd.read_csv("../data/binance-ETHUSDT-5m-2025-01-01_2025-12-20.csv")
+    df = pd.read_csv(BASE_DIR / "../../data/binance-ETHUSDT-5m-2025-01-01_2025-12-20.csv")
     
     # 处理时间戳：转换为 datetime 对象
     df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms")
@@ -183,15 +185,17 @@ with pd.option_context(
     print("\n=== 订单成交记录 (Fills) ===")
     print(engine.trader.generate_order_fills_report())
     
-    print("\n=== 持仓记录 (Positions) ===")
-    # 这里的 Positions 展示逻辑受 OMS (NETTING/HEDGING) 的直接影响
-    print(engine.trader.generate_positions_report())
+    # print("\n=== 持仓记录 (Positions) ===")
+    # # 这里的 Positions 展示逻辑受 OMS (NETTING/HEDGING) 的直接影响
+    # print(engine.trader.generate_positions_report())
 
 # %% [markdown]
 # # 8. 可视化 (Tearsheet)
 # 如果安装了 Plotly，可以生成交互式的 HTML 报表。
 
 # %%
+output_path = str(BASE_DIR / f"../../output/{inst.id}_tearsheet.html")
+
 try:
     from nautilus_trader.analysis import TearsheetConfig
     from nautilus_trader.analysis.tearsheet import create_tearsheet
@@ -203,14 +207,14 @@ try:
 
     create_tearsheet(
         engine=engine,
-        output_path="crypto_ethusdt_tearsheet.html",
+        output_path=output_path,
         config=tearsheet_config,
     )
-    print("报表已保存至: crypto_ethusdt_tearsheet.html")
+    print(f"报表已保存至: {output_path}")
     print("请在浏览器中打开该文件查看交互式图表。")
 
 except ImportError:
-    print("\n提示: 未安装 Plotly，无法生成图表。")
+    print("\n提示: 未安装 Plotly，无法生成图表。另外也需要注意 NT 版本中是否存在 nautilus_trader.analysis import TearsheetConfig 等文件")
     print("请运行: pip install plotly>=6.3.1")
 except Exception as e:
     print(f"\n生成报表时发生错误: {e}")
