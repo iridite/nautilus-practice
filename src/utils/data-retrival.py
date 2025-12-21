@@ -1,10 +1,11 @@
-import ccxt
-import pandas as pd
 import argparse
 import time
-import sys
-from pathlib import Path
 from datetime import datetime, timezone
+from pathlib import Path
+
+import ccxt
+import pandas as pd
+
 
 def parse_arguments():
     parser = argparse.ArgumentParser(description='Fetch OHLCV and Funding Rate data from Crypto Exchanges via CCXT.')
@@ -25,7 +26,9 @@ def parse_arguments():
     # 4. 指定交易所 (新增)
     parser.add_argument('--exchange', type=str, default='binance', choices=['binance', 'okx'], 
                         help='Exchange ID (binance or okx). Default is binance.')
-    
+
+    parser.add_argument('-extra', '-e', type=bool, default=False)
+
     return parser.parse_args()
 
 def get_ms_timestamp(date_str):
@@ -206,8 +209,10 @@ def main():
     print(f"Exchange: {args.exchange.upper()}")
     print(f"Raw Input: {raw_symbol}")
     print(f"Target Symbol: {ccxt_symbol}")
+    print(f"Time Frame: {args.timeframe}")
     print(f"Type: {market_type.upper()}")
     print(f"Range: {args.start} to {args.end}")
+    print(f"资金费率添加：{args.extra}")
     print(f"---------------------")
 
     # 4. 加载市场
@@ -233,7 +238,7 @@ def main():
         return
 
     # 6. 如果是永续合约，获取资金费率并合并
-    if market_type == 'swap':
+    if market_type == 'swap' and args.extra:
         funding_df = fetch_funding_data(exchange, ccxt_symbol, start_ms, end_ms)
         
         if not funding_df.empty:
@@ -253,7 +258,7 @@ def main():
 
     # 8. 保存文件
     current_dir = Path(__file__).parent
-    output_dir = current_dir.parent / 'data'
+    output_dir = current_dir.parent.parent / 'data'
     output_dir.mkdir(parents=True, exist_ok=True)
     
     safe_symbol = raw_symbol.replace('/', '') 
