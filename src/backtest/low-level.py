@@ -1,11 +1,12 @@
-# %% [markdown]
 # # 1. 初始化回测引擎 (Engine Configuration)
 # 这里是整个系统的起点。我们需要定义“谁”在交易（TraderId），以及系统的日志级别。
 
-# %%
-import pandas as pd
 from decimal import Decimal
+from pathlib import Path
 
+import pandas as pd
+# 交易所适配器配置 (这里只用作 Venue 的标识符)
+from nautilus_trader.adapters.binance import BINANCE_VENUE
 # Nautilus 核心组件
 from nautilus_trader.backtest.config import BacktestEngineConfig
 from nautilus_trader.backtest.engine import BacktestEngine
@@ -14,10 +15,6 @@ from nautilus_trader.model import TraderId, Money
 from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.enums import OmsType, BookType, AccountType
 
-# 交易所适配器配置 (这里只用作 Venue 的标识符)
-from nautilus_trader.adapters.binance import BINANCE_VENUE
-
-from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent
 
 # 配置回测引擎
@@ -33,12 +30,10 @@ config = BacktestEngineConfig(
 # 实例化引擎
 engine = BacktestEngine(config)
 
-# %% [markdown]
 # # 2. 配置 Venue (交易场所)与 OMS
 # - `oms_type`: 决定了持仓是合并(Netting)还是独立(Hedging)。
 # - `account_type`: 定义账户性质（现货、保证金、期货等）。
 
-# %%
 # 添加 Venue（交易所）配置
 engine.add_venue(
     venue=BINANCE_VENUE,
@@ -47,7 +42,7 @@ engine.add_venue(
     # 订单簿类型：L1_MBP 表示 Level 1 (最优买卖价) Market By Price
     book_type=BookType.L1_MBP,
     # 账户类型：注意，原代码使用的是 MARGIN (现货杠杆)，
-    # 如果交易永续合约(Perp)，通常应使用 AccountType.FUTURE，但在此仅作演示不影响运行。
+    # 如果交易永续合约(Perpetual)，通常应使用 AccountType.FUTURE，但在此仅作演示不影响运行。
     account_type=AccountType.MARGIN,
     base_currency=USDT,  # 账户本位币
     starting_balances=[Money(1_000_000.0, USDT)],  # 初始资金 100万 USDT
@@ -161,7 +156,6 @@ engine.add_strategy(strategy)
 exec_algorithm = TWAPExecAlgorithm()
 engine.add_exec_algorithm(exec_algorithm)
 
-# %% [markdown]
 # # 6. 运行回测 (Run Engine)
 
 # %%
