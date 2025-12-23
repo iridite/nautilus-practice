@@ -1,16 +1,67 @@
 from nautilus_trader.persistence.catalog import ParquetDataCatalog
+from nautilus_trader.persistence.loaders import CSVBarDataLoader
+from nautilus_trader.persistence.wranglers import BarDataWrangler
+# 引用方面总是或多或少的存在问题，尤其是 pyo3 相关的库，使用起来大概率会报错
+from nautilus_trader.model import BarType
+
+# 关于这个导入的路径，在教程中使用的是：nautilus_trader.test_kit.providers，但是实际上也是导入的这个路径。只不过 pylance 会报警告
 import os
-import pandas as pd
+from pathlib import Path
 
-def loader(path_csv: str, output_dir: str, instrument):
+def loader(csv_path: str, output_dir: str, instrument, bar_type: BarType)   -> ParquetDataCatalog:
+    """
+    Docstring for loader
+    
+    :param csv_path: Description
+    :type csv_path: str
+    :param output_dir: Description
+    :type output_dir: str
+    :param instrument: Description
+    :param bar_type: Description
+    :type bar_type: BarType
+    :return: Description
+    :rtype: ParquetDataCatalog
+    """  
     # TODO 检测该路径是否存在，若不存在便给出提示并进行自动重建文件夹
-    print(f"Reading file: {path_csv}\nDesignated Output: {output_dir}\nUsing Instrument: {instrument}")
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+        print(f"Created output directory: {output_dir}")
+    output_path = Path(output_dir) / Path(csv_path).with_suffix('.parquet').name
+    
+    print(f"Reading file: {csv_path}\nDesignated Output: {output_dir}\nUsing Instrument: {instrument}")
 
+    # Load the first CSV file into a pandas DataFrame
+    df = CSVBarDataLoader.load(
+        file_path=csv_path,
+        index_col=0,
+        # header=None,
+        # names=["timestamp", "bid_price", "ask_price", "volume"],
+        usecols=["timestamp", "open", "high", "low", "close", "volume"],
+        # parse_dates=["timestamp"],
+        # date_format="%Y%m%d %H%M%S%f", # 这部分如何处理还不清楚
+    )
+
+    
+    df = df.sort_index()
+    df.head(2)
+
+    wrangler = BarDataWrangler(
+        bar_type,
+        instrument
+    )
+
+    # catalog building
     catalog = ParquetDataCatalog(output_dir)
-    catalog.write_instrument(instrument)
+    catalog.write_data(instrument) # write the instrument metadata
+    catalog.write_data(wrangler.process(df)) # Write the processed data to Parquet files
 
-    df = pd.read_csv(path_csv)
-    # 确保时间列是 datetime 类型，并设为 UTC
-    df['datetime'] = pd.to_datetime(df['datetime'])
-    if df['datetime'].dt.tz is None:
-        df['datetime'] = df['datetime'].dt.tz_localize('UTC')
+    bars = catalog.bars(bar_type)
+    print(f"Added {len(bars)} bars in catalog.")
+    if bars:
+        print(f"Preview of first 2 bars:\n{bars[:2]}")
+        return catalog
+    else:
+        raise ValueError("There's no bar in the catalog.")
+    
+    
+
