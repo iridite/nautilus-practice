@@ -36,11 +36,9 @@ def loader(csv_path: Path, output_dir: Path, instrument, bar_type: BarType)  -> 
     df: DataFrame = CSVBarDataLoader.load(
         file_path=csv_path,
         index_col=0,
-        # header=None,
-        # names=["timestamp", "bid_price", "ask_price", "volume"],
-        usecols=["timestamp", "open", "high", "low", "close", "volume"],
-        # parse_dates=["timestamp"],
-        # date_format="%Y%m%d %H%M%S%f", # 这部分如何处理还不清楚
+        usecols=["datetime", "open", "high", "low", "close", "volume"],
+        parse_dates=["datetime"], # pyright: ignore[reportArgumentType]
+        date_format="%Y%m%d %H%M%S", 
     )
 
     
@@ -61,7 +59,6 @@ def loader(csv_path: Path, output_dir: Path, instrument, bar_type: BarType)  -> 
     bars = catalog.bars(bar_types=bar_type)
     print(f"Added {len(bars)} bars in catalog.")
     if bars:
-        print(f"Preview of first 2 bars:\n{bars[:2]}")
         return catalog, output_path
     else:
         raise ValueError("There's no bar in the catalog.")
