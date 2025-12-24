@@ -8,7 +8,9 @@ from nautilus_trader.model import BarType
 import os
 from pathlib import Path
 
-def loader(csv_path: str, output_dir: str, instrument, bar_type: BarType)   -> ParquetDataCatalog:
+from pandas import DataFrame
+
+def loader(csv_path: Path, output_dir: Path, instrument, bar_type: BarType)  -> ParquetDataCatalog:
     """
     Docstring for loader
     
@@ -23,15 +25,15 @@ def loader(csv_path: str, output_dir: str, instrument, bar_type: BarType)   -> P
     :rtype: ParquetDataCatalog
     """  
     # TODO 检测该路径是否存在，若不存在便给出提示并进行自动重建文件夹
-    if not os.path.exists(output_dir):
-        os.makedirs(output_dir)
+    if not os.path.exists(path=output_dir):
+        os.makedirs(name=output_dir)
         print(f"Created output directory: {output_dir}")
-    output_path = Path(output_dir) / Path(csv_path).with_suffix('.parquet').name
+    output_path: Path = output_dir / csv_path.with_suffix(suffix='.parquet').name
     
     print(f"Reading file: {csv_path}\nDesignated Output: {output_dir}\nUsing Instrument: {instrument}")
 
     # Load the first CSV file into a pandas DataFrame
-    df = CSVBarDataLoader.load(
+    df: DataFrame = CSVBarDataLoader.load(
         file_path=csv_path,
         index_col=0,
         # header=None,
