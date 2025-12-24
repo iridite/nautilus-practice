@@ -22,13 +22,13 @@ from utils.data_loader import loader
 BASE_DIR: Path = Path(__file__).resolve().parent
 DATA_PATH: Path = BASE_DIR.parent / "data" 
 
-instrument = TestInstrumentProvider.ethusdt_perp_binance
+instrument = TestInstrumentProvider.ethusdt_perp_binance()
 
-parquet: ParquetDataCatalog = loader(
-    csv_path = DATA_PATH / "raw" / "binance-ETHUSDT-5m-2025-01-01_2025-12-20",
+parquet, catalog_path = loader(
+    csv_path = DATA_PATH / "raw" / "binance-ETHUSDT-1h-2025-01-01_2025-12-24.csv",
     output_dir= DATA_PATH / "parquet",
     instrument=instrument,
-    bar_type=BarType("ETH/USD.BINANCE-SPOT-5-MINUTE-LAST-INTERNAL"),
+    bar_type=BarType.from_str(f"{instrument.id}-1-HOUR-LAST-INTERNAL"),
 )
 
 venue_configs: list[BacktestVenueConfig] = [
@@ -43,7 +43,7 @@ venue_configs: list[BacktestVenueConfig] = [
 
 data_configs: list[BacktestDataConfig] = [
     BacktestDataConfig(
-        catalog_path=str(object=DATA_PATH / "parquet"),
+        catalog_path=str(object=catalog_path), # sucks that we have to cast Path to str here
         data_cls=QuoteTick,
         instrument_id=instrument.id,
         start_time="2025-01-01", # Can be an ISO 8601 format datetime string, or UNIX nanoseconds integer
