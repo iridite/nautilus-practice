@@ -10,19 +10,19 @@ from pathlib import Path
 
 from pandas import DataFrame
 
-def loader(csv_path: Path, output_dir: Path, instrument, bar_type: BarType)  -> ParquetDataCatalog:
+def loader(csv_path: Path, output_dir: Path, instrument, bar_type: BarType)  -> tuple[ParquetDataCatalog, Path]:
     """
     Docstring for loader
     
     :param csv_path: Description
-    :type csv_path: str
+    :type csv_path: Path
     :param output_dir: Description
-    :type output_dir: str
+    :type output_dir: Path
     :param instrument: Description
     :param bar_type: Description
     :type bar_type: BarType
     :return: Description
-    :rtype: ParquetDataCatalog
+    :rtype: [ParquetDataCatalog, catalog_path: Path]
     """  
     # TODO 检测该路径是否存在，若不存在便给出提示并进行自动重建文件夹
     if not os.path.exists(path=output_dir):
@@ -45,7 +45,7 @@ def loader(csv_path: Path, output_dir: Path, instrument, bar_type: BarType)  -> 
 
     
     df = df.sort_index()
-    df.head(2)
+    print(f"Loaded DataFrame preview:\n{df.head(n=2)}")
 
     wrangler = BarDataWrangler(
         bar_type,
@@ -53,17 +53,19 @@ def loader(csv_path: Path, output_dir: Path, instrument, bar_type: BarType)  -> 
     )
 
     # catalog building
-    catalog = ParquetDataCatalog(output_dir)
-    catalog.write_data(instrument) # write the instrument metadata
+    catalog = ParquetDataCatalog(path=output_path)
+    catalog.write_data([instrument]) # write the instrument metadata
+    # worth noting that write_data can only accept a List when it is INSTRUMENT
     catalog.write_data(wrangler.process(df)) # Write the processed data to Parquet files
 
-    bars = catalog.bars(bar_type)
+    bars = catalog.bars(bar_types=bar_type)
     print(f"Added {len(bars)} bars in catalog.")
     if bars:
         print(f"Preview of first 2 bars:\n{bars[:2]}")
-        return catalog
+        return catalog, output_path
     else:
         raise ValueError("There's no bar in the catalog.")
+
     
     
 
