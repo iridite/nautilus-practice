@@ -251,20 +251,20 @@ def main():
     # 7. 数据格式化
     ohlcv_df['datetime'] = pd.to_datetime(ohlcv_df['timestamp'], unit='ms')
     
-    cols = ['datetime', 'timestamp', 'open', 'high', 'low', 'close', 'volume']
+    cols: list[str] = ['datetime', 'timestamp', 'open', 'high', 'low', 'close', 'volume']
     if 'fundingRate' in ohlcv_df.columns:
         cols.append('fundingRate')
     ohlcv_df = ohlcv_df[cols]
 
     # 8. 保存文件
-    current_dir = Path(__file__).parent
-    output_dir = current_dir.parent.parent / 'data'
+    current_dir: Path = Path(__file__).parent
+    output_dir: Path = current_dir.parent / 'data' / 'raw'
     output_dir.mkdir(parents=True, exist_ok=True)
     
     safe_symbol = raw_symbol.replace('/', '') 
     # 文件名增加 exchange 标识，防止同名币种覆盖
-    filename = f"{args.exchange}-{safe_symbol}-{args.timeframe}-{args.start}_{args.end}.csv"
-    output_path = output_dir / filename
+    filename: str = f"{args.exchange}-{safe_symbol}-{args.timeframe}-{args.start}_{args.end}.csv"
+    output_path: Path = output_dir / filename
     
     ohlcv_df.to_csv(output_path, index=False)
     print(f"\n[√] Data saved to: {output_path}")
