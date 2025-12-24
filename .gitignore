@@ -1,4 +1,4 @@
-.env
+# Ignore Python virtual environments and IDE settings
 .idea
 .venv
 __pycache__/
@@ -7,6 +7,4 @@ __pycache__/
 dist/
 build/
 .vscode/
-*.log
-*.html
-*.csv
+
