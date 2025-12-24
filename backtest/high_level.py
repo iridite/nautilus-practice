@@ -1,6 +1,9 @@
 import shutil
 from decimal import Decimal
 from pathlib import Path
+from nautilus_trader.adapters.databento.data_utils import DATA_PATH
+from nautilus_trader.model.currencies import DASH
+from nautilus_trader.persistence.catalog import ParquetDataCatalog
 import pandas as pd
 
 from nautilus_trader.backtest.node import BacktestDataConfig # pyright: ignore[reportPrivateImportUsage]
@@ -11,12 +14,24 @@ from nautilus_trader.backtest.node import BacktestVenueConfig # pyright: ignore[
 from nautilus_trader.config import ImportableStrategyConfig
 from nautilus_trader.core.datetime import dt_to_unix_nanos
 from nautilus_trader.model import QuoteTick
-# from nautilus_trader.persistence.catalog import ParquetDataCatalog
-# from nautilus_trader.persistence.wranglers import QuoteTickDataWrangler
-# from nautilus_trader.test_kit.providers import CSVTickDataLoader
-# from nautilus_trader.test_kit.providers import TestInstrumentProvider
+from nautilus_trader.test_kit.providers import TestInstrumentProvider
+from nautilus_trader.model import BarType
+from utils.data_loader import loader
 
-venue_configs = [
+# path setup
+BASE_DIR: Path = Path(__file__).resolve().parent
+DATA_PATH: Path = BASE_DIR.parent / "data" 
+
+instrument = TestInstrumentProvider.ethusdt_perp_binance
+
+parquet: ParquetDataCatalog = loader(
+    csv_path = DATA_PATH / "raw" / "binance-ETHUSDT-5m-2025-01-01_2025-12-20",
+    output_dir= DATA_PATH / "parquet",
+    instrument=instrument,
+    bar_type=BarType("ETH/USD.BINANCE-SPOT-5-MINUTE-LAST-INTERNAL"),
+)
+
+venue_configs: list[BacktestVenueConfig] = [
     BacktestVenueConfig(
         name="SIM",
         oms_type="HEDGING",
@@ -26,13 +41,13 @@ venue_configs = [
     ),
 ]
 
-data_configs = [
+data_configs: list[BacktestDataConfig] = [
     BacktestDataConfig(
-        catalog_path=str(CATALOG_PATH),
+        catalog_path=str(object=DATA_PATH / "parquet"),
         data_cls=QuoteTick,
         instrument_id=instrument.id,
-        start_time=start_time,
-        end_time=end_time,
+        start_time="2025-01-01", # Can be an ISO 8601 format datetime string, or UNIX nanoseconds integer
+        end_time="2025-12-10",
     ),
 ]
 
