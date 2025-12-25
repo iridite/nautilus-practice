@@ -1,10 +1,8 @@
-import shutil
 import gc 
 from decimal import Decimal
 from pathlib import Path
 import sys
 from turtle import st
-import pandas as pd
 from utils.data_loader import loader
 
 # Nautilus Imports
@@ -19,12 +17,14 @@ from nautilus_trader.backtest.results import BacktestResult
 from nautilus_trader.config import ImportableStrategyConfig
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.model.data import Bar, BarType 
-# ⚠️ 注意这里改成了 Bar
 from nautilus_trader.common.config import LoggingConfig
 
 # Path setup
 BASE_DIR: Path = Path(__file__).resolve().parent
-DATA_PATH: Path = BASE_DIR.parent / "data" 
+RAW_DATA_PATH: Path = BASE_DIR.parent / "data" / "raw"
+# 设置 Parquet 输出目录
+output_dir = RAW_DATA_PATH / "parquet"
+
 
 # 1. 定义 Instrument
 instrument = TestInstrumentProvider.ethusdt_perp_binance()
@@ -34,18 +34,9 @@ instrument = TestInstrumentProvider.ethusdt_perp_binance()
 bar_type_str = f"{instrument.id}-5-MINUTE-LAST-EXTERNAL"
 bar_type_def = BarType.from_str(bar_type_str)
 
-# 3. 加载数据 (执行转换)
-# parquet_catalog, catalog_path = loader(
-#     csv_path = DATA_PATH / "raw" / "binance-ETHUSDT-5m-2025-01-01_2025-12-24.csv",
-#     output_dir= DATA_PATH / "parquet",
-#     instrument=instrument,
-#     bar_type=bar_type_def,
-# )
-
-# 1. 设置 Parquet 输出目录
-output_dir = DATA_PATH / "parquet"
+# 3. 加载 CSV 数据并转换为 Parquet 格式的 Catalog
 parquet_catalog, catalog_path = loader(
-    csv_path = DATA_PATH / "raw" / "binance-ETHUSDT-1h-2025-01-01_2025-12-25.csv",
+    csv_path = RAW_DATA_PATH / "binance-ETHUSDT-1h-2025-01-01_2025-12-25.csv",
     output_dir= output_dir,
     instrument=instrument,
     bar_type=bar_type_def,
@@ -102,9 +93,9 @@ eng_cfg = BacktestEngineConfig(
     # trader_id=TraderId("BACKTESTER-001"),
     strategies=strategies,
     logging=LoggingConfig(
-        log_level="INFO",  # 减少日志输出，只看警告及以上，提高回测速度
+        log_level="INFO",       # 减少日志输出，只看警告及以上，提高回测速度
         log_colors=True,
-        use_pyo3=True,       # 是否使用 Rust 优化的日志组件
+        use_pyo3=True,          # 是否使用 Rust 优化的日志组件
     ),
 )
 
@@ -113,6 +104,9 @@ config = BacktestRunConfig(
     engine=eng_cfg,
     data=data_configs,
     venues=venue_configs,
+    # 也可以在这里设置全局的回测时间范围
+    # start_time="2025-01-01",
+    # end_time="2025-12-31",
 )
 
 # 8. 执行
