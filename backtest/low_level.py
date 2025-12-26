@@ -15,6 +15,8 @@ from nautilus_trader.model import BarType
 from nautilus_trader.persistence.wranglers import BarDataWrangler
 from nautilus_trader.examples.algorithms.twap import TWAPExecAlgorithm
 from nautilus_trader.examples.strategies.ema_cross_twap import EMACrossTWAP, EMACrossTWAPConfig
+from nautilus_trader.analysis import TearsheetConfig
+from nautilus_trader.analysis.tearsheet import create_tearsheet
 
 BASE_DIR: Path = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BASE_DIR))
@@ -104,9 +106,10 @@ print("Backtest finished.")
 # Visualization
 output_path = str(BASE_DIR / "output" / f"{inst.id}_{datetime.now().isoformat()}.html")
 
-generate_tearsheet_report(
+create_tearsheet(
     engine=engine,
-    output_path=output_path,
+    output_path=output_path, # 显式指定文件名
+    # currency
 )
 
 # Cleanup
