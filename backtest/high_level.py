@@ -18,30 +18,29 @@ from nautilus_trader.config import ImportableStrategyConfig
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.model.data import Bar, BarType 
 from nautilus_trader.common.config import LoggingConfig
+from datetime import datetime
 
 # Path setup
-BASE_DIR: Path = Path(__file__).resolve().parent
-RAW_DATA_PATH: Path = BASE_DIR.parent / "data" / "raw"
-# 设置 Parquet 输出目录
-output_dir = RAW_DATA_PATH / "parquet"
-
+BASE_DIR: Path = Path(__file__).resolve().parent.parent
+print(f"Base directory set to: {BASE_DIR}")
+DATA_PATH: Path = BASE_DIR / "data"
 
 # 1. 定义 Instrument
 instrument = TestInstrumentProvider.ethusdt_perp_binance()
 
 # 2. 定义 BarType (确保 Strategy 和 Loader 使用完全相同的定义)
 # 该部分依照 k 线来源进行分类，如果不是基于 tick 或者 quote 生成的 k 线，建议使用 EXTERNAL
-bar_type_str = f"{instrument.id}-5-MINUTE-LAST-EXTERNAL"
+bar_type_str: str = f"{instrument.id}-1-HOUR-LAST-EXTERNAL"
 bar_type_def = BarType.from_str(bar_type_str)
 
 # 3. 加载 CSV 数据并转换为 Parquet 格式的 Catalog
 parquet_catalog, catalog_path = loader(
-    csv_path = RAW_DATA_PATH / "binance-ETHUSDT-1h-2025-01-01_2025-12-25.csv",
-    output_dir= output_dir,
-    instrument=instrument,
-    bar_type=bar_type_def,
+    csv_path =      DATA_PATH / "raw" / "binance-ETHUSDT-1h-2025-01-01_2025-12-25.csv",
+    output_path =   DATA_PATH / "parquet" / f"{datetime.now().isoformat()}",
+    instrument =    instrument,
+    bar_type =      bar_type_def,
 )
-del parquet_catalog 
+del parquet_catalog
 
 # 3. 强制垃圾回收（释放 Pandas 占用的内存）
 gc.collect()

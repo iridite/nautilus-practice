@@ -15,15 +15,13 @@ from nautilus_trader.model import BarType
 from nautilus_trader.persistence.wranglers import BarDataWrangler
 from nautilus_trader.examples.algorithms.twap import TWAPExecAlgorithm
 from nautilus_trader.examples.strategies.ema_cross_twap import EMACrossTWAP, EMACrossTWAPConfig
-from nautilus_trader.analysis import TearsheetConfig
+# from nautilus_trader.analysis import TearsheetConfig
 from nautilus_trader.analysis.tearsheet import create_tearsheet
+# Import local modules
+from datetime import datetime
 
 BASE_DIR: Path = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BASE_DIR))
-
-# Import local modules
-from utils.visualize import generate_tearsheet_report
-from datetime import datetime
 
 # Configure backtest engine
 config = BacktestEngineConfig(

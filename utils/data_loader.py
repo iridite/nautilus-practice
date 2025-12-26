@@ -7,10 +7,9 @@ from nautilus_trader.model import BarType
 # 关于这个导入的路径，在教程中使用的是：nautilus_trader.test_kit.providers，但是实际上也是导入的这个路径。只不过 pylance 会报警告
 import os
 from pathlib import Path
-
 from pandas import DataFrame
 
-def loader(csv_path: Path, output_dir: Path, instrument, bar_type: BarType)  -> tuple[ParquetDataCatalog, Path]:
+def loader(csv_path: Path, output_path: Path, instrument, bar_type: BarType)  -> tuple[ParquetDataCatalog, Path]:
     """
     Docstring for loader
     
@@ -25,12 +24,11 @@ def loader(csv_path: Path, output_dir: Path, instrument, bar_type: BarType)  -> 
     :rtype: [ParquetDataCatalog, catalog_path: Path]
     """  
     # TODO 检测该路径是否存在，若不存在便给出提示并进行自动重建文件夹
-    if not os.path.exists(path=output_dir):
-        os.makedirs(name=output_dir)
-        print(f"Created output directory: {output_dir}")
-    output_path: Path = output_dir / csv_path.with_suffix(suffix='.parquet').name
+    if not os.path.exists(path=output_path):
+        os.makedirs(name=output_path)
+        print(f"Created output directory: {output_path}")
     
-    print(f"Reading file: {csv_path}\nDesignated Output: {output_dir}\nUsing Instrument: {instrument}")
+    print(f"Reading file: {csv_path}\nDesignated Output Path: {output_path}\nUsing Instrument: {instrument}")
 
     # Load the first CSV file into a pandas DataFrame
     df: DataFrame = CSVBarDataLoader.load(
