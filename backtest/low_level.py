@@ -21,6 +21,7 @@ sys.path.insert(0, str(BASE_DIR))
 
 # Import local modules
 from utils.visualize import generate_tearsheet_report
+from datetime import datetime
 
 # Configure backtest engine
 config = BacktestEngineConfig(
@@ -42,7 +43,7 @@ engine.add_venue(
     book_type=BookType.L1_MBP,
     account_type=AccountType.MARGIN,
     base_currency=USDT,
-    starting_balances=[Money(1_000_000.0, USDT)],
+    starting_balances=[Money(1_000.0, USDT)],
     trade_execution=True,
 )
 
@@ -72,14 +73,11 @@ try:
     bars = wrangler.process(df)
     engine.add_data(bars)
     
-    print(f"Loaded {len(bars)} bars")
+    print(f"\nLoaded {len(bars)} bars")
 
 except FileNotFoundError:
     print("Error: Data file not found.")
     bars = []
-
-print("\nInitial account state:")
-print(engine.trader.generate_account_report(BINANCE_VENUE))
 
 # Strategy and Execution Algorithm configuration
 strategy_config = EMACrossTWAPConfig(
@@ -104,7 +102,7 @@ engine.run()
 print("Backtest finished.")
 
 # Visualization
-output_path = str(BASE_DIR / "output" / f"{inst.id}_tearsheet.html")
+output_path = str(BASE_DIR / "output" / f"{inst.id}_{datetime.now().isoformat()}.html")
 
 generate_tearsheet_report(
     engine=engine,
