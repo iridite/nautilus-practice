@@ -7,7 +7,7 @@ requires-python = ">=3.14"
 dependencies = [
     "ccxt>=4.5.28",
     "jupyterlab>=4.5.1",
-    "nautilus-trader>=1.222.0a20251219",
+    "nautilus-trader[binance,okx]>=1.222.0a20251219",
     "pandas-stubs~=2.3.3",
     "plotly>=6.5.0",
     "python-dotenv>=1.2.1",

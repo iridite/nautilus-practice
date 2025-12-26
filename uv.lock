@@ -1017,7 +1017,7 @@ dependencies = [
 requires-dist = [
     { name = "ccxt", specifier = ">=4.5.28" },
     { name = "jupyterlab", specifier = ">=4.5.1" },
-    { name = "nautilus-trader", specifier = ">=1.222.0a20251219", index = "https://packages.nautechsystems.io/simple" },
+    { name = "nautilus-trader", extras = ["binance", "okx"], specifier = ">=1.222.0a20251219", index = "https://packages.nautechsystems.io/simple" },
     { name = "pandas-stubs", specifier = "~=2.3.3" },
     { name = "plotly", specifier = ">=6.5.0" },
     { name = "python-dotenv", specifier = ">=1.2.1" },
