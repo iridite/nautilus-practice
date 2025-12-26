@@ -92,7 +92,7 @@ wrangler = BarDataWrangler(bar_type, inst)
 # 读取 CSV 数据
 # 假设 CSV 路径正确，且包含 timestamp, open, high, low, close, volume 列
 try:
-    df = pd.read_csv(BASE_DIR / "data" / "raw" / "binance-ETHUSDT-5m-2025-01-01_2025-12-24.csv")
+    df = pd.read_csv(BASE_DIR / "data" / "raw" / "binance-ETHUSDT-30m-2025-01-01_2025-12-25.csv")
     
     # 处理时间戳：转换为 datetime 对象
     df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms")
@@ -137,7 +137,7 @@ print(engine.trader.generate_account_report(BINANCE_VENUE))
 strategy_config = EMACrossTWAPConfig(
     instrument_id=inst.id,
     bar_type=bar_type,             # 使用前面定义的 BarType
-    trade_size=Decimal("0.10"),    # 每次交易 0.1 个 ETH
+    trade_size=Decimal("2"), 
     fast_ema_period=10,            # 快线周期
     slow_ema_period=20,            # 慢线周期
     twap_horizon_secs=10.0,        # TWAP 执行总时长
@@ -190,7 +190,7 @@ output_path = str(BASE_DIR / "output" / f"{inst.id}_tearsheet.html")
 generate_tearsheet_report(
     engine=engine,
     output_path=output_path,
-    title=f"Backtest Tearsheet for {inst.id}"
+    title=f"Backtest Tearsheet for {inst.id}",
 )
 
 # %% [markdown]

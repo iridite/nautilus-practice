@@ -10,3 +10,4 @@ build/
 
 # catalog data
 data/parquet/**
+output/**
