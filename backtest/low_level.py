@@ -161,26 +161,6 @@ engine.run()
 print("回测结束。")
 
 # %% [markdown]
-# # 7. 报告与分析 (Reporting)
-# 使用 Pandas context manager 格式化输出，便于在控制台查看。
-
-# %%
-with pd.option_context(
-    "display.max_rows", 10,
-    "display.max_columns", None,
-    "display.width", 300,
-):
-    print("\n=== 账户最终资金报告 ===")
-    print(engine.trader.generate_account_report(BINANCE_VENUE))
-    
-    print("\n=== 订单成交记录 (Fills) ===")
-    print(engine.trader.generate_order_fills_report())
-    
-    print("\n=== 持仓记录 (Positions) ===")
-    # 这里的 Positions 展示逻辑受 OMS (NETTING/HEDGING) 的直接影响
-    print(engine.trader.generate_positions_report())
-
-# %% [markdown]
 # # 8. 可视化 (Tearsheet)
 # 如果安装了 Plotly，可以生成交互式的 HTML 报表。
 
