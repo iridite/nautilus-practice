@@ -3,19 +3,27 @@
 
 from decimal import Decimal
 from pathlib import Path
-
 import pandas as pd
+import sys
 # 交易所适配器配置 (这里只用作 Venue 的标识符)
 from nautilus_trader.adapters.binance import BINANCE_VENUE
-# Nautilus 核心组件
 from nautilus_trader.backtest.config import BacktestEngineConfig
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.common.config import LoggingConfig
 from nautilus_trader.model import TraderId, Money
 from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.enums import OmsType, BookType, AccountType
+from nautilus_trader.test_kit.providers import TestInstrumentProvider
+from nautilus_trader.model import BarType
+from nautilus_trader.persistence.wranglers import BarDataWrangler
+from nautilus_trader.examples.algorithms.twap import TWAPExecAlgorithm
+from nautilus_trader.examples.strategies.ema_cross_twap import EMACrossTWAP, EMACrossTWAPConfig
 
-BASE_DIR = Path(__file__).resolve().parent
+BASE_DIR: Path = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(BASE_DIR)) # 将项目根目录加入模块搜索路径
+
+# 导入本地模块
+from utils.visualize import generate_tearsheet_report
 
 # 配置回测引擎
 config = BacktestEngineConfig(
@@ -62,9 +70,6 @@ engine.add_venue(
 # 帮我们快速生成标准化的 `Instrument` 对象，免去了手动编写一大堆参数的麻烦。
 # 它生成的对象是完全合法的标准 Instrument 对象。
 
-# %%
-from nautilus_trader.test_kit.providers import TestInstrumentProvider
-
 # 从预设库中加载 "ETHUSDT 永续合约" 的标的信息
 # 这会自动包含价格精度、数量精度等关键信息
 inst = TestInstrumentProvider.ethusdt_perp_binance()
@@ -77,10 +82,6 @@ engine.add_instrument(inst)
 # # 4. 数据加载与清洗 (Data Wrangling)
 # NT 是事件驱动的，需要将 CSV 数据转换成系统能理解的 `Bar` 对象。
 
-# %%
-from nautilus_trader.model import BarType
-from nautilus_trader.persistence.wranglers import BarDataWrangler
-
 # 定义数据类型：Binance 交易所的 5分钟 K线
 # 格式解析: [INSTRUMENT]-[TIMEFRAME]-[BAR_AGGREGATION]-[SOURCE]
 bar_type = BarType.from_str(f"{inst.id}-5-MINUTE-LAST-EXTERNAL")
@@ -91,7 +92,7 @@ wrangler = BarDataWrangler(bar_type, inst)
 # 读取 CSV 数据
 # 假设 CSV 路径正确，且包含 timestamp, open, high, low, close, volume 列
 try:
-    df = pd.read_csv(BASE_DIR / "../../data/binance-ETHUSDT-5m-2025-01-01_2025-12-20.csv")
+    df = pd.read_csv(BASE_DIR / "data" / "raw" / "binance-ETHUSDT-5m-2025-01-01_2025-12-24.csv")
     
     # 处理时间戳：转换为 datetime 对象
     df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms")
@@ -131,10 +132,6 @@ print(engine.trader.generate_account_report(BINANCE_VENUE))
 # 这里我们将策略 (Strategy) 和执行算法 (Execution Algorithm) 挂载到引擎上。
 # - **Strategy**: 大脑，决定“买什么、什么时候买”。
 # - **Exec Algorithm (TWAP)**: 手脚，决定“怎么买”（例如拆单执行，减少滑点）。
-
-# %%
-from nautilus_trader.examples.algorithms.twap import TWAPExecAlgorithm
-from nautilus_trader.examples.strategies.ema_cross_twap import EMACrossTWAP, EMACrossTWAPConfig
 
 # 5.1 配置策略参数
 strategy_config = EMACrossTWAPConfig(
@@ -179,39 +176,22 @@ with pd.option_context(
     print("\n=== 订单成交记录 (Fills) ===")
     print(engine.trader.generate_order_fills_report())
     
-    # print("\n=== 持仓记录 (Positions) ===")
-    # # 这里的 Positions 展示逻辑受 OMS (NETTING/HEDGING) 的直接影响
-    # print(engine.trader.generate_positions_report())
+    print("\n=== 持仓记录 (Positions) ===")
+    # 这里的 Positions 展示逻辑受 OMS (NETTING/HEDGING) 的直接影响
+    print(engine.trader.generate_positions_report())
 
 # %% [markdown]
 # # 8. 可视化 (Tearsheet)
 # 如果安装了 Plotly，可以生成交互式的 HTML 报表。
 
 # %%
-output_path = str(BASE_DIR / f"../../output/{inst.id}_tearsheet.html")
+output_path = str(BASE_DIR / "output" / f"{inst.id}_tearsheet.html")
 
-try:
-    from nautilus_trader.analysis import TearsheetConfig
-    from nautilus_trader.analysis.tearsheet import create_tearsheet
-
-    print("\n正在生成可视化报表 (Tearsheet)...")
-
-    # 配置报表主题: "plotly_white", "plotly_dark", "nautilus", "nautilus_dark"
-    tearsheet_config = TearsheetConfig(theme="plotly_white")
-
-    create_tearsheet(
-        engine=engine,
-        output_path=output_path,
-        config=tearsheet_config,
-    )
-    print(f"报表已保存至: {output_path}")
-    print("请在浏览器中打开该文件查看交互式图表。")
-
-except ImportError:
-    print("\n提示: 未安装 Plotly，无法生成图表。另外也需要注意 NT 版本中是否存在 nautilus_trader.analysis import TearsheetConfig 等文件")
-    print("请运行: pip install plotly>=6.3.1")
-except Exception as e:
-    print(f"\n生成报表时发生错误: {e}")
+generate_tearsheet_report(
+    engine=engine,
+    output_path=output_path,
+    title=f"Backtest Tearsheet for {inst.id}"
+)
 
 # %% [markdown]
 # # 9. 清理资源
