@@ -170,7 +170,6 @@ output_path = str(BASE_DIR / "output" / f"{inst.id}_tearsheet.html")
 generate_tearsheet_report(
     engine=engine,
     output_path=output_path,
-    title=f"Backtest Tearsheet for {inst.id}",
 )
 
 # %% [markdown]
