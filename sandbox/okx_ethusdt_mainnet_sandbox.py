@@ -1,3 +1,4 @@
+from datetime import datetime
 import os
 from dotenv import load_dotenv
 from nautilus_trader.core.nautilus_pyo3 import OKXInstrumentType
@@ -47,6 +48,7 @@ from nautilus_trader.model.identifiers import TraderId
 # *** IT IS NOT INTENDED TO BE USED TO TRADE LIVE WITH REAL MONEY. ***
 
 BASE_DIR: Path = Path(__file__).resolve().parent.parent
+LOG_DIR = BASE_DIR / "log" / "sandbox"
 
 load_dotenv(BASE_DIR / ".env")
 
@@ -118,7 +120,7 @@ async def main():
             log_level="INFO",
             log_level_file="DEBUG",
             log_file_format="json",
-            log_directory= str(BASE_DIR / "log" / "sandbox"),
+            log_directory= str(LOG_DIR / "runtime"),
             log_colors=True,
             use_pyo3=True,
         ),
@@ -219,7 +221,9 @@ async def main():
             print(node.trader.generate_order_fills_report().tail())
 
             # 3. (可选) 导出为 CSV
-            node.trader.generate_account_report(OKX_VENUE).to_csv("sandbox_account.csv")
+            node.trader.generate_account_report(OKX_VENUE).to_csv(
+                str(LOG_DIR / "account" / f"account_report_{datetime.now().isoformat()}.csv")
+            )
             print("✅ 数据已保存到 sandbox_account.csv")
         
         await node.stop_async()
