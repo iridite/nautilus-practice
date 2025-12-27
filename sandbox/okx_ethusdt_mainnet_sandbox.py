@@ -50,6 +50,63 @@ BASE_DIR: Path = Path(__file__).resolve().parent.parent
 
 load_dotenv(BASE_DIR / ".env")
 
+# 1. 定义一个监控协程
+async def monitor_portfolio(node: TradingNode, interval_secs: int = 5):
+    print(f"👀 启动 PnL 监控 (每 {interval_secs} 秒刷新)...")
+    
+    while True:
+        try:
+            await asyncio.sleep(interval_secs)
+            
+            if not node.cache:
+                continue
+
+            accounts = node.cache.accounts()
+            
+            target_account = None
+            for acc in accounts:
+                if str(acc.id).startswith("OKX"): 
+                    target_account = acc
+                    break
+            
+            if target_account:
+                # 1. 获取 Money 对象
+                total_money = target_account.balance_total()
+                free_money = target_account.balance_free()
+                
+                # 2. ⚠️ 关键修改：转换为 float 以便格式化
+                # 如果是 Money 对象，直接 float() 即可提取数值
+                total_val = float(total_money)
+                free_val = float(free_money)
+                
+                positions = node.cache.positions()
+                
+                # 计算总浮盈 (Money 对象支持 sum，但结果还是 Money)
+                # 如果没有持仓，sum 可能返回 0 (int)，所以要做个判断或初始值处理
+                if positions:
+                    total_upnl_money = sum((p.unrealized_pnl for p in positions), start=None) # pyright: ignore[reportCallIssue, reportArgumentType]
+                    # 如果 start=None 且列表非空，sum 会用第一个元素的类型累加
+                    # 为了安全，我们分别处理
+                    current_upnl_val = float(total_upnl_money) if total_upnl_money else 0.0
+                else:
+                    current_upnl_val = 0.0
+                
+                # 打印状态
+                print(f"💰 [Monitor] 权益: {total_val:,.2f} U | 浮盈: {current_upnl_val:+,.2f} U | 可用: {free_val:,.2f} | 持仓数: {len(positions)}")
+                
+                # 打印具体持仓
+                for pos in positions:
+                    # ⚠️ 这里也要转 float
+                    upnl_val = float(pos.unrealized_pnl)
+                    print(f"   👉 持仓: {pos.instrument_id} | 数量: {pos.quantity} | 方向: {pos.side} | 浮盈: {upnl_val:+,.2f}")
+            
+        except asyncio.CancelledError:
+            print("👋 监控任务已停止")
+            break
+        except Exception as e:
+            # 打印简单报错，避免刷屏
+            print(f"⚠️ 监控报错: {e}")
+
 async def main():
     """
     Show how to run a strategy in a sandbox for the OKX venue.
@@ -142,9 +199,29 @@ async def main():
     node.add_exec_client_factory(OKX, SandboxLiveExecClientFactory)
     node.build()
 
+    # 创建一个后台任务
+    monitor_task = asyncio.create_task(monitor_portfolio(node, interval_secs=20))
+
     try:
         await node.run_async()
     finally:
+        # 退出时取消监控
+        monitor_task.cancel() 
+
+        if node.trader:
+            print("\n🛑 Sandbox 已停止，正在生成最终报告...")
+            # 1. 打印账户报告 DataFrame
+            print("📊 账户资金历史:")
+            print(node.trader.generate_account_report(OKX_VENUE).tail())
+            
+            # 2. 打印成交记录
+            print("📝 成交记录:")
+            print(node.trader.generate_order_fills_report().tail())
+
+            # 3. (可选) 导出为 CSV
+            node.trader.generate_account_report(OKX_VENUE).to_csv("sandbox_account.csv")
+            print("✅ 数据已保存到 sandbox_account.csv")
+        
         await node.stop_async()
         await asyncio.sleep(1)
         node.dispose()
