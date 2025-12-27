@@ -72,42 +72,38 @@ async def monitor_portfolio(node: TradingNode, interval_secs: int = 5):
                     break
             
             if target_account:
-                # 1. 获取 Money 对象
-                total_money = target_account.balance_total()
-                free_money = target_account.balance_free()
-                
-                # 2. ⚠️ 关键修改：转换为 float 以便格式化
-                # 如果是 Money 对象，直接 float() 即可提取数值
-                total_val = float(total_money)
-                free_val = float(free_money)
+                # 1. 获取 Money 对象并转 float
+                # balance_total() 是方法，调用后转 float
+                total_val = float(target_account.balance_total())
+                free_val = float(target_account.balance_free())
                 
                 positions = node.cache.positions()
                 
-                # 计算总浮盈 (Money 对象支持 sum，但结果还是 Money)
-                # 如果没有持仓，sum 可能返回 0 (int)，所以要做个判断或初始值处理
-                if positions:
-                    total_upnl_money = sum((p.unrealized_pnl for p in positions), start=None) # pyright: ignore[reportCallIssue, reportArgumentType]
-                    # 如果 start=None 且列表非空，sum 会用第一个元素的类型累加
-                    # 为了安全，我们分别处理
-                    current_upnl_val = float(total_upnl_money) if total_upnl_money else 0.0
-                else:
-                    current_upnl_val = 0.0
+                # 2. 计算总浮盈 (修正版)
+                # 错误原因修正：
+                # (1) start=None 改为 start=0.0 (因为我们要累加数字)
+                # (2) p.unrealized_pnl 改为 p.unrealized_pnl() (它是方法，要加括号)
+                # (3) 显式 float() 转换 Money 对象
+                total_upnl_val = sum((float(p.unrealized_pnl()) for p in positions), start=0.0)
                 
                 # 打印状态
-                print(f"💰 [Monitor] 权益: {total_val:,.2f} U | 浮盈: {current_upnl_val:+,.2f} U | 可用: {free_val:,.2f} | 持仓数: {len(positions)}")
+                print(f"💰 [Monitor] 权益: {total_val:,.2f} U | 浮盈: {total_upnl_val:+,.2f} U | 可用: {free_val:,.2f} | 持仓数: {len(positions)}")
                 
                 # 打印具体持仓
                 for pos in positions:
-                    # ⚠️ 这里也要转 float
-                    upnl_val = float(pos.unrealized_pnl)
-                    print(f"   👉 持仓: {pos.instrument_id} | 数量: {pos.quantity} | 方向: {pos.side} | 浮盈: {upnl_val:+,.2f}")
+                    # 同样，这里也要加括号并转 float
+                    upnl_val = float(pos.unrealized_pnl())
+                    qty = pos.quantity # quantity 通常是属性，不用括号
+                    print(f"   👉 持仓: {pos.instrument_id} | 数量: {qty} | 方向: {pos.side} | 浮盈: {upnl_val:+,.2f}")
             
         except asyncio.CancelledError:
             print("👋 监控任务已停止")
             break
         except Exception as e:
-            # 打印简单报错，避免刷屏
+            # 打印详细堆栈，防止因为属性名不对猜来猜去
+            import traceback
             print(f"⚠️ 监控报错: {e}")
+            # traceback.print_exc()
 
 async def main():
     """
