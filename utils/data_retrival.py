@@ -2,7 +2,6 @@ import argparse
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-
 import ccxt
 import pandas as pd
 
@@ -40,7 +39,6 @@ def get_ms_timestamp(date_str):
 def resolve_symbol_and_type(input_symbol):
     """
     解析输入标的，返回 (ccxt_unified_symbol, market_type)
-    
     策略：
     1. 输入含 '/': 认为是现货。
     2. 输入不含 '/': 认为是永续合约，尝试转换为 CCXT 的统一格式 Base/Quote:Settle。
@@ -238,6 +236,8 @@ def main():
         return
 
     # 6. 如果是永续合约，获取资金费率并合并
+
+    # TODO 将资金费率部分单独出来生成，生成独立的 csv
     if market_type == 'swap' and args.extra:
         funding_df = fetch_funding_data(exchange, ccxt_symbol, start_ms, end_ms)
         
@@ -257,8 +257,7 @@ def main():
     ohlcv_df = ohlcv_df[cols]
 
     # 8. 保存文件
-    current_dir: Path = Path(__file__).parent
-    output_dir: Path = current_dir.parent / 'data' / 'raw'
+    output_dir: Path = Path(__file__).parent.parent / 'data' / 'raw'
     output_dir.mkdir(parents=True, exist_ok=True)
     
     safe_symbol = raw_symbol.replace('/', '') 

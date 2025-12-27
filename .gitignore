@@ -11,3 +11,4 @@ build/
 # catalog data
 data/parquet/**
 output/**
+log/**
