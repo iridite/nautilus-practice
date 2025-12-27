@@ -58,6 +58,7 @@ class MACDEnhancedStrategy(Strategy):
         """处理持仓相关事件。"""
         if isinstance(event, PositionOpened):
             self.position = self.cache.position(event.position_id)
+            assert self.position is not None, "Position should exist in cache"
             self._log.info(f"Position opened: {self.position.side} @ {self.position.avg_px_open}")
             # 下止损与止盈单
             self.place_exit_orders()
