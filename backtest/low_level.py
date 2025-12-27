@@ -14,8 +14,6 @@ from nautilus_trader.model.enums import OmsType, BookType, AccountType
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.model import BarType
 from nautilus_trader.persistence.wranglers import BarDataWrangler
-from nautilus_trader.examples.algorithms.twap import TWAPExecAlgorithm
-from nautilus_trader.examples.strategies.ema_cross_twap import EMACrossTWAP, EMACrossTWAPConfig
 # from nautilus_trader.analysis import TearsheetConfig
 from nautilus_trader.analysis.tearsheet import create_tearsheet
 # Import local modules
@@ -23,6 +21,14 @@ from datetime import datetime
 
 BASE_DIR: Path = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BASE_DIR))
+
+# Strategy
+## Example EMACross TWAP
+from nautilus_trader.examples.algorithms.twap import TWAPExecAlgorithm
+from nautilus_trader.examples.strategies.ema_cross_twap import EMACrossTWAP, EMACrossTWAPConfig
+## MACD Enhanced Strategy
+from strategy.macd_enhanced import MACDEnhancedStrategy, MACDEnhancedConfig
+
 
 # Configure backtest engine
 config = BacktestEngineConfig(
@@ -58,7 +64,7 @@ print(f"Loaded instrument: {inst.id}")
 engine.add_instrument(inst)
 
 # Data loading and wrangling
-bar_type = BarType.from_str(f"{inst.id}-5-MINUTE-LAST-EXTERNAL")
+bar_type = BarType.from_str(f"{inst.id}-30-MINUTE-LAST-EXTERNAL")
 wrangler = BarDataWrangler(bar_type, inst)
 
 try:
@@ -94,7 +100,18 @@ strategy_config = EMACrossTWAPConfig(
     twap_interval_secs=2.5,
 )
 
-strategy = EMACrossTWAP(config=strategy_config)
+strategy_config = MACDEnhancedConfig(
+    instrument_id=inst.id,
+    fast_period=12,
+    slow_period=26,
+    trade_size=1_000_000,
+    entry_threshold=0.00005,
+    exit_threshold=0.00002,
+    stop_loss_pips=20,
+    take_profit_pips=40,
+)
+
+strategy = MACDEnhancedStrategy(config=strategy_config)
 engine.add_strategy(strategy)
 
 exec_algorithm = TWAPExecAlgorithm()
