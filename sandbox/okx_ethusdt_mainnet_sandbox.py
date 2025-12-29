@@ -26,7 +26,6 @@ from pathlib import Path
 
 from nautilus_trader.adapters.okx import OKX
 from nautilus_trader.adapters.okx import OKX_VENUE
-from nautilus_trader.adapters.binance import BinanceAccountType
 from nautilus_trader.adapters.okx import OKXDataClientConfig
 from nautilus_trader.adapters.okx.factories import OKXLiveDataClientFactory
 from nautilus_trader.adapters.sandbox.config import SandboxExecutionClientConfig
@@ -43,9 +42,6 @@ from nautilus_trader.model.data import BarType
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import TraderId
 
-
-# *** THIS IS A TEST STRATEGY WITH NO ALPHA ADVANTAGE WHATSOEVER. ***
-# *** IT IS NOT INTENDED TO BE USED TO TRADE LIVE WITH REAL MONEY. ***
 
 trader_name = "OKX_ETHUSDT_MAINNET_001"
 BASE_DIR: Path = Path(__file__).resolve().parent.parent

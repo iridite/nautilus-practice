@@ -1,4 +1,3 @@
-from datetime import datetime
 import os
 from dotenv import load_dotenv
 from nautilus_trader.core.nautilus_pyo3 import OKXContractType, OKXInstrumentType
@@ -25,7 +24,6 @@ from decimal import Decimal
 from pathlib import Path
 
 from nautilus_trader.adapters.okx import OKX, OKXExecClientConfig, OKXLiveExecClientFactory
-from nautilus_trader.adapters.okx import OKX_VENUE
 from nautilus_trader.adapters.okx import OKXDataClientConfig
 from nautilus_trader.adapters.okx.factories import OKXLiveDataClientFactory
 from nautilus_trader.config import CacheConfig
@@ -39,10 +37,6 @@ from nautilus_trader.live.node import TradingNode
 from nautilus_trader.model.data import BarType
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import TraderId
-
-
-# *** THIS IS A TEST STRATEGY WITH NO ALPHA ADVANTAGE WHATSOEVER. ***
-# *** IT IS NOT INTENDED TO BE USED TO TRADE LIVE WITH REAL MONEY. ***
 
 trader_name = "OKX_BTCUSDT_TESTNET_001"
 BASE_DIR: Path = Path(__file__).resolve().parent.parent
