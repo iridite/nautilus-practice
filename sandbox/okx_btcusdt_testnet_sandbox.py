@@ -44,8 +44,9 @@ from nautilus_trader.model.identifiers import TraderId
 # *** THIS IS A TEST STRATEGY WITH NO ALPHA ADVANTAGE WHATSOEVER. ***
 # *** IT IS NOT INTENDED TO BE USED TO TRADE LIVE WITH REAL MONEY. ***
 
+trader_name = "OKX_BTCUSDT_TESTNET_001"
 BASE_DIR: Path = Path(__file__).resolve().parent.parent
-LOG_DIR = BASE_DIR / "log" / "sandbox"
+LOG_DIR = BASE_DIR / "log" / "sandbox" / trader_name
 
 load_dotenv(BASE_DIR / "test.env")
 
@@ -61,7 +62,7 @@ async def main():
     """
     # Configure the trading node
     config_node = TradingNodeConfig(
-        trader_id=TraderId("OKX-TESTNET-001"),
+        trader_id=TraderId(trader_name),
         logging=LoggingConfig(
             log_level="INFO",
             log_level_file="DEBUG",

@@ -47,10 +47,11 @@ from nautilus_trader.model.identifiers import TraderId
 # *** THIS IS A TEST STRATEGY WITH NO ALPHA ADVANTAGE WHATSOEVER. ***
 # *** IT IS NOT INTENDED TO BE USED TO TRADE LIVE WITH REAL MONEY. ***
 
+trader_name = "OKX_ETHUSDT_MAINNET_001"
 BASE_DIR: Path = Path(__file__).resolve().parent.parent
-LOG_DIR = BASE_DIR / "log" / "sandbox"
+LOG_DIR = BASE_DIR / "log" / "sandbox" / trader_name
 
-load_dotenv(BASE_DIR / ".env")
+load_dotenv(BASE_DIR / "live.env")
 
 # 1. 定义一个监控协程
 async def monitor_portfolio(node: TradingNode, interval_secs: int = 5):
@@ -111,7 +112,7 @@ async def main():
     """
     # Configure the trading node
     config_node = TradingNodeConfig(
-        trader_id=TraderId("TESTER-001"),
+        trader_id=TraderId(""),
         logging=LoggingConfig(
             log_level="INFO",
             log_level_file="DEBUG",
@@ -156,7 +157,7 @@ async def main():
                     load_all=False,  # 1. 关闭全量加载 (这一步是关键，否则会拉取所有合约)
                     load_ids=frozenset({"ETH-USDT-SWAP.OKX"})
                 ),
-                is_demo=False # we have it run on live data in sandbox mode
+                is_demo=False # 我们使用 live data 只是下面的 execution client 是纯 sandbox
             ),
         },
         exec_clients={ 
