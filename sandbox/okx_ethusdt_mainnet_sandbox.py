@@ -116,7 +116,6 @@ async def main():
         logging=LoggingConfig(
             log_level="INFO",
             log_level_file="DEBUG",
-            log_file_format="json",
             log_directory= str(LOG_DIR / "runtime"),
             log_colors=True,
             use_pyo3=True,

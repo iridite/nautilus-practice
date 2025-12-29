@@ -36,7 +36,6 @@ config = BacktestEngineConfig(
     logging=LoggingConfig(
         log_level="WARNING",
         log_level_file="DEBUG",
-        log_file_format="json",
         log_colors=True,
         use_pyo3=True,
         log_directory=str(BASE_DIR / "log" / "backtest" / "low_level")
