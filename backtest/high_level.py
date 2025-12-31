@@ -4,13 +4,16 @@ from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
 
-# Nautilus Imports
-from nautilus_trader.backtest.node import (
+from nautilus_trader.backtest.config import (
     BacktestDataConfig,
-    BacktestEngineConfig,
-    BacktestNode,
     BacktestRunConfig,
     BacktestVenueConfig,
+)
+
+# Nautilus Imports
+from nautilus_trader.backtest.node import (
+    BacktestEngineConfig,
+    BacktestNode,
 )
 from nautilus_trader.backtest.results import BacktestResult
 from nautilus_trader.common.config import LoggingConfig
