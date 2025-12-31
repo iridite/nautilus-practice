@@ -1,9 +1,8 @@
-import gc 
+import gc
+import sys
+from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
-import sys
-from turtle import st
-from utils.data_loader import loader
 
 # Nautilus Imports
 from nautilus_trader.backtest.node import (
@@ -11,19 +10,21 @@ from nautilus_trader.backtest.node import (
     BacktestEngineConfig,
     BacktestNode,
     BacktestRunConfig,
-    BacktestVenueConfig
+    BacktestVenueConfig,
 )
 from nautilus_trader.backtest.results import BacktestResult
-from nautilus_trader.config import ImportableStrategyConfig
-from nautilus_trader.test_kit.providers import TestInstrumentProvider
-from nautilus_trader.model.data import Bar, BarType 
 from nautilus_trader.common.config import LoggingConfig
-from datetime import datetime
+from nautilus_trader.config import ImportableStrategyConfig
+from nautilus_trader.model.data import Bar, BarType
+from nautilus_trader.test_kit.providers import TestInstrumentProvider
 
 # Path setup
 BASE_DIR: Path = Path(__file__).resolve().parent.parent
 print(f"Base directory set to: {BASE_DIR}")
 DATA_PATH: Path = BASE_DIR / "data"
+sys.path.insert(0, str(BASE_DIR))
+
+from utils.data_loader import loader
 
 # 1. 定义 Instrument
 instrument = TestInstrumentProvider.ethusdt_perp_binance()
@@ -35,10 +36,10 @@ bar_type_def = BarType.from_str(bar_type_str)
 
 # 3. 加载 CSV 数据并转换为 Parquet 格式的 Catalog
 parquet_catalog, catalog_path = loader(
-    csv_path =      DATA_PATH / "raw" / "binance-ETHUSDT-1h-2025-01-01_2025-12-25.csv",
-    output_path =   DATA_PATH / "parquet" / f"{datetime.now().isoformat()}",
-    instrument =    instrument,
-    bar_type =      bar_type_def,
+    csv_path=DATA_PATH / "raw" / "binance-ETHUSDT-1h-2025-01-01_2025-12-25.csv",
+    output_path=DATA_PATH / "parquet" / f"{datetime.now().isoformat()}",
+    instrument=instrument,
+    bar_type=bar_type_def,
 )
 del parquet_catalog
 
@@ -55,7 +56,7 @@ venue_configs: list[BacktestVenueConfig] = [
         account_type="MARGIN",
         base_currency="USDT",
         # 🔧 修正 1: 增加本金，防止资金不足
-        starting_balances=["1_000_000 USDT"], 
+        starting_balances=["1_000_000 USDT"],
     ),
 ]
 
@@ -64,10 +65,10 @@ data_configs: list[BacktestDataConfig] = [
     BacktestDataConfig(
         catalog_path=str(catalog_path),
         # 🔧 修正 2: 这里必须是 Bar，因为你加载的是 K线
-        data_cls=Bar, 
+        data_cls=Bar,
         instrument_id=instrument.id,
         # 建议：如果是刚生成的数据，可以不写 start/end，让引擎自动读取全部
-        start_time="2025-01-01", 
+        start_time="2025-01-01",
         end_time="2025-12-20",
     ),
 ]
@@ -79,11 +80,11 @@ strategies = [
         config_path="nautilus_trader.examples.strategies.ema_cross:EMACrossConfig",
         config={
             "instrument_id": instrument.id,
-            "bar_type": bar_type_str, # 必须和上面定义的字符串完全一致
+            "bar_type": bar_type_str,  # 必须和上面定义的字符串完全一致
             "fast_ema_period": 10,
             "slow_ema_period": 20,
             # 🔧 修正 3: 调整下单数量，或者配合上面的本金调整
-            "trade_size": Decimal("3")
+            "trade_size": Decimal("3"),
         },
     ),
 ]
@@ -92,9 +93,9 @@ eng_cfg = BacktestEngineConfig(
     # trader_id=TraderId("BACKTESTER-001"),
     strategies=strategies,
     logging=LoggingConfig(
-        log_level="INFO",       # 减少日志输出，只看警告及以上，提高回测速度
+        log_level="INFO",  # 减少日志输出，只看警告及以上，提高回测速度
         log_colors=True,
-        use_pyo3=True,          # 是否使用 Rust 优化的日志组件
+        use_pyo3=True,  # 是否使用 Rust 优化的日志组件
     ),
 )
 
@@ -118,12 +119,12 @@ results: list[BacktestResult] = node.run()
 print("✅ node.run() 已返回！程序正常结束。", flush=True)
 
 if results:
-    result = results[0] # 获取第一个回测结果
-    
-    print("\n" + "="*65)
+    result = results[0]  # 获取第一个回测结果
+
+    print("\n" + "=" * 65)
     print("🏆 最终回测报告 (MANUAL REPORT)")
-    print("="*65)
-    
+    print("=" * 65)
+
     # 1. 基础信息 (直接从类属性获取)
     print(f"🆔 Run ID:        {result.run_id}")
     print(f"⏱️ 耗时:           {result.elapsed_time:.4f} 秒")
@@ -138,12 +139,12 @@ if results:
         # 我们遍历所有的币种统计（通常主要是 USDT）
         for currency, metrics in result.stats_pnls.items():
             print(f"💰 盈亏统计 ({currency}):")
-            
+
             # 尝试获取一些关键指标，如果字典里有就打印，没有就跳过或打印全部
             # 这里为了保险，我们打印字典里所有的非 NaN 值
             for metric_name, value in metrics.items():
                 # 过滤掉 NaN 值以保持整洁 (Python中 float('nan') != float('nan'))
-                if value == value: 
+                if value == value:
                     print(f"   - {metric_name:<20}: {value:,.4f}")
             print("-" * 30)
     else:
@@ -154,12 +155,12 @@ if results:
     if result.stats_returns:
         print("📈 回报率/风险统计:")
         for metric_name, value in result.stats_returns.items():
-            if value == value: # 过滤 NaN
+            if value == value:  # 过滤 NaN
                 print(f"   - {metric_name:<25}: {value:.4f}")
     else:
         print("⚠️ 未找到回报率统计数据")
 
-    print("="*65 + "\n")
+    print("=" * 65 + "\n")
 
 else:
     print("❌ 没有任何回测结果生成")
