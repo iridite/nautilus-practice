@@ -1,34 +1,27 @@
+import sys
+from datetime import datetime
 from decimal import Decimal
 from math import log
 from pathlib import Path
-import pandas as pd
-import sys
 
+import pandas as pd
 from nautilus_trader.adapters.binance import BINANCE_VENUE
+from nautilus_trader.analysis.tearsheet import create_tearsheet
 from nautilus_trader.backtest.config import BacktestEngineConfig
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.common.config import LoggingConfig
-from nautilus_trader.model import TraderId, Money
+from nautilus_trader.model import BarType, Money, TraderId
 from nautilus_trader.model.currencies import USDT
-from nautilus_trader.model.enums import OmsType, BookType, AccountType
-from nautilus_trader.test_kit.providers import TestInstrumentProvider
-from nautilus_trader.model import BarType
+from nautilus_trader.model.enums import AccountType, BookType, OmsType
 from nautilus_trader.persistence.wranglers import BarDataWrangler
-# from nautilus_trader.analysis import TearsheetConfig
-from nautilus_trader.analysis.tearsheet import create_tearsheet
-# Import local modules
-from datetime import datetime
+from nautilus_trader.test_kit.providers import TestInstrumentProvider
 
 BASE_DIR: Path = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BASE_DIR))
 
 # Strategy
-## Example EMACross TWAP
-from nautilus_trader.examples.algorithms.twap import TWAPExecAlgorithm
-from nautilus_trader.examples.strategies.ema_cross_twap import EMACrossTWAP, EMACrossTWAPConfig
-## MACD Enhanced Strategy
-from strategy.macd_enhanced import MACDEnhancedStrategy, MACDEnhancedConfig
-
+from strategy.bmr import BmrStrategy, BmrStrategyConfig
+from strategy.macd_enhanced import MACDEnhancedConfig, MACDEnhancedStrategy
 
 # Configure backtest engine
 config = BacktestEngineConfig(
@@ -38,7 +31,7 @@ config = BacktestEngineConfig(
         log_level_file="DEBUG",
         log_colors=True,
         use_pyo3=True,
-        log_directory=str(BASE_DIR / "log" / "backtest" / "low_level")
+        log_directory=str(BASE_DIR / "log" / "backtest" / "low_level"),
     ),
 )
 
@@ -67,12 +60,14 @@ bar_type = BarType.from_str(f"{inst.id}-30-MINUTE-LAST-EXTERNAL")
 wrangler = BarDataWrangler(bar_type, inst)
 
 try:
-    df = pd.read_csv(BASE_DIR / "data" / "raw" / "binance-ETHUSDT-30m-2025-01-01_2025-12-25.csv")
-    
+    df = pd.read_csv(
+        BASE_DIR / "data" / "raw" / "binance-ETHUSDT-30m-2025-01-01_2025-12-25.csv"
+    )
+
     df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms")
     # Adjust timestamp to close time
     df["timestamp"] = df["timestamp"] + pd.Timedelta(minutes=5)
-    
+
     df.set_index("timestamp", inplace=True)
     df = df[["open", "high", "low", "close", "volume"]]
 
@@ -81,7 +76,7 @@ try:
 
     bars = wrangler.process(df)
     engine.add_data(bars)
-    
+
     print(f"\nLoaded {len(bars)} bars")
 
 except FileNotFoundError:
@@ -89,16 +84,6 @@ except FileNotFoundError:
     bars = []
 
 # Strategy and Execution Algorithm configuration
-strategy_config = EMACrossTWAPConfig(
-    instrument_id=inst.id,
-    bar_type=bar_type,
-    trade_size=Decimal("2"), 
-    fast_ema_period=10,
-    slow_ema_period=20,
-    twap_horizon_secs=10.0,
-    twap_interval_secs=2.5,
-)
-
 strategy_config = MACDEnhancedConfig(
     instrument_id=inst.id,
     fast_period=12,
@@ -113,8 +98,8 @@ strategy_config = MACDEnhancedConfig(
 strategy = MACDEnhancedStrategy(config=strategy_config)
 engine.add_strategy(strategy)
 
-exec_algorithm = TWAPExecAlgorithm()
-engine.add_exec_algorithm(exec_algorithm)
+# exec_algorithm =
+# engine.add_exec_algorithm(exec_algorithm)
 
 # Run engine
 print("\nRunning backtest...")
@@ -126,7 +111,7 @@ output_path = str(BASE_DIR / "output" / f"{inst.id}_{datetime.now().isoformat()}
 
 create_tearsheet(
     engine=engine,
-    output_path=output_path, # 显式指定文件名
+    output_path=output_path,  # 显式指定文件名
     # currency
 )
 
