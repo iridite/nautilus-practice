@@ -1,19 +1,20 @@
 from decimal import Decimal
-from operator import indexOf
 
+# from operator import indexOf
 from nautilus_trader.config import StrategyConfig
-from nautilus_trader.model.data import Bar
-from nautilus_trader.model.enums import OrderSide, TimeInForce
+from nautilus_trader.indicators.momentum import RelativeStrengthIndex
+
+# from nautilus_trader.indicators.averages import  # 均线
+from nautilus_trader.indicators.volatility import AverageTrueRange, BollingerBands
+from nautilus_trader.model.data import Bar, BarType
+from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.trading.strategy import Strategy
-# from nautilus_trader.indicators.averages import  # 均线
-from nautilus_trader.indicators.volatility import AverageTrueRange
-from nautilus_trader.indicators.volatility import BollingerBands
-from nautilus_trader.indicators.momentum import RelativeStrengthIndex
+
 
 class BmrStrategyConfig(StrategyConfig, frozen=True):
     instrument_id: str
-    bar_type: str
+    bar_type: BarType
     # 15m 或者 1h bar
 
     qty: Decimal = Decimal("0.01")  # 每次交易数量
@@ -23,26 +24,33 @@ class BmrStrategyConfig(StrategyConfig, frozen=True):
     bb_dev: float = 2.0
     atr_period: int = 14
 
+
 class BmrStrategy(Strategy):
     def __init__(self, config: BmrStrategyConfig):
         super().__init__(config)
-        self.instrument_id = InstrumentId.from_str(config.instrument_id)
-        
+        self.instrument_id: str = config.instrument_id
+
         # 1. 定义指标
         self.rsi = RelativeStrengthIndex(config.rsi_period)
         self.bb = BollingerBands(config.bb_period, config.bb_dev)
         self.atr = AverageTrueRange(config.atr_period)
 
-        if "15m" in config.bar_type or "1h" in config.bar_type:
-            self.log.info("BmrStrategy initialized with ACCEPTED bar type: " + config.bar_type)
-        else:
-            self.log.warning("BmrStrategy initialized with UNACCEPTED bar type: " + config.bar_type + ". Recommended to use 15m or 1h bars.")
-        
+        # if "15m" in config.bar_type or "1h" in config.bar_type:
+        #     self.log.info(
+        #         "BmrStrategy initialized with ACCEPTED bar type: " + config.bar_type
+        #     )
+        # else:
+        #     self.log.warning(
+        #         "BmrStrategy initialized with UNACCEPTED bar type: "
+        #         + config.bar_type
+        #         + ". Recommended to use 15m or 1h bars."
+        #     )
+
     def on_start(self):
         # 2. 注册指标与数据流
         self.register_indicator_for_bars(self.config.bar_type, self.rsi)
         self.register_indicator_for_bars(self.config.bar_type, self.bb)
-        
+
         # 订阅行情数据
         self.subscribe_bars(self.config.bar_type)
 
@@ -68,21 +76,29 @@ class BmrStrategy(Strategy):
         if pos_qty == 0:
             # 开多条件：跌破下轨 + RSI超卖
             if price < bb_lower and rsi_val < 30:
-                self.log.info(f"Signal LONG: Price={price} < Lower={bb_lower}, RSI={rsi_val}")
-                self.submit_order(self.order_factory.market(
-                    instrument_id=self.instrument_id,
-                    order_side=OrderSide.BUY,
-                    quantity=self.config.qty
-                ))
+                self.log.info(
+                    f"Signal LONG: Price={price} < Lower={bb_lower}, RSI={rsi_val}"
+                )
+                self.submit_order(
+                    self.order_factory.market(
+                        instrument_id=self.instrument_id,
+                        order_side=OrderSide.BUY,
+                        quantity=self.config.qty,
+                    )
+                )
 
             # 开空条件：突破上轨 + RSI超买
             elif price > bb_upper and rsi_val > 70:
-                self.log.info(f"Signal SHORT: Price={price} > Upper={bb_upper}, RSI={rsi_val}")
-                self.submit_order(self.order_factory.market(
-                    instrument_id=self.instrument_id,
-                    order_side=OrderSide.SELL,
-                    quantity=self.config.qty
-                ))
+                self.log.info(
+                    f"Signal SHORT: Price={price} > Upper={bb_upper}, RSI={rsi_val}"
+                )
+                self.submit_order(
+                    self.order_factory.market(
+                        instrument_id=self.instrument_id,
+                        order_side=OrderSide.SELL,
+                        quantity=self.config.qty,
+                    )
+                )
 
         # 场景 B: 持有做多仓位，寻找平仓机会
         elif pos_qty > 0:
