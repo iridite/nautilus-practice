@@ -55,7 +55,7 @@ def run_low_level(cfg: GlobalConfig, base_dir: Path):
     instrument_file = (
         base_dir
         / "data"
-        / "instruments"
+        / "instrument"
         / cfg.instrument.venue
         / f"{cfg.instrument.instrument_id.split('.')[0]}.json"
     )

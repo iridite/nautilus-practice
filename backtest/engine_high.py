@@ -31,9 +31,8 @@ def run_high_level(cfg: GlobalConfig, base_dir: Path):
     # Try to load from data/instruments/{VENUE}/{SYMBOL}.json
     # This file should have been fetched by main.py -> fetch_instrument.py
     instrument_file = (
-        base_dir
-        / "data"
-        / "instruments"
+        data_path
+        / "instrument"
         / cfg.instrument.venue
         / f"{cfg.instrument.instrument_id.split('.')[0]}.json"
     )
