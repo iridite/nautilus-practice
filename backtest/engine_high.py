@@ -115,7 +115,6 @@ def run_high_level(cfg: GlobalConfig, base_dir: Path):
         use_pyo3=cfg.logging.use_pyo3,
         log_directory=str(log_dir),
     )
-    cfg.logging.log_directory = str(log_dir)
 
     eng_cfg = BacktestEngineConfig(
         strategies=strategies,
