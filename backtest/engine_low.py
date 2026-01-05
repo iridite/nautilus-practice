@@ -7,6 +7,7 @@ from nautilus_trader.analysis.tearsheet import create_tearsheet
 from nautilus_trader.backtest.config import BacktestEngineConfig
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.common.config import LoggingConfig
+from nautilus_trader.config import RiskEngineConfig
 from nautilus_trader.model import BarType, TraderId
 from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.enums import AccountType, BookType, OmsType
@@ -37,6 +38,9 @@ def run_low_level(cfg: GlobalConfig, base_dir: Path):
     engine_config = BacktestEngineConfig(
         trader_id=TraderId("BACKTESTER-001"),
         logging=logging_config,
+        risk_engine=RiskEngineConfig(
+            bypass=True,  # 彻底关闭风控检查
+        ),
     )
     engine = BacktestEngine(engine_config)
 

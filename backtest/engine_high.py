@@ -134,13 +134,13 @@ def run_high_level(cfg: GlobalConfig, base_dir: Path):
     # 8. Execute
     node = BacktestNode(configs=[run_config])
     print("⏳ Running BacktestNode...")
-    results = node.run()
+    node.run()
     print("✅ Backtest Complete.")
 
-    if results:
-        _print_results(results[0])
-    else:
-        print("❌ No results generated.")
+    # if results:
+    #     _print_results(results[0])
+    # else:
+    #     print("❌ No results generated.")
 
 
 def _print_results(result: BacktestResult):
