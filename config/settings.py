@@ -5,7 +5,8 @@ from config.definitions import (
     InstrumentConfig, 
     DataConfig, 
     StrategyConfig, 
-    BacktestConfig
+    BacktestConfig,
+    LogConfig
 )
 
 # ==========================================
@@ -66,7 +67,16 @@ MACD_STRATEGY = StrategyConfig(
 BACKTEST_SETTINGS = BacktestConfig(
     start_date="2025-01-01",
     end_date="2025-12-20",
-    initial_balance="100000 USDT"
+    initial_balance="1000 USDT"
+)
+
+# 5. 日志配置
+# 注意：log_directory 将在运行时根据模式自动生成
+LOGGING_SETTINGS = LogConfig(
+    log_level="WARNING",
+    log_level_file="DEBUG",
+    log_colors=True,
+    use_pyo3=True,
 )
 
 # ==========================================
@@ -77,7 +87,8 @@ BACKTEST_SETTINGS = BacktestConfig(
 # 你可以创建多个 Config 对象，然后在 main.py 中选择，或者直接修改这里
 current_config = GlobalConfig(
     instrument=ETH_USDT_BINANCE,
-    data=DATA_30M, # 切换数据源
+    data=DATA_1H, # 切换数据源
     strategy=BMR_STRATEGY, # 切换策略
-    backtest=BACKTEST_SETTINGS
+    backtest=BACKTEST_SETTINGS,
+    logging=LOGGING_SETTINGS
 )

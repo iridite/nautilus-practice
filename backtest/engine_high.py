@@ -97,9 +97,20 @@ def run_high_level(cfg: GlobalConfig, base_dir: Path):
         ),
     ]
 
+    # 7. Configure Logging
+    log_dir = base_dir / "log" / "backtest" / "high_level"
+    logging_config = LoggingConfig(
+        log_level=cfg.logging.log_level,
+        log_level_file=cfg.logging.log_level_file,
+        log_colors=cfg.logging.log_colors,
+        use_pyo3=cfg.logging.use_pyo3,
+        log_directory=str(log_dir),
+    )
+    cfg.logging.log_directory = str(log_dir)
+
     eng_cfg = BacktestEngineConfig(
         strategies=strategies,
-        logging=LoggingConfig(log_level="INFO", log_colors=True),
+        logging=logging_config,
     )
 
     # 7. Run Config

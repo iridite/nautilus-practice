@@ -25,13 +25,18 @@ def run_low_level(cfg: GlobalConfig, base_dir: Path):
     out_dir.mkdir(parents=True, exist_ok=True)
     
     # 1. Configure Engine
+    log_dir = base_dir / "log" / "backtest" / "low_level"
+    logging_config = LoggingConfig(
+        log_level=cfg.logging.log_level,
+        log_level_file=cfg.logging.log_level_file,
+        log_colors=cfg.logging.log_colors,
+        use_pyo3=cfg.logging.use_pyo3,
+        log_directory=str(log_dir),
+    )
+    
     engine_config = BacktestEngineConfig(
         trader_id=TraderId("BACKTESTER-001"),
-        logging=LoggingConfig(
-            log_level="WARNING",
-            log_colors=True,
-            log_directory=str(base_dir / "log" / "backtest" / "low_level"),
-        ),
+        logging=logging_config,
     )
     engine = BacktestEngine(engine_config)
 

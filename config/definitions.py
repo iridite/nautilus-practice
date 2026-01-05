@@ -39,12 +39,20 @@ class BacktestConfig:
     start_date: Optional[str] = None
     end_date: Optional[str] = None
     initial_balance: str = "10000 USDT"
-    
+
+@dataclass
+class LogConfig:
+    log_level: str = "INFO"
+    log_level_file: str = "DEBUG"
+    log_colors: bool = True
+    use_pyo3: bool = True
+
 @dataclass
 class GlobalConfig:
     instrument: InstrumentConfig
     data: DataConfig
     strategy: StrategyConfig
     backtest: BacktestConfig
+    logging: LogConfig
     
     # 可以在这里添加 Sandbox 或 Live 的配置
