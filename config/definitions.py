@@ -2,6 +2,8 @@ from dataclasses import dataclass, field
 from decimal import Decimal
 from typing import Any, Dict, Optional, List
 from nautilus_trader.model.enums import BarAggregation, PriceType
+from nautilus_trader.model import Money
+from nautilus_trader.model.currencies import USDT
 
 @dataclass
 class InstrumentConfig:
@@ -38,8 +40,9 @@ class StrategyConfig:
 class BacktestConfig:
     start_date: Optional[str] = None
     end_date: Optional[str] = None
-    initial_balance: str = "10000 USDT"
-
+    initial_balance: List[Money] = field(
+        default_factory=lambda: [Money("10_000", USDT)]
+    )
 @dataclass
 class LogConfig:
     log_level: str = "INFO"

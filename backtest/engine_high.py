@@ -65,7 +65,7 @@ def run_high_level(cfg: GlobalConfig, base_dir: Path):
             oms_type="HEDGING",
             account_type="MARGIN",
             base_currency="USDT",
-            starting_balances=[cfg.backtest.initial_balance],
+            starting_balances=cfg.backtest.initial_balance,
         ),
     ]
 

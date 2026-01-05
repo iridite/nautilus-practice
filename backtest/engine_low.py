@@ -41,9 +41,6 @@ def run_low_level(cfg: GlobalConfig, base_dir: Path):
     engine = BacktestEngine(engine_config)
 
     # 2. Configure Venue
-    # Parse initial balance string "1000 USDT" -> 1000.0
-    balance_str = cfg.backtest.initial_balance.split(" ")[0]
-    start_balance = float(balance_str.replace("_", ""))
     
     engine.add_venue(
         venue=BINANCE_VENUE, # TODO: Map cfg.instrument.venue to actual Venue object if needed
@@ -51,7 +48,7 @@ def run_low_level(cfg: GlobalConfig, base_dir: Path):
         book_type=BookType.L1_MBP,
         account_type=AccountType.MARGIN,
         base_currency=USDT,
-        starting_balances=[Money(start_balance, USDT)],
+        starting_balances=cfg.backtest.initial_balance, # preconfigured at definitions.py as Money()
         trade_execution=True,
     )
 
