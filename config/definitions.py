@@ -79,6 +79,8 @@ class LogConfig:
     log_level_file: str = "DEBUG"
     log_colors: bool = True
     use_pyo3: bool = True
+    log_component_levels: Dict[str, str] = field(default_factory=dict)
+    log_components_only: bool = False
 
 
 @dataclass

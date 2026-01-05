@@ -20,17 +20,18 @@ from utils.instrument_loader import load_instrument
 def run_low_level(cfg: GlobalConfig, base_dir: Path):
     print(f"🚀 Starting Low-Level Backtest with config: {cfg.strategy.name}")
 
-    out_dir = base_dir / "output"
-    out_dir.mkdir(parents=True, exist_ok=True)
+    OUTPUT_DIR = base_dir / "output"
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
     # 1. Configure Engine
-    log_dir = base_dir / "log" / "backtest" / "low_level"
     logging_config = LoggingConfig(
         log_level=cfg.logging.log_level,
         log_level_file=cfg.logging.log_level_file,
         log_colors=cfg.logging.log_colors,
         use_pyo3=cfg.logging.use_pyo3,
-        log_directory=str(log_dir),
+        log_component_levels=cfg.logging.log_component_levels,
+        log_components_only=bool(cfg.logging.log_components_only),
+        log_directory=str(base_dir / "log" / "backtest" / "low_level"),
     )
 
     engine_config = BacktestEngineConfig(
@@ -133,7 +134,7 @@ def run_low_level(cfg: GlobalConfig, base_dir: Path):
 
     # 7. Report
     timestamp = datetime.now().isoformat().replace(":", "-")
-    report_path = out_dir / f"{inst.id}_{timestamp}.html"
+    report_path = OUTPUT_DIR / f"{inst.id}_{timestamp}.html"
     create_tearsheet(
         engine=engine,
         output_path=str(report_path),
