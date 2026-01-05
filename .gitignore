@@ -12,3 +12,6 @@ build/
 data/parquet/**
 output/**
 log/**
+
+# Ignore configuration files
+config/settings.py
