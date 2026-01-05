@@ -18,6 +18,8 @@ from nautilus_trader.test_kit.providers import TestInstrumentProvider
 
 BASE_DIR: Path = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BASE_DIR))
+out_dir = BASE_DIR / "output"
+out_dir.mkdir(parents=True, exist_ok=True)
 
 # Strategy
 from strategy.bmr import BmrStrategy, BmrStrategyConfig
@@ -107,11 +109,11 @@ engine.run()
 print("Backtest finished.")
 
 # Visualization
-output_path = str(BASE_DIR / "output" / f"{inst.id}_{datetime.now().isoformat()}.html")
+timestamp = datetime.now().isoformat().replace(":", "-")
 
 create_tearsheet(
     engine=engine,
-    output_path=output_path,  # 显式指定文件名
+    output_path=str(out_dir / f"{inst.id}_{timestamp}.html"),  # 显式指定文件名
     # currency
 )
 
