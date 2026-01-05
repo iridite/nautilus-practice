@@ -1,7 +1,5 @@
 import gc
-import sys
 from datetime import datetime
-from decimal import Decimal
 from pathlib import Path
 
 from nautilus_trader.backtest.config import (
@@ -17,11 +15,11 @@ from nautilus_trader.backtest.results import BacktestResult
 from nautilus_trader.common.config import LoggingConfig
 from nautilus_trader.config import ImportableStrategyConfig, RiskEngineConfig
 from nautilus_trader.model.data import Bar, BarType
-from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 
 from config.definitions import GlobalConfig
 from utils.data_loader import loader
+from utils.instrument_loader import load_instrument
 
 
 def run_high_level(cfg: GlobalConfig, base_dir: Path):
@@ -42,8 +40,8 @@ def run_high_level(cfg: GlobalConfig, base_dir: Path):
 
     if instrument_file.exists():
         print(f"📂 Loading instrument from {instrument_file}")
-        with open(instrument_file, "rb") as f:
-            instrument = Instrument.from_json(f.read())
+        instrument = load_instrument(instrument_file)
+        # 这个写法可能复杂了，晚点看能不能精简一下
     else:
         print(f"⚠️ Instrument file not found at {instrument_file}")
         print("   Falling back to TestInstrumentProvider (ETHUSDT-PERP.BINANCE)")
