@@ -1,9 +1,3 @@
-import os
-from nautilus_trader.model.instruments import Instrument
-from dotenv import load_dotenv
-from nautilus_trader.core.nautilus_pyo3 import OKXContractType, OKXInstrumentType
-from nautilus_trader.model.identifiers import InstrumentId
-
 #!/usr/bin/env python3
 # -------------------------------------------------------------------------------------------------
 #  Copyright (C) 2015-2025 Nautech Systems Pty Ltd. All rights reserved.
@@ -19,28 +13,42 @@ from nautilus_trader.model.identifiers import InstrumentId
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
 import asyncio
+import os
+import sys
 from decimal import Decimal
 from pathlib import Path
 
-from nautilus_trader.adapters.okx import OKX, OKXExecClientConfig, OKXLiveExecClientFactory
-from nautilus_trader.adapters.okx import OKXDataClientConfig
+from dotenv import load_dotenv
+from nautilus_trader.adapters.okx import (
+    OKX,
+    OKXDataClientConfig,
+    OKXExecClientConfig,
+    OKXLiveExecClientFactory,
+)
 from nautilus_trader.adapters.okx.factories import OKXLiveDataClientFactory
-from nautilus_trader.config import CacheConfig
-from nautilus_trader.config import InstrumentProviderConfig
-from nautilus_trader.config import LiveExecEngineConfig
-from nautilus_trader.config import LoggingConfig
-from nautilus_trader.config import TradingNodeConfig
-from nautilus_trader.examples.strategies.volatility_market_maker import VolatilityMarketMaker
-from nautilus_trader.examples.strategies.volatility_market_maker import VolatilityMarketMakerConfig
+from nautilus_trader.config import (
+    CacheConfig,
+    InstrumentProviderConfig,
+    LiveExecEngineConfig,
+    LoggingConfig,
+    TradingNodeConfig,
+)
+from nautilus_trader.core.nautilus_pyo3 import OKXContractType, OKXInstrumentType
+from nautilus_trader.examples.strategies.volatility_market_maker import (
+    VolatilityMarketMaker,
+    VolatilityMarketMakerConfig,
+)
 from nautilus_trader.live.node import TradingNode
 from nautilus_trader.model.data import BarType
-from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.identifiers import TraderId
+from nautilus_trader.model.identifiers import InstrumentId, TraderId
+from nautilus_trader.model.instruments import Instrument
 
 trader_name = "OKX_BTCUSDT_TESTNET_001"
 BASE_DIR: Path = Path(__file__).resolve().parent.parent
+sys.path.append(str(BASE_DIR))
+from utils.instrument_loader import load_instrument
+
 LOG_DIR = BASE_DIR / "log" / "sandbox" / trader_name
 
 load_dotenv(BASE_DIR / "test.env")
@@ -49,7 +57,12 @@ api_key = os.getenv("OKX_API_KEY")
 api_secret = os.getenv("OKX_API_SECRET")
 api_passphrase: str | None = os.getenv("OKX_API_PASSPHRASE")
 
-print(f"Using OKX Testnet API Key: {api_key}\n" f" Passphrase: {api_passphrase}\n" f" Secret: {api_secret}")
+print(
+    f"Using OKX Testnet API Key: {api_key}\n"
+    f" Passphrase: {api_passphrase}\n"
+    f" Secret: {api_secret}"
+)
+
 
 async def main():
     """
@@ -61,7 +74,7 @@ async def main():
         logging=LoggingConfig(
             log_level="INFO",
             log_level_file="DEBUG",
-            log_directory= str(LOG_DIR / "runtime"),
+            log_directory=str(LOG_DIR / "runtime"),
             log_colors=True,
             use_pyo3=True,
         ),
@@ -96,23 +109,23 @@ async def main():
                 instrument_types=(OKXInstrumentType.SWAP,),
                 instrument_provider=InstrumentProviderConfig(
                     load_all=False,  # 1. 关闭全量加载 (这一步是关键，否则会拉取所有合约)
-                    load_ids=frozenset({"BTC-USDT-SWAP.OKX"})
+                    load_ids=frozenset({"BTC-USDT-SWAP.OKX"}),
                 ),
                 contract_types=(OKXContractType.LINEAR,),
-                is_demo=True # 现在是指明要访问 OKX 的 Testnet 也就是 Demo 环境
+                is_demo=True,  # 现在是指明要访问 OKX 的 Testnet 也就是 Demo 环境
             ),
         },
-        exec_clients={ 
+        exec_clients={
             OKX: OKXExecClientConfig(
                 # # 此处因为是 Testnet，所以账户的余额由 OKX Testnet 控制
                 # # base_url_http="https://www.okx.com",  # Override with custom endpoint
                 # base_url_ws="wss://wspap.okx.com:8443/ws/v5/private",  # Override with custom endpoint
                 instrument_provider=InstrumentProviderConfig(
                     load_all=False,  # 1. 关闭全量加载 (这一步是关键，否则会拉取所有合约)
-                    load_ids=frozenset({"BTC-USDT-SWAP.OKX"})
+                    load_ids=frozenset({"BTC-USDT-SWAP.OKX"}),
                 ),
                 instrument_types=(OKXInstrumentType.SWAP,),
-                contract_types=(OKXContractType.LINEAR,), # 对冲或者单项持仓？
+                contract_types=(OKXContractType.LINEAR,),  # 对冲或者单项持仓？
                 is_demo=True,
             ),
         },
@@ -133,7 +146,7 @@ async def main():
         bar_type=BarType.from_str("BTC-USDT-SWAP.OKX-1-MINUTE-LAST-EXTERNAL"),
         atr_period=20,
         atr_multiple=6.0,
-        trade_size=Decimal("0.01"), # 数量值小于 0.01 会报错，报出小数位舍弃错误
+        trade_size=Decimal("0.01"),  # 数量值小于 0.01 会报错，报出小数位舍弃错误
         # manage_gtd_expiry=True,
     )
     # Instantiate your strategy
@@ -150,13 +163,18 @@ async def main():
     # Load and register instrument from local file
     inst_id_str = "BTC-USDT-SWAP.OKX"
     venue_str = "OKX"
-    inst_file = BASE_DIR / "data" / "instruments" / venue_str / f"{inst_id_str.split('.')[0]}.json"
-    
+    inst_file = (
+        BASE_DIR
+        / "data"
+        / "instruments"
+        / venue_str
+        / f"{inst_id_str.split('.')[0]}.json"
+    )
+
     if inst_file.exists():
         print(f"📂 Loading instrument from {inst_file}")
-        with open(inst_file, "rb") as f:
-            inst = Instrument.from_json(f.read())
-            node.trader.add_instrument(inst)
+        inst = load_instrument(inst_file)
+        node.trader.add_instrument(inst)
     else:
         print(f"⚠️ Instrument file not found: {inst_file}")
 
@@ -167,14 +185,14 @@ async def main():
         await node.run_async()
     finally:
         # 退出时取消监控
-        # monitor_task.cancel() 
+        # monitor_task.cancel()
 
         # if node.trader:
         #     print("\n🛑 Sandbox 已停止，正在生成最终报告...")
         #     # 1. 打印账户报告 DataFrame
         #     print("📊 账户资金历史:")
         #     print(node.trader.generate_account_report(OKX_VENUE).tail())
-            
+
         #     # 2. 打印成交记录
         #     print("📝 成交记录:")
         #     print(node.trader.generate_order_fills_report().tail())
@@ -184,7 +202,7 @@ async def main():
         #         str(LOG_DIR / "account" / f"account_report_{datetime.now().isoformat()}.csv")
         #     )
         #     print("✅ 数据已保存到 sandbox_account.csv")
-        
+
         await node.stop_async()
         await asyncio.sleep(1)
         node.dispose()
