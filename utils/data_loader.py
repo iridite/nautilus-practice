@@ -39,7 +39,7 @@ def loader(
         index_col=0,
         usecols=["datetime", "open", "high", "low", "close", "volume"],
         parse_dates=["datetime"],  # pyright: ignore[reportArgumentType]
-        date_format="%Y%m%d %H%M%S",
+        date_format="%Y-%m-%d %H:%M:%S",
     )
 
     df = df.sort_index()

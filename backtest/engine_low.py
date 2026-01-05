@@ -48,7 +48,7 @@ def run_low_level(cfg: GlobalConfig, base_dir: Path):
 
     engine.add_venue(
         venue=BINANCE_VENUE,  # TODO: Map cfg.instrument.venue to actual Venue object if needed
-        oms_type=OmsType.NETTING,
+        oms_type=OmsType.HEDGING,
         book_type=BookType.L1_MBP,
         account_type=AccountType.MARGIN,
         base_currency=USDT,
