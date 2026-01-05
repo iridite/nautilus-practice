@@ -21,6 +21,7 @@ from nautilus_trader.test_kit.providers import TestInstrumentProvider
 
 from config.definitions import GlobalConfig
 from utils.data_loader import loader
+from nautilus_trader.config import RiskEngineConfig
 
 def run_high_level(cfg: GlobalConfig, base_dir: Path):
     print(f"🚀 Starting High-Level Backtest with config: {cfg.strategy.name}")
@@ -111,6 +112,9 @@ def run_high_level(cfg: GlobalConfig, base_dir: Path):
     eng_cfg = BacktestEngineConfig(
         strategies=strategies,
         logging=logging_config,
+        risk_engine=RiskEngineConfig(
+            bypass=True,  # 彻底关闭风控检查
+        ),
     )
 
     # 7. Run Config
@@ -135,9 +139,9 @@ def _print_results(result: BacktestResult):
     print("\n" + "=" * 65)
     print("🏆 Backtest Report")
     print("=" * 65)
-    print(f"⏱️ Duration:       {result.elapsed_time:.4f}s")
-    print(f"📝 Orders:         {result.total_orders}")
-    print(f"📍 Positions:      {result.total_positions}")
+    print(f"⏱️ \tDuration:       {result.elapsed_time:.4f}s")
+    print(f"📝 \tOrders:         {result.total_orders}")
+    print(f"📍 \tPositions:      {result.total_positions}")
     
     if result.stats_pnls:
         for currency, metrics in result.stats_pnls.items():
