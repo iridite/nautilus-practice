@@ -7,7 +7,7 @@ from nautilus_trader.indicators.momentum import RelativeStrengthIndex
 from nautilus_trader.indicators.volatility import AverageTrueRange, BollingerBands
 from nautilus_trader.model.data import Bar, BarType
 from nautilus_trader.model.enums import OrderSide
-from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.identifiers import InstrumentId # TODO 到底从哪里导入是正确的
 from nautilus_trader.trading.strategy import Strategy
 
 class SizeType(str, Enum):

@@ -9,6 +9,7 @@ from nautilus_trader.backtest.config import BacktestEngineConfig
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.common.config import LoggingConfig
 from nautilus_trader.model import BarType, Money, TraderId
+from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.enums import AccountType, BookType, OmsType
 from nautilus_trader.persistence.wranglers import BarDataWrangler
@@ -53,10 +54,16 @@ def run_low_level(cfg: GlobalConfig, base_dir: Path):
     )
 
     # 3. Load Instrument
-    if cfg.instrument.symbol == "ETHUSDT":
-        inst = TestInstrumentProvider.ethusdt_perp_binance()
+    instrument_file = base_dir / "data" / "instruments" / cfg.instrument.venue / f"{cfg.instrument.symbol}.json"
+    
+    if instrument_file.exists():
+        print(f"📂 Loading instrument from {instrument_file}")
+        with open(instrument_file, "rb") as f:
+            inst = Instrument.from_json(f.read())
     else:
-        inst = TestInstrumentProvider.ethusdt_perp_binance() # Fallback
+        print(f"⚠️ Instrument file not found at {instrument_file}")
+        print("   Falling back to TestInstrumentProvider (ETHUSDT-PERP.BINANCE)")
+        inst = TestInstrumentProvider.ethusdt_perp_binance()
     
     engine.add_instrument(inst)
 

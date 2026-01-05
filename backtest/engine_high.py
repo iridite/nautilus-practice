@@ -1,8 +1,8 @@
-import sys
 import gc
-from pathlib import Path
-from decimal import Decimal
+import sys
 from datetime import datetime
+from decimal import Decimal
+from pathlib import Path
 
 from nautilus_trader.backtest.config import (
     BacktestDataConfig,
@@ -15,28 +15,38 @@ from nautilus_trader.backtest.node import (
 )
 from nautilus_trader.backtest.results import BacktestResult
 from nautilus_trader.common.config import LoggingConfig
-from nautilus_trader.config import ImportableStrategyConfig
+from nautilus_trader.config import ImportableStrategyConfig, RiskEngineConfig
 from nautilus_trader.model.data import Bar, BarType
+from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 
 from config.definitions import GlobalConfig
 from utils.data_loader import loader
-from nautilus_trader.config import RiskEngineConfig
+
 
 def run_high_level(cfg: GlobalConfig, base_dir: Path):
     print(f"🚀 Starting High-Level Backtest with config: {cfg.strategy.name}")
-    
+
     data_path = base_dir / "data"
-    
-    # 1. Setup Instrument (Currently using TestInstrumentProvider for simplicity, 
-    # in a real scenario you might construct this from cfg.instrument)
-    # For now, we map the config symbol to the test provider if possible, or create a custom one.
-    # To keep it simple and working with existing code, we'll use the provider but check consistency.
-    if cfg.instrument.symbol == "ETHUSDT" and cfg.instrument.venue == "BINANCE":
-        instrument = TestInstrumentProvider.ethusdt_perp_binance()
+
+    # 1. Setup Instrument
+    # Try to load from data/instruments/{VENUE}/{SYMBOL}.json
+    # This file should have been fetched by main.py -> fetch_instrument.py
+    instrument_file = (
+        base_dir
+        / "data"
+        / "instruments"
+        / cfg.instrument.venue
+        / f"{cfg.instrument.instrument_id.split('.')[0]}.json"
+    )
+
+    if instrument_file.exists():
+        print(f"📂 Loading instrument from {instrument_file}")
+        with open(instrument_file, "rb") as f:
+            instrument = Instrument.from_json(f.read())
     else:
-        # Fallback or TODO: Create instrument from config properties
-        print(f"⚠️ Warning: Using default ETHUSDT instrument for {cfg.instrument.symbol}")
+        print(f"⚠️ Instrument file not found at {instrument_file}")
+        print("   Falling back to TestInstrumentProvider (ETHUSDT-PERP.BINANCE)")
         instrument = TestInstrumentProvider.ethusdt_perp_binance()
 
     # 2. Define BarType
@@ -85,11 +95,11 @@ def run_high_level(cfg: GlobalConfig, base_dir: Path):
     strategy_params = cfg.strategy.params.copy()
     strategy_params["instrument_id"] = instrument.id
     strategy_params["bar_type"] = bar_type_str
-    
-    # Convert Decimal strings to Decimal objects if needed (Nautilus config usually handles this, 
+
+    # Convert Decimal strings to Decimal objects if needed (Nautilus config usually handles this,
     # but ImportableStrategyConfig passes dict)
     # Note: ImportableStrategyConfig expects a dict.
-    
+
     strategies = [
         ImportableStrategyConfig(
             strategy_path=f"{cfg.strategy.module_path}:{cfg.strategy.name}",
@@ -135,6 +145,7 @@ def run_high_level(cfg: GlobalConfig, base_dir: Path):
     else:
         print("❌ No results generated.")
 
+
 def _print_results(result: BacktestResult):
     print("\n" + "=" * 65)
     print("🏆 Backtest Report")
@@ -142,15 +153,17 @@ def _print_results(result: BacktestResult):
     print(f"⏱️ \tDuration:       {result.elapsed_time:.4f}s")
     print(f"📝 \tOrders:         {result.total_orders}")
     print(f"📍 \tPositions:      {result.total_positions}")
-    
+
     if result.stats_pnls:
         for currency, metrics in result.stats_pnls.items():
             print(f"💰 PnL ({currency}):")
             for k, v in metrics.items():
-                if v == v: print(f"   - {k:<20}: {v:,.4f}")
-    
+                if v == v:
+                    print(f"   - {k:<20}: {v:,.4f}")
+
     if result.stats_returns:
         print("📈 Returns:")
         for k, v in result.stats_returns.items():
-            if v == v: print(f"   - {k:<25}: {v:.4f}")
+            if v == v:
+                print(f"   - {k:<25}: {v:.4f}")
     print("=" * 65 + "\n")

@@ -10,6 +10,7 @@ build/
 
 # catalog data
 data/parquet/**
+data/instrument/**
 output/**
 log/**
 

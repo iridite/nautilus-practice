@@ -1,4 +1,5 @@
 import os
+from nautilus_trader.model.instruments import Instrument
 from dotenv import load_dotenv
 from nautilus_trader.core.nautilus_pyo3 import OKXContractType, OKXInstrumentType
 from nautilus_trader.model.identifiers import InstrumentId
@@ -145,6 +146,19 @@ async def main():
     node.add_data_client_factory(OKX, OKXLiveDataClientFactory)
     node.add_exec_client_factory(OKX, OKXLiveExecClientFactory)
     node.build()
+
+    # Load and register instrument from local file
+    inst_id_str = "BTC-USDT-SWAP.OKX"
+    venue_str = "OKX"
+    inst_file = BASE_DIR / "data" / "instruments" / venue_str / f"{inst_id_str.split('.')[0]}.json"
+    
+    if inst_file.exists():
+        print(f"📂 Loading instrument from {inst_file}")
+        with open(inst_file, "rb") as f:
+            inst = Instrument.from_json(f.read())
+            node.trader.add_instrument(inst)
+    else:
+        print(f"⚠️ Instrument file not found: {inst_file}")
 
     # 创建一个后台任务
     # monitor_task = asyncio.create_task(monitor_portfolio(node, interval_secs=20))
