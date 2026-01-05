@@ -1,7 +1,6 @@
 from decimal import Decimal
-
 from nautilus_trader.common.enums import LogColor
-
+from enum import Enum
 # from operator import indexOf
 from nautilus_trader.config import StrategyConfig
 from nautilus_trader.indicators.momentum import RelativeStrengthIndex
@@ -11,15 +10,18 @@ from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.trading.strategy import Strategy
 
+class SizeType(str, Enum):
+    FIXED_QTY = "FIXED_QTY"       # 固定数量 (比如 0.1 BTC)
+    FIXED_NOTIONAL = "FIXED_NOTIONAL" # 固定金额 (比如 1000 U)
+    PCT_EQUITY = "PCT_EQUITY"     # 权益百分比 (比如 50% 仓位)
+
 
 class BmrStrategyConfig(StrategyConfig, frozen=True):
     instrument_id: InstrumentId
     bar_type: BarType
     # 15m 或者 1h bar
-
-    qty: Decimal = Decimal("0.01")  # 每次交易数量
-    qty_percentage: Decimal = Decimal("0.05")  # 每次交易数量百分比
-    # TODO 下单数量不按张数来计算，而是使用资金百分比或USDT等方式计算
+    size_type: SizeType = SizeType.FIXED_QTY
+    size_value: Decimal = Decimal("0.01")  # 每次交易数量或金额
     rsi_period: int = 14
     bb_period: int = 20
     bb_dev: float = 2.0
@@ -47,53 +49,77 @@ class BmrStrategy(Strategy):
         #         + ". Recommended to use 15m or 1h bars."
         #     )
 
-    def calc_quantity(self, price: Decimal) -> Decimal:
-        """
-        计算下单数量
-        支持：固定数量模式 OR 余额百分比模式
-        """
-        # 模式 A: 如果配置了固定数量，直接返回
-        if self.config.qty > 0:
-            return self.config.qty
 
-        # 模式 B: 根据余额百分比计算
-        # 1. 获取合约信息以确定计价货币 (Quote Currency, 如 USDT)
+    def calculate_order_qty(self, price: Decimal, direction: OrderSide) -> Decimal:
+        """
+        根据配置模式计算下单数量
+        """
+        # 1. 查找 Instrument
         instrument = self.cache.instrument(self.instrument_id)
         if not instrument:
             self.log.error(f"Cannot find instrument: {self.instrument_id}")
             return Decimal("0")
 
-        # 2. 获取账户余额 (需要知道 Quote Currency，例如 USDT)
-        # 注意：这里假设你只有一个账户。如果是实盘，通常会自动匹配。
-        account_id = self.portfolio.account_id  # 或者使用 self.cache.accounts()[0].id
-        account = self.cache.account(account_id)
-
-        if not account:
-            self.log.error("No account found, cannot calc quantity by percentage")
+        # 2. 修复：正确获取 Account 对象
+        # 不再通过 self.portfolio.account_id 获取，而是直接查 Cache
+        accounts = self.cache.accounts()
+        if not accounts:
+            self.log.error("No accounts found in cache.")
             return Decimal("0")
+        
+        # 取第一个账户 (通常就是我们要用的那个)
+        account = accounts[0]
 
-        # 获取可用余额 (Free Balance)
-        balance = account.balance(instrument.quote_currency).free
+        # 3. 获取权益 (Equity)
+        # 注意：这里我们使用 quote_currency (例如 USDT) 的余额
+        # 在回测中，确保你的 start_balance 是以 USDT 注入的
+        balance = account.balance(instrument.quote_currency)
+        if not balance:
+             self.log.error(f"No balance found for {instrument.quote_currency}")
+             return Decimal("0")
+             
+        # 使用 total (包含未结盈亏) 还是 free (可用余额) 取决于你的风控偏好
+        # 这里使用 total (总权益) 来计算仓位占比是比较标准的做法
+        equity = balance.total
 
-        # 3. 计算名义价值 (Notional Value) = 余额 * 百分比
-        notional_value = balance * self.config.qty_percentage
+        target_qty = Decimal("0")
 
-        if price == 0:
+        # --- 分支逻辑 (保持不变) ---
+        if self.config.size_type == SizeType.FIXED_QTY:
+            target_qty = self.config.size_value
+
+        elif self.config.size_type == SizeType.FIXED_NOTIONAL:
+            if price > 0:
+                target_qty = self.config.size_value / price
+
+        elif self.config.size_type == SizeType.PCT_EQUITY:
+            # 模式: 权益百分比
+            target_notional = equity * self.config.size_value
+            if price > 0:
+                target_qty = target_notional / price
+
+        # --- 精度修正 (保持不变) ---
+        try:
+            valid_qty = instrument.make_qty(target_qty)
+        except AttributeError:
+            # 备用方案：如果 make_qty 也不存在，可能是旧版本，尝试 round_quantity
+            # 或者手动处理 (不推荐，但为了防止报错)
+            self.log.warning("Method 'make_qty' not found, using raw quantity.")
+            valid_qty = target_qty
+        
+        if valid_qty < instrument.min_quantity:
+            # 只有数量大于 0 时才报 warning，避免日志刷屏
+            if valid_qty > 0:
+                self.log.warning(f"Qty {valid_qty} < min {instrument.min_quantity}")
             return Decimal("0")
-
-        # 4. 计算原始数量 = 名义价值 / 当前价格
-        raw_qty = notional_value / price
-
-        # 5. 【关键】修正数量精度 (Make Quantity Valid)
-        # 这一步非常重要！比如算出来是 0.12345678，但交易所只接受 0.12，
-        # instrument.make_qty_valid 会自动帮你处理最小下单量和步长。
-        return instrument.make_qty_valid(raw_qty)
+            
+        return valid_qty
 
     def buy(self, qty: Decimal):
         """
         封装的买入逻辑
         """
-        qty = self.calc_quantity(qty)
+        qty = self.calculate_order_qty(price=qty, direction=OrderSide.BUY)
 
         # 数量为 0 或太小，不执行
         if qty <= 0:
@@ -114,7 +140,7 @@ class BmrStrategy(Strategy):
         """
         封装的卖出逻辑
         """
-        qty = self.calc_quantity(qty)
+        qty = self.calculate_order_qty(price=qty, direction=OrderSide.SELL)
 
         if qty <= 0:
             self.log.warning(f"Calculated SELL quantity is {qty}, skipping.")
@@ -181,40 +207,28 @@ class BmrStrategy(Strategy):
                 self.log.info(
                     f"Signal LONG: Price={price} < Lower={bb_lower}, RSI={rsi_val}"
                 )
-                self.submit_order(
-                    self.order_factory.market(
-                        instrument_id=self.instrument_id,
-                        order_side=OrderSide.BUY,
-                        quantity=self.config.qty,
-                    )
-                )
+                self.buy(self.config.size_value)
 
             # 开空条件：突破上轨 + RSI超买
             elif price > bb_upper and rsi_val > 70:
                 self.log.info(
                     f"Signal SHORT: Price={price} > Upper={bb_upper}, RSI={rsi_val}"
                 )
-                self.submit_order(
-                    self.order_factory.market(
-                        instrument_id=self.instrument_id,
-                        order_side=OrderSide.SELL,
-                        quantity=self.config.qty,
-                    )
-                )
+                self.sell(self.config.size_value)
 
         # 场景 B: 持有做多仓位，寻找平仓机会
         elif pos_qty > 0:
             # 回归中轨平仓
             if price >= bb_mid:
                 self.log.info("Exit LONG: Hit Middle Band")
-                self.close_position(self.instrument_id)
+                self.close_position(current_pos)
 
         # 场景 C: 持有做空仓位，寻找平仓机会
         elif pos_qty < 0:
             # 回归中轨平仓
             if price <= bb_mid:
                 self.log.info("Exit SHORT: Hit Middle Band")
-                self.close_position(self.instrument_id)
+                self.close_position(current_pos)
 
     def on_stop(self):
         # 策略停止时，清理仓位 (可选)
