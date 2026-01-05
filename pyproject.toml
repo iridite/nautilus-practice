@@ -3,17 +3,19 @@ name = "nautilus-practice"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.14"
+requires-python = ">=3.12, <3.15"
+
 dependencies = [
     "ccxt>=4.5.28",
     "jupyterlab>=4.5.1",
-    "nautilus-trader[binance,okx]>=1.222.0a20251219",
+    "nautilus-trader", 
     "pandas-stubs~=2.3.3",
     "plotly>=6.5.0",
     "python-dotenv>=1.2.1",
 ]
 
 [tool.uv]
+# 必须保留，允许安装 alpha/dev 版本
 prerelease = "allow"
 
 [[tool.uv.index]]
