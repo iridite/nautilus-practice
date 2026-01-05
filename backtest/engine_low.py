@@ -1,6 +1,4 @@
-import sys
 from datetime import datetime
-from decimal import Decimal
 from pathlib import Path
 
 import pandas as pd
@@ -9,12 +7,10 @@ from nautilus_trader.analysis.tearsheet import create_tearsheet
 from nautilus_trader.backtest.config import BacktestEngineConfig
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.common.config import LoggingConfig
-from nautilus_trader.model import BarType, Money, TraderId
+from nautilus_trader.model import BarType, TraderId
 from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.enums import AccountType, BookType, OmsType
-from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.persistence.wranglers import BarDataWrangler
-from nautilus_trader.test_kit.providers import TestInstrumentProvider
 
 from backtest.utils import load_strategy_class, load_strategy_config_class
 from config.definitions import GlobalConfig
@@ -68,10 +64,7 @@ def run_low_level(cfg: GlobalConfig, base_dir: Path):
         print(f"📂 Loading instrument from {instrument_file}")
         inst = load_instrument(instrument_file)
     else:
-        print(f"⚠️ Instrument file not found at {instrument_file}")
-        print("   Falling back to TestInstrumentProvider (ETHUSDT-PERP.BINANCE)")
-        inst = TestInstrumentProvider.ethusdt_perp_binance()
-
+        raise FileNotFoundError(f"⚠️ Instrument file not found at {instrument_file}")
     engine.add_instrument(inst)
 
     # 4. Load Data
