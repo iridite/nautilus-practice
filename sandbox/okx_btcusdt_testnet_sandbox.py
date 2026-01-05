@@ -56,7 +56,7 @@ async def main():
     """
     # Configure the trading node
     config_node = TradingNodeConfig(
-        trader_id=TraderId(trader_name),
+        trader_id=TraderId(trader_name.replace("_", "-")),
         logging=LoggingConfig(
             log_level="INFO",
             log_level_file="DEBUG",
