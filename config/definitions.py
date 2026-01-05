@@ -11,6 +11,11 @@ class InstrumentConfig:
     symbol: str
     step_size: Decimal = Decimal("0.01")
     lot_size: Decimal = Decimal("0.01")
+
+    price_precision: int = 2
+    size_precision: int = 3
+    base_currency: str = "ETH"
+    quote_currency: str = "USDT"
     
     @property
     def instrument_id(self) -> str:

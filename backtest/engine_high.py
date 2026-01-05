@@ -17,6 +17,7 @@ from nautilus_trader.backtest.results import BacktestResult
 from nautilus_trader.common.config import LoggingConfig
 from nautilus_trader.config import ImportableStrategyConfig
 from nautilus_trader.model.data import Bar, BarType
+from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 
 from config.definitions import GlobalConfig
@@ -28,15 +29,18 @@ def run_high_level(cfg: GlobalConfig, base_dir: Path):
     
     data_path = base_dir / "data"
     
-    # 1. Setup Instrument (Currently using TestInstrumentProvider for simplicity, 
-    # in a real scenario you might construct this from cfg.instrument)
-    # For now, we map the config symbol to the test provider if possible, or create a custom one.
-    # To keep it simple and working with existing code, we'll use the provider but check consistency.
-    if cfg.instrument.symbol == "ETHUSDT" and cfg.instrument.venue == "BINANCE":
-        instrument = TestInstrumentProvider.ethusdt_perp_binance()
+    # 1. Setup Instrument
+    # Try to load from data/instruments/{VENUE}/{SYMBOL}.json
+    # This file should have been fetched by main.py -> fetch_instrument.py
+    instrument_file = base_dir / "data" / "instruments" / cfg.instrument.venue / f"{cfg.instrument.symbol}.json"
+    
+    if instrument_file.exists():
+        print(f"📂 Loading instrument from {instrument_file}")
+        with open(instrument_file, "rb") as f:
+            instrument = Instrument.from_json(f.read())
     else:
-        # Fallback or TODO: Create instrument from config properties
-        print(f"⚠️ Warning: Using default ETHUSDT instrument for {cfg.instrument.symbol}")
+        print(f"⚠️ Instrument file not found at {instrument_file}")
+        print("   Falling back to TestInstrumentProvider (ETHUSDT-PERP.BINANCE)")
         instrument = TestInstrumentProvider.ethusdt_perp_binance()
 
     # 2. Define BarType
