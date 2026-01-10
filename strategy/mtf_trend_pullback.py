@@ -101,6 +101,10 @@ class MtfTrendPullbackStrategy(Strategy):
         self.log.info(f"   Trend Layer: {self.trend_bar_type}")
         self.log.info(f"   Trade Layer: {self.trade_bar_type}")
 
+    def on_stop(self):
+        self.log.info(f"🔴 Strategy Stopped on {self.instrument_id}")
+        self.close_all_positions(self.instrument_id)
+
     def on_bar(self, bar: Bar):
         """
         Handle incoming bars.
