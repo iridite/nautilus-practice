@@ -11,8 +11,13 @@ build/
 # catalog data
 data/parquet/**
 data/instrument/**
+data/record/
+data/raw
 output/**
 log/**
+
+# ml models
+models/
 
 # Ignore configuration files
 config/settings.py
