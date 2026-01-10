@@ -40,7 +40,7 @@ def run_low_level(cfg: GlobalConfig, base_dir: Path):
         trader_id=TraderId("BACKTESTER-001"),
         logging=logging_config,
         risk_engine=RiskEngineConfig(
-            bypass=True,  # 彻底关闭风控检查
+            bypass=False,  # 彻底关闭风控检查
         ),
     )
     engine = BacktestEngine(engine_config)
@@ -116,7 +116,9 @@ def run_low_level(cfg: GlobalConfig, base_dir: Path):
             df = df[df.index <= pd.Timestamp(cfg.backtest.end_date)]
 
         if len(df) == 0:
-            print(f"❌ Error: No data found for {inst.id} within the specified date range in {cfg.backtest.start_date} to {cfg.backtest.end_date}")
+            print(
+                f"❌ Error: No data found for {inst.id} within the specified date range in {cfg.backtest.start_date} to {cfg.backtest.end_date}"
+            )
             return
         else:
             print(f"📥 Loaded {len(df)} rows from CSV: {csv_path}")
