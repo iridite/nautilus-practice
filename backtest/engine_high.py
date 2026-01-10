@@ -121,7 +121,9 @@ def run_high_level(cfg: GlobalConfig, base_dir: Path):
     # Auto-inject MTF params if aux data is present
     if cfg.aux_data:
         strategy_params["trade_bar_type"] = bar_type_str
-        strategy_params["trend_bar_type"] = f"{instrument.id}-{cfg.aux_data.bar_type_str}"
+        strategy_params["trend_bar_type"] = (
+            f"{instrument.id}-{cfg.aux_data.bar_type_str}"
+        )
 
     # Convert Decimal strings to Decimal objects if needed (Nautilus config usually handles this,
     # but ImportableStrategyConfig passes dict)
@@ -150,7 +152,7 @@ def run_high_level(cfg: GlobalConfig, base_dir: Path):
         strategies=strategies,
         logging=logging_config,
         risk_engine=RiskEngineConfig(
-            bypass=True,  # 彻底关闭风控检查
+            bypass=False,  # 彻底关闭风控检查
         ),
     )
 
