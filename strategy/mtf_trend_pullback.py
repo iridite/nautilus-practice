@@ -1,13 +1,13 @@
-from decimal import Decimal
-from pathlib import Path
-from typing import Optional, Dict, Any, List
 import csv
 import sys
+from decimal import Decimal
+from pathlib import Path
+from typing import Any, Dict, List, Optional
 
 # Third-party imports
 import joblib
-import pandas as pd
 import numpy as np
+import pandas as pd
 import ta
 
 # Nautilus imports
@@ -18,6 +18,7 @@ from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.objects import Price, Quantity
 from nautilus_trader.model.position import Position
 from nautilus_trader.trading.strategy import Strategy
+
 
 class MtfTrendPullbackConfig(StrategyConfig):
     instrument_id: str
@@ -42,6 +43,7 @@ class MtfTrendPullbackConfig(StrategyConfig):
     # Data Recording
     record_features: bool = False
     record_path: str = "data/record/features_log.csv"
+
 
 class MtfTrendPullbackStrategy(Strategy):
     def __init__(self, config: MtfTrendPullbackConfig):
@@ -89,7 +91,9 @@ class MtfTrendPullbackStrategy(Strategy):
                 # Or keep it enabled but fail open/closed?
                 # Here we'll just log error, and _ask_ai_filter will check if self.model is None.
         else:
-            self.log.warning(f"⚠️ AI Model path not found: {path}. Strategy will run without AI filter (or fail if logic depends on it).")
+            self.log.warning(
+                f"⚠️ AI Model path not found: {path}. Strategy will run without AI filter (or fail if logic depends on it)."
+            )
 
     def on_start(self):
         """
@@ -113,12 +117,12 @@ class MtfTrendPullbackStrategy(Strategy):
             # 1. Convert Bar to Dict for DataFrame construction
             # Using dicts is slightly faster for appending than creating single-row DFs repeatedly
             row = {
-                'datetime': pd.to_datetime(bar.ts_event, unit='ns'),
-                'open': float(bar.open),
-                'high': float(bar.high),
-                'low': float(bar.low),
-                'close': float(bar.close),
-                'volume': float(bar.volume)
+                "datetime": pd.to_datetime(bar.ts_event, unit="ns"),
+                "open": float(bar.open),
+                "high": float(bar.high),
+                "low": float(bar.low),
+                "close": float(bar.close),
+                "volume": float(bar.volume),
             }
 
             # 2. Route based on BarType
@@ -135,7 +139,7 @@ class MtfTrendPullbackStrategy(Strategy):
                 if len(self.trade_bars) > self.lookback:
                     self.trade_bars.pop(0)
 
-                self._check_signal_logic(bar) # only trade on trade bars
+                self._check_signal_logic(bar)  # only trade on trade bars
 
         except Exception as e:
             self.log.error(f"🔥 Error in on_bar processing: {e}", exc_info=True)
@@ -150,11 +154,13 @@ class MtfTrendPullbackStrategy(Strategy):
         try:
             df = pd.DataFrame(self.trend_bars)
             # EMA Calculation
-            ema_series = ta.trend.EMAIndicator(close=df['close'], window=self.config.ema_period).ema_indicator()
+            ema_series = ta.trend.EMAIndicator(
+                close=df["close"], window=self.config.ema_period
+            ).ema_indicator()
 
             # Check if we have valid EMA value
             current_ema = ema_series.iloc[-1]
-            current_close = df['close'].iloc[-1]
+            current_close = df["close"].iloc[-1]
 
             if pd.isna(current_ema):
                 return
@@ -188,7 +194,9 @@ class MtfTrendPullbackStrategy(Strategy):
         # 3. Entry Logic
         try:
             df_trade = pd.DataFrame(self.trade_bars)
-            rsi_series = ta.momentum.RSIIndicator(close=df_trade['close'], window=self.config.rsi_period).rsi()
+            rsi_series = ta.momentum.RSIIndicator(
+                close=df_trade["close"], window=self.config.rsi_period
+            ).rsi()
             rsi_val = rsi_series.iloc[-1]
 
             if pd.isna(rsi_val):
@@ -203,7 +211,9 @@ class MtfTrendPullbackStrategy(Strategy):
                 signal = -1
 
             if signal != 0:
-                self.log.info(f"💡 CTA Signal Generated: {'LONG' if signal==1 else 'SHORT'} (RSI: {rsi_val:.2f})")
+                self.log.info(
+                    f"💡 CTA Signal Generated: {'LONG' if signal == 1 else 'SHORT'} (RSI: {rsi_val:.2f})"
+                )
 
                 # 4. AI Filter
                 should_trade = True
@@ -211,7 +221,9 @@ class MtfTrendPullbackStrategy(Strategy):
                     if self.model:
                         should_trade = self._ask_ai_filter(signal)
                     else:
-                        self.log.warning("AI Filter enabled but model not loaded. Skipping trade for safety.")
+                        self.log.warning(
+                            "AI Filter enabled but model not loaded. Skipping trade for safety."
+                        )
                         should_trade = False
 
                 if should_trade:
@@ -233,40 +245,72 @@ class MtfTrendPullbackStrategy(Strategy):
             # --- Feature Engineering (Must match train.py exactly) ---
 
             # Trend Context
-            trend_ema = ta.trend.EMAIndicator(close=df_trend['close'], window=self.config.ema_period).ema_indicator()
-            df_trend['trend_dir'] = np.where(df_trend['close'] > trend_ema, 1, -1)
-            trend_adx = ta.trend.ADXIndicator(high=df_trend['high'], low=df_trend['low'], close=df_trend['close'], window=14).adx()
+            trend_ema = ta.trend.EMAIndicator(
+                close=df_trend["close"], window=self.config.ema_period
+            ).ema_indicator()
+            df_trend["trend_dir"] = np.where(df_trend["close"] > trend_ema, 1, -1)
+            trend_adx = ta.trend.ADXIndicator(
+                high=df_trend["high"],
+                low=df_trend["low"],
+                close=df_trend["close"],
+                window=14,
+            ).adx()
 
             # Trade Indicators
-            rsi = ta.momentum.RSIIndicator(close=df_trade['close'], window=self.config.rsi_period).rsi()
-            atr = ta.volatility.AverageTrueRange(high=df_trade['high'], low=df_trade['low'], close=df_trade['close'], window=14).average_true_range()
-            vol_ma = df_trade['volume'].rolling(20).mean()
-            trade_ema = ta.trend.EMAIndicator(close=df_trade['close'], window=self.config.ema_period).ema_indicator()
-            bb = ta.volatility.BollingerBands(close=df_trade['close'], window=20, window_dev=2)
+            rsi = ta.momentum.RSIIndicator(
+                close=df_trade["close"], window=self.config.rsi_period
+            ).rsi()
+            atr = ta.volatility.AverageTrueRange(
+                high=df_trade["high"],
+                low=df_trade["low"],
+                close=df_trade["close"],
+                window=14,
+            ).average_true_range()
+            vol_ma = df_trade["volume"].rolling(20).mean()
+            trade_ema = ta.trend.EMAIndicator(
+                close=df_trade["close"], window=self.config.ema_period
+            ).ema_indicator()
+            bb = ta.volatility.BollingerBands(
+                close=df_trade["close"], window=20, window_dev=2
+            )
 
             # Get latest values
             curr_trade = df_trade.iloc[-1]
-            ctx_trend = df_trend.iloc[-1] # Last available trend bar
+            ctx_trend = df_trend.iloc[-1]  # Last available trend bar
 
             # Handle division by zero or NaNs safely
             def safe_div(a, b, default=0.0):
-                if pd.isna(b) or b == 0: return default
+                if pd.isna(b) or b == 0:
+                    return default
                 return a / b
 
             # Feature Vector construction
             features = {
-                'rsi': rsi.iloc[-1],
-                'atr_pct': safe_div(atr.iloc[-1], curr_trade['close']),
-                'vol_ratio': safe_div(curr_trade['volume'], vol_ma.iloc[-1], 1.0),
-                'dist_to_ema': safe_div((curr_trade['close'] - trade_ema.iloc[-1]), trade_ema.iloc[-1]),
-                'bb_width': safe_div((bb.bollinger_hband().iloc[-1] - bb.bollinger_lband().iloc[-1]), bb.bollinger_mavg().iloc[-1]),
-                'ctx_trend_dir': ctx_trend['trend_dir'],
-                'ctx_trend_adx': trend_adx.iloc[-1]
+                "rsi": rsi.iloc[-1],
+                "atr_pct": safe_div(atr.iloc[-1], curr_trade["close"]),
+                "vol_ratio": safe_div(curr_trade["volume"], vol_ma.iloc[-1], 1.0),
+                "dist_to_ema": safe_div(
+                    (curr_trade["close"] - trade_ema.iloc[-1]), trade_ema.iloc[-1]
+                ),
+                "bb_width": safe_div(
+                    (bb.bollinger_hband().iloc[-1] - bb.bollinger_lband().iloc[-1]),
+                    bb.bollinger_mavg().iloc[-1],
+                ),
+                "ctx_trend_dir": ctx_trend["trend_dir"],
+                "ctx_trend_adx": trend_adx.iloc[-1],
             }
 
             # Prepare Input DataFrame
             # IMPORTANT: Column order must match training
-            model_cols = ['rsi', 'atr_pct', 'vol_ratio', 'dist_to_ema', 'bb_width', 'ctx_trend_dir', 'ctx_trend_adx']
+            model_cols = [
+                "rsi",
+                "atr_pct",
+                "vol_ratio",
+                "dist_to_ema",
+                "bb_width",
+                "ctx_trend_dir",
+                "ctx_trend_adx",
+            ]
             X_input = pd.DataFrame([features])[model_cols]
 
             # Fill NaNs (LightGBM handles them, but clean input is better)
@@ -276,7 +320,9 @@ class MtfTrendPullbackStrategy(Strategy):
             prob = self.model.predict_proba(X_input)[0][1]
             is_pass = prob >= self.config.min_prob_threshold
 
-            self.log.info(f"🤖 AI Inference | Prob: {prob:.4f} | Threshold: {self.config.min_prob_threshold} | Accepted: {is_pass}")
+            self.log.info(
+                f"🤖 AI Inference | Prob: {prob:.4f} | Threshold: {self.config.min_prob_threshold} | Accepted: {is_pass}"
+            )
 
             if self.config.record_features:
                 self._record_features(features, prob, signal, is_pass)
@@ -289,20 +335,22 @@ class MtfTrendPullbackStrategy(Strategy):
             # Usually fail closed is safer for "High Win Rate" strategy.
             return False
 
-    def _record_features(self, features: Dict, prob: float, signal: int, accepted: bool):
+    def _record_features(
+        self, features: Dict, prob: float, signal: int, accepted: bool
+    ):
         try:
             path = Path(self.config.record_path)
             path.parent.mkdir(parents=True, exist_ok=True)
 
             row = features.copy()
-            row['prob'] = prob
-            row['signal'] = signal
-            row['accepted'] = accepted
-            row['timestamp'] = pd.Timestamp.now().isoformat()
+            row["prob"] = prob
+            row["signal"] = signal
+            row["accepted"] = accepted
+            row["timestamp"] = pd.Timestamp.now().isoformat()
 
             file_exists = path.exists()
 
-            with open(path, 'a', newline='') as f:
+            with open(path, "a", newline="") as f:
                 writer = csv.DictWriter(f, fieldnames=row.keys())
                 if not file_exists:
                     writer.writeheader()
@@ -379,6 +427,18 @@ class MtfTrendPullbackStrategy(Strategy):
             balance = account.balance(instrument.quote_currency)
             if not balance:
                 self.log.error(f"No balance found for {instrument.quote_currency}")
+                return Quantity.from_int(0)
+
+            # 1. Bankruptcy Check (Total Equity)
+            if balance.total <= 0:
+                self.log.warning(f"🛑 Account Bankrupt! Equity: {balance.total}")
+                return Quantity.from_int(0)
+
+            # 2. Margin Check (Free Balance)
+            if balance.free <= 0:
+                self.log.warning(
+                    f"🛑 Insufficient Margin! Free Balance: {balance.free}"
+                )
                 return Quantity.from_int(0)
 
             equity = balance.total
