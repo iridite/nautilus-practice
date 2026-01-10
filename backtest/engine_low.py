@@ -3,6 +3,7 @@ from pathlib import Path
 
 import pandas as pd
 from nautilus_trader.adapters.binance import BINANCE_VENUE
+from nautilus_trader.adapters.okx import OKX_VENUE
 from nautilus_trader.analysis.tearsheet import create_tearsheet
 from nautilus_trader.backtest.config import BacktestEngineConfig
 from nautilus_trader.backtest.engine import BacktestEngine
@@ -46,8 +47,18 @@ def run_low_level(cfg: GlobalConfig, base_dir: Path):
 
     # 2. Configure Venue
 
+    # Map string venue to object
+    venue_map = {
+        "BINANCE": BINANCE_VENUE,
+        "OKX": OKX_VENUE,
+    }
+    venue_obj = venue_map.get(cfg.instrument.venue)
+    # TODO: see if there's a better method, that could direct designate Venue
+    if not venue_obj:
+        raise ValueError(f"Unsupported venue: {cfg.instrument.venue}")
+
     engine.add_venue(
-        venue=BINANCE_VENUE,  # TODO: Map cfg.instrument.venue to actual Venue object if needed
+        venue=venue_obj,
         oms_type=OmsType.HEDGING,
         book_type=BookType.L1_MBP,
         account_type=AccountType.MARGIN,
@@ -90,15 +101,18 @@ def run_low_level(cfg: GlobalConfig, base_dir: Path):
             # Adjust if needed, assuming close time
             # df["timestamp"] = df["timestamp"] + pd.Timedelta(minutes=5)
             df.set_index("timestamp", inplace=True)
+        elif "datetime" in df.columns:
+            df["datetime"] = pd.to_datetime(df["datetime"])
+            df.set_index("datetime", inplace=True)
 
         # Filter columns
         df = df[["open", "high", "low", "close", "volume"]]
 
         # Filter by date if provided in config
         if cfg.backtest.start_date:
-            df = df[df.index >= cfg.backtest.start_date]
+            df = df[df.index >= pd.Timestamp(cfg.backtest.start_date)]
         if cfg.backtest.end_date:
-            df = df[df.index <= cfg.backtest.end_date]
+            df = df[df.index <= pd.Timestamp(cfg.backtest.end_date)]
 
         print(f"📥 Loaded {len(df)} rows from CSV")
         bars = wrangler.process(df)
@@ -106,6 +120,38 @@ def run_low_level(cfg: GlobalConfig, base_dir: Path):
     except FileNotFoundError:
         print(f"❌ Error: Data file not found at {csv_path}")
         return
+
+    # 4.1 Load Aux Data (e.g. Trend Layer)
+    if cfg.aux_data:
+        aux_bar_type_str = f"{inst.id}-{cfg.aux_data.bar_type_str}"
+        aux_bar_type = BarType.from_str(aux_bar_type_str)
+        aux_wrangler = BarDataWrangler(aux_bar_type, inst)
+
+        aux_csv_path = base_dir / "data" / "raw" / cfg.aux_data.csv_file_name
+        try:
+            aux_df = pd.read_csv(aux_csv_path)
+            # Basic preprocessing
+            if "timestamp" in aux_df.columns:
+                aux_df["timestamp"] = (
+                    pd.to_datetime(aux_df["timestamp"], unit="ms")
+                    if aux_df["timestamp"].dtype != "datetime64[ns]"
+                    else aux_df["timestamp"]
+                )
+                aux_df.set_index("timestamp", inplace=True)
+
+            aux_df = aux_df[["open", "high", "low", "close", "volume"]]
+
+            if cfg.backtest.start_date:
+                aux_df = aux_df[aux_df.index >= pd.Timestamp(cfg.backtest.start_date)]
+            if cfg.backtest.end_date:
+                aux_df = aux_df[aux_df.index <= pd.Timestamp(cfg.backtest.end_date)]
+
+            print(f"📥 Loaded Aux Data: {len(aux_df)} rows")
+            aux_bars = aux_wrangler.process(aux_df)
+            engine.add_data(aux_bars)
+        except FileNotFoundError:
+            print(f"❌ Error: Aux Data file not found at {aux_csv_path}")
+            return
 
     # 5. Configure Strategy
     StrategyClass = load_strategy_class(cfg.strategy.module_path, cfg.strategy.name)
@@ -118,11 +164,25 @@ def run_low_level(cfg: GlobalConfig, base_dir: Path):
     strategy_params["instrument_id"] = inst.id
     strategy_params["bar_type"] = bar_type
 
+    # Inject MTF params if present
+    if cfg.aux_data:
+        strategy_params["trade_bar_type"] = bar_type_str
+        strategy_params["trend_bar_type"] = f"{inst.id}-{cfg.aux_data.bar_type_str}"
+
     # Instantiate Config
-    # Note: Pydantic models or dataclasses in Nautilus might need specific types
-    # We assume the ConfigClass can handle the dict unpacking or we might need to be careful
+    # Filter params to match what the ConfigClass actually accepts
+    # This handles cases where some strategies need 'bar_type' and others (like MTF) don't
     try:
-        strat_config = ConfigClass(**strategy_params)
+        valid_fields = set(ConfigClass.__annotations__.keys())
+        # Inspect parent classes for inherited fields if needed (simple approximation)
+        if hasattr(ConfigClass, "__mro__"):
+            for base in ConfigClass.__mro__:
+                if hasattr(base, "__annotations__"):
+                    valid_fields.update(base.__annotations__.keys())
+
+        final_params = {k: v for k, v in strategy_params.items() if k in valid_fields}
+
+        strat_config = ConfigClass(**final_params)
     except Exception as e:
         print(f"❌ Error creating strategy config: {e}")
         print(f"Params provided: {strategy_params}")
