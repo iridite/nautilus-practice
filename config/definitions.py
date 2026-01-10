@@ -25,7 +25,7 @@ class InstrumentConfig:
     def instrument_id(self) -> str:
         if self.venue == "OKX":
             return (
-                f"{self.quote_currency}-{self.base_currency}-{self.type}.{self.venue}"
+                f"{self.quote_currency}-{self.base_currency}-{self.type.value}.{self.venue}"
             )
         elif self.venue == "BINANCE":
             if self.type == InstrumentType.SPOT:
@@ -33,9 +33,9 @@ class InstrumentConfig:
             elif self.type == InstrumentType.SWAP:
                 return f"{self.quote_currency}{self.base_currency}-PERP.{self.venue}"
             elif self.type == InstrumentType.FUTURES:
-                return f"{self.quote_currency}{self.base_currency}-{self.type}.{self.venue}"
+                return f"{self.quote_currency}{self.base_currency}-{self.type.value}.{self.venue}"
             elif self.type == InstrumentType.OPTION:
-                return f"{self.quote_currency}{self.base_currency}-{self.type}.{self.venue}"
+                return f"{self.quote_currency}{self.base_currency}-{self.type.value}.{self.venue}"
             else:
                 raise ValueError(f"Unsupported instrument type: {self.type}")
         else:
@@ -84,11 +84,34 @@ class LogConfig:
 
 
 @dataclass
+class MLConfig:
+    # Feature Engineering & Labeling
+    ema_period: int = 50
+    rsi_period: int = 14
+    rsi_oversold: int = 30
+    rsi_overbought: int = 70
+    stop_loss_pct: float = 0.015
+    take_profit_pct: float = 0.03
+    horizon_bars: int = 24
+
+    # Inference Control
+    use_ai_filter: bool = False
+    model_path: str = "data/models/lgbm_mtf_v1.joblib"
+    min_prob_threshold: float = 0.60
+    record_features: bool = False
+    record_path: str = "data/features_log.csv"
+
+
+@dataclass
 class GlobalConfig:
     instrument: InstrumentConfig
     data: DataConfig
     strategy: StrategyConfig
     backtest: BacktestConfig
     logging: LogConfig
+    ml: MLConfig = field(default_factory=MLConfig)
+
+    # Support for auxiliary data (e.g. for MTF strategy trend layer)
+    aux_data: Optional[DataConfig] = None
 
     # 可以在这里添加 Sandbox 或 Live 的配置

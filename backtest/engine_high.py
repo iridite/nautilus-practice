@@ -15,7 +15,6 @@ from nautilus_trader.backtest.results import BacktestResult
 from nautilus_trader.common.config import LoggingConfig
 from nautilus_trader.config import ImportableStrategyConfig, RiskEngineConfig
 from nautilus_trader.model.data import Bar, BarType
-from nautilus_trader.test_kit.providers import TestInstrumentProvider
 
 from config.definitions import GlobalConfig
 from utils.data_loader import loader
@@ -40,11 +39,11 @@ def run_high_level(cfg: GlobalConfig, base_dir: Path):
     if instrument_file.exists():
         print(f"📂 Loading instrument from {instrument_file}")
         instrument = load_instrument(instrument_file)
-        # 这个写法可能复杂了，晚点看能不能精简一下
     else:
-        print(f"⚠️ Instrument file not found at {instrument_file}")
-        print("   Falling back to TestInstrumentProvider (ETHUSDT-PERP.BINANCE)")
-        instrument = TestInstrumentProvider.ethusdt_perp_binance()
+        raise FileNotFoundError(
+            f"❌ Instrument definition not found at: {instrument_file}\n"
+            f"👉 Please run: uv run main.py (to fetch instruments)"
+        )
 
     # 2. Define BarType
     bar_type_str = f"{instrument.id}-{cfg.data.bar_type_str}"
@@ -52,17 +51,42 @@ def run_high_level(cfg: GlobalConfig, base_dir: Path):
     print(f"📊 Bar Type: {bar_type_str}")
 
     # 3. Load Data
+    run_timestamp = datetime.now().isoformat()
+    catalog_paths = []
+
+    # 3.1 Load Main Data
     csv_path = data_path / "raw" / cfg.data.csv_file_name
     if not csv_path.exists():
         raise FileNotFoundError(f"Data file not found: {csv_path}")
 
     parquet_catalog, catalog_path = loader(
         csv_path=csv_path,
-        output_path=data_path / "parquet" / f"{datetime.now().isoformat()}",
+        output_path=data_path / "parquet" / f"{run_timestamp}_main",
         instrument=instrument,
         bar_type=bar_type_def,
     )
+    catalog_paths.append(str(catalog_path))
     del parquet_catalog
+
+    # 3.2 Load Aux Data (if any)
+    if cfg.aux_data:
+        aux_bar_type_str = f"{instrument.id}-{cfg.aux_data.bar_type_str}"
+        aux_bar_type_def = BarType.from_str(aux_bar_type_str)
+        print(f"📊 Aux Bar Type: {aux_bar_type_str}")
+
+        aux_csv_path = data_path / "raw" / cfg.aux_data.csv_file_name
+        if not aux_csv_path.exists():
+            raise FileNotFoundError(f"Aux Data file not found: {aux_csv_path}")
+
+        aux_catalog, aux_catalog_path = loader(
+            csv_path=aux_csv_path,
+            output_path=data_path / "parquet" / f"{run_timestamp}_aux",
+            instrument=instrument,
+            bar_type=aux_bar_type_def,
+        )
+        catalog_paths.append(str(aux_catalog_path))
+        del aux_catalog
+
     gc.collect()
 
     # 4. Configure Venue
@@ -79,12 +103,13 @@ def run_high_level(cfg: GlobalConfig, base_dir: Path):
     # 5. Configure Data
     data_configs = [
         BacktestDataConfig(
-            catalog_path=str(catalog_path),
+            catalog_path=path,
             data_cls=Bar,
             instrument_id=instrument.id,
             start_time=cfg.backtest.start_date,
             end_time=cfg.backtest.end_date,
-        ),
+        )
+        for path in catalog_paths
     ]
 
     # 6. Configure Strategy
@@ -92,6 +117,11 @@ def run_high_level(cfg: GlobalConfig, base_dir: Path):
     strategy_params = cfg.strategy.params.copy()
     strategy_params["instrument_id"] = instrument.id
     strategy_params["bar_type"] = bar_type_str
+
+    # Auto-inject MTF params if aux data is present
+    if cfg.aux_data:
+        strategy_params["trade_bar_type"] = bar_type_str
+        strategy_params["trend_bar_type"] = f"{instrument.id}-{cfg.aux_data.bar_type_str}"
 
     # Convert Decimal strings to Decimal objects if needed (Nautilus config usually handles this,
     # but ImportableStrategyConfig passes dict)
