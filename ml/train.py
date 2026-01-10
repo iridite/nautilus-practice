@@ -58,6 +58,7 @@ def train_model(trade_file: str, trend_file: str):
     ]
 
     feature_cols = [c for c in df.columns if c not in exclude_cols]
+    # TODO: research on feature engineering
 
     X = df[feature_cols]
     y = df['target']

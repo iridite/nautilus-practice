@@ -26,7 +26,7 @@ def loader(
     :return: Description
     :rtype: [ParquetDataCatalog, catalog_path: Path]
     """
-    # TODO 检测该路径是否存在，若不存在便给出提示并进行自动重建文件夹
+
     if not os.path.exists(path=output_path):
         os.makedirs(name=output_path)
         print(f"Created output directory: {output_path}")
