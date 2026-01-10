@@ -84,6 +84,7 @@ def run_low_level(cfg: GlobalConfig, base_dir: Path):
     engine.add_instrument(inst)
 
     # 4. Load Data
+    # low-end backtest engine loads data by itself
     bar_type_str = f"{inst.id}-{cfg.data.bar_type_str}"
     bar_type = BarType.from_str(bar_type_str)
     wrangler = BarDataWrangler(bar_type, inst)
@@ -114,7 +115,12 @@ def run_low_level(cfg: GlobalConfig, base_dir: Path):
         if cfg.backtest.end_date:
             df = df[df.index <= pd.Timestamp(cfg.backtest.end_date)]
 
-        print(f"📥 Loaded {len(df)} rows from CSV")
+        if len(df) == 0:
+            print(f"❌ Error: No data found for {inst.id} within the specified date range in {cfg.backtest.start_date} to {cfg.backtest.end_date}")
+            return
+        else:
+            print(f"📥 Loaded {len(df)} rows from CSV: {csv_path}")
+
         bars = wrangler.process(df)
         engine.add_data(bars)
     except FileNotFoundError:
