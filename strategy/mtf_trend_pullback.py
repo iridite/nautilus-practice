@@ -11,19 +11,21 @@ import pandas as pd
 import ta
 
 # Nautilus imports
-from nautilus_trader.config import StrategyConfig
 from nautilus_trader.model.data import Bar, BarType
 from nautilus_trader.model.enums import OrderSide, TimeInForce
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.objects import Price, Quantity
 from nautilus_trader.model.position import Position
-from nautilus_trader.trading.strategy import Strategy
+
+# Local imports
+from strategy.base import BaseStrategy, BaseStrategyConfig
 
 
-class MtfTrendPullbackConfig(StrategyConfig):
-    instrument_id: str
-    trend_bar_type: str
-    trade_bar_type: str
+class MtfTrendPullbackConfig(BaseStrategyConfig):
+    # instrument_id provided by BaseStrategyConfig
+
+    trend_bar_type: str = ""
+    trade_bar_type: str = ""
 
     # Strategy Params
     ema_period: int = 50
@@ -32,9 +34,13 @@ class MtfTrendPullbackConfig(StrategyConfig):
     rsi_overbought: int = 70
 
     # Risk Management
-    qty_percent: Decimal = Decimal("0.1")
+    # qty_percent provided by BaseStrategyConfig (default None)
+    # leverage provided by BaseStrategyConfig (default 1)
+
+    # Override defaults if necessary or just rely on passing them in settings
+    qty_percent: Optional[Decimal] = Decimal("0.1")
     stop_loss_pct: Decimal = Decimal("0.02")
-    leverage: Optional[int] = None
+    # leverage inherited from BaseStrategyConfig (default 1)
 
     # AI Filtering
     use_ai_filter: bool = False
@@ -46,7 +52,7 @@ class MtfTrendPullbackConfig(StrategyConfig):
     record_path: str = "data/record/features_log.csv"
 
 
-class MtfTrendPullbackStrategy(Strategy):
+class MtfTrendPullbackStrategy(BaseStrategy):
     def __init__(self, config: MtfTrendPullbackConfig):
         super().__init__(config)
 
@@ -100,6 +106,8 @@ class MtfTrendPullbackStrategy(Strategy):
         """
         Subscribe to data feeds.
         """
+        super().on_start()
+
         self.subscribe_bars(self.trend_bar_type)
         self.subscribe_bars(self.trade_bar_type)
         self.log.info(f"🟢 Strategy Started on {self.instrument_id}")
@@ -387,10 +395,10 @@ class MtfTrendPullbackStrategy(Strategy):
 
     def _execute_trade(self, direction: int, price: Price):
         """
-        Execute Market Order.
+        Execute Market Order using BaseStrategy calculation and safe submission.
         """
         try:
-            qty = self.calc_order_qty(price)
+            qty = self.calculate_order_qty(price)
             if qty <= 0:
                 return
 
@@ -403,92 +411,17 @@ class MtfTrendPullbackStrategy(Strategy):
                 time_in_force=TimeInForce.IOC,
             )
 
-            self.submit_order(order)
-            self.log.info(f"🚀 SUBMIT ORDER: {side} {qty} @ {price}")
+            # Use BaseStrategy safe submission
+            self.submit_order_safe(order, reason=f"Signal Dir {direction}")
 
         except Exception as e:
             self.log.error(f"Error executing trade: {e}")
-
-    def recommend_leverage(self) -> Optional[int]:
-        """
-        策略可以重写此方法以提供推荐的杠杆倍数。
-        优先级：recommend_leverage() > config.leverage
-        """
-        return None
-
-    def calc_order_qty(self, price: Price) -> Quantity:
-        """
-        Calculate Position Size based on Equity Percentage and Leverage.
-        """
-        try:
-            accounts = self.cache.accounts()
-            if not accounts:
-                self.log.error("No accounts found in cache")
-                return Quantity.from_int(0)
-
-            account = accounts[0]
-            instrument = self.cache.instrument(self.instrument_id)
-            if not instrument:
-                self.log.error("Instrument not found in cache")
-                return Quantity.from_int(0)
-
-            balance = account.balance(instrument.quote_currency)
-            if not balance:
-                self.log.error(f"No balance found for {instrument.quote_currency}")
-                return Quantity.from_int(0)
-
-            # 1. Bankruptcy Check (Total Equity)
-            if balance.total <= 0:
-                self.log.warning(f"🛑 Account Bankrupt! Equity: {balance.total}")
-                return Quantity.from_int(0)
-
-            # 2. Margin Check (Free Balance)
-            if balance.free <= 0:
-                self.log.warning(
-                    f"🛑 Insufficient Margin! Free Balance: {balance.free}"
-                )
-                return Quantity.from_int(0)
-
-            # 3. Determine Leverage
-            # Priority: Strategy Recommended > Config Set > Default(1)
-            rec_leverage = self.recommend_leverage()
-            leverage = (
-                rec_leverage if rec_leverage is not None else self.config.leverage
-            )
-            leverage = leverage if leverage is not None else 1
-
-            # 4. Cap by Instrument Maximum Leverage (if available from exchange data)
-            if hasattr(instrument, "max_leverage") and instrument.max_leverage:
-                if leverage > instrument.max_leverage:
-                    self.log.warning(
-                        f"⚠️ Requested leverage {leverage} exceeds instrument max "
-                        f"{instrument.max_leverage}. Capping to limit."
-                    )
-                    leverage = instrument.max_leverage
-
-            equity = balance.total
-            # Target Notional = Equity * Percentage * Leverage
-            target_notional = equity * self.config.qty_percent * leverage
-
-            if price == 0:
-                return Quantity.from_int(0)
-
-            raw_qty = target_notional / price
-
-            try:
-                return instrument.make_qty(raw_qty)
-            except AttributeError:
-                # Fallback if method missing (unlikely in newer versions)
-                return Quantity.from_int(0)
-
-        except Exception as e:
-            self.log.error(f"Error calculating quantity: {e}")
-            return Quantity.from_int(0)
 
     def on_reset(self):
         """
         策略重置时调用，清除内部状态
         """
+        super().on_reset()
         self.trade_bars.clear()
         self.trend_bars.clear()
         self.current_trend = 0

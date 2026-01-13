@@ -1,39 +1,37 @@
 from decimal import Decimal
 from typing import Optional
 
-from nautilus_trader.config import StrategyConfig
 from nautilus_trader.model.data import Bar, BarType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.instruments import Instrument
-from nautilus_trader.model.objects import Quantity
-from nautilus_trader.trading.strategy import Strategy
+
+from strategy.base import BaseStrategy, BaseStrategyConfig
 
 
-class DualThrustConfig(StrategyConfig):
+class DualThrustConfig(BaseStrategyConfig):
     """
     Dual Thrust 策略配置参数
+    继承自 BaseStrategyConfig，自动获得 trade_size, qty_percent, leverage 等通用参数
     """
 
-    instrument_id: InstrumentId | str
-    bar_type: BarType | str
+    # instrument_id is inherited from BaseStrategyConfig
+
+    bar_type: BarType | str = ""
 
     # 策略核心参数
     lookback_period: int = 4  # N: 回溯周期数
     k1: float = 0.5  # 上轨系数
     k2: float = 0.5  # 下轨系数
 
-    # 风控与资金管理
-    trade_size: float = 0.01  # 每次交易数量 (根据Instrument精度调整)
-    qty_percent: Decimal = Decimal("0.1")  # 仓位比例 (如使用杠杆)
-    leverage: Optional[int] = None
+    # 其他风控
     use_trailing_stop: bool = False
     trailing_stop_pct: float = 0.02
 
 
-class DualThrust(Strategy):
+class DualThrust(BaseStrategy):
     """
     Dual Thrust 策略实现 for NautilusTrader
+    继承 BaseStrategy 以复用下单量计算与安全下单逻辑。
 
     逻辑:
     1. 计算前N个周期的 HH, HC, LC, LL
@@ -57,7 +55,7 @@ class DualThrust(Strategy):
             self.bar_type = BarType.from_str(config.bar_type)
 
         # 状态变量
-        self.instrument: Optional[Instrument] = None
+        # self.instrument 由 BaseStrategy.on_start() 统一初始化
         self.history_bars: list[Bar] = []  # 用于存储计算Range的历史K线
 
         self.current_range: Optional[Decimal] = None
@@ -68,12 +66,17 @@ class DualThrust(Strategy):
         """
         策略启动时调用
         """
-        # 1. 获取 Instrument 对象
-        self.instrument = self.cache.instrument(self.instrument_id)
+        # 1. 调用父类 on_start 初始化 instrument
+        super().on_start()
+
+        # 确保 instrument 加载成功
         if self.instrument is None:
-            self.log.error(f"Could not find instrument: {self.instrument_id}")
-            self.stop()
-            return
+            # 尝试通过 instrument_id 再次获取 (防止父类只用了 config 里的 str)
+            self.instrument = self.cache.instrument(self.instrument_id)
+            if self.instrument is None:
+                self.log.error(f"Could not find instrument: {self.instrument_id}")
+                self.stop()
+                return
 
         # 2. 订阅行情数据
         self.subscribe_bars(self.bar_type)
@@ -145,55 +148,6 @@ class DualThrust(Strategy):
         self.buy_line = current_open + (rng * k1)
         self.sell_line = current_open - (rng * k2)
 
-    def recommend_leverage(self) -> Optional[int]:
-        """
-        策略可以重写此方法以提供推荐的杠杆倍数。
-        优先级：recommend_leverage() > config.leverage
-        """
-        return None
-
-    def _calc_order_qty(self, price: Decimal) -> Quantity:
-        """
-        根据权益、比例和杠杆计算下单数量
-        """
-        try:
-            accounts = self.cache.accounts()
-            if not accounts:
-                return self.instrument.make_qty(self.config.trade_size)
-
-            account = accounts[0]
-            balance = account.balance(self.instrument.quote_currency)
-            if not balance or balance.total <= 0:
-                return self.instrument.make_qty(self.config.trade_size)
-            else:
-                self.log.warn(
-                    f"Balance is not enough to make new positions: {balance.total}"
-                )
-
-            # 杠杆确定
-            # 优先级：策略推荐 > 配置设定 > 默认1
-            rec_leverage = self.recommend_leverage()
-            leverage = (
-                rec_leverage if rec_leverage is not None else self.config.leverage
-            )
-            leverage = leverage if leverage is not None else 1
-
-            # 交易所上限检查 (instrument.max_leverage)
-            if (
-                hasattr(self.instrument, "max_leverage")
-                and self.instrument.max_leverage
-            ):
-                if leverage > self.instrument.max_leverage:
-                    leverage = self.instrument.max_leverage
-
-            # 计算名义价值 = 权益 * 比例 * 杠杆
-            target_notional = balance.total * self.config.qty_percent * leverage
-            raw_qty = target_notional / price
-            return self.instrument.make_qty(raw_qty)
-        except Exception:
-            # 容错：返回配置的固定数量
-            return self.instrument.make_qty(self.config.trade_size)
-
     def _check_signals(self, bar: Bar):
         """
         信号检查与订单执行
@@ -205,8 +159,8 @@ class DualThrust(Strategy):
         # 获取当前所有的持仓
         positions = self.cache.positions_open(instrument_id=self.instrument_id)
 
-        # 使用计算后的杠杆仓位数量
-        qty = self._calc_order_qty(current_price)
+        # 使用 BaseStrategy 统一提供的计算逻辑
+        qty = self.calculate_order_qty(current_price)
         if qty <= 0:
             return
 
@@ -227,9 +181,10 @@ class DualThrust(Strategy):
                     order_side=OrderSide.BUY,
                     quantity=qty,
                 )
-                self.submit_order(order)
-                self.log.info(
-                    f"BREAKOUT BUY triggered at {current_price} > {self.buy_line}"
+                # 使用 BaseStrategy 的安全下单方法，自带日志和检查
+                self.submit_order_safe(
+                    order,
+                    reason=f"Breakout ({current_price} > BuyLine {self.buy_line})",
                 )
 
         # --- 逻辑 2: 做空突破 ---
@@ -249,9 +204,9 @@ class DualThrust(Strategy):
                     order_side=OrderSide.SELL,
                     quantity=qty,
                 )
-                self.submit_order(order)
-                self.log.info(
-                    f"BREAKOUT SELL triggered at {current_price} < {self.sell_line}"
+                self.submit_order_safe(
+                    order,
+                    reason=f"Breakout ({current_price} < SellLine {self.sell_line})",
                 )
 
     def on_stop(self):
@@ -262,7 +217,7 @@ class DualThrust(Strategy):
         """
         策略重置时调用，清除内部状态
         """
-        self.instrument = None
+        super().on_reset()  # Reset BaseStrategy (instrument=None)
         self.history_bars.clear()
         self.current_range = None
         self.buy_line = None
