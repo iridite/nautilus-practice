@@ -3,8 +3,11 @@ from typing import Optional
 
 from nautilus_trader.indicators import AverageTrueRange, ExponentialMovingAverage
 from nautilus_trader.model.data import Bar, BarType
-from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import OrderSide, OrderType, PositionSide, TimeInForce
+from nautilus_trader.model.events import PositionOpened
 from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.objects import Price
+from nautilus_trader.model.orders import Order
 
 from strategy.base import BaseStrategy, BaseStrategyConfig
 
@@ -29,9 +32,9 @@ class DualThrustConfig(BaseStrategyConfig):
     atr_period: int = 20  # 波动率计算周期
     atr_threshold: float = 1.2  # 波动率阈值倍数 (Range > ATR * Threshold)
 
-    # 其他风控
-    use_trailing_stop: bool = False
-    trailing_stop_pct: float = 0.02
+    # 风控参数 (New)
+    stop_loss_pct: float = 0.015  # 1.5% 硬止损
+    breakeven_trigger_pct: float = 0.02  # 2.0% 利润触发保本移动
 
 
 class DualThrust(BaseStrategy):
@@ -48,6 +51,10 @@ class DualThrust(BaseStrategy):
     新增过滤:
     1. 趋势过滤: 价格 > EMA做多, 价格 < EMA做空
     2. 波动过滤: Range > ATR * Threshold
+
+    新增风控:
+    1. 初始硬止损 (Hard Stop Loss)
+    2. 保本止损 (Breakeven Stop)
     """
 
     def __init__(self, config: DualThrustConfig):
@@ -102,6 +109,9 @@ class DualThrust(BaseStrategy):
         self.log.info(
             f"Filters: EMA={self.config.ema_period}, ATR={self.config.atr_period}, Threshold={self.config.atr_threshold}"
         )
+        self.log.info(
+            f"Risk: SL={self.config.stop_loss_pct:.1%}, BreakevenTrigger={self.config.breakeven_trigger_pct:.1%}"
+        )
 
     def on_bar(self, bar: Bar):
         """
@@ -121,57 +131,177 @@ class DualThrust(BaseStrategy):
             self.history_bars.pop(0)
 
         # 3. 检查数据预热进度
-        # 既要满足 DualThrust 的 lookback，也要满足指标的预热要求
-        # EMA 和 ATR 需要一定的历史数据才能稳定
         if (
             not self.ema.initialized
             or not self.atr.initialized
             or len(self.history_bars) < required_len
         ):
-            # 仅在每10个bar打印一次日志，避免刷屏
             if len(self.history_bars) % 10 == 0:
                 self.log.info(
                     f"Warming up... EMA:{self.ema.initialized} ATR:{self.atr.initialized}"
                 )
             return
 
-        # 4. 计算 Dual Thrust 轨道
+        # 4. 风控管理 (移动止损/保本)
+        self._manage_risk(bar)
+
+        # 5. 计算 Dual Thrust 轨道
         self._calculate_thresholds()
 
-        # 5. 执行交易逻辑
+        # 6. 执行交易逻辑
         self._check_signals(bar)
+
+    def on_position_opened(self, event: PositionOpened):
+        """
+        当仓位建立时触发：立即设置初始硬止损
+        """
+        super().on_position_opened(event)
+
+        # 仅针对主交易标的
+        if event.instrument_id != self.instrument_id:
+            return
+
+        entry_price = event.avg_px_open
+        qty = event.quantity
+
+        # Determine Stop Price based on Position Side
+        sl_price = Decimal(0)
+        sl_side = None
+
+        if event.side == PositionSide.LONG:
+            # Long Position -> Sell Stop
+            sl_price = Decimal(str(entry_price)) * Decimal(
+                1 - self.config.stop_loss_pct
+            )
+            sl_side = OrderSide.SELL
+        else:
+            # Short Position -> Buy Stop
+            sl_price = Decimal(str(entry_price)) * Decimal(
+                1 + self.config.stop_loss_pct
+            )
+            sl_side = OrderSide.BUY
+
+        # Round to instrument precision to avoid "precision > 16" error
+        if self.instrument and self.instrument.price_precision:
+            sl_price = round(sl_price, self.instrument.price_precision)
+        else:
+            sl_price = round(sl_price, 8)
+
+        # 提交止损单 (Stop Market)
+        if sl_price > 0 and sl_side:
+            self.log.info(
+                f"🛡️ Placing Initial Stop Loss for {event.side} at {sl_price:.4f}"
+            )
+            try:
+                sl_order = self.order_factory.stop_market(
+                    instrument_id=self.instrument_id,
+                    order_side=sl_side,
+                    quantity=qty,
+                    trigger_price=self.instrument.make_price(sl_price),
+                    reduce_only=True,
+                    time_in_force=TimeInForce.GTC,
+                )
+                self.submit_order(sl_order)
+            except Exception as e:
+                self.log.error(f"Failed to submit Stop Loss order: {e}")
+
+    def _manage_risk(self, bar: Bar):
+        """
+        在每个 Bar 检查持仓浮盈，触发保本逻辑
+        """
+        positions = self.cache.positions_open(instrument_id=self.instrument_id)
+        if not positions:
+            return
+
+        current_price = bar.close
+
+        for pos in positions:
+            entry_price = pos.avg_px_open
+
+            # 计算未实现盈亏百分比
+            pnl_pct = Decimal(0)
+            if pos.is_long:
+                pnl_pct = (current_price - entry_price) / entry_price
+            else:
+                pnl_pct = (entry_price - current_price) / entry_price
+
+            # 检查是否触发保本逻辑
+            if pnl_pct > self.config.breakeven_trigger_pct:
+                self._move_stop_to_breakeven(pos)
+
+    def _move_stop_to_breakeven(self, position):
+        """
+        将止损移动到开仓价 (保本)
+        """
+        # 1. 查找当前针对该持仓的未结止损单
+        # 注意: 这里的逻辑简化查找: 找同标的、反方向、StopMarket类型的订单
+        open_orders = self.cache.orders_open(instrument_id=self.instrument_id)
+        sl_order: Optional[Order] = None
+
+        expected_sl_side = OrderSide.SELL if position.is_long else OrderSide.BUY
+
+        for order in open_orders:
+            if (
+                order.order_type == OrderType.STOP_MARKET
+                and order.side == expected_sl_side
+            ):
+                sl_order = order
+                break
+
+        entry_price = position.avg_px_open
+
+        # 2. 如果存在止损单
+        if sl_order:
+            # 检查触发价是否已经是开仓价 (允许微小误差)
+            current_trigger = sl_order.trigger_price
+            if abs(current_trigger - entry_price) < (entry_price * 0.001):
+                # 已经是保本位了，无需操作
+                return
+
+            # 取消旧订单
+            self.log.info(
+                f"💰 Profit > {self.config.breakeven_trigger_pct:.1%}, Moving SL to Breakeven: {entry_price}"
+            )
+            self.cancel_order(sl_order)
+        else:
+            self.log.info(
+                f"💰 Profit > {self.config.breakeven_trigger_pct:.1%}, Placing New Breakeven SL: {entry_price}"
+            )
+
+        # 3. 提交新的保本止损单
+        new_sl_order = self.order_factory.stop_market(
+            instrument_id=self.instrument_id,
+            order_side=expected_sl_side,
+            quantity=position.quantity,
+            trigger_price=self.instrument.make_price(entry_price),
+            reduce_only=True,
+            time_in_force=TimeInForce.GTC,
+        )
+        self.submit_order(new_sl_order)
 
     def _calculate_thresholds(self):
         """
         计算上下轨核心逻辑
         """
-        # 基于过去 N 个已完成 Bar 计算 Range
-        # history_bars[-1] 是当前刚闭合的 bar，用于开仓判断
-        # history_bars[-N-1 : -1] 是用于计算 range 的前 N 个 bar
         reference_bars = self.history_bars[-self.config.lookback_period - 1 : -1]
 
         if len(reference_bars) < self.config.lookback_period:
             return
 
-        # 提取数据序列
         highs = [b.high for b in reference_bars]
         lows = [b.low for b in reference_bars]
         closes = [b.close for b in reference_bars]
 
-        # 计算 HH, HC, LC, LL
         hh = max(highs)
         hc = max(closes)
         lc = min(closes)
         ll = min(lows)
 
-        # 计算 Range
         rng = max(hh - lc, hc - ll)
         self.current_range = rng
 
-        # 以当前刚闭合的 Bar 的 Open 作为基准点
         current_open = self.history_bars[-1].open
 
-        # 计算轨道
         k1 = Decimal(str(self.config.k1))
         k2 = Decimal(str(self.config.k2))
 
@@ -192,43 +322,33 @@ class DualThrust(BaseStrategy):
         current_price = bar.close
 
         # --- 过滤器检查 ---
-
-        # 1. 波动率过滤 (Volatility Filter)
-        # 当前 Range 必须大于 ATR 的一定倍数，表明当前波动足够大，值得参与
-        # 转换 float 为 Decimal 进行比较
         atr_val = Decimal(str(self.atr.value))
         vol_threshold = atr_val * Decimal(str(self.config.atr_threshold))
 
         if self.current_range <= vol_threshold:
-            # 波动太小，不做交易
             return
 
-        # 2. 趋势过滤 (Trend Filter)
         ema_val = Decimal(str(self.ema.value))
         is_uptrend = current_price > ema_val
         is_downtrend = current_price < ema_val
 
         # --- 仓位管理 ---
-
-        # 获取当前所有的持仓
         positions = self.cache.positions_open(instrument_id=self.instrument_id)
 
-        # 使用 BaseStrategy 统一提供的计算逻辑
         qty = self.calculate_order_qty(current_price)
         if qty <= 0:
             return
 
         # --- 逻辑 1: 做多突破 ---
-        # 必须满足: 价格突破上轨 AND 处于上升趋势 (价格 > EMA)
         if current_price > self.buy_line and is_uptrend:
-            # 如果有空仓，先平掉所有空仓
             has_short = any(p.is_short for p in positions)
             if has_short:
                 self.log.info("Closing existing short positions before going long")
+                # 平仓前必须取消关联的止损单，防止意外触发
+                self.cancel_all_orders(self.instrument_id)
                 self.close_all_positions(self.instrument_id)
                 positions = [p for p in positions if not p.is_short]
 
-            # 无多头仓位则开多
             has_long = any(p.is_long for p in positions)
             if not has_long:
                 order = self.order_factory.market(
@@ -236,23 +356,21 @@ class DualThrust(BaseStrategy):
                     order_side=OrderSide.BUY,
                     quantity=qty,
                 )
-                # 使用 BaseStrategy 的安全下单方法，自带日志和检查
                 self.submit_order_safe(
                     order,
                     reason=f"Breakout BUY (Price {current_price} > BuyLine {self.buy_line}) & Trend (Price > EMA {ema_val:.2f}) & Vol ({self.current_range:.2f} > {vol_threshold:.2f})",
                 )
 
         # --- 逻辑 2: 做空突破 ---
-        # 必须满足: 价格突破下轨 AND 处于下降趋势 (价格 < EMA)
         elif current_price < self.sell_line and is_downtrend:
-            # 如果有多仓，先平掉所有多仓
             has_long = any(p.is_long for p in positions)
             if has_long:
                 self.log.info("Closing existing long positions before going short")
+                # 平仓前必须取消关联的止损单
+                self.cancel_all_orders(self.instrument_id)
                 self.close_all_positions(self.instrument_id)
                 positions = [p for p in positions if not p.is_long]
 
-            # 无空头仓位则开空
             has_short = any(p.is_short for p in positions)
             if not has_short:
                 order = self.order_factory.market(
@@ -266,6 +384,7 @@ class DualThrust(BaseStrategy):
                 )
 
     def on_stop(self):
+        self.cancel_all_orders(self.instrument_id)
         self.close_all_positions(self.instrument_id)
         self.log.info("Dual Thrust Strategy stopped.")
 
@@ -273,11 +392,10 @@ class DualThrust(BaseStrategy):
         """
         策略重置时调用，清除内部状态
         """
-        super().on_reset()  # Reset BaseStrategy (instrument=None)
+        super().on_reset()
         self.history_bars.clear()
         self.current_range = None
         self.buy_line = None
         self.sell_line = None
-        # 重置指标
         self.ema.reset()
         self.atr.reset()
