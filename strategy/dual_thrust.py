@@ -253,3 +253,13 @@ class DualThrust(Strategy):
     def on_stop(self):
         self.close_all_positions(self.instrument_id)
         self.log.info("Dual Thrust Strategy stopped.")
+
+    def on_reset(self):
+        """
+        策略重置时调用，清除内部状态
+        """
+        self.instrument = None
+        self.history_bars.clear()
+        self.current_range = None
+        self.buy_line = None
+        self.sell_line = None

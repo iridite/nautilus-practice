@@ -484,3 +484,11 @@ class MtfTrendPullbackStrategy(Strategy):
         except Exception as e:
             self.log.error(f"Error calculating quantity: {e}")
             return Quantity.from_int(0)
+
+    def on_reset(self):
+        """
+        策略重置时调用，清除内部状态
+        """
+        self.trade_bars.clear()
+        self.trend_bars.clear()
+        self.current_trend = 0
