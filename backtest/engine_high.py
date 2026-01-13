@@ -117,6 +117,9 @@ def run_high_level(cfg: GlobalConfig, base_dir: Path):
     strategy_params = cfg.strategy.params.copy()
     strategy_params["instrument_id"] = instrument.id
     strategy_params["bar_type"] = bar_type_str
+    # Inject leverage from instrument config if not explicitly set in strategy params
+    if "leverage" not in strategy_params:
+        strategy_params["leverage"] = cfg.instrument.leverage
 
     # Auto-inject MTF params if aux data is present
     if cfg.aux_data:

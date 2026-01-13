@@ -20,13 +20,12 @@ class InstrumentConfig:
     venue: str = "OKX"
     base_currency: str = "ETH"
     quote_currency: str = "USDT"
+    leverage: Optional[int] = None  # 用户设定的杠杆倍数
 
     @property
     def instrument_id(self) -> str:
         if self.venue == "OKX":
-            return (
-                f"{self.quote_currency}-{self.base_currency}-{self.type.value}.{self.venue}"
-            )
+            return f"{self.quote_currency}-{self.base_currency}-{self.type.value}.{self.venue}"
         elif self.venue == "BINANCE":
             if self.type == InstrumentType.SPOT:
                 return f"{self.quote_currency}{self.base_currency}.{self.venue}"

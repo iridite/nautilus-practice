@@ -171,6 +171,9 @@ def run_low_level(cfg: GlobalConfig, base_dir: Path):
     strategy_params = cfg.strategy.params.copy()
     strategy_params["instrument_id"] = inst.id
     strategy_params["bar_type"] = bar_type
+    # Inject leverage from instrument config if not explicitly set in strategy params
+    if "leverage" not in strategy_params:
+        strategy_params["leverage"] = cfg.instrument.leverage
 
     # Inject MTF params if present
     if cfg.aux_data:

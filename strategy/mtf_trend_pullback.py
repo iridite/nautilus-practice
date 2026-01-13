@@ -34,6 +34,7 @@ class MtfTrendPullbackConfig(StrategyConfig):
     # Risk Management
     qty_percent: Decimal = Decimal("0.1")
     stop_loss_pct: Decimal = Decimal("0.02")
+    leverage: Optional[int] = None
 
     # AI Filtering
     use_ai_filter: bool = False
@@ -408,9 +409,16 @@ class MtfTrendPullbackStrategy(Strategy):
         except Exception as e:
             self.log.error(f"Error executing trade: {e}")
 
+    def recommend_leverage(self) -> Optional[int]:
+        """
+        策略可以重写此方法以提供推荐的杠杆倍数。
+        优先级：recommend_leverage() > config.leverage
+        """
+        return None
+
     def calc_order_qty(self, price: Price) -> Quantity:
         """
-        Calculate Position Size based on Equity Percentage.
+        Calculate Position Size based on Equity Percentage and Leverage.
         """
         try:
             accounts = self.cache.accounts()
@@ -441,8 +449,26 @@ class MtfTrendPullbackStrategy(Strategy):
                 )
                 return Quantity.from_int(0)
 
+            # 3. Determine Leverage
+            # Priority: Strategy Recommended > Config Set > Default(1)
+            rec_leverage = self.recommend_leverage()
+            leverage = (
+                rec_leverage if rec_leverage is not None else self.config.leverage
+            )
+            leverage = leverage if leverage is not None else 1
+
+            # 4. Cap by Instrument Maximum Leverage (if available from exchange data)
+            if hasattr(instrument, "max_leverage") and instrument.max_leverage:
+                if leverage > instrument.max_leverage:
+                    self.log.warning(
+                        f"⚠️ Requested leverage {leverage} exceeds instrument max "
+                        f"{instrument.max_leverage}. Capping to limit."
+                    )
+                    leverage = instrument.max_leverage
+
             equity = balance.total
-            target_notional = equity * self.config.qty_percent
+            # Target Notional = Equity * Percentage * Leverage
+            target_notional = equity * self.config.qty_percent * leverage
 
             if price == 0:
                 return Quantity.from_int(0)

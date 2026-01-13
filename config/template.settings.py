@@ -20,11 +20,18 @@ from config.definitions import (
 # ==========================================
 
 # 1. 标的配置
+# 关于杠杆 (leverage) 的说明：
+# 1. 来源优先级：策略推荐杠杆 (Strategy Recommend) > 策略配置 (StrategyConfig.params) > 标的配置 (InstrumentConfig)。
+#    - 优先级 1 (最高): 策略代码动态推荐的杠杆数（通过策略接口输出）。
+#    - 优先级 2: 如果策略未推荐，则采用 `StrategyConfig` 的 `params` 中设置的 `leverage`。
+#    - 优先级 3 (最低): 如果以上均未设置，则采用下方 `InstrumentConfig` 中设定的默认 `leverage`。
+# 2. 自动上限保护：程序会结合交易所返回的 `instrument` 数据，确保最终开仓杠杆不超过交易所允许的最大上限。
 ETH_USDT_BINANCE = InstrumentConfig(
     venue="BINANCE",
     quote_currency="ETH",
     base_currency="USDT",
     type=InstrumentType.SWAP,
+    leverage=3,  # 设定 3 倍杠杆
 )
 
 DOGE_USDT_OKX = InstrumentConfig(
@@ -32,6 +39,7 @@ DOGE_USDT_OKX = InstrumentConfig(
     quote_currency="DOGE",
     base_currency="USDT",
     type=InstrumentType.SWAP,
+    leverage=1,
 )
 
 # 2. 数据配置
@@ -101,6 +109,7 @@ MTF_TREND_STRATEGY = StrategyConfig(
         # Risk Management
         "qty_percent": Decimal("0.05"),
         "stop_loss_pct": Decimal(str(ML_SETTINGS.stop_loss_pct)),
+        "leverage": 3,  # 此处设置策略级的杠杆数，若策略有推荐则覆盖此处
         # AI Filtering
         "use_ai_filter": ML_SETTINGS.use_ai_filter,
         "model_path": ML_SETTINGS.model_path,
