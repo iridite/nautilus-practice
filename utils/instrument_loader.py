@@ -1,4 +1,5 @@
 import json
+from decimal import Decimal
 from pathlib import Path
 from typing import Union
 
@@ -6,7 +7,11 @@ import nautilus_trader.model.instruments as instruments_module
 from nautilus_trader.model.instruments import Instrument
 
 
-def load_instrument(file_path: Union[str, Path]) -> Instrument:
+def load_instrument(
+    file_path: Union[str, Path],
+    maker_fee: float = None,
+    taker_fee: float = None,
+) -> Instrument:
     """
     Loads an instrument from a JSON file.
 
@@ -40,5 +45,10 @@ def load_instrument(file_path: Union[str, Path]) -> Instrument:
         raise ValueError(
             f"Instrument class {instrument_type} does not support from_dict deserialization"
         )
+
+    if maker_fee is not None:
+        data["maker_fee"] = str(maker_fee)
+    if taker_fee is not None:
+        data["taker_fee"] = str(taker_fee)
 
     return cls.from_dict(data)

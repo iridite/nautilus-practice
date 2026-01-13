@@ -26,12 +26,17 @@ from config.definitions import (
 #    - 优先级 2: 如果策略未推荐，则采用 `StrategyConfig` 的 `params` 中设置的 `leverage`。
 #    - 优先级 3 (最低): 如果以上均未设置，则采用下方 `InstrumentConfig` 中设定的默认 `leverage`。
 # 2. 自动上限保护：程序会结合交易所返回的 `instrument` 数据，确保最终开仓杠杆不超过交易所允许的最大上限。
+# 3. 手续费配置 (Fees)：
+#    - 可选配置 maker_fee 和 taker_fee (例如 0.0002 代表 0.02%)。
+#    - 如果不配置且 venue 为 OKX，系统引擎将自动应用行业标准费率 (Maker 0.02%, Taker 0.05%)。
 ETH_USDT_BINANCE = InstrumentConfig(
     venue="BINANCE",
     quote_currency="ETH",
     base_currency="USDT",
     type=InstrumentType.SWAP,
     leverage=3,  # 设定 3 倍杠杆
+    maker_fee=0.0002,
+    taker_fee=0.0005,
 )
 
 DOGE_USDT_OKX = InstrumentConfig(
@@ -40,6 +45,8 @@ DOGE_USDT_OKX = InstrumentConfig(
     base_currency="USDT",
     type=InstrumentType.SWAP,
     leverage=1,
+    maker_fee=0.0002,
+    taker_fee=0.0005,
 )
 
 # 2. 数据配置

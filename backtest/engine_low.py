@@ -7,6 +7,7 @@ from nautilus_trader.adapters.okx import OKX_VENUE
 from nautilus_trader.analysis.tearsheet import create_tearsheet
 from nautilus_trader.backtest.config import BacktestEngineConfig
 from nautilus_trader.backtest.engine import BacktestEngine
+from nautilus_trader.backtest.models.fee import MakerTakerFeeModel
 from nautilus_trader.common.config import LoggingConfig
 from nautilus_trader.config import RiskEngineConfig
 from nautilus_trader.model import BarType, TraderId
@@ -63,11 +64,19 @@ def run_low_level(cfg: GlobalConfig, base_dir: Path):
         book_type=BookType.L1_MBP,
         account_type=AccountType.MARGIN,
         base_currency=USDT,
-        starting_balances=cfg.backtest.initial_balance,  # preconfigured at definitions.py as Money()
+        starting_balances=cfg.backtest.initial_balance,
         trade_execution=True,
+        fee_model=MakerTakerFeeModel(),
     )
 
     # 3. Load Instrument
+    # Determine fees (industry standard defaults for OKX if not provided)
+    maker_fee = cfg.instrument.maker_fee
+    taker_fee = cfg.instrument.taker_fee
+    if cfg.instrument.venue == "OKX" and maker_fee is None and taker_fee is None:
+        maker_fee = 0.0002
+        taker_fee = 0.0005
+
     instrument_file = (
         base_dir
         / "data"
@@ -78,7 +87,9 @@ def run_low_level(cfg: GlobalConfig, base_dir: Path):
 
     if instrument_file.exists():
         print(f"📂 Loading instrument from {instrument_file}")
-        inst = load_instrument(instrument_file)
+        inst = load_instrument(
+            instrument_file, maker_fee=maker_fee, taker_fee=taker_fee
+        )
     else:
         raise FileNotFoundError(f"⚠️ Instrument file not found at {instrument_file}")
     engine.add_instrument(inst)

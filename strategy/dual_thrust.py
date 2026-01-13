@@ -165,6 +165,10 @@ class DualThrust(Strategy):
             balance = account.balance(self.instrument.quote_currency)
             if not balance or balance.total <= 0:
                 return self.instrument.make_qty(self.config.trade_size)
+            else:
+                self.log.warn(
+                    f"Balance is not enough to make new positions: {balance.total}"
+                )
 
             # 杠杆确定
             # 优先级：策略推荐 > 配置设定 > 默认1

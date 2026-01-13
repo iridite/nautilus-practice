@@ -6,6 +6,7 @@ from nautilus_trader.backtest.config import (
     BacktestDataConfig,
     BacktestRunConfig,
     BacktestVenueConfig,
+    MakerTakerFeeModelConfig,
 )
 from nautilus_trader.backtest.node import (
     BacktestEngineConfig,
@@ -38,7 +39,17 @@ def run_high_level(cfg: GlobalConfig, base_dir: Path):
 
     if instrument_file.exists():
         print(f"📂 Loading instrument from {instrument_file}")
-        instrument = load_instrument(instrument_file)
+
+        # Determine fees (industry standard defaults for OKX if not provided)
+        maker_fee = cfg.instrument.maker_fee
+        taker_fee = cfg.instrument.taker_fee
+        if cfg.instrument.venue == "OKX" and maker_fee is None and taker_fee is None:
+            maker_fee = 0.0002
+            taker_fee = 0.0005
+
+        instrument = load_instrument(
+            instrument_file, maker_fee=maker_fee, taker_fee=taker_fee
+        )
     else:
         raise FileNotFoundError(
             f"❌ Instrument definition not found at: {instrument_file}\n"
@@ -90,6 +101,7 @@ def run_high_level(cfg: GlobalConfig, base_dir: Path):
     gc.collect()
 
     # 4. Configure Venue
+    # Use MakerTakerFeeModelConfig which pulls fees directly from the instrument
     venue_configs = [
         BacktestVenueConfig(
             name=cfg.instrument.venue,
@@ -97,6 +109,7 @@ def run_high_level(cfg: GlobalConfig, base_dir: Path):
             account_type="MARGIN",
             base_currency="USDT",
             starting_balances=cfg.backtest.initial_balance,
+            fee_model=MakerTakerFeeModelConfig(),
         ),
     ]
 

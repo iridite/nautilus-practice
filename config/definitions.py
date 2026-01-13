@@ -21,6 +21,8 @@ class InstrumentConfig:
     base_currency: str = "ETH"
     quote_currency: str = "USDT"
     leverage: Optional[int] = None  # 用户设定的杠杆倍数
+    maker_fee: Optional[float] = None
+    taker_fee: Optional[float] = None
 
     @property
     def instrument_id(self) -> str:
