@@ -6,7 +6,8 @@ from nautilus_trader.model.data import Bar, BarType
 from nautilus_trader.model.enums import OrderSide, OrderType, PositionSide, TimeInForce
 from nautilus_trader.model.events import PositionOpened
 from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.objects import Price
+
+# from nautilus_trader.model.objects import Price
 from nautilus_trader.model.orders import Order
 
 from strategy.base import BaseStrategy, BaseStrategyConfig
@@ -321,6 +322,12 @@ class DualThrust(BaseStrategy):
 
         current_price = bar.close
 
+        # --- 0. 管理未成交挂单 ---
+        # 每次 Bar 更新，Buy/Sell Line 会变动，先取消所有旧的 Limit 入场单
+        for order in self.cache.orders_open(instrument_id=self.instrument_id):
+            if order.order_type == OrderType.LIMIT:
+                self.cancel_order(order)
+
         # --- 过滤器检查 ---
         atr_val = Decimal(str(self.atr.value))
         vol_threshold = atr_val * Decimal(str(self.config.atr_threshold))
@@ -351,14 +358,23 @@ class DualThrust(BaseStrategy):
 
             has_long = any(p.is_long for p in positions)
             if not has_long:
-                order = self.order_factory.market(
+                # 改为 Limit 单挂在 Buy Line (Maker)，减少 Taker 手续费
+                precision = (
+                    self.instrument.price_precision
+                    if self.instrument and self.instrument.price_precision is not None
+                    else 8
+                )
+                buy_price_rnd = round(self.buy_line, precision)
+                limit_price = self.instrument.make_price(buy_price_rnd)
+                order = self.order_factory.limit(
                     instrument_id=self.instrument_id,
                     order_side=OrderSide.BUY,
                     quantity=qty,
+                    price=limit_price,
                 )
                 self.submit_order_safe(
                     order,
-                    reason=f"Breakout BUY (Price {current_price} > BuyLine {self.buy_line}) & Trend (Price > EMA {ema_val:.2f}) & Vol ({self.current_range:.2f} > {vol_threshold:.2f})",
+                    reason=f"Breakout BUY Limit (Price {current_price} > BuyLine {self.buy_line}) & Trend (Price > EMA {ema_val:.2f}) & Vol ({self.current_range:.2f} > {vol_threshold:.2f})",
                 )
 
         # --- 逻辑 2: 做空突破 ---
@@ -373,14 +389,23 @@ class DualThrust(BaseStrategy):
 
             has_short = any(p.is_short for p in positions)
             if not has_short:
-                order = self.order_factory.market(
+                # 改为 Limit 单挂在 Sell Line (Maker)
+                precision = (
+                    self.instrument.price_precision
+                    if self.instrument and self.instrument.price_precision is not None
+                    else 8
+                )
+                sell_price_rnd = round(self.sell_line, precision)
+                limit_price = self.instrument.make_price(sell_price_rnd)
+                order = self.order_factory.limit(
                     instrument_id=self.instrument_id,
                     order_side=OrderSide.SELL,
                     quantity=qty,
+                    price=limit_price,
                 )
                 self.submit_order_safe(
                     order,
-                    reason=f"Breakout SELL (Price {current_price} < SellLine {self.sell_line}) & Trend (Price < EMA {ema_val:.2f}) & Vol ({self.current_range:.2f} > {vol_threshold:.2f})",
+                    reason=f"Breakout SELL Limit (Price {current_price} < SellLine {self.sell_line}) & Trend (Price < EMA {ema_val:.2f}) & Vol ({self.current_range:.2f} > {vol_threshold:.2f})",
                 )
 
     def on_stop(self):
