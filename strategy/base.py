@@ -3,7 +3,7 @@ from typing import Optional
 
 from nautilus_trader.config import StrategyConfig
 from nautilus_trader.model.enums import OrderSide, OrderType, PositionSide, TimeInForce
-from nautilus_trader.model.events import PositionOpened
+from nautilus_trader.model.events import PositionClosed, PositionOpened
 from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orders import MarketOrder, Order
@@ -32,21 +32,25 @@ class BaseStrategyConfig(StrategyConfig):
 
     # --- Risk Management ---
     # Stop Loss Percentage (e.g., 0.015 for 1.5%)
-    # If set, a Stop Market order is automatically placed upon position opening.
+    # If set, a Stop Market order is automatically managed to prevent major drawdowns.
     stop_loss_pct: Optional[float] = None
+
+    # Toggle for automated stop loss management.
+    use_auto_sl: bool = True
 
 
 class BaseStrategy(Strategy):
     """
     Base Strategy class encapsulating common logic for:
-    1. Instrument initialization
-    2. Unified position sizing calculation (Fixed vs Dynamic)
-    3. Safe order submission with validation and enhanced logging
+    1. Instrument initialization and state management.
+    2. Unified position sizing calculation (Fixed vs Dynamic).
+    3. Safe order submission with validation and enhanced logging.
+    4. Robust auto-managed stop loss mechanism within the bar lifecycle.
     """
 
     def __init__(self, config: BaseStrategyConfig):
         super().__init__(config)
-        self.base_config = config  # Typed alias for easier access
+        self.base_config = config
         self.instrument: Optional[Instrument] = None
 
     def on_start(self):
@@ -54,7 +58,6 @@ class BaseStrategy(Strategy):
         Lifecycle hook: Strategy Setup.
         Subclasses should call super().on_start() to ensure instrument is loaded.
         """
-        # Attempt to load instrument if ID is provided in config
         if hasattr(self.config, "instrument_id") and self.config.instrument_id:
             self.instrument = self.cache.instrument(self.config.instrument_id)
             if not self.instrument:
@@ -63,251 +66,181 @@ class BaseStrategy(Strategy):
                 )
             else:
                 self.log.info(f"BaseStrategy: Instrument {self.instrument.id} loaded.")
-
-                # warning on non-one order multiplier
                 if self.instrument.multiplier and self.instrument.multiplier != 1:
                     self.log.warning(
-                        f"Current instrument have non-one order multiplier, it is {self.instrument.multiplier}"
+                        f"Instrument has non-standard multiplier: {self.instrument.multiplier}"
                     )
 
-    def on_position_opened(self, event: PositionOpened):
+    def on_bar(self, bar):
         """
-        Event handler for PositionOpened.
-        Implements automatic Stop Loss placement if configured.
+        Base lifecycle for bar processing.
+        Subclasses MUST call super().on_bar(bar) to enable automated risk management.
         """
-        super().on_position_opened(event)
+        self._manage_auto_stop_loss()
 
-        # 1. Check if stop loss is enabled in config
+    def _manage_auto_stop_loss(self):
+        """
+        Monitors open positions and ensures a stop-loss order exists if configured.
+        Priority: If the strategy has already placed a stop order (e.g., ATR stop),
+        this managed SL will back off to avoid conflicts.
+        """
         if (
-            self.base_config.stop_loss_pct is None
+            not self.base_config.use_auto_sl
+            or self.base_config.stop_loss_pct is None
             or self.base_config.stop_loss_pct <= 0
         ):
             return
 
-        # 2. Check if the event matches our main instrument
-        # Note: If strategy trades multiple instruments, logic should be adjusted.
-        # Here we assume BaseStrategy primarily manages self.instrument.
-        if self.instrument and event.instrument_id != self.instrument.id:
+        instrument = self.get_instrument()
+        positions = self.cache.positions_open(instrument_id=instrument.id)
+
+        if not positions:
             return
 
-        # 3. Calculate Stop Price
-        entry_price = event.avg_px_open
-        qty = event.quantity
-        sl_pct = Decimal(str(self.base_config.stop_loss_pct))
+        # Check for any existing stop orders for this instrument
+        open_orders = self.cache.orders_open(instrument_id=instrument.id)
+        has_stop = any(
+            order.order_type in (OrderType.STOP_MARKET, OrderType.STOP_LIMIT)
+            for order in open_orders
+        )
 
-        stop_price = Decimal(0)
-        sl_side = None
+        if has_stop:
+            return
 
-        if event.side == PositionSide.LONG:
-            # Long Position -> Sell Stop
-            stop_price = Decimal(str(entry_price)) * (1 - sl_pct)
-            sl_side = OrderSide.SELL
-        else:
-            # Short Position -> Buy Stop
-            stop_price = Decimal(str(entry_price)) * (1 + sl_pct)
-            sl_side = OrderSide.BUY
+        for pos in positions:
+            self.log.info(
+                f"BaseStrategy: Auto-managing missing SL for position {str(pos.id)[:8]}"
+            )
 
-        # 4. Rounding and Price Creation
-        # Ensure we use the instrument's precision
-        try:
-            instrument = self.get_instrument()
+            entry_price = Decimal(str(pos.avg_px_open))
+            qty = pos.quantity
+            sl_pct = Decimal(str(self.base_config.stop_loss_pct))
 
-            # Using make_price logic via instrument precision if available,
-            # or relying on instrument.make_price to handle it
+            if pos.side == PositionSide.LONG:
+                stop_price = entry_price * (1 - sl_pct)
+                sl_side = OrderSide.SELL
+            else:
+                stop_price = entry_price * (1 + sl_pct)
+                sl_side = OrderSide.BUY
+
+            # Round to instrument precision
             if instrument.price_precision:
                 stop_price = round(stop_price, instrument.price_precision)
 
-            trigger_price_obj = instrument.make_price(stop_price)
+            try:
+                trigger_price = instrument.make_price(stop_price)
 
-            # 5. Create and Submit Stop Order
-            sl_order = self.order_factory.stop_market(
-                instrument_id=event.instrument_id,
-                order_side=sl_side,
-                quantity=qty,
-                trigger_price=trigger_price_obj,
-                # Disable reduce_only to avoid rejections in backtesting if position sync lags or logic conflicts
-                reduce_only=False,
-                time_in_force=TimeInForce.GTC,
-            )
+                # Use reduce_only=False for better compatibility with HEDGING backtests.
+                sl_order = self.order_factory.stop_market(
+                    instrument_id=instrument.id,
+                    order_side=sl_side,
+                    quantity=qty,
+                    trigger_price=trigger_price,
+                    reduce_only=False,
+                    time_in_force=TimeInForce.GTC,
+                )
 
-            self.submit_order_safe(
-                sl_order,
-                reason=f"Auto Stop Loss ({self.base_config.stop_loss_pct:.1%}) triggered by PositionOpened",
-            )
+                self.submit_order_safe(
+                    sl_order,
+                    reason=f"Auto-Managed SL ({self.base_config.stop_loss_pct:.1%})",
+                )
+            except Exception as e:
+                self.log.error(f"Failed to submit auto-managed SL: {e}")
 
-        except Exception as e:
-            self.log.error(f"Failed to submit Auto Stop Loss order: {e}")
-
-    def on_reset(self):
+    def on_position_closed(self, event: PositionClosed):
         """
-        Lifecycle hook: Strategy Reset.
-        Clears internal state to prevent issues during multiple backtest runs.
+        Event handler for PositionClosed.
+        Ensures all remaining orders are cancelled to prevent "ghost" orders.
         """
-        self.instrument = None
+        super().on_position_closed(event)
+        if self.instrument and event.instrument_id == self.instrument.id:
+            self.cancel_all_orders(event.instrument_id)
+            self.log.info(
+                f"BaseStrategy: Position closed for {event.instrument_id}, all orders cancelled."
+            )
 
     def get_instrument(self) -> Instrument:
         """
-        Helper to get the main instrument, initializing it if necessary.
+        Helper to get the main instrument, initializing if necessary.
         """
         if self.instrument:
             return self.instrument
-
         if hasattr(self.config, "instrument_id") and self.config.instrument_id:
             self.instrument = self.cache.instrument(self.config.instrument_id)
-
         if not self.instrument:
             raise ValueError(
-                "Instrument not initialized. "
-                "Ensure 'instrument_id' is in config and valid, or call super().on_start()."
+                "Instrument not initialized. Ensure super().on_start() was called."
             )
         return self.instrument
 
-    def recommend_leverage(self) -> Optional[int]:
-        """
-        Override this method to provide dynamic leverage recommendations.
-        Priority: recommend_leverage() > config.leverage > 1
-        """
-        return None
-
     def calculate_order_qty(self, price: float | Decimal) -> Quantity:
         """
-        Unified logic for calculating order quantity.
-
-        Logic:
-        1. If config.trade_size is set -> Use Fixed Quantity.
-        2. If config.qty_percent is set -> Use Dynamic Calculation:
-           Qty = (Equity * qty_percent * effective_leverage) / Price
-        3. Else -> Log Error & Return 0.
-
-        Includes checks for:
-        - Account Balance/Equity
-        - Instrument Max Leverage
-        - Zero/Negative Price
+        Unified logic for calculating order quantity (Fixed vs Dynamic).
         """
         price = Decimal(str(price))
         if price <= 0:
-            self.log.error(f"Invalid price for calculation: {price}")
             return Quantity.from_int(0)
 
         instrument = self.get_instrument()
 
-        # --- Mode 1: Fixed Trade Size ---
+        # Mode 1: Fixed Trade Size
         if self.base_config.trade_size is not None and self.base_config.trade_size > 0:
-            # Direct fixed quantity
-            try:
-                qty = instrument.make_qty(self.base_config.trade_size)
-                return qty
-            except Exception as e:
-                self.log.error(
-                    f"Error creating fixed qty from {self.base_config.trade_size}: {e}"
-                )
-                return Quantity.from_int(0)
+            return instrument.make_qty(self.base_config.trade_size)
 
-        # --- Mode 2: Dynamic Position Sizing ---
+        # Mode 2: Dynamic Percentage Sizing
         if (
             self.base_config.qty_percent is not None
             and self.base_config.qty_percent > 0
         ):
             return self._calculate_dynamic_qty(instrument, price)
 
-        # --- No valid configuration ---
-        self.log.error(
-            "Position sizing configuration missing: Set 'trade_size' or 'qty_percent'."
-        )
         return Quantity.from_int(0)
 
     def _calculate_dynamic_qty(
         self, instrument: Instrument, price: Decimal
     ) -> Quantity:
-        """
-        Internal method for dynamic quantity calculation based on equity.
-        """
         try:
-            # 1. Retrieve Account/Balance
-            # Note: Assuming single account or first available account for simplicity.
-            # In multi-account setups, logic to select the correct account ID is needed.
             accounts = self.cache.accounts()
             if not accounts:
-                self.log.error("No accounts found in cache.")
                 return Quantity.from_int(0)
 
-            # Prefer account matching the quote currency if possible, else take first
-            account = None
-            for acc in accounts:
-                if acc.balance(instrument.quote_currency) is not None:
-                    account = acc
-                    break
-            if not account:
-                account = accounts[0]
-
+            account = next(
+                (a for a in accounts if a.balance(instrument.quote_currency)),
+                accounts[0],
+            )
             balance = account.balance(instrument.quote_currency)
             if not balance:
-                self.log.error(
-                    f"No balance found for quote currency: {instrument.quote_currency}"
-                )
                 return Quantity.from_int(0)
 
-            # Use .as_decimal() to extract Decimal from Money object for arithmetic
             equity = balance.total.as_decimal()
-
             if equity <= 0:
-                self.log.warn(f"Insufficient equity: {equity}. Cannot open position.")
                 return Quantity.from_int(0)
 
-            # 2. Determine Leverage
-            rec_leverage = self.recommend_leverage()
-            leverage = (
-                rec_leverage if rec_leverage is not None else self.base_config.leverage
-            )
-            # Ensure leverage is at least 1
-            leverage = max(1, leverage)
-
-            # 3. Cap Leverage by Instrument Limits
+            leverage = max(1, self.base_config.leverage)
             if hasattr(instrument, "max_leverage") and instrument.max_leverage:
-                if leverage > instrument.max_leverage:
-                    # self.log.debug(f"Capping leverage {leverage} -> {instrument.max_leverage}")
-                    leverage = instrument.max_leverage
+                leverage = min(leverage, instrument.max_leverage)
 
-            # 4. Calculate Notional and Quantity
             target_notional = equity * self.base_config.qty_percent * leverage
             raw_qty = target_notional / price
 
-            # Account for instrument multiplier (e.g. OKX SWAP contract size = 0.1 or 0.01 etc.)
-            # If multiplier is 0.1, it means 1 contract = 0.1 units of underlying.
-            # So we need 10x more contracts to match the target notional.
             if instrument.multiplier:
                 multiplier = Decimal(str(instrument.multiplier))
-                if multiplier > 0 and multiplier != 1:
+                if multiplier > 0:
                     raw_qty = raw_qty / multiplier
 
-            # Check against minimum size increment to avoid "rounded to zero" errors
             if instrument.size_increment:
-                try:
-                    min_size = instrument.size_increment.as_decimal()
-                    if min_size > 0 and raw_qty < min_size:
-                        self.log.warn(
-                            f"Calculated qty {raw_qty:.8f} is below instrument min size {min_size}. "
-                            "Skipping trade."
-                        )
-                        return Quantity.from_int(0)
-                except AttributeError:
-                    pass  # Fallback: let make_qty handle validation if as_decimal fails
+                min_size = instrument.size_increment.as_decimal()
+                if raw_qty < min_size:
+                    return Quantity.from_int(0)
 
             return instrument.make_qty(raw_qty)
-
-        except ValueError as e:
-            if "rounded to zero" in str(e):
-                self.log.warn(f"Qty too small (rounded to zero): {e}")
-                return Quantity.from_int(0)
-            self.log.error(f"ValueError in dynamic qty calculation: {e}")
-            return Quantity.from_int(0)
         except Exception as e:
-            self.log.error(f"Error in dynamic qty calculation: {e}")
+            self.log.error(f"Dynamic qty calculation error: {e}")
             return Quantity.from_int(0)
 
     def submit_order_safe(self, order: Order, reason: str = ""):
         """
-        Submit an order with pre-checks and standardized formatting logging.
+        Submit an order with validation and standardized logging.
         """
         if order is None:
             self.log.error("Cannot submit None order.")
@@ -319,10 +252,7 @@ class BaseStrategy(Strategy):
             )
             return
 
-        # Submit
         self.submit_order(order)
-
-        # Log
         self._log_order_submission(order, reason)
 
     def _log_order_submission(self, order: Order, reason: str):
@@ -330,8 +260,13 @@ class BaseStrategy(Strategy):
         Pretty-print order submission details.
         """
         side = "BUY" if order.side == OrderSide.BUY else "SELL"
-        order_type = "MARKET" if isinstance(order, MarketOrder) else "LIMIT"
-        price_str = f"{order.price}" if hasattr(order, "price") else "Market"
+        order_type = str(order.order_type)
+
+        price_str = "Market"
+        if hasattr(order, "trigger_price"):
+            price_str = f"Trigger@{order.trigger_price}"
+        elif hasattr(order, "price"):
+            price_str = str(order.price)
 
         self.log.info(
             f"\n{'=' * 60}\n"
@@ -342,3 +277,9 @@ class BaseStrategy(Strategy):
             f"   Reason:     {reason}\n"
             f"{'=' * 60}"
         )
+
+    def on_reset(self):
+        """
+        Strategy Reset.
+        """
+        self.instrument = None

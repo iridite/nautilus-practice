@@ -122,6 +122,7 @@ class MtfTrendPullbackStrategy(BaseStrategy):
         """
         Handle incoming bars.
         """
+        super().on_bar(bar)
         try:
             # 1. Convert Bar to Dict for DataFrame construction
             # Using dicts is slightly faster for appending than creating single-row DFs repeatedly

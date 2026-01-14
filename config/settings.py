@@ -127,18 +127,13 @@ def get_data_config(
 # 3. 动态构建配置对象 (Dynamic Construction)
 # ==========================================
 
-# A. 标的
 active_instrument = get_instrument_config(SYMBOL, QUOTE, VENUE, INSTRUMENT_TYPE)
 
-# B. 数据
-# 主数据 (用于交易执行)
 data_main = get_data_config(SYMBOL, QUOTE, VENUE, MAIN_TIMEFRAME, START_DATE, END_DATE)
-# 辅助数据 (用于趋势判断 - MTF)
 data_trend = get_data_config(
     SYMBOL, QUOTE, VENUE, TREND_TIMEFRAME, START_DATE, END_DATE
 )
 
-# C. 机器学习/风控配置
 ML_SETTINGS = MLConfig(
     ema_period=50,
     rsi_period=14,
@@ -147,7 +142,7 @@ ML_SETTINGS = MLConfig(
     stop_loss_pct=0.015,
     take_profit_pct=0.03,
     horizon_bars=36,
-    use_ai_filter=False,  # 默认关闭，按需开启
+    use_ai_filter=False,
     model_path="data/models/lgbm_mtf_v1.joblib",
     min_prob_threshold=0.3,
     record_features=True,
@@ -155,7 +150,6 @@ ML_SETTINGS = MLConfig(
 )
 
 
-# D. 策略配置生成函数 (Strategy Factory)
 def get_dual_thrust_strategy(
     instrument: InstrumentConfig,
     main_data: DataConfig,
@@ -183,6 +177,8 @@ def get_dual_thrust_strategy(
             "leverage": leverage,
             # 风控 (Risk Management)
             "stop_loss_atr_mult": 1.5,
+            "stop_loss_pct": 0.015,
+            "use_auto_sl": False,  # DualThrust uses its own ATR stop, so disable base auto-SL
         },
     )
 
@@ -207,17 +203,16 @@ def get_mtf_trend_strategy(
             "stop_loss_pct": 0.015,
             "leverage": 1,
             "use_ai_filter": ml_settings.use_ai_filter,
+            "use_auto_sl": True,  # MtfTrendPullback uses managed SL from BaseStrategy
         },
     )
 
 
 # 选择并实例化策略
-# DUAL_THRUST (Dual Thrust Breakout Strategy)
 DUAL_THRUST_STRATEGY = get_dual_thrust_strategy(
     active_instrument, data_main, data_trend, RISK_QTY_PERCENT, STRATEGY_LEVERAGE
 )
 
-# MTF_TREND (备用)
 MTF_TREND_STRATEGY = get_mtf_trend_strategy(
     active_instrument, data_main, data_trend, ML_SETTINGS
 )

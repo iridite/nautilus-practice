@@ -111,6 +111,8 @@ class DualThrust(BaseStrategy):
         """
         处理新的 Bar 数据
         """
+        super().on_bar(bar)
+
         # --- A. 处理 4H 数据 (趋势与轨道计算层) ---
         if self.trend_bar_type and bar.bar_type == self.trend_bar_type:
             self.ema_4h.handle_bar(bar)
@@ -239,9 +241,12 @@ class DualThrust(BaseStrategy):
                     quantity=qty,
                     trigger_price=trigger_price,
                     time_in_force=TimeInForce.GTC,
-                    reduce_only=True,
+                    reduce_only=False,
                 )
-                self.submit_order(sl_order)
+                self.submit_order_safe(
+                    sl_order,
+                    reason=f"DualThrust ATR Stop Loss (SELL) @ {trigger_price}",
+                )
 
         # --- 4. 逻辑 B: 做空突破 ---
         elif self.sell_line and current_price < self.sell_line and is_downtrend:
@@ -280,9 +285,12 @@ class DualThrust(BaseStrategy):
                     quantity=qty,
                     trigger_price=trigger_price,
                     time_in_force=TimeInForce.GTC,
-                    reduce_only=True,
+                    reduce_only=False,
                 )
-                self.submit_order(sl_order)
+                self.submit_order_safe(
+                    sl_order,
+                    reason=f"DualThrust ATR Stop Loss (BUY) @ {trigger_price}",
+                )
 
     def on_stop(self):
         """
