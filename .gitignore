@@ -20,4 +20,4 @@ log/**
 models/
 
 # Ignore configuration files
-config/settings.py
+# config/settings.py # since there is only me doing development, I will keep this unignored for now
