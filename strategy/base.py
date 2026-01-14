@@ -3,14 +3,14 @@ from typing import Optional
 
 from nautilus_trader.config import StrategyConfig
 from nautilus_trader.model.enums import OrderSide, OrderType, PositionSide, TimeInForce
-from nautilus_trader.model.events import PositionClosed, PositionOpened
+from nautilus_trader.model.events import PositionClosed
 from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.model.orders import MarketOrder, Order
+from nautilus_trader.model.orders import Order
 from nautilus_trader.trading.strategy import Strategy
 
 
-class BaseStrategyConfig(StrategyConfig):
+class BaseStrategyConfig(StrategyConfig):  # pyright: ignore[reportGeneralTypeIssues]
     """
     Base configuration for strategies, including common risk management and position sizing parameters.
     """
@@ -51,7 +51,7 @@ class BaseStrategy(Strategy):
     def __init__(self, config: BaseStrategyConfig):
         super().__init__(config)
         self.base_config = config
-        self.instrument: Optional[Instrument] = None
+        self.instrument: Instrument = None
 
     def on_start(self):
         """

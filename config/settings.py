@@ -1,8 +1,5 @@
-import os
-from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
-from typing import Optional
 
 from nautilus_trader.model import Money
 from nautilus_trader.model.currencies import USDT
@@ -24,7 +21,7 @@ from config.definitions import (
 # ==========================================
 
 # 交易标的定义
-SYMBOL = "BTC"
+SYMBOL = "ETH"
 QUOTE = "USDT"
 VENUE = "OKX"  # OKX or BINANCE
 INSTRUMENT_TYPE = InstrumentType.SWAP  # Usually SWAP for perps
@@ -32,6 +29,7 @@ INSTRUMENT_TYPE = InstrumentType.SWAP  # Usually SWAP for perps
 # 回测时间段
 START_DATE = "2020-01-01"
 END_DATE = "2026-01-14"
+# 有些币种，如 SOL 没有那么长的历史，获取数据会失败需要特别注意
 
 # 数据配置 (Data Configuration)
 # 策略使用的主周期和趋势辅助周期
@@ -41,8 +39,8 @@ MAIN_TIMEFRAME = "1h"
 TREND_TIMEFRAME = "4h"
 
 # 策略参数 (Strategy Parameters)
-STRATEGY_LEVERAGE = 1
-RISK_QTY_PERCENT = Decimal("0.5")  # 每次交易占权益百分比
+STRATEGY_LEVERAGE = 5
+RISK_QTY_PERCENT = Decimal("0.2")  # 每次交易占权益百分比
 
 
 # ==========================================
