@@ -16,21 +16,32 @@ from config.definitions import (
 )
 
 # ==========================================
-# 用户配置区域
+# 用户配置区域 (User Configuration)
 # ==========================================
 
-# 1. 标的配置
+# 1. 标的配置 (Instrument Configuration)
+# 关于杠杆 (leverage) 的说明：
+# 1. 来源优先级：策略推荐杠杆 (Strategy Recommend) > 策略配置 (StrategyConfig.params) > 标的配置 (InstrumentConfig)。
+#    - 优先级 1 (最高): 策略代码动态推荐的杠杆数。
+#    - 优先级 2: 如果策略未推荐，则采用 `StrategyConfig` 的 `params` 中设置的 `leverage`。
+#    - 优先级 3 (最低): 如果以上均未设置，则采用下方 `InstrumentConfig` 中设定的默认 `leverage`。
+# 2. 自动上限保护：程序会结合交易所返回的 `instrument` 数据，确保最终开仓杠杆不超过交易所允许的最大上限。
+# 3. 手续费配置 (Fees)：
+#    - 可选配置 maker_fee 和 taker_fee (例如 0.0002 代表 0.02%)。
+#    - 如果不配置且 venue 为 OKX，系统引擎将自动应用行业标准费率 (Maker 0.02%, Taker 0.05%)。
+
 ETH_USDT_BINANCE_SWAP = InstrumentConfig(
     venue="BINANCE",
     quote_currency="ETH",
     base_currency="USDT",
     type=InstrumentType.SWAP,
     leverage=3,
+    maker_fee=0.0002,
+    taker_fee=0.0005,
 )
 
-# 1. 标的配置
 ETH_USDT_OKX_SWAP = InstrumentConfig(
-    venue="OKX",  # be warned: on the instrument definition have a 0.1x multiplier
+    venue="OKX",  # Note: OKX ETH-USDT-SWAP usually has a 0.1x multiplier defined in instrument file
     quote_currency="ETH",
     base_currency="USDT",
     type=InstrumentType.SWAP,
@@ -45,11 +56,13 @@ DOGE_USDT_OKX_SWAP = InstrumentConfig(
     base_currency="USDT",
     type=InstrumentType.SWAP,
     leverage=1,
+    maker_fee=0.0002,
+    taker_fee=0.0005,
 )
 
-# 2. 数据配置
-# 请确保文件名与 data/raw 下的一致
-# TODO 出去 csv name 让 程序自己抓取并合成
+# 2. 数据配置 (Data Configuration)
+# 请确保文件名与 data/raw 下的一致。Nautilus 会在加载外部 CSV 时自动附加 '-EXTERNAL' 后缀。
+
 DATA_4H = DataConfig(
     csv_file_name="okx-ETHUSDT-4h-2020-01-01_2026-01-13.csv",
     bar_aggregation=BarAggregation.HOUR,
@@ -78,7 +91,7 @@ DATA_5M = DataConfig(
     price_type=PriceType.LAST,
 )
 
-# 3. ML 配置 (AI 过滤参数)
+# 3. ML 配置 (AI Filter/Feature Settings)
 ML_SETTINGS = MLConfig(
     ema_period=50,
     rsi_period=14,
@@ -94,15 +107,14 @@ ML_SETTINGS = MLConfig(
     record_path="data/record/features_log.csv",
 )
 
-# 4. 策略配置
+# 4. 策略配置 (Strategy Configuration)
 
-# MTF_TREND
+# MTF_TREND (Multi-Timeframe Trend Strategy)
 MTF_TREND_STRATEGY = StrategyConfig(
     name="MtfTrendPullbackStrategy",  # 必须与策略类名一致
     module_path="strategy.mtf_trend_pullback",
     config_class="MtfTrendPullbackConfig",
     params={
-        # Instrument & BarTypes (will be auto-filled/validated in runner if possible, or manual here)
         "instrument_id": "ETHUSDT-PERP.BINANCE",
         "trend_bar_type": "ETHUSDT-PERP.BINANCE-1-HOUR-LAST-EXTERNAL",
         "trade_bar_type": "ETHUSDT-PERP.BINANCE-5-MINUTE-LAST-EXTERNAL",
@@ -113,7 +125,7 @@ MTF_TREND_STRATEGY = StrategyConfig(
         "rsi_overbought": ML_SETTINGS.rsi_overbought,
         # Risk Management
         "qty_percent": Decimal("0.05"),
-        "stop_loss_pct": Decimal(str(ML_SETTINGS.stop_loss_pct)),
+        "stop_loss_pct": 0.015,  # 1.5%
         "leverage": 1,
         # AI Filtering
         "use_ai_filter": ML_SETTINGS.use_ai_filter,
@@ -125,40 +137,43 @@ MTF_TREND_STRATEGY = StrategyConfig(
     },
 )
 
-# DUAL_THRUST (New)
+# DUAL_THRUST (Dual Thrust Breakout Strategy)
 DUAL_THRUST_STRATEGY = StrategyConfig(
     name="DualThrust",  # 必须与策略类名一致
     module_path="strategy.dual_thrust",
     config_class="DualThrustConfig",
     params={
-        # 使用 4H 数据对应的 ID 和 BarType
-        # 注意: 外部加载的csv数据，Nautilus通常会附加 '-EXTERNAL'
         "instrument_id": "ETHUSDT-PERP.BINANCE",
         "bar_type": "ETHUSDT-PERP.BINANCE-4-HOUR-LAST-EXTERNAL",
-        # 核心参数
-        "lookback_period": 4,  # N=4, 4个4H周期
+        # 核心参数 (Core Params)
+        "lookback_period": 4,
         "k1": 0.5,
         "k2": 0.5,
-        # 交易量: 0.02 ETH (约为60-70u，适合50u挑战的激进仓位或配合杠杆)
-        "qty_percent": Decimal("0.5"),
+        # 下单设置 (Position Sizing)
+        # 1. qty_percent: 按账户总权益的比例计算下单量。系统已自动处理合约乘数修正。
+        "qty_percent": Decimal("0.2"),
+        # 2. trade_size: 固定下单张数。若启用此项请取消注释，它会覆盖 qty_percent。
         # "trade_size": 1,
-        "leverage": 3,
-        "stop_loss_pct": 0.015,
-        # 需要检查 reduce_only 带来的可能影响
-        # 目前为了保证回测流畅运行，使用了 `reduce_only=False`。在实盘接入时（Live Mode），建议重新测试 `reduce_only=True` 的兼容性，因为那是更安全的行业标准。
+        "leverage": 5,
+        # 风险管理 (Risk Management)
+        # stop_loss_pct: 强制止损比例。
+        # - 计算方式：入场价格的百分比损失 (即对该笔仓位收益率的监控)。
+        # - 禁用方式：设置为 None 或 0。
+        "stop_loss_pct": 0.05,  # 5% SL on position entry price
+        # 注意: 目前止损单使用 reduce_only=False 以确保回测存单成功。
         "use_trailing_stop": False,
         "trailing_stop_pct": 0.02,
     },
 )
 
-# 5. 回测环境配置
+# 5. 回测环境配置 (Backtest Environment)
 BACKTEST_SETTINGS = BacktestConfig(
     # start_date="2024-01-01",
-    # end_date="2026-01-01",
+    # end_date="2024-08-01",
     initial_balance=[Money("100", USDT)],
 )
 
-# 6. 日志配置
+# 6. 日志配置 (Logging Configuration)
 LOGGING_SETTINGS = LogConfig(
     log_level="DEBUG",
     log_level_file="DEBUG",
@@ -167,21 +182,22 @@ LOGGING_SETTINGS = LogConfig(
     log_component_levels={
         "Portfolio": "INFO",
         "BacktestEngine": "INFO",
-        "DualThrust": "DEBUG",  # 监控新策略
+        "DualThrust": "DEBUG",
+        "MtfTrendPullbackStrategy": "DEBUG",
     },
     log_components_only=True,
 )
 
 # ==========================================
-# 激活配置
+# 激活配置 (Active Configuration)
 # ==========================================
 
-# 这里定义当前生效的配置
+# 在此处定义当前回测运行所使用的组合
 current_config = GlobalConfig(
-    instrument=ETH_USDT_OKX_SWAP,  # 切换到 ETH
-    data=DATA_4H,  # 使用 4H 数据配合 Dual Thrust
-    aux_data=None,  # Dual Thrust 是单周期策略，不需要辅助数据
-    strategy=DUAL_THRUST_STRATEGY,  # 切换到 Dual Thrust 策略
+    instrument=ETH_USDT_OKX_SWAP,  # 使用标的
+    data=DATA_4H,  # 主数据源
+    aux_data=None,  # 辅助数据源 (Dual Thrust 不需要，MTF 需要 DATA_1H)
+    strategy=DUAL_THRUST_STRATEGY,  # 运行策略
     backtest=BACKTEST_SETTINGS,
     logging=LOGGING_SETTINGS,
     ml=ML_SETTINGS,
