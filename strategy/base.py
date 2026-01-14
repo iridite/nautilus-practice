@@ -192,6 +192,15 @@ class BaseStrategy(Strategy):
             target_notional = equity * self.base_config.qty_percent * leverage
             raw_qty = target_notional / price
 
+            # Account for instrument multiplier (e.g. OKX SWAP contract size = 0.1 or 0.01 etc.)
+            # If multiplier is 0.1, it means 1 contract = 0.1 units of underlying.
+            # So we need 10x more contracts to match the target notional.
+            if instrument.multiplier:
+                multiplier = Decimal(str(instrument.multiplier))
+                if multiplier > 0 && multiplier != 1:
+                    self.log.warn(f"Current instrument have non-one order multiplier, it is {multiplier}")
+                    raw_qty = raw_qty / multiplier
+
             # Check against minimum size increment to avoid "rounded to zero" errors
             if instrument.size_increment:
                 try:
