@@ -21,13 +21,13 @@ from config.definitions import (
 # ==========================================
 
 # 交易标的定义
-SYMBOL = "ETH"
+SYMBOL = "SOL"
 QUOTE = "USDT"
 VENUE = "OKX"  # OKX or BINANCE
 INSTRUMENT_TYPE = InstrumentType.SWAP  # Usually SWAP for perps
 
 # 回测时间段
-START_DATE = "2020-01-01"
+START_DATE = "2022-01-01"
 END_DATE = "2026-01-14"
 # 有些币种，如 SOL 没有那么长的历史，获取数据会失败需要特别注意
 
@@ -181,38 +181,9 @@ def get_dual_thrust_strategy(
     )
 
 
-def get_mtf_trend_strategy(
-    instrument: InstrumentConfig,
-    main_data: DataConfig,
-    trend_data: DataConfig,
-    ml_settings: MLConfig,
-) -> StrategyConfig:
-    """自动生成 MTF Trend Pullback 策略配置"""
-    return StrategyConfig(
-        name="MtfTrendPullbackStrategy",
-        module_path="strategy.mtf_trend_pullback",
-        config_class="MtfTrendPullbackConfig",
-        params={
-            "instrument_id": instrument.instrument_id,
-            "trend_bar_type": f"{instrument.instrument_id}-{trend_data.bar_type_str}",
-            "trade_bar_type": f"{instrument.instrument_id}-{main_data.bar_type_str}",
-            "ema_period": ml_settings.ema_period,
-            "qty_percent": Decimal("0.05"),
-            "stop_loss_pct": 0.015,
-            "leverage": 1,
-            "use_ai_filter": ml_settings.use_ai_filter,
-            "use_auto_sl": True,  # MtfTrendPullback uses managed SL from BaseStrategy
-        },
-    )
-
-
 # 选择并实例化策略
 DUAL_THRUST_STRATEGY = get_dual_thrust_strategy(
     active_instrument, data_main, data_trend, RISK_QTY_PERCENT, STRATEGY_LEVERAGE
-)
-
-MTF_TREND_STRATEGY = get_mtf_trend_strategy(
-    active_instrument, data_main, data_trend, ML_SETTINGS
 )
 
 # E. 回测环境
