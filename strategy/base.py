@@ -58,6 +58,12 @@ class BaseStrategy(Strategy):
             else:
                 self.log.info(f"BaseStrategy: Instrument {self.instrument.id} loaded.")
 
+                # warning on non-one order multiplier
+                if self.instrument.multiplier and self.instrument.multiplier != 1:
+                    self.log.warning(
+                        f"Current instrument have non-one order multiplier, it is {self.instrument.multiplier}"
+                    )
+
     def on_reset(self):
         """
         Lifecycle hook: Strategy Reset.
@@ -197,8 +203,7 @@ class BaseStrategy(Strategy):
             # So we need 10x more contracts to match the target notional.
             if instrument.multiplier:
                 multiplier = Decimal(str(instrument.multiplier))
-                if multiplier > 0 && multiplier != 1:
-                    self.log.warn(f"Current instrument have non-one order multiplier, it is {multiplier}")
+                if multiplier > 0 and multiplier != 1:
                     raw_qty = raw_qty / multiplier
 
             # Check against minimum size increment to avoid "rounded to zero" errors
