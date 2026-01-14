@@ -2,7 +2,8 @@ from decimal import Decimal
 from typing import Optional
 
 from nautilus_trader.config import StrategyConfig
-from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import OrderSide, OrderType, PositionSide, TimeInForce
+from nautilus_trader.model.events import PositionOpened
 from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orders import MarketOrder, Order
@@ -28,6 +29,11 @@ class BaseStrategyConfig(StrategyConfig):
     # Leverage (Default: 1)
     # Applied in Dynamic Percentage Mode.
     leverage: int = 1
+
+    # --- Risk Management ---
+    # Stop Loss Percentage (e.g., 0.015 for 1.5%)
+    # If set, a Stop Market order is automatically placed upon position opening.
+    stop_loss_pct: Optional[float] = None
 
 
 class BaseStrategy(Strategy):
@@ -63,6 +69,74 @@ class BaseStrategy(Strategy):
                     self.log.warning(
                         f"Current instrument have non-one order multiplier, it is {self.instrument.multiplier}"
                     )
+
+    def on_position_opened(self, event: PositionOpened):
+        """
+        Event handler for PositionOpened.
+        Implements automatic Stop Loss placement if configured.
+        """
+        super().on_position_opened(event)
+
+        # 1. Check if stop loss is enabled in config
+        if (
+            self.base_config.stop_loss_pct is None
+            or self.base_config.stop_loss_pct <= 0
+        ):
+            return
+
+        # 2. Check if the event matches our main instrument
+        # Note: If strategy trades multiple instruments, logic should be adjusted.
+        # Here we assume BaseStrategy primarily manages self.instrument.
+        if self.instrument and event.instrument_id != self.instrument.id:
+            return
+
+        # 3. Calculate Stop Price
+        entry_price = event.avg_px_open
+        qty = event.quantity
+        sl_pct = Decimal(str(self.base_config.stop_loss_pct))
+
+        stop_price = Decimal(0)
+        sl_side = None
+
+        if event.side == PositionSide.LONG:
+            # Long Position -> Sell Stop
+            stop_price = Decimal(str(entry_price)) * (1 - sl_pct)
+            sl_side = OrderSide.SELL
+        else:
+            # Short Position -> Buy Stop
+            stop_price = Decimal(str(entry_price)) * (1 + sl_pct)
+            sl_side = OrderSide.BUY
+
+        # 4. Rounding and Price Creation
+        # Ensure we use the instrument's precision
+        try:
+            instrument = self.get_instrument()
+
+            # Using make_price logic via instrument precision if available,
+            # or relying on instrument.make_price to handle it
+            if instrument.price_precision:
+                stop_price = round(stop_price, instrument.price_precision)
+
+            trigger_price_obj = instrument.make_price(stop_price)
+
+            # 5. Create and Submit Stop Order
+            sl_order = self.order_factory.stop_market(
+                instrument_id=event.instrument_id,
+                order_side=sl_side,
+                quantity=qty,
+                trigger_price=trigger_price_obj,
+                # Disable reduce_only to avoid rejections in backtesting if position sync lags or logic conflicts
+                reduce_only=False,
+                time_in_force=TimeInForce.GTC,
+            )
+
+            self.submit_order_safe(
+                sl_order,
+                reason=f"Auto Stop Loss ({self.base_config.stop_loss_pct:.1%}) triggered by PositionOpened",
+            )
+
+        except Exception as e:
+            self.log.error(f"Failed to submit Auto Stop Loss order: {e}")
 
     def on_reset(self):
         """

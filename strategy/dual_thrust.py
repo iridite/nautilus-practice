@@ -3,8 +3,7 @@ from typing import Optional
 
 from nautilus_trader.indicators import AverageTrueRange, ExponentialMovingAverage
 from nautilus_trader.model.data import Bar, BarType
-from nautilus_trader.model.enums import OrderSide, OrderType, PositionSide, TimeInForce
-from nautilus_trader.model.events import PositionOpened
+from nautilus_trader.model.enums import OrderSide, OrderType, TimeInForce
 from nautilus_trader.model.identifiers import InstrumentId
 
 # from nautilus_trader.model.objects import Price
@@ -151,60 +150,6 @@ class DualThrust(BaseStrategy):
 
         # 6. 执行交易逻辑
         self._check_signals(bar)
-
-    def on_position_opened(self, event: PositionOpened):
-        """
-        当仓位建立时触发：立即设置初始硬止损
-        """
-        super().on_position_opened(event)
-
-        # 仅针对主交易标的
-        if event.instrument_id != self.instrument_id:
-            return
-
-        entry_price = event.avg_px_open
-        qty = event.quantity
-
-        # Determine Stop Price based on Position Side
-        sl_price = Decimal(0)
-        sl_side = None
-
-        if event.side == PositionSide.LONG:
-            # Long Position -> Sell Stop
-            sl_price = Decimal(str(entry_price)) * Decimal(
-                1 - self.config.stop_loss_pct
-            )
-            sl_side = OrderSide.SELL
-        else:
-            # Short Position -> Buy Stop
-            sl_price = Decimal(str(entry_price)) * Decimal(
-                1 + self.config.stop_loss_pct
-            )
-            sl_side = OrderSide.BUY
-
-        # Round to instrument precision to avoid "precision > 16" error
-        if self.instrument and self.instrument.price_precision:
-            sl_price = round(sl_price, self.instrument.price_precision)
-        else:
-            sl_price = round(sl_price, 8)
-
-        # 提交止损单 (Stop Market)
-        if sl_price > 0 and sl_side:
-            self.log.info(
-                f"🛡️ Placing Initial Stop Loss for {event.side} at {sl_price:.4f}"
-            )
-            try:
-                sl_order = self.order_factory.stop_market(
-                    instrument_id=self.instrument_id,
-                    order_side=sl_side,
-                    quantity=qty,
-                    trigger_price=self.instrument.make_price(sl_price),
-                    reduce_only=True,
-                    time_in_force=TimeInForce.GTC,
-                )
-                self.submit_order(sl_order)
-            except Exception as e:
-                self.log.error(f"Failed to submit Stop Loss order: {e}")
 
     def _manage_risk(self, bar: Bar):
         """

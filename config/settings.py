@@ -140,9 +140,12 @@ DUAL_THRUST_STRATEGY = StrategyConfig(
         "k1": 0.5,
         "k2": 0.5,
         # 交易量: 0.02 ETH (约为60-70u，适合50u挑战的激进仓位或配合杠杆)
-        # "qty_percent": Decimal("0.5"),
-        "trade_size": 1,
-        "leverage": 4,
+        "qty_percent": Decimal("0.5"),
+        # "trade_size": 1,
+        "leverage": 3,
+        "stop_loss_pct": 0.015,
+        # 需要检查 reduce_only 带来的可能影响
+        # 目前为了保证回测流畅运行，使用了 `reduce_only=False`。在实盘接入时（Live Mode），建议重新测试 `reduce_only=True` 的兼容性，因为那是更安全的行业标准。
         "use_trailing_stop": False,
         "trailing_stop_pct": 0.02,
     },

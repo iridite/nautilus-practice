@@ -127,6 +127,30 @@ MTF_TREND_STRATEGY = StrategyConfig(
     },
 )
 
+# DUAL_THRUST (New)
+DUAL_THRUST_STRATEGY = StrategyConfig(
+    name="DualThrust",  # 必须与策略类名一致
+    module_path="strategy.dual_thrust",
+    config_class="DualThrustConfig",
+    params={
+        # 使用 4H 数据对应的 ID 和 BarType
+        # 注意: 外部加载的csv数据，Nautilus通常会附加 '-EXTERNAL'
+        "instrument_id": "ETHUSDT-PERP.BINANCE",
+        "bar_type": "ETHUSDT-PERP.BINANCE-4-HOUR-LAST-EXTERNAL",
+        # 核心参数
+        "lookback_period": 4,  # N=4, 4个4H周期
+        "k1": 0.5,
+        "k2": 0.5,
+        # 交易量: 0.02 ETH (约为60-70u，适合50u挑战的激进仓位或配合杠杆)
+        "qty_percent": Decimal("0.5"),
+        # "trade_size": 1,
+        "leverage": 3,
+        "stop_loss_pct": 0.015,
+        "use_trailing_stop": False,
+        "trailing_stop_pct": 0.02,
+    },
+)
+
 # 5. 回测环境配置
 BACKTEST_SETTINGS = BacktestConfig(
     start_date="2024-01-01",
@@ -144,6 +168,7 @@ LOGGING_SETTINGS = LogConfig(
         "Portfolio": "INFO",
         "BacktestEngine": "INFO",
         "MtfTrendPullbackStrategy": "DEBUG",
+        "DualThrust": "DEBUG",
     },
     log_components_only=True,
 )
