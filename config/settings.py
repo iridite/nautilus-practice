@@ -20,7 +20,7 @@ from config.definitions import (
 # ==========================================
 
 # 1. 标的配置
-ETH_USDT_BINANCE = InstrumentConfig(
+ETH_USDT_BINANCE_SWAP = InstrumentConfig(
     venue="BINANCE",
     quote_currency="ETH",
     base_currency="USDT",
@@ -29,8 +29,8 @@ ETH_USDT_BINANCE = InstrumentConfig(
 )
 
 # 1. 标的配置
-ETH_USDT_OKX = InstrumentConfig(
-    venue="OKX",
+ETH_USDT_OKX_SWAP = InstrumentConfig(
+    venue="OKX",  # be warned: on the instrument definition have a 0.1x multiplier
     quote_currency="ETH",
     base_currency="USDT",
     type=InstrumentType.SWAP,
@@ -39,7 +39,7 @@ ETH_USDT_OKX = InstrumentConfig(
     taker_fee=0.0005,
 )
 
-DOGE_USDT_OKX = InstrumentConfig(
+DOGE_USDT_OKX_SWAP = InstrumentConfig(
     venue="OKX",
     quote_currency="DOGE",
     base_currency="USDT",
@@ -175,7 +175,7 @@ LOGGING_SETTINGS = LogConfig(
 
 # 这里定义当前生效的配置
 current_config = GlobalConfig(
-    instrument=ETH_USDT_OKX,  # 切换到 ETH
+    instrument=ETH_USDT_OKX_SWAP,  # 切换到 ETH
     data=DATA_4H,  # 使用 4H 数据配合 Dual Thrust
     aux_data=None,  # Dual Thrust 是单周期策略，不需要辅助数据
     strategy=DUAL_THRUST_STRATEGY,  # 切换到 Dual Thrust 策略
