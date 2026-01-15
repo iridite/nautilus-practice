@@ -6,6 +6,7 @@ from nautilus_trader.backtest.config import (
     BacktestDataConfig,
     BacktestRunConfig,
     BacktestVenueConfig,
+    ImportableFeeModelConfig,
 )
 from nautilus_trader.backtest.node import (
     BacktestEngineConfig,
@@ -42,6 +43,9 @@ def run_high_level(cfg: BackTestConfig, base_dir: Path):
         instrument = load_instrument(
             instrument_file
         )  # Determine fees (industry standard defaults for OKX if not provided)
+        print(
+            f"✅ Fees Loaded: Maker={float(instrument.maker_fee) * 100:.4f}%, Taker={float(instrument.taker_fee) * 100:.4f}%"
+        )
     else:
         raise FileNotFoundError(
             f"❌ Instrument definition not found at: {instrument_file}\n"
@@ -93,7 +97,7 @@ def run_high_level(cfg: BackTestConfig, base_dir: Path):
     gc.collect()
 
     # 4. Configure Venue
-    # Use MakerTakerFeeModelConfig which pulls fees directly from the instrument
+
     venue_configs = [
         BacktestVenueConfig(
             name=cfg.instrument.venue_name,
@@ -101,8 +105,12 @@ def run_high_level(cfg: BackTestConfig, base_dir: Path):
             account_type="MARGIN",
             base_currency="USDT",
             starting_balances=cfg.initial_balances,
-            fee_model=None,
-            trade_execution=True,
+            fee_model=ImportableFeeModelConfig(
+                fee_model_path="nautilus_trader.backtest.models:MakerTakerFeeModel",
+                config_path="nautilus_trader.backtest.config:MakerTakerFeeModelConfig",
+                config={},
+            ),
+            trade_execution=True,  # Do not false it
         ),
     ]
 
@@ -195,13 +203,20 @@ def _print_results(result: BacktestResult):
     print(f"⏱️ \tDuration:       {result.elapsed_time:.4f}s")
     print(f"📝 \tOrders:         {result.total_orders}")
     print(f"📍 \tPositions:      {result.total_positions}")
-
     if result.stats_pnls:
         for currency, metrics in result.stats_pnls.items():
             print(f"💰 PnL ({currency}):")
-            for k, v in metrics.items():
-                if v == v:
-                    print(f"   - {k:<20}: {v:,.4f}")
+            # 核心指标优先展示
+            core_metrics = ["PnL (total)", "PnL% (total)", "Commissions", "Fees"]
+            for k in core_metrics:
+                if k in metrics and metrics[k] == metrics[k]:
+                    print(f"   * {k:<25}: {metrics[k]:,.4f}")
+
+            print("   " + "-" * 40)
+            # 其他指标按字母顺序排列
+            for k in sorted(metrics.keys()):
+                if k not in core_metrics and metrics[k] == metrics[k]:
+                    print(f"   - {k:<25}: {metrics[k]:,.4f}")
 
     if result.stats_returns:
         print("📈 Returns:")
