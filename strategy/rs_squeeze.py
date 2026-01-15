@@ -48,6 +48,7 @@ class RSSqueezeConfig(BaseStrategyConfig):
     breakeven_mult: float = 1.5  # 价格达到 1.5*ATR 利润时移动止损
     breakeven_offset: float = 0.002  # 移动到 Entry + 0.2%
     stop_loss_mult: float = 1.5  # 初始止损 ATR 倍数
+    # TODO: 这玩意有 ATR 止损吗？
 
 
 class RSSqueezeStrategy(BaseStrategy):

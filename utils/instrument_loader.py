@@ -55,5 +55,6 @@ def load_instrument(
         data["maker_fee"] = "0.0002"
     if taker_fee is None or str(taker_fee) in ("0", "0.0") or float(taker_fee) == 0:
         data["taker_fee"] = "0.0005"
+    print("Maker / Taker fee is Unknown, set default values")
 
     return cls.from_dict(data)  # return a Instrument

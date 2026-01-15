@@ -176,7 +176,7 @@ current_config = BackTestConfig(
         data_trend,
         # data_benchmark,
     ],
-    strategy=DUAL_THRUST_STRATEGY,  # 在这里切换策略
+    strategy=RS_SQUEEZE_STRATEGY,  # 在这里切换策略
     # 策略里面永远都不能明显指定交易标的，交易标的应该人工指定，策略只管在特定的标的上计算和发送订单
     # 基础配置
     start_date=START_DATE,
