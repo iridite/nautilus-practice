@@ -39,9 +39,9 @@ MAIN_TIMEFRAME = "1h"
 TREND_TIMEFRAME = "4h"  # TODO： 该部分设计应该是在单独的策略里面定义，如 dual_thrust 策略需要趋势和信号时间粒度，则单独指明
 
 # 下单参数 (Order Parameters)
-STRATEGY_LEVERAGE = 5
-RISK_QTY_PERCENT = Decimal("0.2")  # 每次交易占权益百分比
-INIT_BALANCES = [Money("100", USDT)]
+STRATEGY_LEVERAGE: int = 3
+RISK_QTY_PERCENT: Decimal = Decimal("0.2")  # 每次交易占权益百分比
+INIT_BALANCES: list = [Money("100", USDT)]
 
 # 日志配置
 LOGGING_SETTINGS = LogConfig(
@@ -139,6 +139,7 @@ active_instrument = InstrumentConfig(
     quote_currency=SYMBOL,
     base_currency=QUOTE,
     type=INSTRUMENT_TYPE,
+    leverage=STRATEGY_LEVERAGE,  # 杠杆在这里导入
 )
 
 # TODO: 数据生成与处理完全自动化，即使是多类型数据也能自己搞定
@@ -153,7 +154,6 @@ def get_dual_thrust_strategy(
     main_data: DataConfig,
     trend_data: DataConfig,
     risk_qty_percent: Decimal,
-    leverage: int,
 ) -> StrategyConfig:
     """自动生成 Dual Thrust 策略配置"""
     return StrategyConfig(
@@ -172,7 +172,6 @@ def get_dual_thrust_strategy(
             "atr_period": 20,
             # 资金管理 (Money Management)
             "qty_percent": risk_qty_percent,
-            "leverage": leverage,  # TODO: 为什么要在策略里写明杠杆量？
             # 风控 (Risk Management)
             "stop_loss_atr_mult": 1.5,
             "stop_loss_pct": 0.015,
@@ -183,7 +182,7 @@ def get_dual_thrust_strategy(
 
 # 选择并实例化策略
 DUAL_THRUST_STRATEGY = get_dual_thrust_strategy(
-    active_instrument, data_main, data_trend, RISK_QTY_PERCENT, STRATEGY_LEVERAGE
+    active_instrument, data_main, data_trend, RISK_QTY_PERCENT
 )
 
 

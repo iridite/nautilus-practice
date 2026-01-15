@@ -131,9 +131,8 @@ def run_high_level(cfg: BackTestConfig, base_dir: Path):
     strategy_params = cfg.strategy.params.copy()
     strategy_params["instrument_id"] = instrument.id
     strategy_params["bar_type"] = bar_type_str
-    # Inject leverage from instrument config if not explicitly set in strategy params
-    if "leverage" not in strategy_params:
-        strategy_params["leverage"] = cfg.instrument.leverage
+    strategy_params["leverage"] = cfg.instrument.leverage
+    # 杠杆在 settings inst 部分定义，但是却导入到策略中
 
     # Auto-inject MTF params if aux data is present
     if cfg.aux_data:

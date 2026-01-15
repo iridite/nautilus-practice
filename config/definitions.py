@@ -18,9 +18,9 @@ class InstrumentType(Enum):
 class InstrumentConfig:
     type: InstrumentType = InstrumentType.SWAP
     venue_name: str = "OKX"
-    base_currency: str = "ETH"
-    quote_currency: str = "USDT"
-    leverage: Optional[int] = None  # 用户设定的杠杆倍数
+    base_currency: str = "USDT"  # 是基于 USDT 进行的币对的交易
+    quote_currency: str = "ETH"  # 而 quote 是被或者说参考 USDT 而衍生出的交易币价格
+    leverage: int = 1  # 用户设定的杠杆倍数
 
     @property
     def instrument_id(self) -> str:
@@ -55,6 +55,7 @@ class DataConfig:
         # 这是一个辅助属性，用于生成 Nautilus 需要的 bar type 字符串
         # 具体的 instrument ID 需要在运行时结合 InstrumentConfig 生成
         return f"{self.bar_period}-{self.bar_aggregation.name}-{self.price_type.name}-EXTERNAL"
+        # 大部分的数据都是由外部直接导入的，所以直接写 ‘external’
 
 
 @dataclass
