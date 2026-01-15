@@ -84,82 +84,57 @@ def run_low_level(cfg: BackTestConfig, base_dir: Path):
         raise FileNotFoundError(f"⚠️ Instrument file not found at {instrument_file}")
     engine.add_instrument(inst)
 
-    # 4. Load Data
-    # low-end backtest engine loads data by itself
-    bar_type_str = f"{inst.id}-{cfg.data.bar_type_str}"
-    bar_type = BarType.from_str(bar_type_str)
-    wrangler = BarDataWrangler(bar_type, inst)
+    # 4. Load Data Feeds (Generic Supply Framework)
+    feed_bar_types = {}  # label -> bar_type (BarType object)
 
-    csv_path = base_dir / "data" / "raw" / cfg.data.csv_file_name
-    try:
-        df = pd.read_csv(csv_path)
-        # Basic preprocessing
-        if "timestamp" in df.columns:
-            df["timestamp"] = (
-                pd.to_datetime(df["timestamp"], unit="ms")
-                if df["timestamp"].dtype != "datetime64[ns]"
-                else df["timestamp"]
-            )
-            # Adjust if needed, assuming close time
-            # df["timestamp"] = df["timestamp"] + pd.Timedelta(minutes=5)
-            df.set_index("timestamp", inplace=True)
-        elif "datetime" in df.columns:
-            df["datetime"] = pd.to_datetime(df["datetime"])
-            df.set_index("datetime", inplace=True)
+    for feed in cfg.data_feeds:
+        # Determine instrument for this feed (support multi-instrument backtest in future)
+        feed_inst = inst
+        if feed.instrument_id and feed.instrument_id != str(inst.id):
+            # TODO: Add logic to load auxiliary instrument if needed (e.g. for benchmark)
+            pass
 
-        # Filter columns
-        df = df[["open", "high", "low", "close", "volume"]]
+        feed_bar_type_str = f"{feed_inst.id}-{feed.bar_type_str}"
+        feed_bar_type = BarType.from_str(feed_bar_type_str)
+        feed_bar_types[feed.label] = feed_bar_type
 
-        # Filter by date if provided in config
-        if cfg.start_date:
-            df = df[df.index >= pd.Timestamp(cfg.start_date)]
-        if cfg.end_date:
-            df = df[df.index <= pd.Timestamp(cfg.end_date)]
+        print(f"📥 Loading Data Feed [{feed.label}]: {feed_bar_type_str}")
 
-        if len(df) == 0:
-            print(
-                f"❌ Error: No data found for {inst.id} within the specified date range in {cfg.start_date} to {cfg.end_date}"
-            )
-            return
-        else:
-            print(f"📥 Loaded {len(df)} rows from CSV: {csv_path}")
-
-        bars = wrangler.process(df)
-        engine.add_data(bars)
-    except FileNotFoundError:
-        print(f"❌ Error: Data file not found at {csv_path}")
-        return
-
-    # 4.1 Load Aux Data (e.g. Trend Layer)
-    if cfg.aux_data:
-        aux_bar_type_str = f"{inst.id}-{cfg.aux_data.bar_type_str}"
-        aux_bar_type = BarType.from_str(aux_bar_type_str)
-        aux_wrangler = BarDataWrangler(aux_bar_type, inst)
-
-        aux_csv_path = base_dir / "data" / "raw" / cfg.aux_data.csv_file_name
+        csv_path = base_dir / "data" / "raw" / feed.csv_file_name
         try:
-            aux_df = pd.read_csv(aux_csv_path)
+            df = pd.read_csv(csv_path)
             # Basic preprocessing
-            if "timestamp" in aux_df.columns:
-                aux_df["timestamp"] = (
-                    pd.to_datetime(aux_df["timestamp"], unit="ms")
-                    if aux_df["timestamp"].dtype != "datetime64[ns]"
-                    else aux_df["timestamp"]
+            if "timestamp" in df.columns:
+                df["timestamp"] = (
+                    pd.to_datetime(df["timestamp"], unit="ms")
+                    if df["timestamp"].dtype != "datetime64[ns]"
+                    else df["timestamp"]
                 )
-                aux_df.set_index("timestamp", inplace=True)
+                df.set_index("timestamp", inplace=True)
+            elif "datetime" in df.columns:
+                df["datetime"] = pd.to_datetime(df["datetime"])
+                df.set_index("datetime", inplace=True)
 
-            aux_df = aux_df[["open", "high", "low", "close", "volume"]]
+            # Filter columns
+            df = df[["open", "high", "low", "close", "volume"]]
 
+            # Filter by date if provided in config
             if cfg.start_date:
-                aux_df = aux_df[aux_df.index >= pd.Timestamp(cfg.start_date)]
+                df = df[df.index >= pd.Timestamp(cfg.start_date)]
             if cfg.end_date:
-                aux_df = aux_df[aux_df.index <= pd.Timestamp(cfg.end_date)]
+                df = df[df.index <= pd.Timestamp(cfg.end_date)]
 
-            print(f"📥 Loaded Aux Data: {len(aux_df)} rows")
-            aux_bars = aux_wrangler.process(aux_df)
-            engine.add_data(aux_bars)
+            if len(df) == 0:
+                print(f"⚠️ Warning: No data found for {feed.label} within range.")
+                continue
+
+            wrangler = BarDataWrangler(feed_bar_type, feed_inst)
+            bars = wrangler.process(df)
+            engine.add_data(bars)
+            print(f"✅ Loaded {len(df)} rows for {feed.label}")
+
         except FileNotFoundError:
-            print(f"❌ Error: Aux Data file not found at {aux_csv_path}")
+            print(f"❌ Error: Data file not found at {csv_path}")
             return
 
     # 5. Configure Strategy
@@ -171,14 +146,20 @@ def run_low_level(cfg: BackTestConfig, base_dir: Path):
     # Prepare params
     strategy_params = cfg.strategy.params.copy()
     strategy_params["instrument_id"] = inst.id
-    strategy_params["bar_type"] = bar_type
     strategy_params["leverage"] = cfg.instrument.leverage
-    # 杠杆在 settings inst 部分定义，但是却导入到策略中
 
-    # Inject MTF params if present
-    if cfg.aux_data:
-        strategy_params["trade_bar_type"] = bar_type_str
-        strategy_params["trend_bar_type"] = f"{inst.id}-{cfg.aux_data.bar_type_str}"
+    # Inject bar types from feeds based on labels
+    if "main" in feed_bar_types:
+        strategy_params["bar_type"] = feed_bar_types["main"]
+        strategy_params["trade_bar_type"] = str(feed_bar_types["main"])
+
+    if "trend" in feed_bar_types:
+        strategy_params["trend_bar_type"] = str(feed_bar_types["trend"])
+
+    # Generic injection for other labels (e.g. benchmark -> benchmark_bar_type)
+    for label, bt in feed_bar_types.items():
+        if label not in ["main", "trend"]:
+            strategy_params[f"{label}_bar_type"] = str(bt)
 
     # Instantiate Config
     # Filter params to match what the ConfigClass actually accepts

@@ -20,7 +20,7 @@ class InstrumentConfig:
     venue_name: str = "OKX"
     base_currency: str = "USDT"  # 是基于 USDT 进行的币对的交易
     quote_currency: str = "ETH"  # 而 quote 是被或者说参考 USDT 而衍生出的交易币价格
-    leverage: int = 1  # 用户设定的杠杆倍数
+    leverage: int = 1  # 默认设定的杠杆倍数
 
     @property
     def instrument_id(self) -> str:
@@ -49,6 +49,8 @@ class DataConfig:
     bar_aggregation: BarAggregation = BarAggregation.HOUR
     bar_period: int = 1
     price_type: PriceType = PriceType.LAST
+    instrument_id: Optional[str] = None  # 可选：指定该数据对应的 InstrumentID
+    label: str = "main"  # 数据标签 (如 "main", "trend", "benchmark")
 
     @property
     def bar_type_str(self) -> str:
@@ -63,6 +65,10 @@ class StrategyConfig:
     name: str  # 策略类名，例如 "BmrStrategy"
     module_path: str  # 策略模块路径，例如 "strategy.bmr"
     config_class: str  # 配置类名，例如 "BmrStrategyConfig"
+    # 感觉有点扯，没有必要设置的这么详细
+
+    trade_pair_list: Optional[List[str]] = field(default_factory=list)
+
     params: Dict[str, Any] = field(default_factory=dict)
 
 
@@ -99,8 +105,10 @@ class MLConfig:
 class BackTestConfig:
     # 以下三个是回测必备的子集配置选项
     instrument: InstrumentConfig
-    data: DataConfig
     strategy: StrategyConfig
+    # 扩展数据配置：支持灵活的多数据源供给 (更优雅的设计)
+    # 通过 DataConfig.label 区分用途 (如 "main", "trend", "benchmark")
+    data_feeds: List[DataConfig] = field(default_factory=list)
 
     # 基础回测配置
     start_date: Optional[str] = None
@@ -115,8 +123,33 @@ class BackTestConfig:
     logging: LogConfig | None = None
     ml: MLConfig | None = None
 
-    # Support for auxiliary data (e.g. for MTF strategy trend layer)
+    # Deprecated
+    ## Support for auxiliary data (e.g. for MTF strategy trend layer)
+    data: Optional[DataConfig] = None
     aux_data: Optional[DataConfig] = None
+
+    def __post_init__(self):
+        """
+        同步兼容性字段到 data_feeds 列表，支持多数据供给框架。
+        """
+        # 将 data 加入 data_feeds
+        if self.data and self.data not in self.data_feeds:
+            if self.data.label == "main":
+                self.data.label = "main"
+            self.data_feeds.insert(0, self.data)
+
+        # 将 aux_data 加入 data_feeds
+        if self.aux_data and self.aux_data not in self.data_feeds:
+            # 如果没指定标签，默认设为 trend
+            if self.aux_data.label == "main":
+                self.aux_data.label = "trend"
+            self.data_feeds.append(self.aux_data)
+
+        # 反向补全 (如果用户只用了 data_feeds)
+        if self.data_feeds and self.data is None:
+            self.data = self.data_feeds[0]
+        if len(self.data_feeds) > 1 and self.aux_data is None:
+            self.aux_data = self.data_feeds[1]
 
 
 @dataclass

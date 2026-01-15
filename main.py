@@ -11,12 +11,7 @@ from backtest.engine_high import run_high_level
 from backtest.engine_low import run_low_level
 from config.settings import (
     END_DATE,
-    MAIN_TIMEFRAME,
-    QUOTE,
     START_DATE,
-    SYMBOL,
-    TREND_TIMEFRAME,
-    VENUE,
     current_config,
 )
 from utils.fetch_instrument import update_instruments
@@ -103,23 +98,43 @@ def main():
     # 1. Automatic Data Retrieval (Only for backtest if not skipped)
     if args.command == "backtest" and not args.skip_data:
         print("==========================================")
-        print("🔍 Checking & Retrieving Data...")
+        print("🔍 Checking & Retrieving Data for all feeds...")
 
-        symbol_str = f"{SYMBOL}{QUOTE}"
-        timeframes = [MAIN_TIMEFRAME]
-        if TREND_TIMEFRAME and TREND_TIMEFRAME != MAIN_TIMEFRAME:
-            timeframes.append(TREND_TIMEFRAME)
+        # 遍历 data_feeds 自动获取所有需要的行情数据
+        for feed in current_config.data_feeds:
+            # 这里的解析逻辑需要与 get_data_config 产生的 csv_file_name 对应
+            # 格式通常是 symbol_quote/exchange-symbol_quote-timeframe-start_end.csv
+            try:
+                parts = feed.csv_file_name.split("/")
+                symbol_quote = parts[0]
+                file_parts = parts[1].split("-")
+                exchange = file_parts[0]
+                timeframe = file_parts[2]
 
-        for tf in timeframes:
-            run_data_retrieval(symbol_str, START_DATE, END_DATE, tf, VENUE)
+                print(
+                    f"📊 Processing feed [{feed.label}]: {symbol_quote} {timeframe} on {exchange}"
+                )
+                run_data_retrieval(
+                    symbol_quote, START_DATE, END_DATE, timeframe, exchange
+                )
+            except Exception as e:
+                print(
+                    f"⚠️ Failed to parse data feed config for retrieval: {feed.label}, error: {e}"
+                )
+
         print("==========================================\n")
 
     # 2. Fetch & Update Instruments
     # This ensures we have the latest instrument definitions from the exchange
     try:
-        instrument_id: str = current_config.instrument.instrument_id
-        print(f"🔄 Updating instrument definitions for: {instrument_id}")
-        update_instruments([instrument_id])
+        # 收集所有需要更新的 Instrument ID (包括主交易品种和辅助品种)
+        instrument_ids = {current_config.instrument.instrument_id}
+        for feed in current_config.data_feeds:
+            if feed.instrument_id:
+                instrument_ids.add(feed.instrument_id)
+
+        print(f"🔄 Updating instrument definitions for: {list(instrument_ids)}")
+        update_instruments(list(instrument_ids))
     except Exception as e:
         print(f"\t ⚠️ Failed to update instruments: {e}")
         print("\t Continuing with existing local files (if any)...")

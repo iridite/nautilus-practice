@@ -1,5 +1,6 @@
 from decimal import Decimal
 from pathlib import Path
+from typing import Optional
 
 from nautilus_trader.model import Money
 from nautilus_trader.model.currencies import USDT
@@ -75,7 +76,14 @@ ML_SETTINGS = MLConfig(
 
 
 def get_data_config(
-    symbol: str, quote: str, venue: str, timeframe: str, start: str, end: str
+    symbol: str,
+    quote: str,
+    venue: str,
+    timeframe: str,
+    start: str,
+    end: str,
+    label: str = "main",
+    instrument_id: Optional[str] = None,
 ) -> DataConfig:
     # TODO: 搞清楚这个 symbol，quote 是什么关系？
     """生成数据配置"""
@@ -100,6 +108,8 @@ def get_data_config(
         bar_aggregation=agg,
         bar_period=period,
         price_type=PriceType.LAST,  # TODO: 多类型 PriceType 处理
+        label=label,
+        instrument_id=instrument_id,
     )
 
 
@@ -116,10 +126,14 @@ active_instrument = InstrumentConfig(
 )
 
 # TODO: 数据生成与处理完全自动化，即使是多类型数据也能自己搞定
-data_main = get_data_config(SYMBOL, QUOTE, VENUE, MAIN_TIMEFRAME, START_DATE, END_DATE)
-data_trend = get_data_config(
-    SYMBOL, QUOTE, VENUE, TREND_TIMEFRAME, START_DATE, END_DATE
+data_main = get_data_config(
+    SYMBOL, QUOTE, VENUE, MAIN_TIMEFRAME, START_DATE, END_DATE, label="main"
 )
+data_trend = get_data_config(
+    SYMBOL, QUOTE, VENUE, TREND_TIMEFRAME, START_DATE, END_DATE, label="trend"
+)
+# 演示：如果需要多源数据（例如 RS-Squeeze 的基准数据）
+# data_benchmark = get_data_config("BTC", "USDT", "BINANCE", MAIN_TIMEFRAME, START_DATE, END_DATE, label="benchmark")
 
 
 def get_dual_thrust_strategy(
@@ -166,9 +180,15 @@ DUAL_THRUST_STRATEGY = get_dual_thrust_strategy(
 current_config = BackTestConfig(
     # 子集配置
     instrument=active_instrument,
-    data=data_main,
-    aux_data=data_trend,
+    # 核心：使用 data_feeds 列表支持无限扩展的数据供给框架
+    data_feeds=[
+        # stores labels as different INSTRUMENT
+        data_main,
+        data_trend,
+        # data_benchmark,
+    ],
     strategy=DUAL_THRUST_STRATEGY,  # 在这里切换策略
+    # 策略里面永远都不能明显指定交易标的，交易标的应该人工指定，策略只管在特定的标的上计算和发送订单
     # 基础配置
     start_date=START_DATE,
     end_date=END_DATE,

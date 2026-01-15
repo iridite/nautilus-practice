@@ -52,52 +52,49 @@ def run_high_level(cfg: BackTestConfig, base_dir: Path):
             f"👉 Please run: uv run main.py (to fetch instruments)"
         )
 
-    # 2. Define BarType
-    bar_type_str = f"{instrument.id}-{cfg.data.bar_type_str}"
-    bar_type_def = BarType.from_str(bar_type_str)
-    print(f"📊 Bar Type: {bar_type_str}")
-
-    # 3. Load Data
+    # 2. Load Data Feeds (Generic Supply Framework)
     run_timestamp = datetime.now().isoformat()
-    catalog_paths = []
+    data_configs = []
+    feed_bar_types = {}  # label -> bar_type_str
 
-    # 3.1 Load Main Data
-    csv_path = data_path / "raw" / cfg.data.csv_file_name
-    if not csv_path.exists():
-        raise FileNotFoundError(f"Data file not found: {csv_path}")
+    for i, feed in enumerate(cfg.data_feeds):
+        # Determine instrument for this feed (support multi-instrument backtest in future)
+        feed_inst = instrument
+        if feed.instrument_id and feed.instrument_id != str(instrument.id):
+            # TODO: Add logic to load auxiliary instrument if needed (e.g. for benchmark)
+            pass
 
-    parquet_catalog, catalog_path = loader(
-        csv_path=csv_path,
-        output_path=data_path / "parquet" / f"{run_timestamp}_main",
-        instrument=instrument,
-        bar_type=bar_type_def,
-    )
-    catalog_paths.append(str(catalog_path))
-    del parquet_catalog
+        feed_bar_type_str = f"{feed_inst.id}-{feed.bar_type_str}"
+        feed_bar_type_def = BarType.from_str(feed_bar_type_str)
+        feed_bar_types[feed.label] = feed_bar_type_str
 
-    # 3.2 Load Aux Data (if any)
-    if cfg.aux_data:
-        aux_bar_type_str = f"{instrument.id}-{cfg.aux_data.bar_type_str}"
-        aux_bar_type_def = BarType.from_str(aux_bar_type_str)
-        print(f"📊 Aux Bar Type: {aux_bar_type_str}")
+        print(f"📥 Loading Data Feed [{feed.label}]: {feed_bar_type_str}")
 
-        aux_csv_path = data_path / "raw" / cfg.aux_data.csv_file_name
-        if not aux_csv_path.exists():
-            raise FileNotFoundError(f"Aux Data file not found: {aux_csv_path}")
+        csv_path = data_path / "raw" / feed.csv_file_name
+        if not csv_path.exists():
+            raise FileNotFoundError(f"Data file not found: {csv_path}")
 
-        aux_catalog, aux_catalog_path = loader(
-            csv_path=aux_csv_path,
-            output_path=data_path / "parquet" / f"{run_timestamp}_aux",
-            instrument=instrument,
-            bar_type=aux_bar_type_def,
+        # Load and wrangle to parquet catalog
+        _, catalog_path = loader(
+            csv_path=csv_path,
+            output_path=data_path / "parquet" / f"{run_timestamp}_{feed.label}_{i}",
+            instrument=feed_inst,
+            bar_type=feed_bar_type_def,
         )
-        catalog_paths.append(str(aux_catalog_path))
-        del aux_catalog
+
+        data_configs.append(
+            BacktestDataConfig(
+                catalog_path=str(catalog_path),
+                data_cls="nautilus_trader.model.data:Bar",
+                instrument_id=feed_inst.id,
+                start_time=cfg.start_date,
+                end_time=cfg.end_date,
+            )
+        )
 
     gc.collect()
 
-    # 4. Configure Venue
-
+    # 3. Configure Venue
     venue_configs = [
         BacktestVenueConfig(
             name=cfg.instrument.venue_name,
@@ -110,36 +107,28 @@ def run_high_level(cfg: BackTestConfig, base_dir: Path):
                 config_path="nautilus_trader.backtest.config:MakerTakerFeeModelConfig",
                 config={},
             ),
-            trade_execution=True,  # Do not false it
+            trade_execution=True,
         ),
     ]
 
-    # 5. Configure Data
-    data_configs = [
-        BacktestDataConfig(
-            catalog_path=path,
-            data_cls="nautilus_trader.model.data:Bar",
-            instrument_id=instrument.id,
-            start_time=cfg.start_date,
-            end_time=cfg.end_date,
-        )
-        for path in catalog_paths
-    ]
-
-    # 6. Configure Strategy
-    # Merge strategy params with system params (instrument_id, bar_type)
+    # 4. Configure Strategy
+    # Merge strategy params with system params
     strategy_params = cfg.strategy.params.copy()
     strategy_params["instrument_id"] = instrument.id
-    strategy_params["bar_type"] = bar_type_str
     strategy_params["leverage"] = cfg.instrument.leverage
-    # 杠杆在 settings inst 部分定义，但是却导入到策略中
 
-    # Auto-inject MTF params if aux data is present
-    if cfg.aux_data:
-        strategy_params["trade_bar_type"] = bar_type_str
-        strategy_params["trend_bar_type"] = (
-            f"{instrument.id}-{cfg.aux_data.bar_type_str}"
-        )
+    # Inject bar types from feeds based on labels
+    if "main" in feed_bar_types:
+        strategy_params["bar_type"] = feed_bar_types["main"]
+        strategy_params["trade_bar_type"] = feed_bar_types["main"]
+
+    if "trend" in feed_bar_types:
+        strategy_params["trend_bar_type"] = feed_bar_types["trend"]
+
+    # Generic injection for other labels (e.g. benchmark -> benchmark_bar_type)
+    for label, bt_str in feed_bar_types.items():
+        if label not in ["main", "trend"]:
+            strategy_params[f"{label}_bar_type"] = bt_str
 
     # Convert Decimal strings to Decimal objects if needed (Nautilus config usually handles this,
     # but ImportableStrategyConfig passes dict)

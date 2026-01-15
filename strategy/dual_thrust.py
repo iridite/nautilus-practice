@@ -16,16 +16,16 @@ class DualThrustConfig(BaseStrategyConfig):
     继承自 BaseStrategyConfig，自动获得 trade_size, qty_percent, leverage 等通用参数
     """
 
+    # 数据设定
     bar_type: str = ""
+    ## MTF 参数
+    trend_bar_type: str = ""  # 4H 周期
+    trend_ema_period: int = 200
 
     # 策略核心参数
     lookback_period: int = 4  # N: 回溯周期数 (4H)
     k1: float = 0.5  # 上轨系数
     k2: float = 0.5  # 下轨系数
-
-    # MTF 参数
-    trend_bar_type: str = ""  # 4H 周期
-    trend_ema_period: int = 200
 
     # 过滤器参数
     atr_period: int = 20  # 波动率计算周期 (1H)
