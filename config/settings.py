@@ -191,6 +191,7 @@ BACKTEST_SETTINGS = BacktestConfig(
     start_date=START_DATE,
     end_date=END_DATE,
     initial_balance=[Money("100", USDT)],
+    output_html_report=False,
 )
 
 # F. 日志配置

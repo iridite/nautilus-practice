@@ -219,13 +219,15 @@ def run_low_level(cfg: GlobalConfig, base_dir: Path):
     print("✅ Backtest finished.")
 
     # 7. Report
-    timestamp = datetime.now().isoformat().replace(":", "-")
-    report_path = OUTPUT_DIR / f"{inst.id}_{timestamp}.html"
-    create_tearsheet(
-        engine=engine,
-        output_path=str(report_path),
-    )
-    print(f"📊 Report generated: {report_path}")
-
+    if cfg.backtest.output_html_report:
+        timestamp = datetime.now().isoformat().replace(":", "-")
+        report_path = OUTPUT_DIR / f"{inst.id}_{timestamp}.html"
+        create_tearsheet(
+            engine=engine,
+            output_path=str(report_path),
+        )
+        print(f"📊 Report generated: {report_path}")
+    else:
+        print("📊 Omitting report generation.")
     engine.reset()
     engine.dispose()

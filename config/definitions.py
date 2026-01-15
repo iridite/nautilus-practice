@@ -72,6 +72,7 @@ class BacktestConfig:
     initial_balance: List[Money] = field(
         default_factory=lambda: [Money("10_000", USDT)]
     )
+    output_html_report: bool = False
 
 
 @dataclass
