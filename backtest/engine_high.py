@@ -14,14 +14,14 @@ from nautilus_trader.backtest.node import (
 from nautilus_trader.backtest.results import BacktestResult
 from nautilus_trader.common.config import LoggingConfig
 from nautilus_trader.config import ImportableStrategyConfig, RiskEngineConfig
-from nautilus_trader.model.data import Bar, BarType
+from nautilus_trader.model.data import BarType
 
-from config.definitions import GlobalConfig
+from config.definitions import BackTestConfig
 from utils.data_loader import loader
 from utils.instrument_loader import load_instrument
 
 
-def run_high_level(cfg: GlobalConfig, base_dir: Path):
+def run_high_level(cfg: BackTestConfig, base_dir: Path):
     print(f"🚀 Starting High-Level Backtest with config: {cfg.strategy.name}")
 
     data_path = base_dir / "data"

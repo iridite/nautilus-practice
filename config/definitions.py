@@ -66,16 +66,6 @@ class StrategyConfig:
 
 
 @dataclass
-class BacktestConfig:
-    start_date: Optional[str] = None
-    end_date: Optional[str] = None
-    initial_balance: List[Money] = field(
-        default_factory=lambda: [Money("10_000", USDT)]
-    )
-    output_html_report: bool = False
-
-
-@dataclass
 class LogConfig:
     log_level: str = "INFO"
     log_level_file: str = "DEBUG"
@@ -105,15 +95,38 @@ class MLConfig:
 
 
 @dataclass
-class GlobalConfig:
+class BackTestConfig:
+    # 以下三个是回测必备的子集配置选项
     instrument: InstrumentConfig
     data: DataConfig
     strategy: StrategyConfig
-    backtest: BacktestConfig
-    logging: LogConfig
-    ml: MLConfig = field(default_factory=MLConfig)
+
+    # 基础回测配置
+    start_date: Optional[str] = None
+    end_date: Optional[str] = None
+    initial_balance: List[Money] = field(
+        default_factory=lambda: [Money("10_000", USDT)]
+    )
+    output_html_report: bool = False
+    # TODO：尝试在这里控制回测的高级/低级引擎切换
+
+    # 以下是可选的配置
+    logging: LogConfig | None = None
+    ml: MLConfig | None = None
 
     # Support for auxiliary data (e.g. for MTF strategy trend layer)
     aux_data: Optional[DataConfig] = None
 
-    # 可以在这里添加 Sandbox 或 Live 的配置
+
+@dataclass
+class SandboxConfig:
+    # Sandbox Configuration Options
+    sandbox_mode: bool = False
+    sandbox_balance: Money = Money("10_000", USDT)
+
+
+@dataclass
+class LiveConfig:
+    # Live Configuration Options
+    live_mode: bool = False
+    live_balance: Money = Money("10_000", USDT)

@@ -6,9 +6,8 @@ from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.enums import BarAggregation, PriceType
 
 from config.definitions import (
-    BacktestConfig,
+    BackTestConfig,
     DataConfig,
-    GlobalConfig,
     InstrumentConfig,
     InstrumentType,
     LogConfig,
@@ -27,6 +26,7 @@ VENUE = "OKX"  # OKX or BINANCE
 INSTRUMENT_TYPE = InstrumentType.SWAP  # Usually SWAP for perps
 
 # 回测时间段
+# 不定义的话会自动使用提供数据的起止范围
 START_DATE = "2022-01-01"
 END_DATE = "2026-01-14"
 # 有些币种，如 SOL 没有那么长的历史，获取数据会失败需要特别注意
@@ -36,12 +36,12 @@ END_DATE = "2026-01-14"
 # 注意：文件名格式必须匹配 data_retrival.py 生成的格式
 # 格式: {VENUE}-{SYMBOL}{QUOTE}-{TIMEFRAME}-{START}_{END}.csv
 MAIN_TIMEFRAME = "1h"
-TREND_TIMEFRAME = "4h"
+TREND_TIMEFRAME = "4h"  # TODO： 该部分设计应该是在单独的策略里面定义，如 dual_thrust 策略需要趋势和信号时间粒度，则单独指明
 
-# 策略参数 (Strategy Parameters)
+# 下单参数 (Order Parameters)
 STRATEGY_LEVERAGE = 5
 RISK_QTY_PERCENT = Decimal("0.2")  # 每次交易占权益百分比
-
+BALANCE = Money("100", USDT)
 
 # ==========================================
 # 2. 自动化配置生成 (Auto Configuration Factory)
@@ -53,7 +53,7 @@ def get_instrument_config(
 ) -> InstrumentConfig:
     """生成标的配置"""
     # 针对不同标的的特殊处理可以放在这里
-    leverage = 3
+    leverage = 3  # TODO： 这块可能会影响实际的杠杆
     if symbol == "DOGE":
         leverage = 1
 
@@ -63,6 +63,7 @@ def get_instrument_config(
         base_currency=quote,
         type=instr_type,
         leverage=leverage,
+        # 挂单手续费这一块，binance 会在 inst json 写明，但 OKX 不会
         maker_fee=0.0002,
         taker_fee=0.0005,
     )
@@ -186,13 +187,6 @@ DUAL_THRUST_STRATEGY = get_dual_thrust_strategy(
     active_instrument, data_main, data_trend, RISK_QTY_PERCENT, STRATEGY_LEVERAGE
 )
 
-# E. 回测环境
-BACKTEST_SETTINGS = BacktestConfig(
-    start_date=START_DATE,
-    end_date=END_DATE,
-    initial_balance=[Money("100", USDT)],
-    output_html_report=False,
-)
 
 # F. 日志配置
 LOGGING_SETTINGS = LogConfig(
@@ -213,12 +207,18 @@ LOGGING_SETTINGS = LogConfig(
 # 4. 最终导出 (Export)
 # ==========================================
 
-current_config = GlobalConfig(
+current_config = BackTestConfig(
+    # 子集配置
     instrument=active_instrument,
     data=data_main,
     aux_data=data_trend,
     strategy=DUAL_THRUST_STRATEGY,  # 在这里切换策略
-    backtest=BACKTEST_SETTINGS,
+    # 基础配置
+    start_date=START_DATE,
+    end_date=END_DATE,
+    initial_balance=BALANCE,
+    output_html_report=False,
+    # 其他配置
     logging=LOGGING_SETTINGS,
-    ml=ML_SETTINGS,
+    ml=None,
 )

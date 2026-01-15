@@ -16,11 +16,11 @@ from nautilus_trader.model.enums import AccountType, BookType, OmsType
 from nautilus_trader.persistence.wranglers import BarDataWrangler
 
 from backtest.utils import load_strategy_class, load_strategy_config_class
-from config.definitions import GlobalConfig
+from config.definitions import BackTestConfig
 from utils.instrument_loader import load_instrument
 
 
-def run_low_level(cfg: GlobalConfig, base_dir: Path):
+def run_low_level(cfg: BackTestConfig, base_dir: Path):
     print(f"🚀 Starting Low-Level Backtest with config: {cfg.strategy.name}")
 
     OUTPUT_DIR = base_dir / "output"
