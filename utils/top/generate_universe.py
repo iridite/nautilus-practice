@@ -7,10 +7,10 @@ import pandas as pd
 from tqdm import tqdm
 
 # 配置常量
-DATA_DIR = Path(__file__).parent.parent / "data" / "top"
+DATA_DIR = Path(__file__).parent.parent.parent / "data" / "top"
 STABLECOINS = ["USDT", "USDC", "BUSD", "DAI", "TUSD", "UST", "EURS", "EUR", "GBP"]
-MIN_COUNT_RATIO = 0.8  # 当月数据完整度阈值
-TOP_N = 50  # 选取前 N 个币种
+MIN_COUNT_RATIO = 0.85  # 当月数据完整度阈值
+TOP_Ns = [25, 50]  # 选取前 N 个币种
 
 
 def is_stablecoin(symbol: str) -> bool:
@@ -23,6 +23,9 @@ def is_stablecoin(symbol: str) -> bool:
         if symbol.startswith(stable):
             return True
     return False
+
+
+# TODO: 可能需要加一个 option 选择是否主动将 BTC，ETH 剔除
 
 
 def get_days_in_month(year: int, month: int) -> int:
@@ -99,7 +102,7 @@ def generate_universe():
     # 注意：T 月的成交量排名决定 T+1 月的 Universe
 
     sorted_months = sorted(monthly_stats.keys())
-    universe_dict = {}
+    universes = {n: {} for n in TOP_Ns}
 
     for i in range(len(sorted_months) - 1):
         current_month = sorted_months[i]
@@ -109,28 +112,33 @@ def generate_universe():
         candidates = monthly_stats[current_month]
         candidates.sort(key=lambda x: x[1], reverse=True)
 
-        # 选取 Top 50
-        top_50 = [c[0] for c in candidates[:TOP_N]]
+        # 选取不同数量的 Top N
+        for n in TOP_Ns:
+            top_n_symbols = [c[0] for c in candidates[:n]]
+            universes[n][next_month] = top_n_symbols
 
-        # 作为下个月的可交易候选池
-        universe_dict[next_month] = top_50
-
-    return universe_dict
+    return universes
 
 
 if __name__ == "__main__":
-    universe = generate_universe()
+    universes = generate_universe()
 
-    if universe:
-        print("\n[*] Sample Universe (Latest Month):")
-        last_month = sorted(universe.keys())[-1]
-        print(f"Month: {last_month}")
-        print(f"Symbols ({len(universe[last_month])}): {universe[last_month][:10]} ...")
+    if universes:
+        for n, universe in universes.items():
+            if not universe:
+                continue
 
-        # 保存为 JSON 方便查看或加载
-        output_path = DATA_DIR.parent / "universe.json"
-        with open(output_path, "w") as f:
-            json.dump(universe, f, indent=4)
-        print(f"\n[√] Universe dictionary saved to: {output_path}")
+            print(f"\n[*] Sample Universe Top {n} (Latest Month):")
+            last_month = sorted(universe.keys())[-1]
+            print(f"Month: {last_month}")
+            print(
+                f"Symbols ({len(universe[last_month])}): {universe[last_month][:10]} ..."
+            )
+
+            # 保存为 JSON 方便查看或加载
+            output_path = DATA_DIR.parent / f"universe_{n}.json"
+            with open(output_path, "w") as f:
+                json.dump(universe, f, indent=4)
+            print(f"[√] Universe Top {n} saved to: {output_path}")
     else:
-        print("[!] No universe generated. Check if data exists in data/top/")
+        print("[!] No universes generated. Check if data exists in data/top/")
