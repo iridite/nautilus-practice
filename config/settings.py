@@ -48,24 +48,6 @@ INIT_BALANCES = [Money("100", USDT)]
 # ==========================================
 
 
-def get_instrument_config(
-    symbol: str, quote: str, venue_name: str, instr_type: InstrumentType
-) -> InstrumentConfig:
-    """生成标的配置"""
-    # 针对不同标的的特殊处理可以放在这里
-    leverage = 3  # TODO： 这块可能会影响实际的杠杆
-    if symbol == "DOGE":
-        leverage = 1
-
-    return InstrumentConfig(
-        venue_name=venue_name,
-        quote_currency=symbol,
-        base_currency=quote,
-        type=instr_type,
-        leverage=leverage,
-    )
-
-
 def find_data_file(
     symbol: str, quote: str, venue: str, timeframe: str, start: str, end: str
 ) -> str:
@@ -109,13 +91,11 @@ def get_data_config(
         agg = BarAggregation.MINUTE
         period = 1
 
-    file_name = find_data_file(symbol, quote, venue, timeframe, start, end)
-
     return DataConfig(
-        csv_file_name=file_name,
+        csv_file_name=f"{symbol}{quote}/{venue.lower()}-{symbol}{quote}-{timeframe}-{start}_{end}.csv",
         bar_aggregation=agg,
         bar_period=period,
-        price_type=PriceType.LAST,
+        price_type=PriceType.LAST,  # TODO: 多类型 PriceType 处理
     )
 
 
