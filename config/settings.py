@@ -135,43 +135,26 @@ data_trend = get_data_config(
 # 演示：如果需要多源数据（例如 RS-Squeeze 的基准数据）
 # data_benchmark = get_data_config("BTC", "USDT", "BINANCE", MAIN_TIMEFRAME, START_DATE, END_DATE, label="benchmark")
 
-
-def get_dual_thrust_strategy(
-    instrument: InstrumentConfig,
-    main_data: DataConfig,
-    trend_data: DataConfig,
-    risk_qty_percent: Decimal,
-) -> StrategyConfig:
-    """自动生成 Dual Thrust 策略配置"""
-    return StrategyConfig(
-        name="DualThrust",
-        module_path="strategy.dual_thrust",
-        config_class="DualThrustConfig",
-        params={
-            "instrument_id": instrument.instrument_id,
-            "bar_type": f"{instrument.instrument_id}-{main_data.bar_type_str}",
-            "trend_bar_type": f"{instrument.instrument_id}-{trend_data.bar_type_str}",
-            # 核心参数 (Core Params)
-            "lookback_period": 4,
-            "k1": 0.5,
-            "k2": 0.5,
-            "trend_ema_period": 200,
-            "atr_period": 20,
-            # 资金管理 (Money Management)
-            "qty_percent": risk_qty_percent,
-            # 风控 (Risk Management)
-            "stop_loss_atr_mult": 1.5,
-            "stop_loss_pct": 0.015,
-            "use_auto_sl": False,  # DualThrust uses its own ATR stop, so disable base auto-SL
-        },
-    )
-
-
-# 选择并实例化策略
-DUAL_THRUST_STRATEGY = get_dual_thrust_strategy(
-    active_instrument, data_main, data_trend, RISK_QTY_PERCENT
+DUAL_THRUST_STRATEGY = StrategyConfig(
+    name="DualThrust",
+    module_path="strategy.dual_thrust",
+    config_class="DualThrustConfig",
+    params={
+        "instrument_id": active_instrument.instrument_id,
+        # 核心参数 (Core Params)
+        "lookback_period": 4,
+        "k1": 0.5,
+        "k2": 0.5,
+        "trend_ema_period": 200,
+        "atr_period": 20,
+        # 资金管理 (Money Management)
+        "qty_percent": RISK_QTY_PERCENT,
+        # 风控 (Risk Management)
+        "stop_loss_atr_mult": 1.5,
+        "stop_loss_pct": 0.015,
+        "use_auto_sl": False,  # DualThrust uses its own ATR stop, so disable base auto-SL
+    },
 )
-
 
 # ==========================================
 # 4. 最终导出 (Export)

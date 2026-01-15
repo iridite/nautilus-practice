@@ -14,6 +14,7 @@ from nautilus_trader.trading.strategy import Strategy
 class BaseStrategyConfig(StrategyConfig):  # pyright: ignore[reportGeneralTypeIssues]
     """
     Base configuration for strategies, including common risk management and position sizing parameters.
+    # TODO: check this later for its usability
     """
 
     instrument_id: str
@@ -34,7 +35,7 @@ class BaseStrategyConfig(StrategyConfig):  # pyright: ignore[reportGeneralTypeIs
     # --- Risk Management ---
     # Stop Loss Percentage (e.g., 0.015 for 1.5%)
     # If set, a Stop Market order is automatically managed to prevent major drawdowns.
-    stop_loss_pct: Optional[float] = None
+    stop_loss_pct: Optional[float] = None  # pct for percent
 
     # Toggle for automated stop loss management.
     use_auto_sl: bool = True
