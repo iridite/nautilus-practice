@@ -123,7 +123,12 @@ def get_data_config(
 # 3. 动态构建配置对象 (Dynamic Construction)
 # ==========================================
 
-active_instrument = get_instrument_config(SYMBOL, QUOTE, VENUE, INSTRUMENT_TYPE)
+active_instrument = InstrumentConfig(
+    venue_name=VENUE,
+    quote_currency=SYMBOL,
+    base_currency=QUOTE,
+    type=INSTRUMENT_TYPE,
+)
 
 data_main = get_data_config(SYMBOL, QUOTE, VENUE, MAIN_TIMEFRAME, START_DATE, END_DATE)
 data_trend = get_data_config(

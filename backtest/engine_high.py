@@ -32,23 +32,16 @@ def run_high_level(cfg: BackTestConfig, base_dir: Path):
     instrument_file = (
         data_path
         / "instrument"
-        / cfg.instrument.venue
+        / cfg.instrument.venue_name
         / f"{cfg.instrument.instrument_id.split('.')[0]}.json"
     )
 
     if instrument_file.exists():
         print(f"📂 Loading instrument from {instrument_file}")
 
-        # Determine fees (industry standard defaults for OKX if not provided)
-        maker_fee = cfg.instrument.maker_fee
-        taker_fee = cfg.instrument.taker_fee
-        if cfg.instrument.venue == "OKX" and maker_fee is None and taker_fee is None:
-            maker_fee = 0.0002
-            taker_fee = 0.0005
-
         instrument = load_instrument(
-            instrument_file, maker_fee=maker_fee, taker_fee=taker_fee
-        )
+            instrument_file
+        )  # Determine fees (industry standard defaults for OKX if not provided)
     else:
         raise FileNotFoundError(
             f"❌ Instrument definition not found at: {instrument_file}\n"
@@ -103,7 +96,7 @@ def run_high_level(cfg: BackTestConfig, base_dir: Path):
     # Use MakerTakerFeeModelConfig which pulls fees directly from the instrument
     venue_configs = [
         BacktestVenueConfig(
-            name=cfg.instrument.venue,
+            name=cfg.instrument.venue_name,
             oms_type="HEDGING",
             account_type="MARGIN",
             base_currency="USDT",
@@ -154,15 +147,18 @@ def run_high_level(cfg: BackTestConfig, base_dir: Path):
     ]
 
     # 7. Configure Logging
-    logging_config = LoggingConfig(
-        log_level=cfg.logging.log_level,
-        log_level_file=cfg.logging.log_level_file,
-        log_colors=cfg.logging.log_colors,
-        use_pyo3=cfg.logging.use_pyo3,
-        log_component_levels=cfg.logging.log_component_levels,
-        log_components_only=bool(cfg.logging.log_components_only),
-        log_directory=str(base_dir / "log" / "backtest" / "high_level"),
-    )
+    if cfg.logging:
+        logging_config = LoggingConfig(
+            log_level=cfg.logging.log_level,
+            log_level_file=cfg.logging.log_level_file,
+            log_colors=cfg.logging.log_colors,
+            use_pyo3=cfg.logging.use_pyo3,
+            log_component_levels=cfg.logging.log_component_levels,
+            log_components_only=bool(cfg.logging.log_components_only),
+            log_directory=str(base_dir / "log" / "backtest" / "low_level"),
+        )
+    else:
+        logging_config = None
 
     eng_cfg = BacktestEngineConfig(
         strategies=strategies,

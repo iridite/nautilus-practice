@@ -1,6 +1,5 @@
 from dataclasses import dataclass, field
 from enum import Enum
-from multiprocessing import Value
 from typing import Any, Dict, List, Optional
 
 from nautilus_trader.model import Money
