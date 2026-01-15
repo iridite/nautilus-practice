@@ -6,7 +6,6 @@ from nautilus_trader.backtest.config import (
     BacktestDataConfig,
     BacktestRunConfig,
     BacktestVenueConfig,
-    MakerTakerFeeModelConfig,
 )
 from nautilus_trader.backtest.node import (
     BacktestEngineConfig,
@@ -109,7 +108,8 @@ def run_high_level(cfg: GlobalConfig, base_dir: Path):
             account_type="MARGIN",
             base_currency="USDT",
             starting_balances=cfg.backtest.initial_balance,
-            fee_model=MakerTakerFeeModelConfig(),
+            fee_model=None,
+            trade_execution=True,
         ),
     ]
 
@@ -117,7 +117,7 @@ def run_high_level(cfg: GlobalConfig, base_dir: Path):
     data_configs = [
         BacktestDataConfig(
             catalog_path=path,
-            data_cls=Bar,
+            data_cls="nautilus_trader.model.data:Bar",
             instrument_id=instrument.id,
             start_time=cfg.backtest.start_date,
             end_time=cfg.backtest.end_date,
@@ -177,18 +177,19 @@ def run_high_level(cfg: GlobalConfig, base_dir: Path):
         engine=eng_cfg,
         data=data_configs,
         venues=venue_configs,
+        raise_exception=True,
     )
 
     # 8. Execute
     node = BacktestNode(configs=[run_config])
     print("⏳ Running BacktestNode...")
-    node.run()
+    results = node.run()
     print("✅ Backtest Complete.")
 
-    # if results:
-    #     _print_results(results[0])
-    # else:
-    #     print("❌ No results generated.")
+    if results:
+        _print_results(results[0])
+    else:
+        print(f"❌ No results generated: {results}")
 
 
 def _print_results(result: BacktestResult):

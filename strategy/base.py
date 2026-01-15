@@ -4,6 +4,7 @@ from typing import Optional
 from nautilus_trader.config import StrategyConfig
 from nautilus_trader.model.enums import OrderSide, OrderType, PositionSide, TimeInForce
 from nautilus_trader.model.events import PositionClosed
+from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orders import Order
@@ -59,7 +60,10 @@ class BaseStrategy(Strategy):
         Subclasses should call super().on_start() to ensure instrument is loaded.
         """
         if hasattr(self.config, "instrument_id") and self.config.instrument_id:
-            self.instrument = self.cache.instrument(self.config.instrument_id)
+            instrument_id = self.config.instrument_id
+            if isinstance(instrument_id, str):
+                instrument_id = InstrumentId.from_str(instrument_id)
+            self.instrument = self.cache.instrument(instrument_id)
             if not self.instrument:
                 self.log.error(
                     f"BaseStrategy: Could not find instrument {self.config.instrument_id}"
@@ -166,7 +170,10 @@ class BaseStrategy(Strategy):
         if self.instrument:
             return self.instrument
         if hasattr(self.config, "instrument_id") and self.config.instrument_id:
-            self.instrument = self.cache.instrument(self.config.instrument_id)
+            instrument_id = self.config.instrument_id
+            if isinstance(instrument_id, str):
+                instrument_id = InstrumentId.from_str(instrument_id)
+            self.instrument = self.cache.instrument(instrument_id)
         if not self.instrument:
             raise ValueError(
                 "Instrument not initialized. Ensure super().on_start() was called."

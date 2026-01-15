@@ -16,7 +16,7 @@ class DualThrustConfig(BaseStrategyConfig):
     继承自 BaseStrategyConfig，自动获得 trade_size, qty_percent, leverage 等通用参数
     """
 
-    bar_type: BarType | str = ""
+    bar_type: str = ""
 
     # 策略核心参数
     lookback_period: int = 4  # N: 回溯周期数 (4H)
