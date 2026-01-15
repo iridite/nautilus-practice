@@ -11,13 +11,12 @@ build/
 # catalog data
 data/parquet/**
 data/instrument/**
-data/record/
-data/raw
+data/record/**
+data/raw/**
+data/models/**
+data/top/**
 output/**
 log/**
-
-# ml models
-models/
 
 # Ignore configuration files
 # config/settings.py # since there is only me doing development, I will keep this unignored for now
