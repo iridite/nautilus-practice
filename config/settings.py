@@ -73,33 +73,6 @@ ML_SETTINGS = MLConfig(
     record_path="data/record/features_log.csv",
 )
 
-# ==========================================
-# 2. 自动化配置生成 (Auto Configuration Factory)
-# ==========================================
-
-
-def find_data_file(
-    symbol: str, quote: str, venue: str, timeframe: str, start: str, end: str
-) -> str:
-    """
-    自动查找符合条件的数据文件。
-    如果文件不存在，则预测其命名（因为 main.py 会在之后尝试下载它）。
-    """
-    base_dir = Path(__file__).parent.parent / "data" / "raw"
-    symbol_folder = f"{symbol}{quote}"
-    target_dir = base_dir / symbol_folder
-
-    # 优先查找已经存在的文件
-    if target_dir.exists():
-        files = list(target_dir.glob(f"*{timeframe}*.csv"))
-        if files:
-            return f"{symbol_folder}/{files[0].name}"
-
-    # 如果没找到，返回预测的路径（符合 data_retrival.py 的命名规则）
-    # 格式: {SYMBOL}{QUOTE}/{VENUE.lower()}-{SYMBOL}{QUOTE}-{TIMEFRAME}-{START}_{END}.csv
-    filename = f"{venue.lower()}-{symbol}{quote}-{timeframe}-{start}_{end}.csv"
-    return f"{symbol_folder}/{filename}"
-
 
 def get_data_config(
     symbol: str, quote: str, venue: str, timeframe: str, start: str, end: str
