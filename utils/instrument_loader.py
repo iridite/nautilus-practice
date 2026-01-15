@@ -9,8 +9,6 @@ from nautilus_trader.model.instruments import Instrument
 
 def load_instrument(
     file_path: Union[str, Path],
-    maker_fee: float = None,
-    taker_fee: float = None,
 ) -> Instrument:
     """
     Loads an instrument from a JSON file.
@@ -46,9 +44,12 @@ def load_instrument(
             f"Instrument class {instrument_type} does not support from_dict deserialization"
         )
 
-    if maker_fee is not None:
-        data["maker_fee"] = str(maker_fee)
-    if taker_fee is not None:
-        data["taker_fee"] = str(taker_fee)
+    # 挂单手续费这一块，binance 会在 inst json 写明，但 OKX 不会
+    # 其他的信息还是比较有用的
+    # TODO: 这部分应该写到文档里面去，方便后面修改做指引
+    if data.get("maker_fee") is None or data.get("maker_fee") == 0:
+        data["maker_fee"] = 0.02
+    if data.get("taker_fee") is None or data.get("taker_fee") == 0:
+        data["taker_fee"] = 0.05
 
-    return cls.from_dict(data)
+    return cls.from_dict(data)  # return a Instrument

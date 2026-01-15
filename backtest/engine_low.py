@@ -2,8 +2,6 @@ from datetime import datetime
 from pathlib import Path
 
 import pandas as pd
-from nautilus_trader.adapters.binance import BINANCE_VENUE
-from nautilus_trader.adapters.okx import OKX_VENUE
 from nautilus_trader.analysis.tearsheet import create_tearsheet
 from nautilus_trader.backtest.config import BacktestEngineConfig
 from nautilus_trader.backtest.engine import BacktestEngine
@@ -13,6 +11,7 @@ from nautilus_trader.config import RiskEngineConfig
 from nautilus_trader.model import BarType, TraderId
 from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.enums import AccountType, BookType, OmsType
+from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.persistence.wranglers import BarDataWrangler
 
 from backtest.utils import load_strategy_class, load_strategy_config_class
@@ -27,39 +26,36 @@ def run_low_level(cfg: BackTestConfig, base_dir: Path):
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
     # 1. Configure Engine
-    logging_config = LoggingConfig(
-        log_level=cfg.logging.log_level,
-        log_level_file=cfg.logging.log_level_file,
-        log_colors=cfg.logging.log_colors,
-        use_pyo3=cfg.logging.use_pyo3,
-        log_component_levels=cfg.logging.log_component_levels,
-        log_components_only=bool(cfg.logging.log_components_only),
-        log_directory=str(base_dir / "log" / "backtest" / "low_level"),
-    )
+    if cfg.logging:
+        logging_config = LoggingConfig(
+            log_level=cfg.logging.log_level,
+            log_level_file=cfg.logging.log_level_file,
+            log_colors=cfg.logging.log_colors,
+            use_pyo3=cfg.logging.use_pyo3,
+            log_component_levels=cfg.logging.log_component_levels,
+            log_components_only=bool(cfg.logging.log_components_only),
+            log_directory=str(base_dir / "log" / "backtest" / "low_level"),
+        )
+    else:
+        logging_config = None
 
     engine_config = BacktestEngineConfig(
         trader_id=TraderId("BACKTESTER-001"),
         logging=logging_config,
         risk_engine=RiskEngineConfig(
             bypass=False,  # 彻底关闭风控检查
+            # TODO: 后期加个 RiskConfig
+            # 实现在 settings 中的管理
         ),
     )
     engine = BacktestEngine(engine_config)
 
     # 2. Configure Venue
 
-    # Map string venue to object
-    venue_map = {
-        "BINANCE": BINANCE_VENUE,
-        "OKX": OKX_VENUE,
-    }
-    venue_obj = venue_map.get(cfg.instrument.venue)
-    # TODO: see if there's a better method, that could direct designate Venue
-    if not venue_obj:
-        raise ValueError(f"Unsupported venue: {cfg.instrument.venue}")
+    assert cfg.instrument.venue_name in ["BINANCE", "OKX"], "Unsupported venue"
 
     engine.add_venue(
-        venue=venue_obj,
+        venue=Venue(cfg.instrument.venue_name),
         oms_type=OmsType.HEDGING,
         book_type=BookType.L1_MBP,
         account_type=AccountType.MARGIN,
@@ -70,26 +66,20 @@ def run_low_level(cfg: BackTestConfig, base_dir: Path):
     )
 
     # 3. Load Instrument
-    # Determine fees (industry standard defaults for OKX if not provided)
-    maker_fee = cfg.instrument.maker_fee
-    taker_fee = cfg.instrument.taker_fee
-    if cfg.instrument.venue == "OKX" and maker_fee is None and taker_fee is None:
-        maker_fee = 0.0002
-        taker_fee = 0.0005
 
     instrument_file = (
         base_dir
         / "data"
         / "instrument"
-        / cfg.instrument.venue
+        / cfg.instrument.venue_name
         / f"{cfg.instrument.instrument_id.split('.')[0]}.json"
     )
 
     if instrument_file.exists():
         print(f"📂 Loading instrument from {instrument_file}")
         inst = load_instrument(
-            instrument_file, maker_fee=maker_fee, taker_fee=taker_fee
-        )
+            instrument_file
+        )  # Dynamically Determine fees (industry standard defaults for OKX if not provided)
     else:
         raise FileNotFoundError(f"⚠️ Instrument file not found at {instrument_file}")
     engine.add_instrument(inst)
@@ -182,6 +172,7 @@ def run_low_level(cfg: BackTestConfig, base_dir: Path):
     strategy_params = cfg.strategy.params.copy()
     strategy_params["instrument_id"] = inst.id
     strategy_params["bar_type"] = bar_type
+
     # Inject leverage from instrument config if not explicitly set in strategy params
     if "leverage" not in strategy_params:
         strategy_params["leverage"] = cfg.instrument.leverage

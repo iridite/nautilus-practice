@@ -49,7 +49,7 @@ INIT_BALANCES = [Money("100", USDT)]
 
 
 def get_instrument_config(
-    symbol: str, quote: str, venue: str, instr_type: InstrumentType
+    symbol: str, quote: str, venue_name: str, instr_type: InstrumentType
 ) -> InstrumentConfig:
     """生成标的配置"""
     # 针对不同标的的特殊处理可以放在这里
@@ -58,14 +58,11 @@ def get_instrument_config(
         leverage = 1
 
     return InstrumentConfig(
-        venue=venue,
+        venue_name=venue_name,
         quote_currency=symbol,
         base_currency=quote,
         type=instr_type,
         leverage=leverage,
-        # 挂单手续费这一块，binance 会在 inst json 写明，但 OKX 不会
-        maker_fee=0.0002,
-        taker_fee=0.0005,
     )
 
 

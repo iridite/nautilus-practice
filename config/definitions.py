@@ -1,5 +1,6 @@
 from dataclasses import dataclass, field
 from enum import Enum
+from multiprocessing import Value
 from typing import Any, Dict, List, Optional
 
 from nautilus_trader.model import Money
@@ -17,30 +18,30 @@ class InstrumentType(Enum):
 @dataclass
 class InstrumentConfig:
     type: InstrumentType = InstrumentType.SWAP
-    venue: str = "OKX"
+    venue_name: str = "OKX"
     base_currency: str = "ETH"
     quote_currency: str = "USDT"
     leverage: Optional[int] = None  # 用户设定的杠杆倍数
-    maker_fee: Optional[float] = None
-    taker_fee: Optional[float] = None
 
     @property
     def instrument_id(self) -> str:
-        if self.venue == "OKX":
-            return f"{self.quote_currency}-{self.base_currency}-{self.type.value}.{self.venue}"
-        elif self.venue == "BINANCE":
+        if self.venue_name == "OKX":
+            return f"{self.quote_currency}-{self.base_currency}-{self.type.value}.{self.venue_name}"
+        elif self.venue_name == "BINANCE":
             if self.type == InstrumentType.SPOT:
-                return f"{self.quote_currency}{self.base_currency}.{self.venue}"
+                return f"{self.quote_currency}{self.base_currency}.{self.venue_name}"
             elif self.type == InstrumentType.SWAP:
-                return f"{self.quote_currency}{self.base_currency}-PERP.{self.venue}"
+                return (
+                    f"{self.quote_currency}{self.base_currency}-PERP.{self.venue_name}"
+                )
             elif self.type == InstrumentType.FUTURES:
-                return f"{self.quote_currency}{self.base_currency}-{self.type.value}.{self.venue}"
+                return f"{self.quote_currency}{self.base_currency}-{self.type.value}.{self.venue_name}"
             elif self.type == InstrumentType.OPTION:
-                return f"{self.quote_currency}{self.base_currency}-{self.type.value}.{self.venue}"
+                return f"{self.quote_currency}{self.base_currency}-{self.type.value}.{self.venue_name}"
             else:
                 raise ValueError(f"Unsupported instrument type: {self.type}")
         else:
-            raise ValueError(f"Unsupported venue: {self.venue}")
+            raise ValueError(f"Unsupported venue: {self.venue_name}")
 
 
 @dataclass
