@@ -1,6 +1,9 @@
+import json
+import os
 from collections import deque
+from datetime import datetime, timezone
 from decimal import Decimal
-from typing import Optional
+from typing import Dict, Optional, Set
 
 from nautilus_trader.indicators import (
     AverageTrueRange,
@@ -22,6 +25,9 @@ class RSSqueezeConfig(BaseStrategyConfig):
 
     bar_type: str = ""
     benchmark_id: str = "BTCUSDT.BINANCE"
+
+    # Universe 参数
+    universe_filename: Optional[str] = None
 
     # 指标参数
     bb_period: int = 20
@@ -54,9 +60,10 @@ class RSSqueezeStrategy(BaseStrategy):
     3. 相对强弱 (RS): (Asset_Ret / BTC_Ret) > 1.02。
     4. Squeeze 条件: Bollinger Width < Keltner Width。
     5. 做多入场: RS 走强且处于 Squeeze 状态，且价格在 EMA200 之上，突破前 2 根 Bar 最高价。
-    6. 仓位管理: 基于 3% 账户风险计算下单量。
-    7. 止损管理: 初始 1.5*ATR 止损，获利 1.5*ATR 后移至保本(Entry + 0.2%)。
-    8. 趋势离场: 收盘跌破 EMA20。
+    6. 动态 Universe 过滤: 只有在当前月份属于合法 Universe 池时才允许开新仓。
+    7. 仓位管理: 基于 3% 账户风险计算下单量。
+    8. 止损管理: 初始 1.5*ATR 止损，获利 1.5*ATR 后移至保本(Entry + 0.2%)。
+    9. 趋势离场: 收盘跌破 EMA20。
     """
 
     def __init__(self, config: RSSqueezeConfig):
@@ -95,8 +102,49 @@ class RSSqueezeStrategy(BaseStrategy):
         self._entry_price: Optional[Decimal] = None
         self._breakeven_triggered = False
 
+        # Universe 配置
+        self._universe_config: Dict[str, Set[str]] = {}
+        self._current_month: str = ""
+        self._is_in_universe: bool = False
+        self._load_universe()
+
         # 日志节流
         self._last_warmup_log = 0
+
+    def _load_universe(self):
+        """
+        加载 Universe 配置文件
+        """
+        if not self.config.universe_filename:
+            return
+
+        # 搜索路径：data/ 目录下
+        paths_to_check = [
+            os.path.join(os.getcwd(), "data", self.config.universe_filename),
+            os.path.join(
+                os.path.dirname(os.path.dirname(__file__)),
+                "data",
+                self.config.universe_filename,
+            ),
+        ]
+
+        file_path = None
+        for p in paths_to_check:
+            if os.path.exists(p):
+                file_path = p
+                break
+
+        if file_path:
+            try:
+                with open(file_path, "r") as f:
+                    raw_data = json.load(f)
+                    # 预处理为 Set 以提高检索效率
+                    self._universe_config = {k: set(v) for k, v in raw_data.items()}
+                self.log.info(f"Loaded universe config from {file_path}")
+            except Exception as e:
+                self.log.error(f"Error loading universe config: {e}")
+        else:
+            self.log.error(f"Universe file not found: {self.config.universe_filename}")
 
     def on_start(self):
         """
@@ -155,19 +203,48 @@ class RSSqueezeStrategy(BaseStrategy):
                     )
                 return
 
-            # 更新 Squeeze 状态
-            self._update_squeeze_state()
+            # --- Universe 时效性检查 ---
+            self._update_universe_status(bar.ts_event)
 
             # 检查仓位
             position = self.cache.position_open(self.instrument_id)
 
             if position:
+                # 如果有持仓，无论是否在 Universe 内，都必须允许该仓位继续运行（直到触发止损或 EMA20）
                 self._manage_exit_and_trailing(bar, position)
-            else:
+            elif self._is_in_universe:
+                # 只有在 Universe 内才允许计算 Squeeze 信号及开新仓
+                self._update_squeeze_state()
                 self._check_entry_signal(bar)
 
             # 存储 High 用于下一根 Bar 的突破判定
             self.asset_highs.append(Decimal(str(bar.high)))
+
+    def _update_universe_status(self, ts_event: int):
+        """
+        更新当前时间戳对应的 Universe 状态
+        """
+        if not self._universe_config:
+            self._is_in_universe = True
+            return
+
+        # 获取月份 key (YYYY-MM)
+        dt = datetime.fromtimestamp(ts_event / 1e9, tz=timezone.utc)
+        month_str = dt.strftime("%Y-%m")
+
+        # 仅在月份变化时更新检索
+        if month_str != self._current_month:
+            self._current_month = month_str
+            month_universe = self._universe_config.get(month_str, set())
+
+            # 兼容 Symbol 和完整的 InstrumentId 字符串
+            symbol = self.instrument_id.symbol
+            self._is_in_universe = (
+                symbol in month_universe or str(self.instrument_id) in month_universe
+            )
+
+            if self._is_in_universe:
+                self.log.debug(f"{self.instrument_id} is in Universe for {month_str}")
 
     def _is_warmed_up(self) -> bool:
         """
@@ -351,3 +428,5 @@ class RSSqueezeStrategy(BaseStrategy):
         self._entry_price = None
         self._breakeven_triggered = False
         self._last_warmup_log = 0
+        self._current_month = ""
+        self._is_in_universe = False
