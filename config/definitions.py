@@ -46,7 +46,7 @@ class InstrumentConfig:
 @dataclass
 class DataConfig:
     csv_file_name: str  # 在 data/raw 下的文件名
-    bar_aggregation: BarAggregation = BarAggregation.MINUTE
+    bar_aggregation: BarAggregation = BarAggregation.HOUR
     bar_period: int = 1
     price_type: PriceType = PriceType.LAST
 

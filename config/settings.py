@@ -43,6 +43,36 @@ STRATEGY_LEVERAGE = 5
 RISK_QTY_PERCENT = Decimal("0.2")  # 每次交易占权益百分比
 INIT_BALANCES = [Money("100", USDT)]
 
+# 日志配置
+LOGGING_SETTINGS = LogConfig(
+    log_level="INFO",
+    log_level_file="DEBUG",
+    log_colors=True,
+    use_pyo3=True,
+    log_component_levels={
+        "Portfolio": "INFO",
+        "BacktestEngine": "INFO",
+        "DualThrust": "DEBUG",
+    },
+    log_components_only=True,
+)
+
+# 机器学习配置
+ML_SETTINGS = MLConfig(
+    ema_period=50,
+    rsi_period=14,
+    rsi_oversold=30,
+    rsi_overbought=70,
+    stop_loss_pct=0.015,
+    take_profit_pct=0.03,
+    horizon_bars=36,
+    use_ai_filter=False,
+    model_path="data/models/lgbm_mtf_v1.joblib",
+    min_prob_threshold=0.3,
+    record_features=True,
+    record_path="data/record/features_log.csv",
+)
+
 # ==========================================
 # 2. 自动化配置生成 (Auto Configuration Factory)
 # ==========================================
@@ -74,6 +104,7 @@ def find_data_file(
 def get_data_config(
     symbol: str, quote: str, venue: str, timeframe: str, start: str, end: str
 ) -> DataConfig:
+    # TODO: 搞清楚这个 symbol，quote 是什么关系？
     """生成数据配置"""
 
     # 解析 timeframe 字符串到 Nautilus 枚举 (简化处理，假设 1h, 4h, 1m, 1d)
@@ -110,6 +141,7 @@ active_instrument = InstrumentConfig(
     type=INSTRUMENT_TYPE,
 )
 
+# TODO: 数据生成与处理完全自动化，即使是多类型数据也能自己搞定
 data_main = get_data_config(SYMBOL, QUOTE, VENUE, MAIN_TIMEFRAME, START_DATE, END_DATE)
 data_trend = get_data_config(
     SYMBOL, QUOTE, VENUE, TREND_TIMEFRAME, START_DATE, END_DATE
@@ -140,7 +172,7 @@ def get_dual_thrust_strategy(
             "atr_period": 20,
             # 资金管理 (Money Management)
             "qty_percent": risk_qty_percent,
-            "leverage": leverage,
+            "leverage": leverage,  # TODO: 为什么要在策略里写明杠杆量？
             # 风控 (Risk Management)
             "stop_loss_atr_mult": 1.5,
             "stop_loss_pct": 0.015,
@@ -152,37 +184,6 @@ def get_dual_thrust_strategy(
 # 选择并实例化策略
 DUAL_THRUST_STRATEGY = get_dual_thrust_strategy(
     active_instrument, data_main, data_trend, RISK_QTY_PERCENT, STRATEGY_LEVERAGE
-)
-
-
-# F. 日志配置
-LOGGING_SETTINGS = LogConfig(
-    log_level="INFO",
-    log_level_file="DEBUG",
-    log_colors=True,
-    use_pyo3=True,
-    log_component_levels={
-        "Portfolio": "INFO",
-        "BacktestEngine": "INFO",
-        "DualThrust": "DEBUG",
-    },
-    log_components_only=True,
-)
-
-# 机器学习配置
-ML_SETTINGS = MLConfig(
-    ema_period=50,
-    rsi_period=14,
-    rsi_oversold=30,
-    rsi_overbought=70,
-    stop_loss_pct=0.015,
-    take_profit_pct=0.03,
-    horizon_bars=36,
-    use_ai_filter=False,
-    model_path="data/models/lgbm_mtf_v1.joblib",
-    min_prob_threshold=0.3,
-    record_features=True,
-    record_path="data/record/features_log.csv",
 )
 
 
