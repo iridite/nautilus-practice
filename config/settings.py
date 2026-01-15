@@ -41,7 +41,7 @@ TREND_TIMEFRAME = "4h"  # TODO： 该部分设计应该是在单独的策略里�
 # 下单参数 (Order Parameters)
 STRATEGY_LEVERAGE = 5
 RISK_QTY_PERCENT = Decimal("0.2")  # 每次交易占权益百分比
-BALANCE = Money("100", USDT)
+INIT_BALANCES = [Money("100", USDT)]
 
 # ==========================================
 # 2. 自动化配置生成 (Auto Configuration Factory)
@@ -133,21 +133,6 @@ data_trend = get_data_config(
     SYMBOL, QUOTE, VENUE, TREND_TIMEFRAME, START_DATE, END_DATE
 )
 
-ML_SETTINGS = MLConfig(
-    ema_period=50,
-    rsi_period=14,
-    rsi_oversold=30,
-    rsi_overbought=70,
-    stop_loss_pct=0.015,
-    take_profit_pct=0.03,
-    horizon_bars=36,
-    use_ai_filter=False,
-    model_path="data/models/lgbm_mtf_v1.joblib",
-    min_prob_threshold=0.3,
-    record_features=True,
-    record_path="data/record/features_log.csv",
-)
-
 
 def get_dual_thrust_strategy(
     instrument: InstrumentConfig,
@@ -202,6 +187,22 @@ LOGGING_SETTINGS = LogConfig(
     log_components_only=True,
 )
 
+# 机器学习配置
+ML_SETTINGS = MLConfig(
+    ema_period=50,
+    rsi_period=14,
+    rsi_oversold=30,
+    rsi_overbought=70,
+    stop_loss_pct=0.015,
+    take_profit_pct=0.03,
+    horizon_bars=36,
+    use_ai_filter=False,
+    model_path="data/models/lgbm_mtf_v1.joblib",
+    min_prob_threshold=0.3,
+    record_features=True,
+    record_path="data/record/features_log.csv",
+)
+
 
 # ==========================================
 # 4. 最终导出 (Export)
@@ -216,7 +217,7 @@ current_config = BackTestConfig(
     # 基础配置
     start_date=START_DATE,
     end_date=END_DATE,
-    initial_balance=BALANCE,
+    initial_balances=INIT_BALANCES,
     output_html_report=False,
     # 其他配置
     logging=LOGGING_SETTINGS,

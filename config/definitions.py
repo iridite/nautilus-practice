@@ -88,10 +88,10 @@ class MLConfig:
 
     # Inference Control
     use_ai_filter: bool = False
-    model_path: str = "data/models/lgbm_mtf_v1.joblib"
+    model_path: str = "data/models/lgbm_mtf_v1.joblib"  # 名称需要动态化
     min_prob_threshold: float = 0.60
     record_features: bool = False
-    record_path: str = "data/features_log.csv"
+    record_path: str = "data/record/features_log.csv"
 
 
 @dataclass
@@ -104,7 +104,7 @@ class BackTestConfig:
     # 基础回测配置
     start_date: Optional[str] = None
     end_date: Optional[str] = None
-    initial_balance: List[Money] = field(
+    initial_balances: List[Money] = field(
         default_factory=lambda: [Money("10_000", USDT)]
     )
     output_html_report: bool = False
@@ -122,11 +122,11 @@ class BackTestConfig:
 class SandboxConfig:
     # Sandbox Configuration Options
     sandbox_mode: bool = False
-    sandbox_balance: Money = Money("10_000", USDT)
+    sandbox_balance: Money = Money("10_000", USDT)  # TODO: 需要注意多币种
 
 
 @dataclass
 class LiveConfig:
     # Live Configuration Options
     live_mode: bool = False
-    live_balance: Money = Money("10_000", USDT)
+    live_balance: Money = Money("10_000", USDT)  # TODO: 需要注意多币种

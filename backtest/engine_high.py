@@ -107,7 +107,7 @@ def run_high_level(cfg: BackTestConfig, base_dir: Path):
             oms_type="HEDGING",
             account_type="MARGIN",
             base_currency="USDT",
-            starting_balances=cfg.backtest.initial_balance,
+            starting_balances=cfg.initial_balances,
             fee_model=None,
             trade_execution=True,
         ),
@@ -119,8 +119,8 @@ def run_high_level(cfg: BackTestConfig, base_dir: Path):
             catalog_path=path,
             data_cls="nautilus_trader.model.data:Bar",
             instrument_id=instrument.id,
-            start_time=cfg.backtest.start_date,
-            end_time=cfg.backtest.end_date,
+            start_time=cfg.start_date,
+            end_time=cfg.end_date,
         )
         for path in catalog_paths
     ]

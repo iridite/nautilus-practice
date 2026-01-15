@@ -64,7 +64,7 @@ def run_low_level(cfg: BackTestConfig, base_dir: Path):
         book_type=BookType.L1_MBP,
         account_type=AccountType.MARGIN,
         base_currency=USDT,
-        starting_balances=cfg.backtest.initial_balance,
+        starting_balances=cfg.initial_balances,
         trade_execution=True,
         fee_model=MakerTakerFeeModel(),
     )
@@ -121,14 +121,14 @@ def run_low_level(cfg: BackTestConfig, base_dir: Path):
         df = df[["open", "high", "low", "close", "volume"]]
 
         # Filter by date if provided in config
-        if cfg.backtest.start_date:
-            df = df[df.index >= pd.Timestamp(cfg.backtest.start_date)]
-        if cfg.backtest.end_date:
-            df = df[df.index <= pd.Timestamp(cfg.backtest.end_date)]
+        if cfg.start_date:
+            df = df[df.index >= pd.Timestamp(cfg.start_date)]
+        if cfg.end_date:
+            df = df[df.index <= pd.Timestamp(cfg.end_date)]
 
         if len(df) == 0:
             print(
-                f"❌ Error: No data found for {inst.id} within the specified date range in {cfg.backtest.start_date} to {cfg.backtest.end_date}"
+                f"❌ Error: No data found for {inst.id} within the specified date range in {cfg.start_date} to {cfg.end_date}"
             )
             return
         else:
@@ -160,10 +160,10 @@ def run_low_level(cfg: BackTestConfig, base_dir: Path):
 
             aux_df = aux_df[["open", "high", "low", "close", "volume"]]
 
-            if cfg.backtest.start_date:
-                aux_df = aux_df[aux_df.index >= pd.Timestamp(cfg.backtest.start_date)]
-            if cfg.backtest.end_date:
-                aux_df = aux_df[aux_df.index <= pd.Timestamp(cfg.backtest.end_date)]
+            if cfg.start_date:
+                aux_df = aux_df[aux_df.index >= pd.Timestamp(cfg.start_date)]
+            if cfg.end_date:
+                aux_df = aux_df[aux_df.index <= pd.Timestamp(cfg.end_date)]
 
             print(f"📥 Loaded Aux Data: {len(aux_df)} rows")
             aux_bars = aux_wrangler.process(aux_df)
@@ -219,7 +219,7 @@ def run_low_level(cfg: BackTestConfig, base_dir: Path):
     print("✅ Backtest finished.")
 
     # 7. Report
-    if cfg.backtest.output_html_report:
+    if cfg.output_html_report:
         timestamp = datetime.now().isoformat().replace(":", "-")
         report_path = OUTPUT_DIR / f"{inst.id}_{timestamp}.html"
         create_tearsheet(
