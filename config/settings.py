@@ -15,6 +15,8 @@ from config.definitions import (
     MLConfig,
     StrategyConfig,
 )
+from strategy.dual_thrust import DualThrustConfig
+from strategy.rs_squeeze import RSSqueezeConfig
 
 # ==========================================
 # 1. 基础回测参数设定 (Basic User Settings)
@@ -138,22 +140,26 @@ data_trend = get_data_config(
 DUAL_THRUST_STRATEGY = StrategyConfig(
     name="DualThrust",
     module_path="strategy.dual_thrust",
-    config_class="DualThrustConfig",
-    params={
-        "instrument_id": active_instrument.instrument_id,
-        # 核心参数 (Core Params)
-        "lookback_period": 4,
-        "k1": 0.5,
-        "k2": 0.5,
-        "trend_ema_period": 200,
-        "atr_period": 20,
-        # 资金管理 (Money Management)
-        "qty_percent": RISK_QTY_PERCENT,
-        # 风控 (Risk Management)
-        "stop_loss_atr_mult": 1.5,
-        "stop_loss_pct": 0.015,
-        "use_auto_sl": False,  # DualThrust uses its own ATR stop, so disable base auto-SL
-    },
+    params=DualThrustConfig(
+        lookback_period=4,
+        k1=0.5,
+        k2=0.5,
+        trend_ema_period=200,
+        atr_period=20,
+        qty_percent=RISK_QTY_PERCENT,
+        stop_loss_atr_mult=1.5,
+        stop_loss_pct=0.015,
+        use_auto_sl=False,
+    ),
+)
+
+RS_SQUEEZE_STRATEGY = StrategyConfig(
+    name="RSSqueezeStrategy",
+    module_path="strategy.rs_squeeze",
+    params=RSSqueezeConfig(
+        use_auto_sl=True,
+        universe_filename="universe_25.json",
+    ),
 )
 
 # ==========================================

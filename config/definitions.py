@@ -62,14 +62,73 @@ class DataConfig:
 
 @dataclass
 class StrategyConfig:
-    name: str  # 策略类名，例如 "BmrStrategy"
-    module_path: str  # 策略模块路径，例如 "strategy.bmr"
-    config_class: str  # 配置类名，例如 "BmrStrategyConfig"
-    # 感觉有点扯，没有必要设置的这么详细
+    """
+    策略配置容器。
+    优化设计：支持自动推断配置类，并集中管理参数解析逻辑，减少引擎层的重复代码。
+    """
 
+    name: str  # 策略类名 (例如 "RSSqueezeStrategy" 或 "RS_Squeeze")
+    module_path: str  # 模块路径 (例如 "strategy.rs_squeeze")
+    config_class: Optional[str] = None  # 可选：配置类名 (不填则自动推断为 {name}Config)
+
+    # 策略特定的私有参数。支持 dict 或 dataclass 对象以获得更好的 IDE 支持
+    params: Any = field(default_factory=dict)
+
+    # 兼容性/扩展字段
     trade_pair_list: Optional[List[str]] = field(default_factory=list)
 
-    params: Dict[str, Any] = field(default_factory=dict)
+    def resolve_config_class(self) -> str:
+        """获取配置类名，支持从策略名自动推断"""
+        if self.config_class:
+            return self.config_class
+        # 自动推断逻辑: RS_Squeeze -> RS_SqueezeConfig
+        return f"{self.name.replace('Strategy', '')}Config"
+
+    def resolve_params(
+        self,
+        instrument_id: Any,
+        leverage: int,
+        feed_bar_types: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """
+        集中解析最终传递给策略的参数字典。
+        统一处理 Instrument ID、杠杆以及多周期数据标签的注入，解决引擎层逻辑分散的问题。
+        """
+        # 1. 基础参数解析 (支持 dict, dataclass 或 msgspec Struct)
+        if isinstance(self.params, dict):
+            p = self.params.copy()
+        elif hasattr(self.params, "__dict__"):
+            # Dataclass 或普通对象: 提取对象属性 (排除私有属性)
+            p = {k: v for k, v in self.params.__dict__.items() if not k.startswith("_")}
+        else:
+            # 尝试处理 msgspec.Struct (Nautilus 核心配置类通常使用 msgspec)
+            try:
+                from msgspec import structs
+
+                p = structs.asdict(self.params)
+            except (ImportError, TypeError):
+                p = {}
+
+        # 2. 注入核心系统变量
+        p["instrument_id"] = str(instrument_id)
+        p["leverage"] = leverage
+
+        # 3. 注入数据流对应的 BarType (基于 Label 约定)
+        if "main" in feed_bar_types:
+            bt = feed_bar_types["main"]
+            # 兼容不同引擎对 bar_type 的类型要求 (Object vs Str)
+            p["bar_type"] = bt
+            p["trade_bar_type"] = str(bt)
+
+        if "trend" in feed_bar_types:
+            p["trend_bar_type"] = str(feed_bar_types["trend"])
+
+        # 4. 自动注入其他辅助标签 (如 label="benchmark" -> benchmark_bar_type)
+        for label, bt in feed_bar_types.items():
+            if label not in ["main", "trend"]:
+                p[f"{label}_bar_type"] = str(bt)
+
+        return p
 
 
 @dataclass

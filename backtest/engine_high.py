@@ -112,32 +112,17 @@ def run_high_level(cfg: BackTestConfig, base_dir: Path):
     ]
 
     # 4. Configure Strategy
-    # Merge strategy params with system params
-    strategy_params = cfg.strategy.params.copy()
-    strategy_params["instrument_id"] = instrument.id
-    strategy_params["leverage"] = cfg.instrument.leverage
-
-    # Inject bar types from feeds based on labels
-    if "main" in feed_bar_types:
-        strategy_params["bar_type"] = feed_bar_types["main"]
-        strategy_params["trade_bar_type"] = feed_bar_types["main"]
-
-    if "trend" in feed_bar_types:
-        strategy_params["trend_bar_type"] = feed_bar_types["trend"]
-
-    # Generic injection for other labels (e.g. benchmark -> benchmark_bar_type)
-    for label, bt_str in feed_bar_types.items():
-        if label not in ["main", "trend"]:
-            strategy_params[f"{label}_bar_type"] = bt_str
-
-    # Convert Decimal strings to Decimal objects if needed (Nautilus config usually handles this,
-    # but ImportableStrategyConfig passes dict)
-    # Note: ImportableStrategyConfig expects a dict.
+    # Resolve params using centralized logic
+    strategy_params = cfg.strategy.resolve_params(
+        instrument_id=instrument.id,
+        leverage=cfg.instrument.leverage,
+        feed_bar_types=feed_bar_types,
+    )
 
     strategies = [
         ImportableStrategyConfig(
             strategy_path=f"{cfg.strategy.module_path}:{cfg.strategy.name}",
-            config_path=f"{cfg.strategy.module_path}:{cfg.strategy.config_class}",
+            config_path=f"{cfg.strategy.module_path}:{cfg.strategy.resolve_config_class()}",
             config=strategy_params,
         ),
     ]

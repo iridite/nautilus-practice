@@ -140,44 +140,29 @@ def run_low_level(cfg: BackTestConfig, base_dir: Path):
     # 5. Configure Strategy
     StrategyClass = load_strategy_class(cfg.strategy.module_path, cfg.strategy.name)
     ConfigClass = load_strategy_config_class(
-        cfg.strategy.module_path, cfg.strategy.config_class
+        cfg.strategy.module_path, cfg.strategy.resolve_config_class()
     )
 
-    # Prepare params
-    strategy_params = cfg.strategy.params.copy()
-    strategy_params["instrument_id"] = inst.id
-    strategy_params["leverage"] = cfg.instrument.leverage
-
-    # Inject bar types from feeds based on labels
-    if "main" in feed_bar_types:
-        strategy_params["bar_type"] = feed_bar_types["main"]
-        strategy_params["trade_bar_type"] = str(feed_bar_types["main"])
-
-    if "trend" in feed_bar_types:
-        strategy_params["trend_bar_type"] = str(feed_bar_types["trend"])
-
-    # Generic injection for other labels (e.g. benchmark -> benchmark_bar_type)
-    for label, bt in feed_bar_types.items():
-        if label not in ["main", "trend"]:
-            strategy_params[f"{label}_bar_type"] = str(bt)
+    # Resolve params using centralized logic
+    strategy_params = cfg.strategy.resolve_params(
+        instrument_id=inst.id,
+        leverage=cfg.instrument.leverage,
+        feed_bar_types=feed_bar_types,
+    )
 
     # Instantiate Config
     # Filter params to match what the ConfigClass actually accepts
-    # This handles cases where some strategies need 'bar_type' and others (like MTF) don't
     try:
         valid_fields = set(ConfigClass.__annotations__.keys())
-        # Inspect parent classes for inherited fields if needed (simple approximation)
         if hasattr(ConfigClass, "__mro__"):
             for base in ConfigClass.__mro__:
                 if hasattr(base, "__annotations__"):
                     valid_fields.update(base.__annotations__.keys())
 
         final_params = {k: v for k, v in strategy_params.items() if k in valid_fields}
-
         strat_config = ConfigClass(**final_params)
     except Exception as e:
         print(f"❌ Error creating strategy config: {e}")
-        print(f"Params provided: {strategy_params}")
         return
 
     strategy = StrategyClass(config=strat_config)
