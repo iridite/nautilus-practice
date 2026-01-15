@@ -179,12 +179,12 @@ class RSSqueezeStrategy(BaseStrategy):
         super().on_bar(bar)
 
         # A. 更新基准品种 (BTC) 数据
-        if bar.instrument_id == self.benchmark_id:
+        if bar.bar_type.instrument_id == self.benchmark_id:
             self.benchmark_closes.append(Decimal(str(bar.close)))
             return
 
         # B. 更新交易品种数据
-        if bar.instrument_id == self.instrument_id:
+        if bar.bar_type.instrument_id == self.instrument_id:
             self.asset_closes.append(Decimal(str(bar.close)))
 
             # 更新指标
@@ -208,11 +208,11 @@ class RSSqueezeStrategy(BaseStrategy):
             self._update_universe_status(bar.ts_event)
 
             # 检查仓位
-            position = self.cache.position_open(self.instrument_id)
+            positions = self.cache.positions_open(instrument_id=self.instrument_id)
 
-            if position:
+            if positions:
                 # 如果有持仓，无论是否在 Universe 内，都必须允许该仓位继续运行（直到触发止损或 EMA20）
-                self._manage_exit_and_trailing(bar, position)
+                self._manage_exit_and_trailing(bar, positions[0])
             elif self._is_in_universe:
                 # 只有在 Universe 内才允许计算 Squeeze 信号及开新仓
                 self._update_squeeze_state()
@@ -238,10 +238,23 @@ class RSSqueezeStrategy(BaseStrategy):
             self._current_month = month_str
             month_universe = self._universe_config.get(month_str, set())
 
-            # 兼容 Symbol 和完整的 InstrumentId 字符串
+            # 兼容多种 Symbol 格式
+            # 1. 基础/报价货币组合 (e.g. SOLUSDT)
+            # 2. 带冒号格式 (e.g. SOLUSDT:USDT)
+            # 3. 原始 Symbol (e.g. SOL-USDT-SWAP)
+            # 4. 完整 ID (e.g. SOL-USDT-SWAP.OKX)
+            base = self.instrument.base_currency.code
+            quote = self.instrument.quote_currency.code
+            simple_pair = f"{base}{quote}"
+            colon_pair = f"{simple_pair}:{quote}"
             symbol = self.instrument_id.symbol
+            full_id = str(self.instrument_id)
+
             self._is_in_universe = (
-                symbol in month_universe or str(self.instrument_id) in month_universe
+                simple_pair in month_universe
+                or colon_pair in month_universe
+                or symbol in month_universe
+                or full_id in month_universe
             )
 
             if self._is_in_universe:
@@ -263,8 +276,14 @@ class RSSqueezeStrategy(BaseStrategy):
         """
         计算 Squeeze 状态: BB_Width < KC_Width
         """
-        bb_width = Decimal(str(self.bb.upper.value - self.bb.lower.value))
-        kc_width = Decimal(str(self.kc.upper.value - self.kc.lower.value))
+        # 获取指标值，兼容不同版本的 Nautilus (可能是 float 或 Indicator 对象)
+        bb_upper = getattr(self.bb.upper, "value", self.bb.upper)
+        bb_lower = getattr(self.bb.lower, "value", self.bb.lower)
+        kc_upper = getattr(self.kc.upper, "value", self.kc.upper)
+        kc_lower = getattr(self.kc.lower, "value", self.kc.lower)
+
+        bb_width = Decimal(str(bb_upper - bb_lower))
+        kc_width = Decimal(str(kc_upper - kc_lower))
 
         was_squeeze = self._is_squeeze
         self._is_squeeze = bb_width < kc_width

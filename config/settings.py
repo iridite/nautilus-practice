@@ -34,6 +34,9 @@ START_DATE = "2022-01-01"
 END_DATE = "2026-01-14"
 # 有些币种，如 SOL 没有那么长的历史，获取数据会失败需要特别注意
 
+BENCHMARK_SYMBOL = "BTC"
+BENCHMARK_ID = "BTC-USDT-SWAP.OKX"
+
 # 数据配置 (Data Configuration)
 # 策略使用的主周期和趋势辅助周期
 # 注意：文件名格式必须匹配 data_retrival.py 生成的格式
@@ -56,6 +59,7 @@ LOGGING_SETTINGS = LogConfig(
         "Portfolio": "INFO",
         "BacktestEngine": "INFO",
         "DualThrust": "DEBUG",
+        "RSSqueezeStrategy": "DEBUG",
     },
     log_components_only=True,
 )
@@ -134,8 +138,17 @@ data_main = get_data_config(
 data_trend = get_data_config(
     SYMBOL, QUOTE, VENUE, TREND_TIMEFRAME, START_DATE, END_DATE, label="trend"
 )
-# 演示：如果需要多源数据（例如 RS-Squeeze 的基准数据）
-# data_benchmark = get_data_config("BTC", "USDT", "BINANCE", MAIN_TIMEFRAME, START_DATE, END_DATE, label="benchmark")
+# RS-Squeeze 的基准数据 (BTC)
+data_benchmark = get_data_config(
+    BENCHMARK_SYMBOL,
+    QUOTE,
+    VENUE,
+    MAIN_TIMEFRAME,
+    START_DATE,
+    END_DATE,
+    label="benchmark",
+    instrument_id=BENCHMARK_ID,
+)
 
 DUAL_THRUST_STRATEGY = StrategyConfig(
     name="DualThrust",
@@ -159,6 +172,7 @@ RS_SQUEEZE_STRATEGY = StrategyConfig(
     params=RSSqueezeConfig(
         use_auto_sl=True,
         universe_filename="universe_25.json",
+        benchmark_id=BENCHMARK_ID,
     ),
 )
 
@@ -174,7 +188,7 @@ current_config = BackTestConfig(
         # stores labels as different INSTRUMENT
         data_main,
         data_trend,
-        # data_benchmark,
+        data_benchmark,
     ],
     strategy=RS_SQUEEZE_STRATEGY,  # 在这里切换策略
     # 策略里面永远都不能明显指定交易标的，交易标的应该人工指定，策略只管在特定的标的上计算和发送订单

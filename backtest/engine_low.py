@@ -86,14 +86,33 @@ def run_low_level(cfg: BackTestConfig, base_dir: Path):
 
     # 4. Load Data Feeds (Generic Supply Framework)
     feed_bar_types = {}  # label -> bar_type (BarType object)
+    loaded_instruments = {str(inst.id): inst}
 
     for feed in cfg.data_feeds:
-        # Determine instrument for this feed (support multi-instrument backtest in future)
-        feed_inst = inst
-        if feed.instrument_id and feed.instrument_id != str(inst.id):
-            # TODO: Add logic to load auxiliary instrument if needed (e.g. for benchmark)
-            pass
+        # Determine instrument for this feed (support multi-instrument backtest)
+        if feed.instrument_id and feed.instrument_id not in loaded_instruments:
+            # Load auxiliary instrument if provided in feed config
+            parts = feed.instrument_id.split(".")
+            if len(parts) == 2:
+                symbol_part, venue_part = parts
+                aux_inst_file = (
+                    base_dir
+                    / "data"
+                    / "instrument"
+                    / venue_part
+                    / f"{symbol_part}.json"
+                )
+                if aux_inst_file.exists():
+                    print(f"📂 Loading auxiliary instrument from {aux_inst_file}")
+                    aux_inst = load_instrument(aux_inst_file)
+                    engine.add_instrument(aux_inst)
+                    loaded_instruments[str(aux_inst.id)] = aux_inst
+                else:
+                    print(f"⚠️ Auxiliary instrument file not found at {aux_inst_file}")
+            else:
+                print(f"⚠️ Invalid instrument_id format: {feed.instrument_id}")
 
+        feed_inst = loaded_instruments.get(feed.instrument_id, inst)
         feed_bar_type_str = f"{feed_inst.id}-{feed.bar_type_str}"
         feed_bar_type = BarType.from_str(feed_bar_type_str)
         feed_bar_types[feed.label] = feed_bar_type
