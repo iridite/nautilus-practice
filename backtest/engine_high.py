@@ -382,3 +382,61 @@ def _print_results(result: BacktestResult):
             if v == v:
                 print(f"   - {k:<25}: {v:.4f}")
     print("=" * 65 + "\n")
+
+
+def catalog_loader(
+    catalog: ParquetDataCatalog,
+    csv_path: Path,
+    instrument: Instrument,
+    bar_type: BarType,
+    force_rebuild: bool = False,
+) -> tuple[ParquetDataCatalog, Path]:
+    """
+    高效构建或加载数据 Catalog。
+
+    优化点：
+    1. 增加 force_rebuild 开关，默认跳过已存在的数据。
+    2. 使用 header() 代替 bars() 进行轻量级校验，避免内存溢出。
+    3. 合并路径创建与对象初始化。
+    """
+
+    # 2. 检查数据是否已存在 (核心优化：避免重复解析巨大的 CSV)
+    if not force_rebuild:
+        # header 仅读取元数据，极快且不占内存
+        existing_header = catalog.header(bar_type=bar_type, instrument_id=instrument.id)
+        if existing_header:
+            print(
+                f"✅ Data already exists in catalog for {instrument.id}, skipping CSV import."
+            )
+            return catalog, output_path
+
+    print(f"📖 Importing CSV to Catalog: {csv_path} -> {output_path}")
+
+    # 3. 高效加载 CSV
+    # 建议：如果 datetime 是标准格式，不指定 date_format 有时反而更快 (pandas 内部优化)
+    df: DataFrame = CSVBarDataLoader.load(
+        file_path=csv_path,
+        index_col=0,
+        usecols=["datetime", "open", "high", "low", "close", "volume"],
+        parse_dates=["datetime"],
+    )
+    df.sort_index(inplace=True)
+
+    # 4. 转换并写入
+    # Wrangler 将 DataFrame 转换为 NT 内部的 Bar 序列
+    wrangler = BarDataWrangler(bar_type, instrument)
+
+    # 写入标的信息 (NT 的写入是幂等的，多次写入同一个 Instrument 不会报错)
+    catalog.write_data(instrument)
+
+    # 写入 Bar 数据
+    # 注意：对于极大数据量，这里可以考虑分块写入，但通常 1GB 以下的 CSV 这样写没问题
+    catalog.write_data(wrangler.process(df))
+
+    # 5. 轻量级校验
+    header = catalog.header(bar_type=bar_type, instrument_id=instrument.id)
+    if header:
+        print(f"🚀 Successfully indexed {header.count} bars for {instrument.id}.")
+        return catalog, output_path
+    else:
+        raise ValueError(f"❌ Failed to verify data in catalog for {instrument.id}")
