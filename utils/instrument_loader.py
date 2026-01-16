@@ -53,8 +53,9 @@ def load_instrument(
     # 如果手续费缺失或为 0（OKX 常见情况），设置更符合实际的默认值（例如 maker 0.02%, taker 0.05%）
     if maker_fee is None or str(maker_fee) in ("0", "0.0") or float(maker_fee) == 0:
         data["maker_fee"] = "0.0002"
+        print("Maker fee is Unknown, set default values")
     if taker_fee is None or str(taker_fee) in ("0", "0.0") or float(taker_fee) == 0:
         data["taker_fee"] = "0.0005"
-    print("Maker / Taker fee is Unknown, set default values")
+        print("Taker fee is Unknown, set default values")
 
     return cls.from_dict(data)  # return a Instrument
