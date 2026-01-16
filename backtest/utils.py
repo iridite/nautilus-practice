@@ -38,38 +38,6 @@ def load_strategy_config_class(
     return getattr(module, class_name)
 
 
-def resolve_instrument_path(base_dir: Path, venue_name: str, symbol: str) -> Path:
-    """
-    解析 Instrument JSON 文件的路径。处理不同命名约定的兼容性。
-
-    Args:
-        base_dir: 项目根目录
-        venue_name: 交易所名称 (e.g., 'BINANCE', 'OKX')
-        symbol: 交易对符号 (e.g., 'BTC-USDT-SWAP')
-
-    Returns:
-        Path: 解析出的 JSON 文件路径
-    """
-    # 统一处理符号中的特殊字符
-    clean_symbol = symbol.replace(":", "-").replace("USDT-USDT", "USDT")
-
-    # 尝试可能的命名变体
-    potential_names = [
-        f"{clean_symbol}.json",
-        f"{clean_symbol.replace('USDT', '-USDT-SWAP')}.json",
-        f"{clean_symbol.replace('USDT', '-USDT')}.json",
-    ]
-
-    inst_dir = base_dir / "data" / "instrument" / venue_name
-    for name in potential_names:
-        path = inst_dir / name
-        if path.exists():
-            return path
-
-    # 如果都没找到，返回最通用的默认路径
-    return inst_dir / f"{clean_symbol}.json"
-
-
 def get_config_fields(config_class: Type) -> Set[str]:
     """
     获取配置类及其父类中定义的所有字段名称。

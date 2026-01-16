@@ -51,6 +51,11 @@ class InstrumentConfig:
     def get_symbol(self) -> str:
         return f"{self.quote_currency}{self.base_currency}"
 
+    def get_json_path(self) -> Path:
+        return Path(
+            f"./data/{(self.venue_name).upper()}/{self.instrument_id.split('.')[0]}"
+        )
+
     @property
     def instrument_id(self) -> str:
         return self.get_id_for(

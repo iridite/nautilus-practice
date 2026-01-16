@@ -23,7 +23,6 @@ from nautilus_trader.model.enums import BarAggregation
 from backtest.utils import (
     filter_strategy_params,
     load_strategy_config_class,
-    resolve_instrument_path,
 )
 from config.definitions import (
     BackTestConfig,
@@ -71,13 +70,10 @@ def run_high_level(cfg: BackTestConfig, base_dir: Path):
     # 2. 加载标的定义 (Instruments)
     loaded_instruments = {}
     for inst_cfg in cfg.instruments:
-        inst_path = resolve_instrument_path(
-            base_dir, inst_cfg.venue_name, inst_cfg.get_symbol()
-        )
+        inst_path = inst_cfg.get_json_path()
         if inst_path.exists():
             try:
-                inst = load_instrument(inst_path)
-                loaded_instruments[str(inst.id)] = inst
+                loaded_instruments[inst_cfg.instrument_id] = load_instrument(inst_path)
             except Exception as e:
                 print(f"⚠️ Failed to load instrument {inst_cfg.instrument_id}: {e}")
 
