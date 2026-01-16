@@ -1,7 +1,7 @@
 import asyncio
 import logging
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import msgspec
 from nautilus_trader.adapters.binance import (
@@ -105,16 +105,25 @@ class InstrumentFetcher:
 
     async def fetch_one(
         self, instrument_id_str: str, retries: int = 3
-    ) -> Optional[Path]:
+    ) -> Tuple[Optional[Path], bool]:
         """
-        Fetch a single instrument and save it.
+        Fetch a single instrument and save it. Returns (path, was_fetched).
         """
+        try:
+            instrument_id = InstrumentId.from_str(instrument_id_str)
+            venue: str = instrument_id.venue.value
+            symbol: str = instrument_id.symbol.value
+        except Exception as e:
+            logger.error(f"❌ Invalid instrument ID string '{instrument_id_str}': {e}")
+            return None, False
+
+        file_path = self.output_dir / venue / f"{symbol}.json"
+        if file_path.exists():
+            logger.info(f"✅ Already exists: {venue}/{symbol} (skipping)")
+            return file_path, False
+
         for attempt in range(1, retries + 1):
             try:
-                instrument_id = InstrumentId.from_str(instrument_id_str)
-                venue: str = instrument_id.venue.value
-                symbol: str = instrument_id.symbol.value
-
                 instrument = None
                 if venue == "BINANCE":
                     is_futures = "-PERP" in symbol or "-DELIVERY" in symbol
@@ -128,9 +137,7 @@ class InstrumentFetcher:
                     instrument = provider.find(instrument_id)
 
                 if instrument:
-                    venue_dir = self.output_dir / venue
-                    venue_dir.mkdir(exist_ok=True)
-                    file_path = venue_dir / f"{symbol}.json"
+                    file_path.parent.mkdir(parents=True, exist_ok=True)
 
                     def enc_hook(obj):
                         if hasattr(obj, "to_dict"):
@@ -146,10 +153,10 @@ class InstrumentFetcher:
                     logger.info(
                         f"✅ Saved: {venue}/{symbol} (Price Step: {instrument.price_increment})"
                     )
-                    return file_path
+                    return file_path, True
                 else:
                     logger.warning(f"⚠️ Instrument not found: {instrument_id_str}")
-                    return None
+                    return None, False
 
             except Exception as e:
                 if attempt < retries:
@@ -161,15 +168,16 @@ class InstrumentFetcher:
                     await asyncio.sleep(sleep_time)
                 else:
                     logger.error(f"🔥 Final error fetching {instrument_id_str}: {e}")
-                    return None
+                    return None, False
 
     async def fetch_all(self, instrument_ids: List[str]):
         """Batch fetch with shared clients"""
         logger.info(f"🚀 Starting batch fetch for {len(instrument_ids)} instruments")
         for pid in instrument_ids:
-            await self.fetch_one(pid)
-            # Small delay between instruments to be polite to the API
-            await asyncio.sleep(0.2)
+            _, was_fetched = await self.fetch_one(pid)
+            if was_fetched:
+                # Small delay between instruments to be polite to the API
+                await asyncio.sleep(0.2)
 
 
 def update_instruments(

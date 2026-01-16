@@ -8,6 +8,7 @@ from nautilus_trader.model.enums import BarAggregation, PriceType
 
 
 class InstrumentType(Enum):
+    # This is a okx-type based instrument type
     SPOT = "SPOT"
     FUTURES = "FUTURES"
     SWAP = "SWAP"

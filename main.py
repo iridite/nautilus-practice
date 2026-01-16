@@ -23,12 +23,21 @@ def check_data_exists(symbol_str, start_date, end_date, timeframe, exchange):
     """
     Checks if the OHLCV data file already exists and is valid.
     """
+    safe_symbol = symbol_str.replace("/", "")
     filename = (
-        f"{exchange.lower()}-{symbol_str}-{timeframe}-{start_date}_{end_date}.csv"
+        f"{exchange.lower()}-{safe_symbol}-{timeframe}-{start_date}_{end_date}.csv"
     )
-    filepath = BASE_DIR / "data" / "raw" / symbol_str / filename
-    if filepath.exists() and filepath.stat().st_size > 500 * 1024:
+    filepath = BASE_DIR / "data" / "raw" / safe_symbol / filename
+    if filepath.exists() and filepath.stat().st_size > 10 * 1024:
         return True
+    elif filepath.exists() and filepath.stat().st_size < 10 * 1024:
+        print(
+            f"⚠️ Data file for {symbol_str} ({exchange} {timeframe}) is un seemingly small"
+        )
+        return True
+    elif not filepath.exists():
+        print(f"⚠️ Data file for {symbol_str} ({exchange} {timeframe}) does not exist.")
+        return False
     return False
 
 
@@ -169,6 +178,10 @@ def main():
                         ):
                             key = (exchange, timeframe, START_DATE, END_DATE)
                             tasks.setdefault(key, set()).add(symbol_str)
+                        else:
+                            print(
+                                f"✅ Data exists for universe symbol: {symbol_str} ({exchange} {timeframe})"
+                            )
                 except Exception as e:
                     print(f"⚠️ Failed to process universe data retrieval logic: {e}")
 

@@ -221,17 +221,36 @@ def fetch_funding_data(exchange, symbol, since, limit_ms):
 
 
 def process_symbol(exchange, raw_symbol, start_ms, end_ms, timeframe, extra, base_dir):
+    """
+    Process a single symbol: check if exists, fetch if not, and save.
+    Returns True if data was actually fetched and saved, False otherwise.
+    """
     ccxt_symbol, market_type = resolve_symbol_and_type(raw_symbol)
+
+    # 检查文件是否已存在且有效 (大于 10KB)
+    safe_symbol = raw_symbol.replace("/", "")
+    start_str = datetime.fromtimestamp(start_ms / 1000, timezone.utc).strftime(
+        "%Y-%m-%d"
+    )
+    end_str = datetime.fromtimestamp(end_ms / 1000, timezone.utc).strftime("%Y-%m-%d")
+    filename = f"{exchange.id}-{safe_symbol}-{timeframe}-{start_str}_{end_str}.csv"
+    output_path = base_dir / "data" / "raw" / safe_symbol / filename
+
+    if output_path.exists() and output_path.stat().st_size > 10 * 1024:
+        print(
+            f"[*] [{exchange.id}] Data for {raw_symbol} already exists and is valid. Skipping."
+        )
+        return False
 
     if ccxt_symbol not in exchange.markets:
         print(
             f"[!] Error: Symbol '{ccxt_symbol}' not found in {exchange.id}. Skipping."
         )
-        return
+        return False
 
     ohlcv_df = fetch_ohlcv_data(exchange, ccxt_symbol, timeframe, start_ms, end_ms)
     if ohlcv_df.empty:
-        return
+        return False
 
     if market_type == "swap" and extra:
         funding_df = fetch_funding_data(exchange, ccxt_symbol, start_ms, end_ms)
@@ -248,19 +267,10 @@ def process_symbol(exchange, raw_symbol, start_ms, end_ms, timeframe, extra, bas
 
     ohlcv_df = ohlcv_df[cols]
 
-    safe_symbol = raw_symbol.replace("/", "")
-    output_dir = base_dir / "data" / "raw" / safe_symbol
-    output_dir.mkdir(parents=True, exist_ok=True)
-
-    start_str = datetime.fromtimestamp(start_ms / 1000, timezone.utc).strftime(
-        "%Y-%m-%d"
-    )
-    end_str = datetime.fromtimestamp(end_ms / 1000, timezone.utc).strftime("%Y-%m-%d")
-    filename = f"{exchange.id}-{safe_symbol}-{timeframe}-{start_str}_{end_str}.csv"
-    output_path = output_dir / filename
-
+    output_path.parent.mkdir(parents=True, exist_ok=True)
     ohlcv_df.to_csv(output_path, index=False)
     print(f"    [√] Saved to: {output_path}")
+    return True
 
 
 def main():
@@ -298,11 +308,12 @@ def main():
     # 4. 循环处理
     for symbol in symbols:
         try:
-            process_symbol(
+            was_fetched = process_symbol(
                 exchange, symbol, start_ms, end_ms, args.timeframe, args.extra, base_dir
             )
             # 在不同币种之间增加额外延迟，进一步降低 IP 封锁风险
-            time.sleep(1.0)
+            if was_fetched:
+                time.sleep(1.0)
         except Exception as e:
             print(f"[!] Error processing {symbol}: {e}")
             continue
