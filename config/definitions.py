@@ -48,6 +48,9 @@ class InstrumentConfig:
         else:
             raise ValueError(f"Unsupported venue: {venue_name}")
 
+    def get_symbol(self) -> str:
+        return f"{self.quote_currency}{self.base_currency}"
+
     @property
     def instrument_id(self) -> str:
         return self.get_id_for(

@@ -68,6 +68,20 @@ def run_high_level(cfg: BackTestConfig, base_dir: Path):
         cfg.strategy.module_path, cfg.strategy.resolve_config_class()
     )
 
+    # 2. 加载标的定义 (Instruments)
+    loaded_instruments = {}
+    for inst_cfg in cfg.instruments:
+        inst_path = resolve_instrument_path(
+            base_dir, inst_cfg.venue_name, inst_cfg.get_symbol()
+        )
+        if inst_path.exists():
+            try:
+                inst = load_instrument(inst_path)
+                loaded_instruments[str(inst.id)] = inst
+            except Exception as e:
+                print(f"⚠️ Failed to load instrument {inst_cfg.instrument_id}: {e}")
+
+    # 3. 准备数据流与策略实例
     data_configs = []
     strategies = []
     loaded_instruments = {}
