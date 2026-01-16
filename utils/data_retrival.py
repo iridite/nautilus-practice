@@ -101,6 +101,22 @@ def resolve_symbol_and_type(input_symbol):
             return input_symbol, "swap"
 
 
+def retry_fetch(func, *args, retries=3, delay=2, **kwargs):
+    """
+    通用重试装饰器/助手函数，用于处理网络请求异常。
+    """
+    for attempt in range(1, retries + 1):
+        try:
+            return func(*args, **kwargs)
+        except (ccxt.NetworkError, ccxt.ExchangeError) as e:
+            if attempt == retries:
+                print(f"\n[!] Final attempt failed: {e}")
+                raise e
+            print(f"\n[!] Error: {e}. Retrying ({attempt}/{retries}) in {delay}s...")
+            time.sleep(delay)
+    return None
+
+
 def fetch_ohlcv_data(exchange, symbol, timeframe, since, limit_ms):
     """循环抓取 OHLCV 数据"""
     all_ohlcv = []
@@ -112,13 +128,17 @@ def fetch_ohlcv_data(exchange, symbol, timeframe, since, limit_ms):
 
     while current_since < limit_ms:
         try:
-            # OKX 和 Binance 都支持 limit 参数，但最大值不同，100 是安全值，但为了速度设为 100 (OKX max 100 for candles usually, Binance 1000)
-            # 为了兼容性，我们可以让 ccxt 自动处理，或者手动设一个小一点的值
+            # OKX 和 Binance 都支持 limit 参数，但最大值不同，100 是安全值
             # OKX 的 fetch_ohlcv limit 默认通常是 100 (历史数据)
             limit_param = 100 if exchange.id == "okx" else 1000
 
-            ohlcv = exchange.fetch_ohlcv(
-                symbol, timeframe, since=current_since, limit=limit_param
+            # 使用重试逻辑获取数据
+            ohlcv = retry_fetch(
+                exchange.fetch_ohlcv,
+                symbol,
+                timeframe,
+                since=current_since,
+                limit=limit_param,
             )
 
             if not ohlcv:
@@ -152,7 +172,6 @@ def fetch_ohlcv_data(exchange, symbol, timeframe, since, limit_ms):
 
         except Exception as e:
             print(f"\n[!] Error fetching OHLCV: {e}")
-            # 对于某些错误（如网络中断），可以考虑重试，这里简单处理为退出循环
             break
 
     print(f"\n[*] OHLCV fetch complete. Total candles: {len(all_ohlcv)}")
@@ -182,8 +201,12 @@ def fetch_funding_data(exchange, symbol, since, limit_ms):
         try:
             limit_param = 100 if exchange.id == "okx" else 1000
 
-            funding = exchange.fetch_funding_rate_history(
-                symbol, since=current_since, limit=limit_param
+            # 使用重试逻辑获取数据
+            funding = retry_fetch(
+                exchange.fetch_funding_rate_history,
+                symbol,
+                since=current_since,
+                limit=limit_param,
             )
 
             if not funding:
@@ -261,9 +284,10 @@ def main():
 
     # 4. 加载市场
     try:
-        exchange.load_markets()
+        # 使用重试逻辑加载市场
+        retry_fetch(exchange.load_markets)
     except Exception as e:
-        print(f"[!] Failed to load markets: {e}")
+        print(f"[!] Failed to load markets after retries: {e}")
         # 如果是因为网络问题，脚本会在这里终止
         return
 
