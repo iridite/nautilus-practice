@@ -52,8 +52,20 @@ class InstrumentConfig:
         return f"{self.quote_currency}{self.base_currency}"
 
     def get_json_path(self) -> Path:
-        return Path(
-            f"./data/{(self.venue_name).upper()}/{self.instrument_id.split('.')[0]}"
+        """
+        获取标的定义 JSON 文件的绝对路径。
+        通过相对于本文件的路径定位项目根目录，确保在任何工作目录下运行都能稳定定位。
+        """
+        # 定位项目根目录 (nautilus-practice/)
+        project_root = Path(__file__).parent.parent.resolve()
+        # 这里的路径逻辑：data/instrument/交易所/符号.json
+        # 增加 .json 后缀并指向 instrument 子目录以确保准确性
+        return (
+            project_root
+            / "data"
+            / "instrument"
+            / self.venue_name.upper()
+            / f"{self.instrument_id.split('.')[0]}.json"
         )
 
     @property
