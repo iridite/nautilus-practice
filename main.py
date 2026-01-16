@@ -10,6 +10,7 @@ sys.path.insert(0, str(BASE_DIR))
 
 from backtest.engine_high import run_high_level
 from backtest.engine_low import run_low_level
+from config.definitions import InstrumentConfig, InstrumentType
 from config.settings import (
     END_DATE,
     START_DATE,
@@ -188,9 +189,17 @@ def main():
 
         for symbol in universe_symbols:
             raw_pair = symbol.split(":")[0]
-            clean_base = raw_pair.replace("USDT", "")
+            # 改进：不再硬编码 USDT 和 SWAP，而是从配置中读取
+            base_cur = current_config.instrument.base_currency
+            clean_base = raw_pair.replace(base_cur, "")
             venue = current_config.instrument.venue_name
-            inst_id = f"{clean_base}-USDT-SWAP.{venue}"
+            # 使用 InstrumentConfig.get_id_for 动态生成符合交易所规范的 ID
+            inst_id = InstrumentConfig.get_id_for(
+                venue_name=venue,
+                base_currency=base_cur,
+                quote_currency=clean_base,
+                inst_type=current_config.instrument.type,
+            )
             instrument_ids.add(inst_id)
 
         print(

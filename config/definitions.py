@@ -22,25 +22,39 @@ class InstrumentConfig:
     quote_currency: str = "ETH"  # 而 quote 是被或者说参考 USDT 而衍生出的交易币价格
     leverage: int = 1  # 默认设定的杠杆倍数
 
+    @classmethod
+    def get_id_for(
+        cls,
+        venue_name: str,
+        base_currency: str,
+        quote_currency: str,
+        inst_type: InstrumentType,
+    ) -> str:
+        """
+        根据交易所、基准货币、报价货币和类型生成标准的 Instrument ID。
+        """
+        if venue_name == "OKX":
+            return f"{quote_currency}-{base_currency}-{inst_type.value}.{venue_name}"
+        elif venue_name == "BINANCE":
+            if inst_type == InstrumentType.SPOT:
+                return f"{quote_currency}{base_currency}.{venue_name}"
+            elif inst_type == InstrumentType.SWAP:
+                return f"{quote_currency}{base_currency}-PERP.{venue_name}"
+            elif inst_type in (InstrumentType.FUTURES, InstrumentType.OPTION):
+                return f"{quote_currency}{base_currency}-{inst_type.value}.{venue_name}"
+            else:
+                raise ValueError(f"Unsupported instrument type: {inst_type}")
+        else:
+            raise ValueError(f"Unsupported venue: {venue_name}")
+
     @property
     def instrument_id(self) -> str:
-        if self.venue_name == "OKX":
-            return f"{self.quote_currency}-{self.base_currency}-{self.type.value}.{self.venue_name}"
-        elif self.venue_name == "BINANCE":
-            if self.type == InstrumentType.SPOT:
-                return f"{self.quote_currency}{self.base_currency}.{self.venue_name}"
-            elif self.type == InstrumentType.SWAP:
-                return (
-                    f"{self.quote_currency}{self.base_currency}-PERP.{self.venue_name}"
-                )
-            elif self.type == InstrumentType.FUTURES:
-                return f"{self.quote_currency}{self.base_currency}-{self.type.value}.{self.venue_name}"
-            elif self.type == InstrumentType.OPTION:
-                return f"{self.quote_currency}{self.base_currency}-{self.type.value}.{self.venue_name}"
-            else:
-                raise ValueError(f"Unsupported instrument type: {self.type}")
-        else:
-            raise ValueError(f"Unsupported venue: {self.venue_name}")
+        return self.get_id_for(
+            venue_name=self.venue_name,
+            base_currency=self.base_currency,
+            quote_currency=self.quote_currency,
+            inst_type=self.type,
+        )
 
 
 @dataclass

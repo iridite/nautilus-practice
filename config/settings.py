@@ -35,7 +35,12 @@ END_DATE = "2026-01-14"
 # 有些币种，如 SOL 没有那么长的历史，获取数据会失败需要特别注意
 
 BENCHMARK_SYMBOL = "BTC"
-BENCHMARK_ID = "BTC-USDT-SWAP.BINANCE"
+BENCHMARK_ID = InstrumentConfig.get_id_for(
+    venue_name=VENUE,
+    base_currency=BASE_SYMBOL,
+    quote_currency=BENCHMARK_SYMBOL,
+    inst_type=INSTRUMENT_TYPE,
+)
 
 # 数据配置 (Data Configuration)
 # 策略使用的主周期和趋势辅助周期

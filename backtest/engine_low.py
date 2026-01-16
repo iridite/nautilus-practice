@@ -27,7 +27,12 @@ from backtest.utils import (
     load_strategy_config_class,
     resolve_instrument_path,
 )
-from config.definitions import BackTestConfig, DataConfig
+from config.definitions import (
+    BackTestConfig,
+    DataConfig,
+    InstrumentConfig,
+    InstrumentType,
+)
 from utils.instrument_loader import load_instrument
 
 
@@ -207,8 +212,16 @@ def run_low_level(cfg: BackTestConfig, base_dir: Path):
         for symbol in sorted(list(universe_symbols)):
             # 转换符号格式 (e.g., SOLUSDT:USDT -> SOL-USDT-SWAP)
             raw_pair = symbol.split(":")[0]
-            clean_base = raw_pair.replace("USDT", "")
-            inst_id_str = f"{clean_base}-USDT-SWAP.{cfg.instrument.venue_name}"
+            base_cur = cfg.instrument.base_currency
+            clean_base = raw_pair.replace(base_cur, "")
+
+            # 使用 InstrumentConfig.get_id_for 动态生成符合交易所规范的 ID
+            inst_id_str = InstrumentConfig.get_id_for(
+                venue_name=cfg.instrument.venue_name,
+                base_currency=base_cur,
+                quote_currency=clean_base,
+                inst_type=cfg.instrument.type,
+            )
 
             if inst_id_str in loaded_instruments:
                 inst = loaded_instruments[inst_id_str]
@@ -237,7 +250,7 @@ def run_low_level(cfg: BackTestConfig, base_dir: Path):
                     timeframe += "m"
 
                 universe_data_cfg = DataConfig(
-                    csv_file_name=f"{clean_base}USDT/{cfg.instrument.venue_name.lower()}-{clean_base}USDT-{timeframe}-{cfg.start_date}_{cfg.end_date}.csv",
+                    csv_file_name=f"{clean_base}{base_cur}/{cfg.instrument.venue_name.lower()}-{clean_base}{base_cur}-{timeframe}-{cfg.start_date}_{cfg.end_date}.csv",
                     label="main",
                 )
 
