@@ -50,9 +50,9 @@ MAIN_TIMEFRAME = "1h"
 TREND_TIMEFRAME = "4h"  # TODO： 该部分设计应该是在单独的策略里面定义，如 dual_thrust 策略需要趋势和信号时间粒度，则单独指明
 
 # 下单参数 (Order Parameters)
-STRATEGY_LEVERAGE: int = 3
-RISK_QTY_PERCENT: Decimal = Decimal("0.2")  # 每次交易占权益百分比
-INIT_BALANCES: list = [Money("100", USDT)]
+STRATEGY_LEVERAGE: int = 1
+RISK_QTY_PERCENT: Decimal = Decimal("0.3")  # 每次交易占权益百分比
+INIT_BALANCES: list = [Money("200", USDT)]
 
 # 日志配置
 LOGGING_SETTINGS = LogConfig(
@@ -154,7 +154,7 @@ data_benchmark = get_data_config(
     BENCHMARK_SYMBOL,
     BASE_SYMBOL,
     VENUE,
-    MAIN_TIMEFRAME,
+    "4h",
     START_DATE,
     END_DATE,
     label="benchmark",
@@ -182,6 +182,7 @@ RS_SQUEEZE_STRATEGY = StrategyConfig(
     module_path="strategy.rs_squeeze",
     params=RSSqueezeConfig(
         use_auto_sl=True,
+        rs_threshold=1.05,
         universe_filename="universe_25.json",
         benchmark_id=BENCHMARK_ID,
     ),
@@ -207,7 +208,7 @@ current_config = BackTestConfig(
     start_date=START_DATE,
     end_date=END_DATE,
     initial_balances=INIT_BALANCES,
-    output_html_report=False,
+    output_html_report=True,
     # 其他配置
     logging=LOGGING_SETTINGS,
     ml=None,
