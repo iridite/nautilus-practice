@@ -11,7 +11,7 @@ from nautilus_trader.indicators import (
     ExponentialMovingAverage,
     KeltnerChannel,
 )
-from nautilus_trader.model.data import Bar, BarType
+from nautilus_trader.model.data import Bar, BarSpecification, BarType
 from nautilus_trader.model.enums import OrderSide, TimeInForce
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.position import Position
