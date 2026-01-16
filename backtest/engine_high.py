@@ -1,8 +1,6 @@
 import gc
-import json
 from datetime import datetime
 from pathlib import Path
-from typing import Any
 
 from nautilus_trader.backtest.config import (
     BacktestDataConfig,
@@ -18,51 +16,32 @@ from nautilus_trader.backtest.results import BacktestResult
 from nautilus_trader.common.config import LoggingConfig
 from nautilus_trader.config import ImportableStrategyConfig, RiskEngineConfig
 from nautilus_trader.model.data import BarType
-from nautilus_trader.model.enums import BarAggregation
+from nautilus_trader.model.instruments import Instrument
+from nautilus_trader.persistence.catalog import ParquetDataCatalog
+from nautilus_trader.persistence.loaders import CSVBarDataLoader
+from nautilus_trader.persistence.wranglers import BarDataWrangler
+from pandas import DataFrame
 
 from backtest.utils import (
     filter_strategy_params,
     load_strategy_config_class,
 )
-from config.definitions import (
-    BackTestConfig,
-    InstrumentConfig,
-    InstrumentType,
-)
-from utils.data_loader import loader
+from config.definitions import BackTestConfig
 from utils.instrument_loader import load_instrument
 
 
 def run_high_level(cfg: BackTestConfig, base_dir: Path):
     """
     运行高级引擎回测 (High-level Engine/BacktestNode)。
-    高级引擎支持并行运行、自动化数据加载和更复杂的测试场景。
+    完全由 BackTestConfig 驱动，移除了硬编码的 Universe 加载逻辑。
     """
     print(f"🚀 Starting High-Level Backtest: {cfg.strategy.name}")
 
-    data_path = base_dir / "data"
+    data_path: Path = base_dir / "data"
+    catalog_path: Path = data_path / "parquet" / f"{cfg.strategy.name}"
     run_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-    # 1. 解析 Universe
-    universe_symbols = set()
-    u_name = None
-    params = cfg.strategy.params
-    if isinstance(params, dict):
-        u_name = params.get("universe_filename")
-    elif hasattr(params, "universe_filename"):
-        u_name = getattr(params, "universe_filename")
-
-    if u_name:
-        universe_file = data_path / u_name
-        if universe_file.exists():
-            with open(universe_file, "r") as f:
-                u_data = json.load(f)
-                for month_list in u_data.values():
-                    universe_symbols.update(month_list)
-            print(f"🌌 Universe loaded: {len(universe_symbols)} symbols found.")
-
-    # 2. 准备策略与配置类
-    # 即使使用 ImportableStrategyConfig，我们也需要配置类来过滤参数，防止 msgspec 校验失败
+    # 1. 准备策略与配置类（用于参数过滤）
     ConfigClass = load_strategy_config_class(
         cfg.strategy.module_path, cfg.strategy.resolve_config_class()
     )
@@ -78,209 +57,80 @@ def run_high_level(cfg: BackTestConfig, base_dir: Path):
                 print(f"⚠️ Failed to load instrument {inst_cfg.instrument_id}: {e}")
 
     # 3. 准备数据流与策略实例
-    data_configs = []
     strategies = []
-    loaded_instruments = {}
 
-    if universe_symbols:
-        # === Case A: Universe 多标的模式 (如 RS-Squeeze) ===
-        print(
-            f"🌌 Running in Universe Mode with {len(universe_symbols)} potential symbols."
-        )
+    # (instrument_id, label) -> bar_type_str
+    all_feed_types = {}
 
-        # 2.1 加载基准数据 (Benchmark)
-        benchmark_bar_type_str = None
-        for feed in cfg.data_feeds:
-            if feed.label == "benchmark" and feed.instrument_id:
-                s_part = feed.instrument_id.split(".")[0]
-                v_part = (
-                    feed.instrument_id.split(".")[1]
-                    if "." in feed.instrument_id
-                    else cfg.instrument.venue_name
-                )
-                path = resolve_instrument_path(base_dir, v_part, s_part)
+    # 3.1 预处理并转换所有数据为 Parquet (Nautlius High-level 必须)
+    for i, data_cfg in enumerate(cfg.data_feeds):
+        # 此处的 data_feeds 如果在前面一切正常的话那就应该和 cfg.instruments 是完全一样的内容
+        # data_feeds 来自于 load_instrument，里面已经定义了 data_cfg.csv_file_name
 
-                if path.exists():
-                    benchmark_inst = load_instrument(path)
-                    loaded_instruments[str(benchmark_inst.id)] = benchmark_inst
+        inst_id = data_cfg.instrument_id or str(cfg.instrument.instrument_id)
+        # 同时适配单 inst 和 多 inst
 
-                    bt_str = f"{benchmark_inst.id}-{feed.bar_type_str}"
-                    benchmark_bar_type_str = bt_str
+        inst = loaded_instruments.get(inst_id)
 
-                    csv_path = data_path / "raw" / feed.csv_file_name
-                    if csv_path.exists():
-                        _, catalog_path = loader(
-                            csv_path=csv_path,
-                            output_path=data_path
-                            / "parquet"
-                            / f"{run_timestamp}_benchmark",
-                            instrument=benchmark_inst,
-                            bar_type=BarType.from_str(bt_str),
-                        )
-                        data_configs.append(
-                            BacktestDataConfig(
-                                catalog_path=str(catalog_path),
-                                data_cls="nautilus_trader.model.data:Bar",
-                                instrument_id=benchmark_inst.id,
-                                start_time=cfg.start_date,
-                                end_time=cfg.end_date,
-                            )
-                        )
+        assert inst, f"Failed to find instrument {inst_id}"
 
-        # 2.2 加载 Universe 各个成员
-        main_feed_template = next(
-            (f for f in cfg.data_feeds if f.label == "main"), None
-        )
-        if not main_feed_template:
-            print("❌ No 'main' data feed found in config to use as template.")
-            return
+        csv_path = Path(data_cfg.csv_file_name)
+        assert csv_path.exists(), f"CSV file not found: {csv_path}"
 
-        for i, symbol in enumerate(sorted(list(universe_symbols))):
-            # 提取基础资产 (e.g., SOLUSDT:USDT -> SOL-USDT-SWAP)
-            raw_pair = symbol.split(":")[0]
-            base_cur = cfg.instrument.base_currency
-            clean_base = raw_pair.replace(base_cur, "")
+        feed_bar_type_str = f"{inst.id}-{data_cfg.bar_type_str}"
+        all_feed_types[(inst_id, data_cfg.label)] = feed_bar_type_str
 
-            # 使用 InstrumentConfig.get_id_for 动态生成符合交易所规范的 ID
-            inst_id_str = InstrumentConfig.get_id_for(
-                venue_name=cfg.instrument.venue_name,
-                base_currency=base_cur,
-                quote_currency=clean_base,
-                inst_type=cfg.instrument.type,
+        _catalog = ParquetDataCatalog(catalog_path)
+
+        try:
+            # 高级引擎需要将数据导入 Catalog (Parquet)
+            catalog_loader(
+                catalog=_catalog,
+                csv_path=csv_path,
+                instrument=inst,
+                bar_type=BarType.from_str(feed_bar_type_str),
             )
+        except Exception as e:
+            print(f"❌ Error loading {data_cfg.csv_file_name}: {e}")
 
-            if inst_id_str in loaded_instruments:
-                inst = loaded_instruments[inst_id_str]
-            else:
-                inst_path = resolve_instrument_path(
-                    base_dir, cfg.instrument.venue_name, inst_id_str.split(".")[0]
-                )
-                if not inst_path.exists():
-                    continue
-                try:
-                    inst = load_instrument(inst_path)
-                    loaded_instruments[str(inst.id)] = inst
-                except Exception as e:
-                    print(f"⚠️ Failed to load instrument {inst_id_str}: {e}")
-                    continue
-
-            # 构造数据路径 (推断 timeframe)
-            timeframe = f"{main_feed_template.bar_period}"
-            if main_feed_template.bar_aggregation == BarAggregation.HOUR:
-                timeframe += "h"
-            elif main_feed_template.bar_aggregation == BarAggregation.DAY:
-                timeframe += "d"
-            else:
-                timeframe += "m"
-
-            csv_file_name = f"{clean_base}{base_cur}/{cfg.instrument.venue_name.lower()}-{clean_base}{base_cur}-{timeframe}-{cfg.start_date}_{cfg.end_date}.csv"
-            csv_path = data_path / "raw" / csv_file_name
-
-            if csv_path.exists():
-                feed_bar_type_str = f"{inst.id}-{main_feed_template.bar_type_str}"
-                try:
-                    _, catalog_path = loader(
-                        csv_path=csv_path,
-                        output_path=data_path
-                        / "parquet"
-                        / f"{run_timestamp}_{clean_base}_{i}",
-                        instrument=inst,
-                        bar_type=BarType.from_str(feed_bar_type_str),
-                    )
-                    data_configs.append(
-                        BacktestDataConfig(
-                            catalog_path=str(catalog_path),
-                            data_cls="nautilus_trader.model.data:Bar",
-                            instrument_id=inst.id,
-                            start_time=cfg.start_date,
-                            end_time=cfg.end_date,
-                        )
-                    )
-
-                    # 准备策略参数
-                    feed_bar_types = {"main": feed_bar_type_str}
-                    if benchmark_bar_type_str:
-                        feed_bar_types["benchmark"] = benchmark_bar_type_str
-
-                    strat_params = cfg.strategy.resolve_params(
-                        instrument_id=inst.id,
-                        leverage=cfg.instrument.leverage,
-                        feed_bar_types=feed_bar_types,
-                    )
-                    if u_name:
-                        strat_params["universe_filename"] = u_name
-
-                    # 过滤多余参数
-                    final_params = filter_strategy_params(strat_params, ConfigClass)
-
-                    strategies.append(
-                        ImportableStrategyConfig(
-                            strategy_path=f"{cfg.strategy.module_path}:{cfg.strategy.name}",
-                            config_path=f"{cfg.strategy.module_path}:{cfg.strategy.resolve_config_class()}",
-                            config=final_params,
-                        )
-                    )
-                except Exception as e:
-                    print(f"⚠️ Failed to setup {inst_id_str}: {e}")
-
-    else:
-        # === Case B: 单标的模式 ===
-        print(f"🎯 Running in Single-Instrument Mode: {cfg.instrument.instrument_id}")
-
-        symbol_part = cfg.instrument.instrument_id.split(".")[0]
-        inst_path = resolve_instrument_path(
-            base_dir, cfg.instrument.venue_name, symbol_part
+        BacktestDataConfig(
+            catalog_path=str(catalog_path),
+            data_cls="nautilus_trader.model.data:Bar",
+            instrument_id=inst.id,
+            start_time=cfg.start_date,
+            end_time=cfg.end_date,
         )
-        if not inst_path.exists():
-            raise FileNotFoundError(f"❌ Instrument definition not found: {inst_path}")
 
-        main_inst = load_instrument(inst_path)
-        loaded_instruments[str(main_inst.id)] = main_inst
+    # 3.2 实例化策略配置
+    global_feeds = {
+        label: bt for (iid, label), bt in all_feed_types.items() if label == "benchmark"
+    }
 
-        feed_bar_types = {}
-        for i, feed in enumerate(cfg.data_feeds):
-            target_inst = main_inst
-            if feed.instrument_id and feed.instrument_id != str(main_inst.id):
-                s_part = feed.instrument_id.split(".")[0]
-                v_part = (
-                    feed.instrument_id.split(".")[1]
-                    if "." in feed.instrument_id
-                    else cfg.instrument.venue_name
-                )
-                aux_path = resolve_instrument_path(base_dir, v_part, s_part)
-                if aux_path.exists():
-                    target_inst = load_instrument(aux_path)
-                    loaded_instruments[str(target_inst.id)] = target_inst
+    for inst_id, inst in loaded_instruments.items():
+        local_feeds = {
+            label: bt
+            for (iid, label), bt in all_feed_types.items()
+            if iid == inst_id and label != "benchmark"
+        }
 
-            feed_bar_type_str = f"{target_inst.id}-{feed.bar_type_str}"
-            feed_bar_types[feed.label] = feed_bar_type_str
+        if "main" not in local_feeds:
+            continue
 
-            csv_path = data_path / "raw" / feed.csv_file_name
-            if csv_path.exists():
-                _, catalog_path = loader(
-                    csv_path=csv_path,
-                    output_path=data_path
-                    / "parquet"
-                    / f"{run_timestamp}_{feed.label}_{i}",
-                    instrument=target_inst,
-                    bar_type=BarType.from_str(feed_bar_type_str),
-                )
-                data_configs.append(
-                    BacktestDataConfig(
-                        catalog_path=str(catalog_path),
-                        data_cls="nautilus_trader.model.data:Bar",
-                        instrument_id=target_inst.id,
-                        start_time=cfg.start_date,
-                        end_time=cfg.end_date,
-                    )
-                )
-
-        # 实例化策略参数
+        # 生成策略参数
         strat_params = cfg.strategy.resolve_params(
-            instrument_id=main_inst.id,
+            instrument_id=inst.id,
             leverage=cfg.instrument.leverage,
-            feed_bar_types=feed_bar_types,
+            feed_bar_types={**local_feeds, **global_feeds},
         )
+
+        # 兼容 Universe 文件名传递
+        if (
+            isinstance(cfg.strategy.params, dict)
+            and "universe_filename" in cfg.strategy.params
+        ):
+            strat_params["universe_filename"] = cfg.strategy.params["universe_filename"]
+
+        # 过滤并添加策略配置
         final_params = filter_strategy_params(strat_params, ConfigClass)
         strategies.append(
             ImportableStrategyConfig(
@@ -290,15 +140,15 @@ def run_high_level(cfg: BackTestConfig, base_dir: Path):
             )
         )
 
-    # 3. 配置交易所 (Venue)
+    # 4. 配置交易所 (Venue)
     venue_configs = [
         BacktestVenueConfig(
             name=cfg.instrument.venue_name,
             oms_type="HEDGING",
             account_type="MARGIN",
-            base_currency="USDT",
+            base_currency="USDT",  # TODO：到时候使用内置的货币类型
             starting_balances=cfg.initial_balances,
-            fee_model=ImportableFeeModelConfig(
+            fee_model=ImportableFeeModelConfig(  # TODO: 看看能不能就进行简单的加密手续费模型
                 fee_model_path="nautilus_trader.backtest.models:MakerTakerFeeModel",
                 config_path="nautilus_trader.backtest.config:MakerTakerFeeModelConfig",
                 config={},
@@ -307,40 +157,34 @@ def run_high_level(cfg: BackTestConfig, base_dir: Path):
         ),
     ]
 
-    # 4. 配置日志
+    # 5. 配置日志 (Logging)
     logging_config = None
     if cfg.logging:
         logging_config = LoggingConfig(
             log_level=cfg.logging.log_level,
             log_level_file=cfg.logging.log_level_file,
-            log_colors=cfg.logging.log_colors,
-            use_pyo3=cfg.logging.use_pyo3,
-            log_component_levels=cfg.logging.log_component_levels,
-            log_components_only=bool(cfg.logging.log_components_only),
             log_directory=str(base_dir / "log" / "backtest" / "high_level"),
         )
 
-    # 5. 引擎全局配置
+    # 6. 执行回测 (Execution)
+    if not strategies:
+        print(
+            "❌ No strategy instances were created. Please check your config and data paths."
+        )
+        return
+
     eng_cfg = BacktestEngineConfig(
         strategies=strategies,
         logging=logging_config,
         risk_engine=RiskEngineConfig(bypass=False),
     )
 
-    # 6. 运行会话配置
     run_config = BacktestRunConfig(
         engine=eng_cfg,
         data=data_configs,
         venues=venue_configs,
         raise_exception=True,
     )
-
-    # 7. 执行
-    if not strategies:
-        print(
-            "❌ No strategies were initialized. Check your configuration and data files."
-        )
-        return
 
     gc.collect()
     node = BacktestNode(configs=[run_config])
@@ -350,8 +194,6 @@ def run_high_level(cfg: BackTestConfig, base_dir: Path):
 
     if results:
         _print_results(results[0])
-    else:
-        print("❌ No results generated.")
 
 
 def _print_results(result: BacktestResult):
@@ -366,21 +208,9 @@ def _print_results(result: BacktestResult):
     if result.stats_pnls:
         for currency, metrics in result.stats_pnls.items():
             print(f"💰 PnL ({currency}):")
-            core_metrics = ["PnL (total)", "PnL% (total)", "Commissions", "Fees"]
-            for k in core_metrics:
-                if k in metrics and metrics[k] == metrics[k]:
-                    print(f"   * {k:<25}: {metrics[k]:,.4f}")
-
-            print("   " + "-" * 40)
-            for k in sorted(metrics.keys()):
-                if k not in core_metrics and metrics[k] == metrics[k]:
-                    print(f"   - {k:<25}: {metrics[k]:,.4f}")
-
-    if result.stats_returns:
-        print("📈 Returns:")
-        for k, v in result.stats_returns.items():
-            if v == v:
-                print(f"   - {k:<25}: {v:.4f}")
+            for k, v in metrics.items():
+                if v == v:  # Check for NaN
+                    print(f"   * {k:<25}: {v:,.4f}")
     print("=" * 65 + "\n")
 
 
@@ -390,7 +220,7 @@ def catalog_loader(
     instrument: Instrument,
     bar_type: BarType,
     force_rebuild: bool = False,
-) -> tuple[ParquetDataCatalog, Path]:
+) -> None:
     """
     高效构建或加载数据 Catalog。
 
@@ -408,9 +238,9 @@ def catalog_loader(
             print(
                 f"✅ Data already exists in catalog for {instrument.id}, skipping CSV import."
             )
-            return catalog, output_path
+            return
 
-    print(f"📖 Importing CSV to Catalog: {csv_path} -> {output_path}")
+    print(f"📖 Importing CSV to Catalog: {csv_path}")
 
     # 3. 高效加载 CSV
     # 建议：如果 datetime 是标准格式，不指定 date_format 有时反而更快 (pandas 内部优化)
@@ -437,6 +267,6 @@ def catalog_loader(
     header = catalog.header(bar_type=bar_type, instrument_id=instrument.id)
     if header:
         print(f"🚀 Successfully indexed {header.count} bars for {instrument.id}.")
-        return catalog, output_path
+        return
     else:
         raise ValueError(f"❌ Failed to verify data in catalog for {instrument.id}")
