@@ -179,10 +179,12 @@ class RSSqueezeStrategy(BaseStrategy):
         spec_str = str(self.bar_type.spec)
         spec_parts = spec_str.split("-")
         if len(spec_parts) >= 3:
-            btc_4h_spec = f"4-HOUR-{spec_parts[2]}"
+            btc_4h_spec_str = f"4-HOUR-{spec_parts[2]}"
         else:
-            btc_4h_spec = "4-HOUR-MIDPOINT"
-        self.btc_4h_bar_type = BarType(self.benchmark_id, btc_4h_spec)
+            btc_4h_spec_str = "4-HOUR-MIDPOINT"
+        self.btc_4h_bar_type = BarType(
+            self.benchmark_id, BarSpecification.from_str(btc_4h_spec_str)
+        )
         self.subscribe_bars(self.btc_4h_bar_type)
 
         self.log.info(f"RS-Squeeze Strategy started for {self.instrument_id}")
