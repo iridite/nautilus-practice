@@ -351,7 +351,11 @@ class RSSqueezeStrategy(BaseStrategy):
             # Quantity = Risk_Amount / (Entry_Price - Initial_SL)
             # 此处 Entry_Price - Initial_SL = sl_dist
             raw_qty = risk_amount / sl_dist
-            qty = self.instrument.make_qty(raw_qty)
+            try:
+                qty = self.instrument.make_qty(raw_qty)
+            except ValueError as e:
+                self.log.warning(f"Quantity calculation error: {e}")
+                return
 
             if qty > 0:
                 # 市价买入
@@ -364,7 +368,12 @@ class RSSqueezeStrategy(BaseStrategy):
 
                 # 设置初始止损 (Stop Market)
                 sl_price = current_price - sl_dist
-                trigger_price = self.instrument.make_price(sl_price)
+                try:
+                    trigger_price = self.instrument.make_price(sl_price)
+                except ValueError as e:
+                    self.log.warning(f"Price calculation error for initial SL: {e}")
+                    return
+
                 sl_order = self.order_factory.stop_market(
                     instrument_id=self.instrument_id,
                     order_side=OrderSide.SELL,
@@ -403,7 +412,11 @@ class RSSqueezeStrategy(BaseStrategy):
                 be_price = self._entry_price * (
                     1 + Decimal(str(self.config.breakeven_offset))
                 )
-                trigger_price = self.instrument.make_price(be_price)
+                try:
+                    trigger_price = self.instrument.make_price(be_price)
+                except ValueError as e:
+                    self.log.warning(f"Price calculation error for breakeven SL: {e}")
+                    return
 
                 self.log.info(
                     f"TRAILING SL: Reached Entry + 1.5*ATR. Moving SL to {trigger_price} (BE+0.2%)"
