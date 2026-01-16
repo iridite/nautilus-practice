@@ -1,6 +1,5 @@
 import argparse
 import json
-import subprocess
 import sys
 from pathlib import Path
 
@@ -16,6 +15,7 @@ from config.settings import (
     START_DATE,
     current_config,
 )
+from utils.data_retrival import batch_fetch_ohlcv
 from utils.fetch_instrument import update_instruments
 
 
@@ -41,37 +41,32 @@ def check_data_exists(symbol_str, start_date, end_date, timeframe, exchange):
     return False
 
 
-def run_batch_data_retrieval(symbols, start_date, end_date, timeframe, exchange):
+def run_batch_data_retrieval(
+    symbols, start_date, end_date, timeframe, exchange
+) -> list:
     """
-    Executes the data retrieval script for a batch of symbols.
+    直接调用 Python 函数进行数据抓取。
     """
     if not symbols:
-        return
+        return []
 
-    cmd = [
-        "uv",
-        "run",
-        "utils/data_retrival.py",
-        "--symbol",
-        ",".join(symbols),
-        "--start",
-        start_date,
-        "--end",
-        end_date,
-        "--timeframe",
-        timeframe,
-        "--exchange",
-        exchange.lower(),
-    ]
-
-    print(f"\n[Data] Fetching/Updating data for {len(symbols)} symbols...")
-    print(f"      Command: {' '.join(cmd)}")
+    print(
+        f"\n[Data] Fetching/Updating data for {len(symbols)} symbols via functional call..."
+    )
     try:
-        subprocess.run(cmd, check=True)
-    except subprocess.CalledProcessError as e:
-        print(f"❌ Error during batch data retrieval: {e}")
+        # 直接调用重构后的函数
+        data_configs = batch_fetch_ohlcv(
+            symbols=sorted(list(symbols)),
+            start_date=start_date,
+            end_date=end_date,
+            timeframe=timeframe,
+            exchange_id=exchange,
+            base_dir=BASE_DIR,
+        )
+        return data_configs
     except Exception as e:
-        print(f"❌ Unexpected error during batch data retrieval: {e}")
+        print(f"❌ Error during data retrieval: {e}")
+        return []
 
 
 def main():
@@ -185,11 +180,20 @@ def main():
                 except Exception as e:
                     print(f"⚠️ Failed to process universe data retrieval logic: {e}")
 
-        # 1.3 执行批量抓取
+        # 1.3 执行批量抓取并实时更新 current_config
+        # 记录已经存在的 csv，防止重复添加
+        existing_csvs = {f.csv_file_name for f in current_config.data_feeds}
+
         for (exchange, timeframe, start, end), symbols in tasks.items():
-            run_batch_data_retrieval(
+            new_configs = run_batch_data_retrieval(
                 sorted(list(symbols)), start, end, timeframe, exchange
             )
+            # 将抓取成功后生成的 DataConfig 注入到全局配置中
+            for nc in new_configs:
+                if nc.csv_file_name not in existing_csvs:
+                    print(f"➕ Auto-injecting feed: {nc.csv_file_name}")
+                    current_config.data_feeds.append(nc)
+                    existing_csvs.add(nc.csv_file_name)
 
         print("==========================================\n")
 
