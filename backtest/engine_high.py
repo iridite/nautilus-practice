@@ -1,4 +1,5 @@
 import gc
+import json
 from datetime import datetime
 from pathlib import Path
 
@@ -16,10 +17,26 @@ from nautilus_trader.backtest.results import BacktestResult
 from nautilus_trader.common.config import LoggingConfig
 from nautilus_trader.config import ImportableStrategyConfig, RiskEngineConfig
 from nautilus_trader.model.data import BarType
+from nautilus_trader.model.enums import BarAggregation
 
-from config.definitions import BackTestConfig
+from config.definitions import BackTestConfig, DataConfig
 from utils.data_loader import loader
 from utils.instrument_loader import load_instrument
+
+
+def _resolve_instrument_path(base_dir: Path, venue_name: str, symbol: str) -> Path:
+    """解析 instrument json 文件的路径"""
+    clean_symbol = symbol.replace(":", "-").replace("USDT-USDT", "USDT")
+    potential_names = [
+        f"{clean_symbol}.json",
+        f"{clean_symbol.replace('USDT', '-USDT-SWAP')}.json",
+        f"{clean_symbol.replace('USDT', '-USDT')}.json",
+    ]
+    for name in potential_names:
+        path = base_dir / "data" / "instrument" / venue_name / name
+        if path.exists():
+            return path
+    return base_dir / "data" / "instrument" / venue_name / f"{clean_symbol}.json"
 
 
 def run_high_level(cfg: BackTestConfig, base_dir: Path):
@@ -27,68 +44,218 @@ def run_high_level(cfg: BackTestConfig, base_dir: Path):
 
     data_path = base_dir / "data"
 
-    # 1. Setup Instrument
-    # Try to load from data/instruments/{VENUE}/{SYMBOL}.json
-    # This file should have been fetched by main.py -> fetch_instrument.py
-    instrument_file = (
-        data_path
-        / "instrument"
-        / cfg.instrument.venue_name
-        / f"{cfg.instrument.instrument_id.split('.')[0]}.json"
+    # 1. Resolve Universe
+    universe_symbols = set()
+    params = cfg.strategy.params
+    u_name = (
+        params.get("universe_filename")
+        if isinstance(params, dict)
+        else getattr(params, "universe_filename", None)
     )
 
-    if instrument_file.exists():
-        print(f"📂 Loading instrument from {instrument_file}")
+    if u_name:
+        universe_file = data_path / u_name
+        if universe_file.exists():
+            with open(universe_file, "r") as f:
+                u_data = json.load(f)
+                for month_list in u_data.values():
+                    universe_symbols.update(month_list)
+            print(f"🌌 Universe loaded: {len(universe_symbols)} symbols found.")
 
-        instrument = load_instrument(
-            instrument_file
-        )  # Determine fees (industry standard defaults for OKX if not provided)
-        print(
-            f"✅ Fees Loaded: Maker={float(instrument.maker_fee) * 100:.4f}%, Taker={float(instrument.taker_fee) * 100:.4f}%"
-        )
-    else:
-        raise FileNotFoundError(
-            f"❌ Instrument definition not found at: {instrument_file}\n"
-            f"👉 Please run: uv run main.py (to fetch instruments)"
-        )
-
-    # 2. Load Data Feeds (Generic Supply Framework)
+    # 2. Data and Strategy Preparation
     run_timestamp = datetime.now().isoformat()
     data_configs = []
-    feed_bar_types = {}  # label -> bar_type_str
+    strategies = []
+    loaded_instruments = {}
 
-    for i, feed in enumerate(cfg.data_feeds):
-        # Determine instrument for this feed (support multi-instrument backtest in future)
-        feed_inst = instrument
-        if feed.instrument_id and feed.instrument_id != str(instrument.id):
-            # TODO: Add logic to load auxiliary instrument if needed (e.g. for benchmark)
-            pass
-
-        feed_bar_type_str = f"{feed_inst.id}-{feed.bar_type_str}"
-        feed_bar_type_def = BarType.from_str(feed_bar_type_str)
-        feed_bar_types[feed.label] = feed_bar_type_str
-
-        print(f"📥 Loading Data Feed [{feed.label}]: {feed_bar_type_str}")
-
-        csv_path = data_path / "raw" / feed.csv_file_name
-        if not csv_path.exists():
-            raise FileNotFoundError(f"Data file not found: {csv_path}")
-
-        # Load and wrangle to parquet catalog
-        _, catalog_path = loader(
-            csv_path=csv_path,
-            output_path=data_path / "parquet" / f"{run_timestamp}_{feed.label}_{i}",
-            instrument=feed_inst,
-            bar_type=feed_bar_type_def,
+    if universe_symbols:
+        # === Case A: Universe-based Multi-Instrument Strategy ===
+        print(
+            f"🌌 Running in Universe Mode with {len(universe_symbols)} potential symbols."
         )
 
-        data_configs.append(
-            BacktestDataConfig(
-                catalog_path=str(catalog_path),
-                data_cls="nautilus_trader.model.data:Bar",
-                instrument_id=feed_inst.id,
-                start_time=cfg.start_date,
-                end_time=cfg.end_date,
+        # 2.1 Load Benchmark (if any)
+        benchmark_inst = None
+        benchmark_bar_type = None
+        for feed in cfg.data_feeds:
+            if feed.label == "benchmark" and feed.instrument_id:
+                symbol_part = feed.instrument_id.split(".")[0]
+                venue_part = (
+                    feed.instrument_id.split(".")[1]
+                    if "." in feed.instrument_id
+                    else cfg.instrument.venue_name
+                )
+                path = _resolve_instrument_path(base_dir, venue_part, symbol_part)
+                if path.exists():
+                    benchmark_inst = load_instrument(path)
+                    loaded_instruments[str(benchmark_inst.id)] = benchmark_inst
+
+                    feed_bar_type_str = f"{benchmark_inst.id}-{feed.bar_type_str}"
+                    benchmark_bar_type = feed_bar_type_str
+
+                    csv_path = data_path / "raw" / feed.csv_file_name
+                    if csv_path.exists():
+                        _, catalog_path = loader(
+                            csv_path=csv_path,
+                            output_path=data_path
+                            / "parquet"
+                            / f"{run_timestamp}_benchmark",
+                            instrument=benchmark_inst,
+                            bar_type=BarType.from_str(feed_bar_type_str),
+                        )
+                        data_configs.append(
+                            BacktestDataConfig(
+                                catalog_path=str(catalog_path),
+                                data_cls="nautilus_trader.model.data:Bar",
+                                instrument_id=benchmark_inst.id,
+                                start_time=cfg.start_date,
+                                end_time=cfg.end_date,
+                            )
+                        )
+
+        # 2.2 Load each Universe member
+        main_feed_template = next(
+            (f for f in cfg.data_feeds if f.label == "main"), None
+        )
+        if not main_feed_template:
+            print("❌ No 'main' data feed found in config to use as template.")
+            return
+
+        for i, symbol in enumerate(sorted(list(universe_symbols))):
+            raw_pair = symbol.split(":")[0]
+            clean_base = raw_pair.replace("USDT", "")
+            inst_id_str = f"{clean_base}-USDT-SWAP.{cfg.instrument.venue_name}"
+
+            if inst_id_str in loaded_instruments:
+                inst = loaded_instruments[inst_id_str]
+            else:
+                inst_path = _resolve_instrument_path(
+                    base_dir, cfg.instrument.venue_name, inst_id_str.split(".")[0]
+                )
+                if not inst_path.exists():
+                    continue
+                try:
+                    inst = load_instrument(inst_path)
+                    loaded_instruments[str(inst.id)] = inst
+                except Exception as e:
+                    print(f"⚠️ Failed to load instrument {inst_id_str}: {e}")
+                    continue
+
+            # Load Data
+            timeframe = f"{main_feed_template.bar_period}{'h' if main_feed_template.bar_aggregation == BarAggregation.HOUR else 'm'}"
+            if main_feed_template.bar_aggregation == BarAggregation.DAY:
+                timeframe = f"{main_feed_template.bar_period}d"
+
+            csv_file_name = f"{clean_base}USDT/{cfg.instrument.venue_name.lower()}-{clean_base}USDT-{timeframe}-{cfg.start_date}_{cfg.end_date}.csv"
+            csv_path = data_path / "raw" / csv_file_name
+
+            if csv_path.exists():
+                feed_bar_type_str = f"{inst.id}-{main_feed_template.bar_type_str}"
+                _, catalog_path = loader(
+                    csv_path=csv_path,
+                    output_path=data_path
+                    / "parquet"
+                    / f"{run_timestamp}_{clean_base}_{i}",
+                    instrument=inst,
+                    bar_type=BarType.from_str(feed_bar_type_str),
+                )
+                data_configs.append(
+                    BacktestDataConfig(
+                        catalog_path=str(catalog_path),
+                        data_cls="nautilus_trader.model.data:Bar",
+                        instrument_id=inst.id,
+                        start_time=cfg.start_date,
+                        end_time=cfg.end_date,
+                    )
+                )
+
+                # Strategy Instance
+                feed_bar_types = {"main": feed_bar_type_str}
+                if benchmark_bar_type:
+                    feed_bar_types["benchmark"] = benchmark_bar_type
+
+                strategy_params = cfg.strategy.resolve_params(
+                    instrument_id=inst.id,
+                    leverage=cfg.instrument.leverage,
+                    feed_bar_types=feed_bar_types,
+                )
+                if u_name:
+                    strategy_params["universe_filename"] = u_name
+
+                strategies.append(
+                    ImportableStrategyConfig(
+                        strategy_path=f"{cfg.strategy.module_path}:{cfg.strategy.name}",
+                        config_path=f"{cfg.strategy.module_path}:{cfg.strategy.resolve_config_class()}",
+                        config=strategy_params,
+                    )
+                )
+                print(f"✅ Prepared strategy for {inst.id}")
+
+    else:
+        # === Case B: Single-Instrument Strategy ===
+        print(f"🎯 Running in Single-Instrument Mode: {cfg.instrument.instrument_id}")
+
+        instrument_file = _resolve_instrument_path(
+            base_dir,
+            cfg.instrument.venue_name,
+            cfg.instrument.instrument_id.split(".")[0],
+        )
+        if not instrument_file.exists():
+            raise FileNotFoundError(
+                f"❌ Instrument definition not found: {instrument_file}"
+            )
+
+        instrument = load_instrument(instrument_file)
+        loaded_instruments[str(instrument.id)] = instrument
+
+        feed_bar_types = {}
+        for i, feed in enumerate(cfg.data_feeds):
+            feed_inst = instrument
+            if feed.instrument_id and feed.instrument_id != str(instrument.id):
+                s_part = feed.instrument_id.split(".")[0]
+                v_part = (
+                    feed.instrument_id.split(".")[1]
+                    if "." in feed.instrument_id
+                    else cfg.instrument.venue_name
+                )
+                aux_path = _resolve_instrument_path(base_dir, v_part, s_part)
+                if aux_path.exists():
+                    feed_inst = load_instrument(aux_path)
+                    loaded_instruments[str(feed_inst.id)] = feed_inst
+
+            feed_bar_type_str = f"{feed_inst.id}-{feed.bar_type_str}"
+            feed_bar_types[feed.label] = feed_bar_type_str
+
+            csv_path = data_path / "raw" / feed.csv_file_name
+            if csv_path.exists():
+                _, catalog_path = loader(
+                    csv_path=csv_path,
+                    output_path=data_path
+                    / "parquet"
+                    / f"{run_timestamp}_{feed.label}_{i}",
+                    instrument=feed_inst,
+                    bar_type=BarType.from_str(feed_bar_type_str),
+                )
+                data_configs.append(
+                    BacktestDataConfig(
+                        catalog_path=str(catalog_path),
+                        data_cls="nautilus_trader.model.data:Bar",
+                        instrument_id=feed_inst.id,
+                        start_time=cfg.start_date,
+                        end_time=cfg.end_date,
+                    )
+                )
+
+        strategy_params = cfg.strategy.resolve_params(
+            instrument_id=instrument.id,
+            leverage=cfg.instrument.leverage,
+            feed_bar_types=feed_bar_types,
+        )
+        strategies.append(
+            ImportableStrategyConfig(
+                strategy_path=f"{cfg.strategy.module_path}:{cfg.strategy.name}",
+                config_path=f"{cfg.strategy.module_path}:{cfg.strategy.resolve_config_class()}",
+                config=strategy_params,
             )
         )
 
@@ -108,22 +275,6 @@ def run_high_level(cfg: BackTestConfig, base_dir: Path):
                 config={},
             ),
             trade_execution=True,
-        ),
-    ]
-
-    # 4. Configure Strategy
-    # Resolve params using centralized logic
-    strategy_params = cfg.strategy.resolve_params(
-        instrument_id=instrument.id,
-        leverage=cfg.instrument.leverage,
-        feed_bar_types=feed_bar_types,
-    )
-
-    strategies = [
-        ImportableStrategyConfig(
-            strategy_path=f"{cfg.strategy.module_path}:{cfg.strategy.name}",
-            config_path=f"{cfg.strategy.module_path}:{cfg.strategy.resolve_config_class()}",
-            config=strategy_params,
         ),
     ]
 

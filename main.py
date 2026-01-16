@@ -1,4 +1,5 @@
 import argparse
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -95,15 +96,36 @@ def main():
         parser.print_help()
         return
 
+    # 检测是否有关联的 Universe 文件
+    universe_symbols = set()
+    if args.command == "backtest":
+        params = current_config.strategy.params
+        u_name = (
+            params.get("universe_filename")
+            if isinstance(params, dict)
+            else getattr(params, "universe_filename", None)
+        )
+        if u_name:
+            u_path = BASE_DIR / "data" / u_name
+            if u_path.exists():
+                try:
+                    with open(u_path, "r") as f:
+                        u_data = json.load(f)
+                        for month_list in u_data.values():
+                            universe_symbols.update(month_list)
+                    print(
+                        f"🌌 Universe detected: {len(universe_symbols)} symbols found."
+                    )
+                except Exception as e:
+                    print(f"⚠️ Failed to load universe file: {e}")
+
     # 1. Automatic Data Retrieval (Only for backtest if not skipped)
     if args.command == "backtest" and not args.skip_data:
         print("==========================================")
         print("🔍 Checking & Retrieving Data for all feeds...")
 
-        # 遍历 data_feeds 自动获取所有需要的行情数据
+        # 1.1 遍历 data_feeds 自动获取所有需要的行情数据
         for feed in current_config.data_feeds:
-            # 这里的解析逻辑需要与 get_data_config 产生的 csv_file_name 对应
-            # 格式通常是 symbol_quote/exchange-symbol_quote-timeframe-start_end.csv
             try:
                 parts = feed.csv_file_name.split("/")
                 symbol_quote = parts[0]
@@ -122,18 +144,50 @@ def main():
                     f"⚠️ Failed to parse data feed config for retrieval: {feed.label}, error: {e}"
                 )
 
+        # 1.2 如果存在 Universe，为其中的每个币种获取数据 (使用 main feed 的参数)
+        if universe_symbols:
+            main_feed = next(
+                (f for f in current_config.data_feeds if f.label == "main"), None
+            )
+            if main_feed:
+                try:
+                    parts = main_feed.csv_file_name.split("/")
+                    file_parts = parts[1].split("-")
+                    exchange = file_parts[0]
+                    timeframe = file_parts[2]
+
+                    for symbol in sorted(list(universe_symbols)):
+                        # 转换符号格式 (e.g., SOLUSDT:USDT -> SOLUSDT)
+                        symbol_str = symbol.split(":")[0]
+                        run_data_retrieval(
+                            symbol_str, START_DATE, END_DATE, timeframe, exchange
+                        )
+                except Exception as e:
+                    print(f"⚠️ Failed to process universe data retrieval: {e}")
+
         print("==========================================\n")
 
     # 2. Fetch & Update Instruments
     # This ensures we have the latest instrument definitions from the exchange
     try:
-        # 收集所有需要更新的 Instrument ID (包括主交易品种和辅助品种)
+        # 收集所有需要更新的 Instrument ID (包括主交易品种、辅助品种以及 Universe 品种)
         instrument_ids = {current_config.instrument.instrument_id}
         for feed in current_config.data_feeds:
             if feed.instrument_id:
                 instrument_ids.add(feed.instrument_id)
 
-        print(f"🔄 Updating instrument definitions for: {list(instrument_ids)}")
+        # 添加 Universe 中的品种
+        for symbol in universe_symbols:
+            # 构造 Instrument ID (e.g., SOLUSDT:USDT -> SOL-USDT-SWAP.OKX)
+            raw_pair = symbol.split(":")[0]
+            clean_base = raw_pair.replace("USDT", "")
+            venue = current_config.instrument.venue_name
+            inst_id = f"{clean_base}-USDT-SWAP.{venue}"
+            instrument_ids.add(inst_id)
+
+        print(
+            f"🔄 Updating instrument definitions for: {len(instrument_ids)} instruments"
+        )
         update_instruments(list(instrument_ids))
     except Exception as e:
         print(f"\t ⚠️ Failed to update instruments: {e}")

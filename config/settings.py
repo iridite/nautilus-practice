@@ -23,9 +23,9 @@ from strategy.rs_squeeze import RSSqueezeConfig
 # ==========================================
 
 # 交易标的定义
-SYMBOL = "SOL"
-QUOTE = "USDT"
-VENUE = "OKX"  # OKX or BINANCE
+QUOTE_SYMBOL = "SOL"
+BASE_SYMBOL = "USDT"
+VENUE = "BINANCE"  # OKX or BINANCE
 INSTRUMENT_TYPE = InstrumentType.SWAP  # Usually SWAP for perps
 
 # 回测时间段
@@ -35,7 +35,7 @@ END_DATE = "2026-01-14"
 # 有些币种，如 SOL 没有那么长的历史，获取数据会失败需要特别注意
 
 BENCHMARK_SYMBOL = "BTC"
-BENCHMARK_ID = "BTC-USDT-SWAP.OKX"
+BENCHMARK_ID = "BTC-USDT-SWAP.BINANCE"
 
 # 数据配置 (Data Configuration)
 # 策略使用的主周期和趋势辅助周期
@@ -125,23 +125,29 @@ def get_data_config(
 
 active_instrument = InstrumentConfig(
     venue_name=VENUE,
-    quote_currency=SYMBOL,
-    base_currency=QUOTE,
+    quote_currency=QUOTE_SYMBOL,
+    base_currency=BASE_SYMBOL,
     type=INSTRUMENT_TYPE,
     leverage=STRATEGY_LEVERAGE,  # 杠杆在这里导入
 )
 
 # TODO: 数据生成与处理完全自动化，即使是多类型数据也能自己搞定
 data_main = get_data_config(
-    SYMBOL, QUOTE, VENUE, MAIN_TIMEFRAME, START_DATE, END_DATE, label="main"
+    QUOTE_SYMBOL, BASE_SYMBOL, VENUE, MAIN_TIMEFRAME, START_DATE, END_DATE, label="main"
 )
 data_trend = get_data_config(
-    SYMBOL, QUOTE, VENUE, TREND_TIMEFRAME, START_DATE, END_DATE, label="trend"
+    QUOTE_SYMBOL,
+    BASE_SYMBOL,
+    VENUE,
+    TREND_TIMEFRAME,
+    START_DATE,
+    END_DATE,
+    label="trend",
 )
 # RS-Squeeze 的基准数据 (BTC)
 data_benchmark = get_data_config(
     BENCHMARK_SYMBOL,
-    QUOTE,
+    BASE_SYMBOL,
     VENUE,
     MAIN_TIMEFRAME,
     START_DATE,
