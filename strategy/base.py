@@ -60,6 +60,7 @@ class BaseStrategy(Strategy):
         Lifecycle hook: Strategy Setup.
         Subclasses should call super().on_start() to ensure instrument is loaded.
         """
+        # TODO: 这里使用的 self.config 和 self.base_config 有什么区别？
         if hasattr(self.config, "instrument_id") and self.config.instrument_id:
             instrument_id = self.config.instrument_id
             if isinstance(instrument_id, str):

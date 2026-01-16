@@ -149,12 +149,24 @@ data_trend = get_data_config(
     END_DATE,
     label="trend",
 )
-# RS-Squeeze 的基准数据 (BTC)
-data_benchmark = get_data_config(
+# RS-Squeeze 的基准数据 (BTC) - 4H Trend Filter
+data_benchmark_trend = get_data_config(
     BENCHMARK_SYMBOL,
     BASE_SYMBOL,
     VENUE,
     "4h",
+    START_DATE,
+    END_DATE,
+    label="benchmark_trend",
+    instrument_id=BENCHMARK_ID,
+)
+
+# RS-Squeeze 的基准数据 (BTC) - 1H RS Calculation
+data_benchmark_rs = get_data_config(
+    BENCHMARK_SYMBOL,
+    BASE_SYMBOL,
+    VENUE,
+    MAIN_TIMEFRAME,
     START_DATE,
     END_DATE,
     label="benchmark",
@@ -200,7 +212,8 @@ current_config = BackTestConfig(
         # stores labels as different INSTRUMENT
         data_main,
         data_trend,
-        data_benchmark,
+        data_benchmark_trend,
+        data_benchmark_rs,
     ],
     strategy=RS_SQUEEZE_STRATEGY,  # 在这里切换策略
     # 策略里面永远都不能明显指定交易标的，交易标的应该人工指定，策略只管在特定的标的上计算和发送订单
@@ -208,7 +221,7 @@ current_config = BackTestConfig(
     start_date=START_DATE,
     end_date=END_DATE,
     initial_balances=INIT_BALANCES,
-    output_html_report=True,
+    output_html_report=False,
     # 其他配置
     logging=LOGGING_SETTINGS,
     ml=None,
