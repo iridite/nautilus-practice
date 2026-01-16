@@ -1,7 +1,7 @@
 import asyncio
 import logging
 from pathlib import Path
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 import msgspec
 from nautilus_trader.adapters.binance import (
@@ -31,7 +31,7 @@ DEFAULT_OUTPUT_DIR = Path(__file__).parent.parent / "data" / "instrument"
 class InstrumentFetcher:
     """
     Responsible for fetching the latest Instrument definitions from exchanges
-    and saving them as JSON files.
+    and saving them as JSON files. Reuses clients to optimize performance.
     """
 
     def __init__(self, output_dir: Path = DEFAULT_OUTPUT_DIR):
@@ -39,119 +39,137 @@ class InstrumentFetcher:
         self._ensure_dir()
         self.clock = LiveClock()
 
+        # Reusable clients and providers
+        self._clients: Dict[str, Any] = {}
+        self._providers: Dict[str, Any] = {}
+
     def _ensure_dir(self):
         """Ensure the output directory exists"""
         if not self.output_dir.exists():
             self.output_dir.mkdir(parents=True, exist_ok=True)
             logger.info(f"📁 Created directory: {self.output_dir}")
 
-    async def fetch_one(self, instrument_id_str: str, retries: int = 3) -> Optional[Path]:
+    def _get_binance_client(self, is_futures: bool) -> BinanceHttpClient:
+        key = f"BINANCE_{'FUTURES' if is_futures else 'SPOT'}"
+        if key not in self._clients:
+            base_url = (
+                "https://fapi.binance.com" if is_futures else "https://api.binance.com"
+            )
+            self._clients[key] = BinanceHttpClient(
+                clock=self.clock,
+                api_key=None,
+                api_secret=None,
+                base_url=base_url,
+            )
+        return self._clients[key]
+
+    def _get_binance_provider(self, is_futures: bool) -> Any:
+        key = f"BINANCE_{'FUTURES' if is_futures else 'SPOT'}"
+        if key not in self._providers:
+            client = self._get_binance_client(is_futures)
+            if is_futures:
+                self._providers[key] = BinanceFuturesInstrumentProvider(
+                    client=client, clock=self.clock
+                )
+            else:
+                self._providers[key] = BinanceSpotInstrumentProvider(
+                    client=client, clock=self.clock
+                )
+        return self._providers[key]
+
+    def _get_okx_client(self) -> OKXHttpClient:
+        key = "OKX"
+        if key not in self._clients:
+            self._clients[key] = OKXHttpClient(
+                api_key="",
+                api_secret="",
+                api_passphrase="",
+                base_url="https://www.okx.com",
+            )
+        return self._clients[key]
+
+    def _get_okx_provider(self) -> OKXInstrumentProvider:
+        key = "OKX"
+        if key not in self._providers:
+            client = self._get_okx_client()
+            self._providers[key] = OKXInstrumentProvider(
+                client=client,
+                instrument_types=(
+                    OKXInstrumentType.SPOT,
+                    OKXInstrumentType.SWAP,
+                    OKXInstrumentType.FUTURES,
+                    OKXInstrumentType.OPTION,
+                ),
+            )
+        return self._providers[key]
+
+    async def fetch_one(
+        self, instrument_id_str: str, retries: int = 3
+    ) -> Optional[Path]:
         """
         Fetch a single instrument and save it.
         """
         for attempt in range(1, retries + 1):
             try:
-                # 因为使用了 NT inst ID 进行分割，所以这里的 inst ID 名称必须准确
                 instrument_id = InstrumentId.from_str(instrument_id_str)
                 venue: str = instrument_id.venue.value
                 symbol: str = instrument_id.symbol.value
 
-                logger.info(f"⏳ Fetching {symbol} from {venue} (Attempt {attempt}/{retries})...")
-
                 instrument = None
                 if venue == "BINANCE":
-                    # Determine if it's Futures or Spot based on the symbol suffix
                     is_futures = "-PERP" in symbol or "-DELIVERY" in symbol
-                    base_url = (
-                        "https://fapi.binance.com"
-                        if is_futures
-                        else "https://api.binance.com"
-                    )
-
-                    client = BinanceHttpClient(
-                        clock=self.clock,
-                        api_key=None,
-                        api_secret=None,
-                        base_url=base_url,
-                    )
-
-                    if is_futures:
-                        provider = BinanceFuturesInstrumentProvider(
-                            client=client, clock=self.clock
-                        )
-                    else:
-                        provider = BinanceSpotInstrumentProvider(
-                            client=client, clock=self.clock
-                        )
-
+                    provider = self._get_binance_provider(is_futures)
                     await provider.load_async(instrument_id)
                     instrument = provider.find(instrument_id)
 
                 elif venue == "OKX":
-                    client = OKXHttpClient(
-                        api_key="",
-                        api_secret="",
-                        api_passphrase="",
-                        base_url="https://www.okx.com",
-                    )
-                    # OKX provider needs to know which types to look for
-                    provider = OKXInstrumentProvider(
-                        client=client,
-                        instrument_types=(
-                            OKXInstrumentType.SPOT,
-                            OKXInstrumentType.SWAP,
-                            OKXInstrumentType.FUTURES,
-                            OKXInstrumentType.OPTION,
-                        ),
-                    )
+                    provider = self._get_okx_provider()
                     await provider.load_async(instrument_id)
                     instrument = provider.find(instrument_id)
 
                 if instrument:
-                    # Generate save path: data/instrument/BINANCE/ETHUSDT-PERP.json
                     venue_dir = self.output_dir / venue
                     venue_dir.mkdir(exist_ok=True)
                     file_path = venue_dir / f"{symbol}.json"
 
-                    # Serialization helper for Nautilus objects
                     def enc_hook(obj):
                         if hasattr(obj, "to_dict"):
                             try:
                                 return obj.to_dict()
                             except TypeError:
-                                # Some Cython versions might require passing self explicitly
                                 return obj.to_dict(obj)
                         return str(obj)
 
-                    # Save as JSON
                     with open(file_path, "wb") as f:
                         f.write(msgspec.json.encode(instrument, enc_hook=enc_hook))
 
                     logger.info(
-                        f"✅ Saved: {file_path} (Price Step: {instrument.price_increment})"
+                        f"✅ Saved: {venue}/{symbol} (Price Step: {instrument.price_increment})"
                     )
                     return file_path
                 else:
-                    logger.warning(
-                        f"⚠️ Instrument not found on exchange: {instrument_id_str}"
-                    )
-                    # No retry if not found
+                    logger.warning(f"⚠️ Instrument not found: {instrument_id_str}")
                     return None
 
             except Exception as e:
                 if attempt < retries:
-                    logger.warning(f"⚠️ Error fetching {instrument_id_str}: {e}. Retrying in 2s...")
-                    await asyncio.sleep(2.0)
+                    # Longer sleep if we hit rate limits (implied by errors)
+                    sleep_time = 2.0 * attempt
+                    logger.warning(
+                        f"⚠️ Error fetching {instrument_id_str}: {e}. Retrying in {sleep_time}s..."
+                    )
+                    await asyncio.sleep(sleep_time)
                 else:
                     logger.error(f"🔥 Final error fetching {instrument_id_str}: {e}")
-                    import traceback
-                    logger.error(traceback.format_exc())
                     return None
 
     async def fetch_all(self, instrument_ids: List[str]):
-        """Batch fetch"""
+        """Batch fetch with shared clients"""
+        logger.info(f"🚀 Starting batch fetch for {len(instrument_ids)} instruments")
         for pid in instrument_ids:
             await self.fetch_one(pid)
+            # Small delay between instruments to be polite to the API
+            await asyncio.sleep(0.2)
 
 
 def update_instruments(
@@ -168,23 +186,17 @@ def update_instruments(
         asyncio.set_event_loop(loop)
 
     if loop.is_running():
-        # If already in an async environment, we need to schedule it
         asyncio.ensure_future(fetcher.fetch_all(instrument_ids))
     else:
         loop.run_until_complete(fetcher.fetch_all(instrument_ids))
 
 
 if __name__ == "__main__":
-    # Test list
     targets = [
         "ETHUSDT-PERP.BINANCE",
         "BTCUSDT-PERP.BINANCE",
         "BTCUSDT.BINANCE",
         "ETH-USDT-SWAP.OKX",
-        "ETH-USDT-PERP.OKX",  # Do not exist
         "ETH-USDT.OKX",
     ]
-
-    print("🚀 Starting manual instrument update...")
     update_instruments(targets)
-    print("✨ Done.")

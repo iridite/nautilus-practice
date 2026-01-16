@@ -12,13 +12,13 @@ def parse_arguments():
         description="Fetch OHLCV and Funding Rate data from Crypto Exchanges via CCXT."
     )
 
-    # 1. 交易标的
+    # 1. 交易标的 (支持多个标的，以逗号分隔)
     parser.add_argument(
         "--symbol",
         "-s",
         type=str,
         required=True,
-        help="Trading symbol, e.g., ETH/USDT (Spot) or ETHUSDT (Perp)",
+        help="Trading symbol(s), e.g., ETHUSDT or ETHUSDT,BTCUSDT",
     )
 
     # 2. 起始时间
@@ -47,7 +47,7 @@ def parse_arguments():
         help="Timeframe interval, e.g., 5m, 1h, 1d",
     )
 
-    # 4. 指定交易所 (新增)
+    # 4. 指定交易所
     parser.add_argument(
         "--exchange",
         type=str,
@@ -56,7 +56,9 @@ def parse_arguments():
         help="Exchange ID (binance or okx). Default is binance.",
     )
 
-    parser.add_argument("-extra", "-e", type=bool, default=False)
+    parser.add_argument(
+        "--extra", "-e", action="store_true", help="Include funding rate data"
+    )
 
     return parser.parse_args()
 
@@ -71,49 +73,45 @@ def get_ms_timestamp(date_str):
 def resolve_symbol_and_type(input_symbol):
     """
     解析输入标的，返回 (ccxt_unified_symbol, market_type)
-    策略：
-    1. 输入含 '/': 认为是现货。
-    2. 输入不含 '/': 认为是永续合约，尝试转换为 CCXT 的统一格式 Base/Quote:Settle。
-       这对于 Binance 和 OKX 都是通用的。
     """
     if "/" in input_symbol:
-        # 现货: ETH/USDT
         return input_symbol, "spot"
     else:
-        # 永续合约: ETHUSDT -> 转换为 ccxt 统一格式
-        # 逻辑：假设是以 USDT 结尾的 U本位合约
         if input_symbol.upper().endswith("USDT"):
             base = input_symbol.upper().replace("USDT", "")
-            # CCXT 统一格式: BASE/QUOTE:SETTLE
-            # 例如: ETH/USDT:USDT
             ccxt_symbol = f"{base}/USDT:USDT"
             return ccxt_symbol, "swap"
-
-        # 逻辑：假设是以 USD 结尾的 币本位合约
         elif input_symbol.upper().endswith("USD"):
             base = input_symbol.upper().replace("USD", "")
-            # 例如: ETH/USD:ETH
             ccxt_symbol = f"{base}/USD:{base}"
             return ccxt_symbol, "swap"
-
         else:
-            # 无法自动解析，直接尝试原样请求
             return input_symbol, "swap"
 
 
-def retry_fetch(func, *args, retries=3, delay=2, **kwargs):
+def retry_fetch(func, *args, retries=3, delay=5, **kwargs):
     """
-    通用重试装饰器/助手函数，用于处理网络请求异常。
+    通用重试助手函数。
+    对于 IP 被封锁 (418) 的情况，增加更长的延迟。
     """
     for attempt in range(1, retries + 1):
         try:
             return func(*args, **kwargs)
         except (ccxt.NetworkError, ccxt.ExchangeError) as e:
+            err_msg = str(e)
+            # 如果触发了 418 (I'm a teapot) 或者 -1003 (Banned)，说明请求太快或被封
+            current_delay = (
+                delay * 2 if "418" in err_msg or "-1003" in err_msg else delay
+            )
+
             if attempt == retries:
                 print(f"\n[!] Final attempt failed: {e}")
                 raise e
-            print(f"\n[!] Error: {e}. Retrying ({attempt}/{retries}) in {delay}s...")
-            time.sleep(delay)
+
+            print(
+                f"\n[!] Error: {e}. Retrying ({attempt}/{retries}) in {current_delay}s..."
+            )
+            time.sleep(current_delay)
     return None
 
 
@@ -122,17 +120,12 @@ def fetch_ohlcv_data(exchange, symbol, timeframe, since, limit_ms):
     all_ohlcv = []
     current_since = since
 
-    print(
-        f"[*] [{exchange.id}] Fetching OHLCV for {symbol} from {datetime.fromtimestamp(since / 1000, timezone.utc)}..."
-    )
+    print(f"[*] [{exchange.id}] Fetching OHLCV for {symbol}...")
 
     while current_since < limit_ms:
         try:
-            # OKX 和 Binance 都支持 limit 参数，但最大值不同，100 是安全值
-            # OKX 的 fetch_ohlcv limit 默认通常是 100 (历史数据)
             limit_param = 100 if exchange.id == "okx" else 1000
 
-            # 使用重试逻辑获取数据
             ohlcv = retry_fetch(
                 exchange.fetch_ohlcv,
                 symbol,
@@ -142,26 +135,19 @@ def fetch_ohlcv_data(exchange, symbol, timeframe, since, limit_ms):
             )
 
             if not ohlcv:
-                print(f"    No more data found at {current_since}.")
                 break
 
             last_timestamp = ohlcv[-1][0]
-
-            # 防止死循环：如果获取到的数据都是旧的
             if last_timestamp < current_since:
                 break
 
-            # 去重：有时交易所会返回包含 current_since 的数据
             new_data = [x for x in ohlcv if x[0] >= current_since]
             if not new_data:
                 break
 
             all_ohlcv.extend(new_data)
-
-            # 更新下一次抓取的起点：最后一条数据时间 + 1ms
             current_since = all_ohlcv[-1][0] + 1
 
-            # 进度显示
             last_date = datetime.fromtimestamp(current_since / 1000, timezone.utc)
             print(f"    Fetched up to {last_date} ({len(all_ohlcv)} candles)", end="\r")
 
@@ -171,10 +157,12 @@ def fetch_ohlcv_data(exchange, symbol, timeframe, since, limit_ms):
             time.sleep(exchange.rateLimit / 1000)
 
         except Exception as e:
-            print(f"\n[!] Error fetching OHLCV: {e}")
+            print(f"\n[!] Error fetching OHLCV for {symbol}: {e}")
             break
 
     print(f"\n[*] OHLCV fetch complete. Total candles: {len(all_ohlcv)}")
+    if not all_ohlcv:
+        return pd.DataFrame()
 
     df = pd.DataFrame(
         all_ohlcv, columns=["timestamp", "open", "high", "low", "close", "volume"]
@@ -188,20 +176,12 @@ def fetch_funding_data(exchange, symbol, since, limit_ms):
     all_funding = []
     current_since = since
 
-    print(f"[*] [{exchange.id}] Fetching Funding Rates for {symbol}...")
-
-    # 检查交易所是否支持
-    if not exchange.has["fetchFundingRateHistory"]:
-        print(
-            f"[!] Exchange {exchange.id} does not support fetchFundingRateHistory via CCXT standard API."
-        )
+    if not exchange.has.get("fetchFundingRateHistory"):
         return pd.DataFrame()
 
     while current_since < limit_ms:
         try:
             limit_param = 100 if exchange.id == "okx" else 1000
-
-            # 使用重试逻辑获取数据
             funding = retry_fetch(
                 exchange.fetch_funding_rate_history,
                 symbol,
@@ -212,145 +192,122 @@ def fetch_funding_data(exchange, symbol, since, limit_ms):
             if not funding:
                 break
 
-            # 过滤掉早于 current_since 的数据（防止死循环）
             new_funding = [f for f in funding if f["timestamp"] >= current_since]
             if not new_funding:
                 break
 
             all_funding.extend(new_funding)
+            current_since = new_funding[-1]["timestamp"] + 1
 
-            last_timestamp = new_funding[-1]["timestamp"]
-            current_since = last_timestamp + 1
-
-            last_date = datetime.fromtimestamp(last_timestamp / 1000, timezone.utc)
-            print(f"    Fetched funding up to {last_date}", end="\r")
-
-            if last_timestamp >= limit_ms:
+            if current_since >= limit_ms:
                 break
 
             time.sleep(exchange.rateLimit / 1000)
 
         except Exception as e:
-            print(f"\n[!] Error fetching Funding Rate: {e}")
+            print(f"\n[!] Error fetching Funding Rate for {symbol}: {e}")
             break
-
-    print(f"\n[*] Funding rate fetch complete. Total records: {len(all_funding)}")
 
     if not all_funding:
         return pd.DataFrame()
 
-    funding_data = []
-    for f in all_funding:
-        funding_data.append(
+    df = pd.DataFrame(
+        [
             {"timestamp": f["timestamp"], "fundingRate": f["fundingRate"]}
-        )
-
-    df = pd.DataFrame(funding_data)
-    df = df.drop_duplicates(subset=["timestamp"])  # 去重
-    df = df[df["timestamp"] < limit_ms]
-    return df
-
-
-def main():
-    args = parse_arguments()
-
-    # 1. 动态初始化交易所
-    exchange_class = getattr(ccxt, args.exchange)
-    exchange = exchange_class(
-        {
-            "enableRateLimit": True,
-            # 这里的 options 主要是为了 Binance 的默认行为，OKX 对此不敏感但也不会报错
-            "options": {"defaultType": "future"},
-        }
+            for f in all_funding
+        ]
     )
+    return df.drop_duplicates(subset=["timestamp"])
 
-    # 2. 解析参数与符号
-    raw_symbol = args.symbol
+
+def process_symbol(exchange, raw_symbol, start_ms, end_ms, timeframe, extra, base_dir):
     ccxt_symbol, market_type = resolve_symbol_and_type(raw_symbol)
 
-    # 3. 设置时间
-    start_ms = get_ms_timestamp(args.start)
-    end_ms = get_ms_timestamp(args.end)
-
-    print(f"--- Configuration ---")
-    print(f"Exchange: {args.exchange.upper()}")
-    print(f"Raw Input: {raw_symbol}")
-    print(f"Target Symbol: {ccxt_symbol}")
-    print(f"Time Frame: {args.timeframe}")
-    print(f"Type: {market_type.upper()}")
-    print(f"Range: {args.start} to {args.end}")
-    print(f"资金费率添加：{args.extra}")
-    print(f"---------------------")
-
-    # 4. 加载市场
-    try:
-        # 使用重试逻辑加载市场
-        retry_fetch(exchange.load_markets)
-    except Exception as e:
-        print(f"[!] Failed to load markets after retries: {e}")
-        # 如果是因为网络问题，脚本会在这里终止
-        return
-
-    # 验证符号是否存在于该交易所
     if ccxt_symbol not in exchange.markets:
-        print(f"[!] Error: Symbol '{ccxt_symbol}' not found in {args.exchange}.")
         print(
-            f"    Possible reasons: Invalid symbol, or conversion from '{raw_symbol}' failed."
+            f"[!] Error: Symbol '{ccxt_symbol}' not found in {exchange.id}. Skipping."
         )
-        print(f"    Available symbols example: {list(exchange.markets.keys())[:5]}...")
         return
 
-    # 5. 获取 OHLCV
-    ohlcv_df = fetch_ohlcv_data(exchange, ccxt_symbol, args.timeframe, start_ms, end_ms)
-
+    ohlcv_df = fetch_ohlcv_data(exchange, ccxt_symbol, timeframe, start_ms, end_ms)
     if ohlcv_df.empty:
-        print("[!] No OHLCV data fetched. Exiting.")
         return
 
-    # 6. 如果是永续合约，获取资金费率并合并
-
-    # TODO 将资金费率部分单独出来生成，生成独立的 csv
-    if market_type == "swap" and args.extra:
+    if market_type == "swap" and extra:
         funding_df = fetch_funding_data(exchange, ccxt_symbol, start_ms, end_ms)
-
         if not funding_df.empty:
-            # 合并：以 OHLCV 为主，左连接资金费率
-            # 资金费率在非结算时间点将为 NaN
             ohlcv_df = pd.merge(ohlcv_df, funding_df, on="timestamp", how="left")
         else:
             ohlcv_df["fundingRate"] = None
 
-    # 7. 数据格式化
     ohlcv_df["datetime"] = pd.to_datetime(ohlcv_df["timestamp"], unit="ms")
 
-    cols: list[str] = [
-        "datetime",
-        "timestamp",
-        "open",
-        "high",
-        "low",
-        "close",
-        "volume",
-    ]
+    cols = ["datetime", "timestamp", "open", "high", "low", "close", "volume"]
     if "fundingRate" in ohlcv_df.columns:
         cols.append("fundingRate")
+
     ohlcv_df = ohlcv_df[cols]
 
-    # 8. 保存文件
     safe_symbol = raw_symbol.replace("/", "")
-
-    # 按照标的名称创建独立文件夹: data/raw/{symbol}/
-    output_dir: Path = Path(__file__).parent.parent / "data" / "raw" / safe_symbol
+    output_dir = base_dir / "data" / "raw" / safe_symbol
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # 文件名增加 exchange 标识，防止同名币种覆盖
-    filename: str = (
-        f"{args.exchange}-{safe_symbol}-{args.timeframe}-{args.start}_{args.end}.csv"
+    start_str = datetime.fromtimestamp(start_ms / 1000, timezone.utc).strftime(
+        "%Y-%m-%d"
     )
-    output_path: Path = output_dir / filename
+    end_str = datetime.fromtimestamp(end_ms / 1000, timezone.utc).strftime("%Y-%m-%d")
+    filename = f"{exchange.id}-{safe_symbol}-{timeframe}-{start_str}_{end_str}.csv"
+    output_path = output_dir / filename
 
     ohlcv_df.to_csv(output_path, index=False)
-    print(f"\n[√] Data saved to: {output_path}")
+    print(f"    [√] Saved to: {output_path}")
+
+
+def main():
+    args = parse_arguments()
+    base_dir = Path(__file__).resolve().parent.parent
+
+    # 1. 初始化交易所 (启用频率限制)
+    exchange_class = getattr(ccxt, args.exchange)
+    exchange = exchange_class(
+        {
+            "enableRateLimit": True,
+            "options": {"defaultType": "future"},
+        }
+    )
+
+    # 2. 预先加载市场 (只加载一次)
+    print(f"[*] Initializing exchange {args.exchange.upper()} and loading markets...")
+    try:
+        retry_fetch(exchange.load_markets)
+    except Exception as e:
+        print(f"[!] Critical error loading markets: {e}")
+        return
+
+    # 3. 解析所有需要抓取的标的
+    symbols = [s.strip() for s in args.symbol.split(",")]
+    start_ms = get_ms_timestamp(args.start)
+    end_ms = get_ms_timestamp(args.end)
+
+    print(f"--- Batch Job Configuration ---")
+    print(f"Exchange: {args.exchange.upper()}")
+    print(f"Symbols:  {len(symbols)} found")
+    print(f"Range:    {args.start} to {args.end}")
+    print(f"--------------------------------")
+
+    # 4. 循环处理
+    for symbol in symbols:
+        try:
+            process_symbol(
+                exchange, symbol, start_ms, end_ms, args.timeframe, args.extra, base_dir
+            )
+            # 在不同币种之间增加额外延迟，进一步降低 IP 封锁风险
+            time.sleep(1.0)
+        except Exception as e:
+            print(f"[!] Error processing {symbol}: {e}")
+            continue
+
+    print("\n[!] Batch processing complete.")
 
 
 if __name__ == "__main__":
