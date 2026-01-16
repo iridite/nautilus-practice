@@ -28,7 +28,7 @@ class RSSqueezeConfig(BaseStrategyConfig):
     benchmark_id: str = "BTCUSDT.BINANCE"
 
     # Universe 参数
-    universe_filename: Optional[str] = None
+    universe_filepath: Optional[str] = None
 
     # 指标参数
     bb_period: int = 20
@@ -75,6 +75,9 @@ class RSSqueezeStrategy(BaseStrategy):
 
     def __init__(self, config: RSSqueezeConfig):
         super().__init__(config)
+        # print(f"config: {self.config}")
+        # 不太理解，应该是在执行完父类的 __init__ 方法后，`self.config` 已经被初始化了。
+        # 因此，这里可以使用 `self.config` 来获取配置信息。
 
         # 解析标识符
         self.instrument_id = (
@@ -124,25 +127,7 @@ class RSSqueezeStrategy(BaseStrategy):
         """
         加载 Universe 配置文件
         """
-        if not self.config.universe_filename:
-            return
-
-        # 搜索路径：data/ 目录下
-        paths_to_check = [
-            os.path.join(os.getcwd(), "data", self.config.universe_filename),
-            os.path.join(
-                os.path.dirname(os.path.dirname(__file__)),
-                "data",
-                self.config.universe_filename,
-            ),
-        ]
-
-        file_path = None
-        for p in paths_to_check:
-            if os.path.exists(p):
-                file_path = p
-                break
-
+        file_path = self.config.universe_filepath
         if file_path:
             try:
                 with open(file_path, "r") as f:
@@ -153,7 +138,7 @@ class RSSqueezeStrategy(BaseStrategy):
             except Exception as e:
                 self.log.error(f"Error loading universe config: {e}")
         else:
-            self.log.error(f"Universe file not found: {self.config.universe_filename}")
+            self.log.error(f"Universe file not found: {self.config.universe_filepath}")
 
     def on_start(self):
         """

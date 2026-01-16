@@ -183,7 +183,7 @@ RS_SQUEEZE_STRATEGY = StrategyConfig(
     params=RSSqueezeConfig(
         use_auto_sl=True,
         rs_threshold=1.05,
-        universe_filename="universe_test.json",
+        universe_filepath="./data/universe_test.json",  # using default start path: {workspace}
         benchmark_id=BENCHMARK_ID,
     ),
 )
