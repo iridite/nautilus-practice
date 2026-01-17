@@ -1,3 +1,4 @@
+import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -8,6 +9,15 @@ import pandas as pd
 from nautilus_trader.model.enums import BarAggregation
 
 from config.definitions import DataConfig
+
+
+def _print_progress(message: str, end: str = "\r"):
+    """打印单行更新进度信息"""
+    # 清除当前行并打印新消息
+    sys.stdout.write(f"\r{message:<80}")
+    sys.stdout.flush()
+    if end == "\n":
+        sys.stdout.write("\n")
 
 
 def get_ms_timestamp(date_str: str) -> int:
@@ -122,8 +132,9 @@ def batch_fetch_ohlcv(
     agg, period = parse_timeframe(timeframe)
 
     configs = []
+    total = len(symbols)
 
-    for raw_symbol in symbols:
+    for idx, raw_symbol in enumerate(symbols, 1):
         ccxt_symbol, market_type = resolve_symbol_and_type(raw_symbol)
         safe_symbol = raw_symbol.replace("/", "")
 
@@ -136,7 +147,7 @@ def batch_fetch_ohlcv(
 
         # 检查是否需要下载
         if not (output_path.exists() and output_path.stat().st_size > 10 * 1024):
-            print(f"[*] Fetching {raw_symbol} from {exchange_id}...")
+            _print_progress(f"📥 [{idx}/{total}] Fetching {raw_symbol}...")
             df = fetch_ohlcv_data(exchange, ccxt_symbol, timeframe, start_ms, end_ms)
             if not df.empty:
                 df["datetime"] = pd.to_datetime(df["timestamp"], unit="ms")
@@ -144,6 +155,8 @@ def batch_fetch_ohlcv(
                 df.to_csv(output_path, index=False)
             else:
                 continue
+        else:
+            _print_progress(f"⏩ [{idx}/{total}] Skipping {raw_symbol} (exists)")
 
         # 生成 DataConfig
         configs.append(
@@ -154,5 +167,10 @@ def batch_fetch_ohlcv(
                 label="main" if len(symbols) == 1 else "universe",
             )
         )
+
+    # 完成后换行，避免后续输出被覆盖
+    _print_progress(
+        f"✅ Data retrieval complete: {len(configs)}/{total} symbols", end="\n"
+    )
 
     return configs

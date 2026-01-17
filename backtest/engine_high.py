@@ -1,4 +1,5 @@
 import gc
+import sys
 from collections import defaultdict
 from pathlib import Path
 
@@ -59,7 +60,8 @@ def run_high_level(cfg: BackTestConfig, base_dir: Path):
     _catalog = ParquetDataCatalog(catalog_path)
 
     # 2. 数据处理与标的加载 (合并原有循环，减少冗余遍历)
-    for data_cfg in cfg.data_feeds:
+    total_feeds = len(cfg.data_feeds)
+    for feed_idx, data_cfg in enumerate(cfg.data_feeds, 1):
         # 优先使用 data_cfg 中的 instrument_id，如果为 None 则回退到主标的配置
         inst_id = data_cfg.instrument_id
         if inst_id is None and cfg.instrument is not None:
@@ -103,9 +105,17 @@ def run_high_level(cfg: BackTestConfig, base_dir: Path):
         )
 
         if existing_intervals:
-            print(f"⏩ Skipping import: {bar_type} already exists in catalog.")
+            # 单行更新进度
+            sys.stdout.write(
+                f"\r⏩ [{feed_idx}/{total_feeds}] Skipping: {bar_type.instrument_id} (exists in catalog){' ' * 20}"
+            )
+            sys.stdout.flush()
         else:
             try:
+                sys.stdout.write(
+                    f"\r📖 [{feed_idx}/{total_feeds}] Importing: {bar_type.instrument_id}{' ' * 30}"
+                )
+                sys.stdout.flush()
                 catalog_loader(
                     catalog=_catalog,
                     csv_path=csv_path,
@@ -114,7 +124,7 @@ def run_high_level(cfg: BackTestConfig, base_dir: Path):
                 )
             except Exception as e:
                 print(
-                    f"[Backtest Engine High] ❌ Error loading {data_cfg.csv_file_name}: {e}"
+                    f"\n[Backtest Engine High] ❌ Error loading {data_cfg.csv_file_name}: {e}"
                 )
 
         # 2.4 构建回测数据配置
@@ -162,7 +172,8 @@ def run_high_level(cfg: BackTestConfig, base_dir: Path):
             )
         )
 
-    print(f"✅ Created {len(strategies)} strategy instances.")
+    # 换行结束进度显示
+    print(f"\n✅ Data import complete. Created {len(strategies)} strategy instances.")
 
     # 4. 配置交易所 (Venue)
     venue_name = (
@@ -258,7 +269,7 @@ def catalog_loader(
     注意：调用前应先检查数据是否已存在，避免重复解析巨大的 CSV。
     检查逻辑已移至 run_high_level 主循环中，以减少冗余函数调用。
     """
-    print(f"📖 Importing CSV to Catalog: {bar_type}")
+    # 日志输出已移至调用方，此处不再打印
 
     # 3. 高效加载 CSV
     df: DataFrame = CSVBarDataLoader.load(
@@ -281,8 +292,5 @@ def catalog_loader(
 
     # 5. 轻量级校验
     intervals = catalog.get_intervals(data_cls=Bar, identifier=str(bar_type))
-    if intervals:
-        print(f"🚀 Successfully indexed bars for {instrument.id}.")
-        return
-    else:
+    if not intervals:
         raise ValueError(f"❌ Failed to verify data in catalog for {instrument.id}")
