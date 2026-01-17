@@ -46,7 +46,12 @@ def run_high_level(cfg: BackTestConfig, base_dir: Path):
         cfg.strategy.module_path, cfg.strategy.resolve_config_class()
     )
 
-    # 2. 加载标的定义 (Instruments)
+    strategies = []
+    # (instrument_id, label) -> bar_type_str
+    all_feed_types = {}
+    backtest_data_configs = []
+
+    # 2. 加载标的与数据处理
     loaded_instruments = {}
     for inst_cfg in cfg.instruments:
         inst_path = inst_cfg.get_json_path()
@@ -55,13 +60,6 @@ def run_high_level(cfg: BackTestConfig, base_dir: Path):
                 loaded_instruments[inst_cfg.instrument_id] = load_instrument(inst_path)
             except Exception as e:
                 print(f"⚠️ Failed to load instrument {inst_cfg.instrument_id}: {e}")
-
-    # 3. 准备数据流与策略实例
-    strategies = []
-
-    # (instrument_id, label) -> bar_type_str
-    all_feed_types = {}
-    backtest_data_configs = []
 
     # 3.1 预处理并转换所有数据为 Parquet (Nautlius High-level 必须)
     for i, data_cfg in enumerate(cfg.data_feeds):
@@ -104,44 +102,54 @@ def run_high_level(cfg: BackTestConfig, base_dir: Path):
 
         backtest_data_configs.append(_BDC)
 
-    # 3.2 实例化策略配置
-    global_feeds = {
-        label: bt for (iid, label), bt in all_feed_types.items() if label == "benchmark"
-    }
+    # --- 优化后的策略实例化逻辑 ---
+
+    # 1. 预分组：将数据流按 InstrumentID 归类，提升大规模 Universe 下的性能
+    from collections import defaultdict
+
+    feeds_by_inst = defaultdict(dict)
+    global_feeds = {}
+
+    for (iid, label), bt_str in all_feed_types.items():
+        if label == "benchmark":
+            global_feeds[label] = bt_str
+        else:
+            feeds_by_inst[iid][label] = bt_str
+
+    # 2. 循环生成策略配置
+    strategy_path = f"{cfg.strategy.module_path}:{cfg.strategy.name}"
+    config_path = f"{cfg.strategy.module_path}:{cfg.strategy.resolve_config_class()}"
 
     for inst_id, inst in loaded_instruments.items():
-        local_feeds = {
-            label: bt
-            for (iid, label), bt in all_feed_types.items()
-            if iid == inst_id and label != "benchmark"
-        }
+        local_feeds = feeds_by_inst.get(inst_id, {})
 
+        # 核心逻辑：只有拥有 'main' 数据流的标的才实例化策略
         if "main" not in local_feeds:
             continue
 
-        # 生成策略参数
+        # 合并本地和全局数据流标签
+        combined_feeds = {**local_feeds, **global_feeds}
+
+        # 生成并过滤参数
+        # 注意：resolve_params 内部会自动处理 cfg.strategy.params 中的原始参数
         strat_params = cfg.strategy.resolve_params(
             instrument_id=inst.id,
             leverage=cfg.instrument.leverage,
-            feed_bar_types={**local_feeds, **global_feeds},
+            feed_bar_types=combined_feeds,
         )
 
-        # 兼容 Universe 文件名传递
-        if (
-            isinstance(cfg.strategy.params, dict)
-            and "universe_filename" in cfg.strategy.params
-        ):
-            strat_params["universe_filename"] = cfg.strategy.params["universe_filename"]
-
-        # 过滤并添加策略配置
         final_params = filter_strategy_params(strat_params, ConfigClass)
+
+        # 3. 封装为 Nautilus 可识别的导入配置
         strategies.append(
             ImportableStrategyConfig(
-                strategy_path=f"{cfg.strategy.module_path}:{cfg.strategy.name}",
-                config_path=f"{cfg.strategy.module_path}:{cfg.strategy.resolve_config_class()}",
+                strategy_path=strategy_path,
+                config_path=config_path,
                 config=final_params,
             )
         )
+
+    print(f"✅ Created {len(strategies)} strategy instances.")
 
     # 4. 配置交易所 (Venue)
     venue_configs = [
