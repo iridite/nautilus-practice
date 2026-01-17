@@ -1325,6 +1325,7 @@ dependencies = [
     { name = "python-dotenv" },
     { name = "scikit-learn" },
     { name = "ta" },
+    { name = "tqdm" },
 ]
 
 [package.metadata]
@@ -1339,6 +1340,7 @@ requires-dist = [
     { name = "python-dotenv", specifier = ">=1.2.1" },
     { name = "scikit-learn", specifier = ">=1.8.0" },
     { name = "ta", specifier = ">=0.11.0" },
+    { name = "tqdm", specifier = ">=4.66.0" },
 ]
 
 [[package]]

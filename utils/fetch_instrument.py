@@ -1,6 +1,5 @@
 import asyncio
 import logging
-import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -16,6 +15,7 @@ from nautilus_trader.adapters.okx import OKXInstrumentProvider
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.core.nautilus_pyo3 import OKXHttpClient, OKXInstrumentType
 from nautilus_trader.model.identifiers import InstrumentId
+from tqdm import tqdm
 
 # Configure logging
 logging.basicConfig(
@@ -105,23 +105,29 @@ class InstrumentFetcher:
         return self._providers[key]
 
     async def fetch_one(
-        self, instrument_id_str: str, retries: int = 3
-    ) -> Tuple[Optional[Path], bool]:
+        self, instrument_id_str: str, retries: int = 3, silent: bool = False
+    ) -> Tuple[Optional[Path], bool, Optional[str]]:
         """
-        Fetch a single instrument and save it. Returns (path, was_fetched).
+        Fetch a single instrument and save it.
+
+        Returns:
+            Tuple of (path, was_fetched, log_message)
+            - path: Path to saved file or None if failed
+            - was_fetched: True if newly fetched, False if existed or failed
+            - log_message: Log message to display after progress bar completes
         """
         try:
             instrument_id = InstrumentId.from_str(instrument_id_str)
             venue: str = instrument_id.venue.value
             symbol: str = instrument_id.symbol.value
         except Exception as e:
-            logger.error(f"❌ Invalid instrument ID string '{instrument_id_str}': {e}")
-            return None, False
+            log_msg = f"❌ Invalid instrument ID string '{instrument_id_str}': {e}"
+            return None, False, log_msg
 
         file_path = self.output_dir / venue / f"{symbol}.json"
         if file_path.exists():
             # 返回 skipped 状态，由 fetch_all 统一处理进度显示
-            return file_path, False
+            return file_path, False, None
 
         for attempt in range(1, retries + 1):
             try:
@@ -151,57 +157,73 @@ class InstrumentFetcher:
                     with open(file_path, "wb") as f:
                         f.write(msgspec.json.encode(instrument, enc_hook=enc_hook))
 
-                    logger.info(
-                        f"✅ Saved: {venue}/{symbol} (Price Step: {instrument.price_increment})"
-                    )
-                    return file_path, True
+                    log_msg = f"✅ Saved: {venue}/{symbol} (Price Step: {instrument.price_increment})"
+                    return file_path, True, log_msg
                 else:
-                    logger.warning(f"⚠️ Instrument not found: {instrument_id_str}")
-                    return None, False
+                    log_msg = f"⚠️ Instrument not found: {instrument_id_str}"
+                    return None, False, log_msg
 
             except Exception as e:
                 if attempt < retries:
                     # Longer sleep if we hit rate limits (implied by errors)
                     sleep_time = 2.0 * attempt
-                    logger.warning(
-                        f"⚠️ Error fetching {instrument_id_str}: {e}. Retrying in {sleep_time}s..."
-                    )
+                    # 静默模式下不打印重试警告
+                    if not silent:
+                        logger.warning(
+                            f"⚠️ Error fetching {instrument_id_str}: {e}. Retrying in {sleep_time}s..."
+                        )
                     await asyncio.sleep(sleep_time)
                 else:
-                    logger.error(f"🔥 Final error fetching {instrument_id_str}: {e}")
-                    return None, False
+                    log_msg = f"🔥 Final error fetching {instrument_id_str}: {e}"
+                    return None, False, log_msg
 
         # 如果 retries=0 或循环未执行，返回失败
-        return None, False
+        return None, False, None
 
     async def fetch_all(self, instrument_ids: List[str]):
-        """Batch fetch with shared clients"""
-        total = len(instrument_ids)
+        """Batch fetch with shared clients using tqdm progress bar"""
         skipped_count = 0
         fetched_count = 0
         failed_count = 0
+        log_messages: List[str] = []
 
-        for i, pid in enumerate(instrument_ids, 1):
-            path, was_fetched = await self.fetch_one(pid)
+        with tqdm(
+            instrument_ids,
+            desc="🔄 Fetching instruments",
+            unit="inst",
+            ncols=80,
+            bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]",
+        ) as pbar:
+            for pid in pbar:
+                # 提取 symbol 用于显示
+                try:
+                    symbol_display = pid.split(".")[0]
+                except Exception:
+                    symbol_display = pid
 
-            if path is None:
-                failed_count += 1
-            elif was_fetched:
-                fetched_count += 1
-                # Small delay between instruments to be polite to the API
-                await asyncio.sleep(0.2)
-            else:
-                skipped_count += 1
+                pbar.set_postfix_str(symbol_display, refresh=True)
 
-            # 单行刷新进度显示
-            sys.stdout.write(
-                f"\r🔄 Instruments: [{i}/{total}] ✅ Exists: {skipped_count} | 📥 Fetched: {fetched_count} | ❌ Failed: {failed_count}    "
-            )
-            sys.stdout.flush()
+                path, was_fetched, log_msg = await self.fetch_one(pid, silent=True)
 
-        # 换行结束进度显示
-        print()
-        logger.info(
+                if path is None:
+                    failed_count += 1
+                elif was_fetched:
+                    fetched_count += 1
+                    # Small delay between instruments to be polite to the API
+                    await asyncio.sleep(0.2)
+                else:
+                    skipped_count += 1
+
+                # 收集日志消息，进度条结束后统一打印
+                if log_msg:
+                    log_messages.append(log_msg)
+
+        # 进度条结束后打印收集到的日志
+        for msg in log_messages:
+            print(f"  {msg}")
+
+        # 打印汇总信息
+        print(
             f"📊 Instrument fetch complete: {fetched_count} new, {skipped_count} existed, {failed_count} failed"
         )
 

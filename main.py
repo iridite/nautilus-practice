@@ -4,6 +4,8 @@ import shutil
 import sys
 from pathlib import Path
 
+from tqdm import tqdm
+
 # Add workspace root to sys.path
 BASE_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(BASE_DIR))
@@ -25,6 +27,11 @@ from utils.fetch_instrument import update_instruments
 def check_data_exists(symbol_str, start_date, end_date, timeframe, exchange):
     """
     Checks if the OHLCV data file already exists and is valid.
+
+    Returns:
+        tuple: (exists: bool, warning: str | None)
+            - exists: True if data file exists and is valid
+            - warning: Warning message if file has issues, None otherwise
     """
     safe_symbol = symbol_str.replace("/", "")
     filename = (
@@ -32,16 +39,15 @@ def check_data_exists(symbol_str, start_date, end_date, timeframe, exchange):
     )
     filepath = BASE_DIR / "data" / "raw" / safe_symbol / filename
     if filepath.exists() and filepath.stat().st_size > 10 * 1024:
-        return True
+        return (True, None)
     elif filepath.exists() and filepath.stat().st_size < 10 * 1024:
-        print(
-            f"❌ Data file for {symbol_str} ({exchange} {timeframe}) is un seemingly small"
+        warning = (
+            f"⚠️ Data file for {symbol_str} ({exchange} {timeframe}) is unusually small"
         )
-        return True
+        return (True, warning)
     elif not filepath.exists():
-        print(f"❌ Data file for {symbol_str} ({exchange}-{timeframe}) does not exist.")
-        return False
-    return False
+        return (False, None)
+    return (False, None)
 
 
 def run_batch_data_retrieval(
@@ -54,7 +60,7 @@ def run_batch_data_retrieval(
         return []
 
     print(
-        f"\n[Data] Fetching/Updating data for {len(symbols)} symbols via functional call..."
+        f"\nFetching/Updating raw trade pair data for {len(symbols)} symbols via functional call..."
     )
     try:
         # 直接调用重构后的函数
@@ -213,35 +219,47 @@ def main():
         # 统计计数器
         data_exists_count = 0
         data_missing_count = 0
+        warnings_list = []
 
         # 1.1 遍历 data_feeds 收集需要更新的行情数据
-        for feed in current_config.data_feeds:
-            try:
-                parts = feed.csv_file_name.split("/")
-                symbol_quote = parts[0]
-                file_parts = parts[1].split("-")
-                exchange = file_parts[0]
-                timeframe = file_parts[2]
+        if current_config.data_feeds:
+            with tqdm(
+                current_config.data_feeds,
+                desc="🔍 Checking data_feeds",
+                unit="feed",
+                ncols=80,
+                bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]",
+            ) as pbar:
+                for feed in pbar:
+                    try:
+                        parts = feed.csv_file_name.split("/")
+                        symbol_quote = parts[0]
+                        file_parts = parts[1].split("-")
+                        exchange = file_parts[0]
+                        timeframe = file_parts[2]
 
-                if not check_data_exists(
-                    symbol_quote, START_DATE, END_DATE, timeframe, exchange
-                ):
-                    key = (exchange, timeframe, START_DATE, END_DATE)
-                    tasks.setdefault(key, set()).add(symbol_quote)
-                    data_missing_count += 1
-                else:
-                    data_exists_count += 1
-                    # 单行刷新显示进度
-                    sys.stdout.write(
-                        f"\r✅ Data exists: {symbol_quote} ({exchange} {timeframe}){' ' * 20}"
-                    )
-                    sys.stdout.flush()
-            except Exception as e:
-                print(f"\n⚠️ Failed to parse data feed config: {feed.label}, error: {e}")
+                        pbar.set_postfix_str(symbol_quote, refresh=True)
 
-        # 换行结束 data_feeds 进度显示
-        if data_exists_count > 0:
-            print()  # 确保后续输出不会覆盖进度行
+                        exists, warning = check_data_exists(
+                            symbol_quote, START_DATE, END_DATE, timeframe, exchange
+                        )
+                        if not exists:
+                            key = (exchange, timeframe, START_DATE, END_DATE)
+                            tasks.setdefault(key, set()).add(symbol_quote)
+                            data_missing_count += 1
+                        else:
+                            data_exists_count += 1
+                            if warning:
+                                warnings_list.append(warning)
+                    except Exception as e:
+                        tqdm.write(
+                            f"⚠️ Failed to parse data feed config: {feed.label}, error: {e}"
+                        )
+
+        # 打印收集到的警告
+        for warning in warnings_list:
+            print(warning)
+        warnings_list.clear()
 
         # 1.2 如果存在 Universe，为其中的每个币种补充到任务列表 (使用 main feed 的参数)
         if universe_symbols:
@@ -269,25 +287,33 @@ def main():
                 timeframe = "1h"
                 print(f"📌 No main feed found, using defaults: {exchange} {timeframe}")
 
-            for symbol in sorted(list(universe_symbols)):
-                symbol_str = symbol.split(":")[0]  # SOLUSDT:USDT -> SOLUSDT
-                if not check_data_exists(
-                    symbol_str, START_DATE, END_DATE, timeframe, exchange
-                ):
-                    key = (exchange, timeframe, START_DATE, END_DATE)
-                    tasks.setdefault(key, set()).add(symbol_str)
-                    data_missing_count += 1
-                else:
-                    data_exists_count += 1
-                    # 使用单行刷新避免大量日志输出
-                    sys.stdout.write(
-                        f"\r✅ Data exists: {symbol_str} ({exchange} {timeframe}){' ' * 20}"
-                    )
-                    sys.stdout.flush()
+            sorted_universe = sorted(list(universe_symbols))
+            with tqdm(
+                sorted_universe,
+                desc="🌌 Checking universe",
+                unit="symbol",
+                ncols=80,
+                bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]",
+            ) as pbar:
+                for symbol in pbar:
+                    symbol_str = symbol.split(":")[0]  # SOLUSDT:USDT -> SOLUSDT
+                    pbar.set_postfix_str(symbol_str, refresh=True)
 
-        # 换行结束进度显示
-        if universe_symbols:
-            print()  # 确保后续输出不会覆盖进度行
+                    exists, warning = check_data_exists(
+                        symbol_str, START_DATE, END_DATE, timeframe, exchange
+                    )
+                    if not exists:
+                        key = (exchange, timeframe, START_DATE, END_DATE)
+                        tasks.setdefault(key, set()).add(symbol_str)
+                        data_missing_count += 1
+                    else:
+                        data_exists_count += 1
+                        if warning:
+                            warnings_list.append(warning)
+
+            # 打印收集到的警告
+            for warning in warnings_list:
+                print(warning)
 
         # 打印数据检查摘要
         print(

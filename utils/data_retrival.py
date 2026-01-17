@@ -1,23 +1,14 @@
-import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import List, Optional
+from typing import List
 
 import ccxt
 import pandas as pd
 from nautilus_trader.model.enums import BarAggregation
+from tqdm import tqdm
 
 from config.definitions import DataConfig
-
-
-def _print_progress(message: str, end: str = "\r"):
-    """打印单行更新进度信息"""
-    # 清除当前行并打印新消息
-    sys.stdout.write(f"\r{message:<80}")
-    sys.stdout.flush()
-    if end == "\n":
-        sys.stdout.write("\n")
 
 
 def get_ms_timestamp(date_str: str) -> int:
@@ -133,44 +124,60 @@ def batch_fetch_ohlcv(
 
     configs = []
     total = len(symbols)
+    fetched_count = 0
+    skipped_count = 0
 
-    for idx, raw_symbol in enumerate(symbols, 1):
-        ccxt_symbol, market_type = resolve_symbol_and_type(raw_symbol)
-        safe_symbol = raw_symbol.replace("/", "")
+    # 使用 tqdm 进度条
+    with tqdm(
+        symbols,
+        desc="📥 Fetching data",
+        unit="symbol",
+        ncols=80,
+        bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]",
+    ) as pbar:
+        for raw_symbol in pbar:
+            ccxt_symbol, market_type = resolve_symbol_and_type(raw_symbol)
+            safe_symbol = raw_symbol.replace("/", "")
 
-        # 构建文件名和路径
-        filename = (
-            f"{exchange.id}-{safe_symbol}-{timeframe}-{start_date}_{end_date}.csv"
-        )
-        relative_path = f"{safe_symbol}/{filename}"
-        output_path = base_dir / "data" / "raw" / relative_path
-
-        # 检查是否需要下载
-        if not (output_path.exists() and output_path.stat().st_size > 10 * 1024):
-            _print_progress(f"📥 [{idx}/{total}] Fetching {raw_symbol}...")
-            df = fetch_ohlcv_data(exchange, ccxt_symbol, timeframe, start_ms, end_ms)
-            if not df.empty:
-                df["datetime"] = pd.to_datetime(df["timestamp"], unit="ms")
-                output_path.parent.mkdir(parents=True, exist_ok=True)
-                df.to_csv(output_path, index=False)
-            else:
-                continue
-        else:
-            _print_progress(f"⏩ [{idx}/{total}] Skipping {raw_symbol} (exists)")
-
-        # 生成 DataConfig
-        configs.append(
-            DataConfig(
-                csv_file_name=relative_path,
-                bar_aggregation=agg,
-                bar_period=period,
-                label="main" if len(symbols) == 1 else "universe",
+            # 构建文件名和路径
+            filename = (
+                f"{exchange.id}-{safe_symbol}-{timeframe}-{start_date}_{end_date}.csv"
             )
-        )
+            relative_path = f"{safe_symbol}/{filename}"
+            output_path = base_dir / "data" / "raw" / relative_path
 
-    # 完成后换行，避免后续输出被覆盖
-    _print_progress(
-        f"✅ Data retrieval complete: {len(configs)}/{total} symbols", end="\n"
+            # 更新进度条描述
+            pbar.set_postfix_str(f"{raw_symbol}", refresh=True)
+
+            # 检查是否需要下载
+            if not (output_path.exists() and output_path.stat().st_size > 10 * 1024):
+                df = fetch_ohlcv_data(
+                    exchange, ccxt_symbol, timeframe, start_ms, end_ms
+                )
+                if not df.empty:
+                    df["datetime"] = pd.to_datetime(df["timestamp"], unit="ms")
+                    output_path.parent.mkdir(parents=True, exist_ok=True)
+                    df.to_csv(output_path, index=False)
+                    fetched_count += 1
+                else:
+                    continue
+            else:
+                skipped_count += 1
+
+            # 生成 DataConfig
+            configs.append(
+                DataConfig(
+                    csv_file_name=relative_path,
+                    bar_aggregation=agg,
+                    bar_period=period,
+                    label="main" if len(symbols) == 1 else "universe",
+                )
+            )
+
+    # 打印完成摘要
+    print(
+        f"✅ Data retrieval complete: {len(configs)}/{total} symbols "
+        f"(fetched: {fetched_count}, cached: {skipped_count})"
     )
 
     return configs
