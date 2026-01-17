@@ -1,10 +1,14 @@
 from dataclasses import dataclass, field
 from enum import Enum
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from nautilus_trader.model import Money
 from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.enums import BarAggregation, PriceType
+
+# 定位项目根目录 (nautilus-practice/)
+project_root: Path = Path(__file__).parent.parent.resolve()
 
 
 class InstrumentType(Enum):
@@ -43,8 +47,6 @@ class InstrumentConfig:
                 return f"{quote_currency}{base_currency}-PERP.{venue_name}"
             elif inst_type in (InstrumentType.FUTURES, InstrumentType.OPTION):
                 return f"{quote_currency}{base_currency}-{inst_type.value}.{venue_name}"
-            else:
-                raise ValueError(f"Unsupported instrument type: {inst_type}")
         else:
             raise ValueError(f"Unsupported venue: {venue_name}")
 
@@ -56,8 +58,6 @@ class InstrumentConfig:
         获取标的定义 JSON 文件的绝对路径。
         通过相对于本文件的路径定位项目根目录，确保在任何工作目录下运行都能稳定定位。
         """
-        # 定位项目根目录 (nautilus-practice/)
-        project_root = Path(__file__).parent.parent.resolve()
         # 这里的路径逻辑：data/instrument/交易所/符号.json
         # 增加 .json 后缀并指向 instrument 子目录以确保准确性
         return (
@@ -86,6 +86,11 @@ class DataConfig:
     price_type: PriceType = PriceType.LAST
     instrument_id: Optional[str] = None  # 可选：指定该数据对应的 InstrumentID
     label: str = "main"  # 数据标签 (如 "main", "trend", "benchmark")
+
+    @property
+    def full_path(self) -> Path:
+        """获取 CSV 文件的完整绝对路径"""
+        return project_root / "data" / "raw" / self.csv_file_name
 
     @property
     def bar_type_str(self) -> str:
@@ -200,6 +205,9 @@ class BackTestConfig:
     # 以下三个是回测必备的子集配置选项
     instrument: InstrumentConfig
     strategy: StrategyConfig
+    # 新增：多标的支持
+    instruments: List[InstrumentConfig] = field(default_factory=list)
+
     # 扩展数据配置：支持灵活的多数据源供给 (更优雅的设计)
     # 通过 DataConfig.label 区分用途 (如 "main", "trend", "benchmark")
     data_feeds: List[DataConfig] = field(default_factory=list)
@@ -226,6 +234,10 @@ class BackTestConfig:
         """
         同步兼容性字段到 data_feeds 列表，支持多数据供给框架。
         """
+        # 兼容性处理：如果提供了 instrument 但 instruments 为空，自动填充
+        if self.instrument and not self.instruments:
+            self.instruments.append(self.instrument)
+
         # 将 data 加入 data_feeds
         if self.data and self.data not in self.data_feeds:
             if self.data.label == "main":

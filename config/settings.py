@@ -1,6 +1,7 @@
+import json
 from decimal import Decimal
 from pathlib import Path
-from typing import Optional
+from typing import List
 
 from nautilus_trader.model import Money
 from nautilus_trader.model.currencies import USDT
@@ -12,217 +13,145 @@ from config.definitions import (
     InstrumentConfig,
     InstrumentType,
     LogConfig,
-    MLConfig,
     StrategyConfig,
+    project_root,
 )
 from strategy.dual_thrust import DualThrustConfig
 from strategy.rs_squeeze import RSSqueezeConfig
 
 # ==========================================
-# 1. 基础回测参数设定 (Basic User Settings)
+# 1. 基础回测环境 (Global Environment)
 # ==========================================
+VENUE = "BINANCE"
+INSTRUMENT_TYPE = InstrumentType.SWAP
+START_DATE = "2024-01-01"
+END_DATE = "2024-12-31"
+INITIAL_BALANCES = [Money("10000", USDT)]
 
-# 交易标的定义
-QUOTE_SYMBOL = "SOL"
-BASE_SYMBOL = "USDT"
-VENUE = "BINANCE"  # OKX or BINANCE
-INSTRUMENT_TYPE = InstrumentType.SWAP  # Usually SWAP for perps
-
-# 回测时间段
-# 不定义的话会自动使用提供数据的起止范围
-START_DATE = "2022-01-01"
-END_DATE = "2026-01-14"
-# 有些币种，如 SOL 没有那么长的历史，获取数据会失败需要特别注意
-
-BENCHMARK_SYMBOL = "BTC"
-BENCHMARK_ID = InstrumentConfig.get_id_for(
-    venue_name=VENUE,
-    base_currency=BASE_SYMBOL,
-    quote_currency=BENCHMARK_SYMBOL,
-    inst_type=INSTRUMENT_TYPE,
-)
-
-# 数据配置 (Data Configuration)
-# 策略使用的主周期和趋势辅助周期
-# 注意：文件名格式必须匹配 data_retrival.py 生成的格式
-# 格式: {VENUE}-{SYMBOL}{QUOTE}-{TIMEFRAME}-{START}_{END}.csv
+# 默认时间周期
 MAIN_TIMEFRAME = "1h"
-TREND_TIMEFRAME = "4h"  # TODO： 该部分设计应该是在单独的策略里面定义，如 dual_thrust 策略需要趋势和信号时间粒度，则单独指明
-
-# 下单参数 (Order Parameters)
-STRATEGY_LEVERAGE: int = 1
-RISK_QTY_PERCENT: Decimal = Decimal("0.3")  # 每次交易占权益百分比
-INIT_BALANCES: list = [Money("200", USDT)]
-
-# 日志配置
-LOGGING_SETTINGS = LogConfig(
-    log_level="INFO",
-    log_level_file="DEBUG",
-    log_colors=True,
-    use_pyo3=True,
-    log_component_levels={
-        "Portfolio": "INFO",
-        "BacktestEngine": "INFO",
-        "DualThrust": "DEBUG",
-        "RSSqueezeStrategy": "DEBUG",
-    },
-    log_components_only=True,
-)
-
-# 机器学习配置
-ML_SETTINGS = MLConfig(
-    ema_period=50,
-    rsi_period=14,
-    rsi_oversold=30,
-    rsi_overbought=70,
-    stop_loss_pct=0.015,
-    take_profit_pct=0.03,
-    horizon_bars=36,
-    use_ai_filter=False,
-    model_path="data/models/lgbm_mtf_v1.joblib",
-    min_prob_threshold=0.3,
-    record_features=True,
-    record_path="data/record/features_log.csv",
-)
+TREND_TIMEFRAME = "4h"
 
 
-def get_data_config(
-    symbol: str,
-    quote: str,
-    venue: str,
-    timeframe: str,
-    start: str,
-    end: str,
-    label: str = "main",
-    instrument_id: Optional[str] = None,
-) -> DataConfig:
-    # TODO: 搞清楚这个 symbol，quote 是什么关系？
-    """生成数据配置"""
+# ==========================================
+# 2. 辅助工具：统一生成 DataConfig
+# ==========================================
+def create_data_cfg(symbol: str, timeframe: str, label: str = "main") -> DataConfig:
+    """统一生成符合项目路径规范的 DataConfig"""
+    # 只有在 universe 接管的时候，系统才能自动生成 DataConfig，故其他模式下需要自行配置
+    # 格式：BTCUSDT/BINANCE-BTCUSDT-1h-2024-01-01_2024-12-31.csv
+    safe_symbol = symbol.replace("/", "")
+    filename = f"{VENUE.lower()}-{safe_symbol}-{timeframe}-{START_DATE}_{END_DATE}.csv"
 
-    # 解析 timeframe 字符串到 Nautilus 枚举 (简化处理，假设 1h, 4h, 1m, 1d)
-    if timeframe.endswith("h"):
-        agg = BarAggregation.HOUR
-        period = int(timeframe[:-1])
-    elif timeframe.endswith("m"):
-        agg = BarAggregation.MINUTE
-        period = int(timeframe[:-1])
-    elif timeframe.endswith("d"):
-        agg = BarAggregation.DAY
-        period = int(timeframe[:-1])
-    else:
-        # Default fallback
-        agg = BarAggregation.MINUTE
-        period = 1
+    # 提取时间周期详情
+    unit = timeframe[-1]
+    period = int(timeframe[:-1]) if len(timeframe) > 1 else 1
+    agg = (
+        BarAggregation.MINUTE
+        if unit == "m"
+        else BarAggregation.HOUR
+        if unit == "h"
+        else BarAggregation.DAY
+    )
 
     return DataConfig(
-        csv_file_name=f"{symbol}{quote}/{venue.lower()}-{symbol}{quote}-{timeframe}-{start}_{end}.csv",
+        csv_file_name=f"{safe_symbol}/{filename}",
         bar_aggregation=agg,
         bar_period=period,
-        price_type=PriceType.LAST,  # TODO: 多类型 PriceType 处理
         label=label,
-        instrument_id=instrument_id,
+        instrument_id=None,  # 由引擎在运行时动态绑定
     )
 
 
 # ==========================================
-# 3. 动态构建配置对象 (Dynamic Construction)
+# 3. 策略库定义 (Strategy Library)
 # ==========================================
 
-active_instrument = InstrumentConfig(
-    venue_name=VENUE,
-    quote_currency=QUOTE_SYMBOL,
-    base_currency=BASE_SYMBOL,
-    type=INSTRUMENT_TYPE,
-    leverage=STRATEGY_LEVERAGE,  # 杠杆在这里导入
-)
-
-# TODO: 数据生成与处理完全自动化，即使是多类型数据也能自己搞定
-data_main = get_data_config(
-    QUOTE_SYMBOL, BASE_SYMBOL, VENUE, MAIN_TIMEFRAME, START_DATE, END_DATE, label="main"
-)
-data_trend = get_data_config(
-    QUOTE_SYMBOL,
-    BASE_SYMBOL,
-    VENUE,
-    TREND_TIMEFRAME,
-    START_DATE,
-    END_DATE,
-    label="trend",
-)
-# RS-Squeeze 的基准数据 (BTC) - 4H Trend Filter
-data_benchmark_trend = get_data_config(
-    BENCHMARK_SYMBOL,
-    BASE_SYMBOL,
-    VENUE,
-    "4h",
-    START_DATE,
-    END_DATE,
-    label="benchmark_trend",
-    instrument_id=BENCHMARK_ID,
-)
-
-# RS-Squeeze 的基准数据 (BTC) - 1H RS Calculation
-data_benchmark_rs = get_data_config(
-    BENCHMARK_SYMBOL,
-    BASE_SYMBOL,
-    VENUE,
-    MAIN_TIMEFRAME,
-    START_DATE,
-    END_DATE,
-    label="benchmark",
-    instrument_id=BENCHMARK_ID,
-)
-
+# 策略 A: 单标的策略
 DUAL_THRUST_STRATEGY = StrategyConfig(
     name="DualThrust",
     module_path="strategy.dual_thrust",
     params=DualThrustConfig(
         lookback_period=4,
-        k1=0.5,
-        k2=0.5,
-        trend_ema_period=200,
-        atr_period=20,
-        qty_percent=RISK_QTY_PERCENT,
-        stop_loss_atr_mult=1.5,
-        stop_loss_pct=0.015,
-        use_auto_sl=False,
+        qty_percent=Decimal("0.1"),
     ),
 )
 
+# 策略 B: 多标的 Universe 策略
 RS_SQUEEZE_STRATEGY = StrategyConfig(
     name="RSSqueezeStrategy",
     module_path="strategy.rs_squeeze",
     params=RSSqueezeConfig(
-        use_auto_sl=True,
         rs_threshold=1.05,
-        universe_filepath="./data/universe_test.json",  # using default start path: {workspace}
-        benchmark_id=BENCHMARK_ID,
+        universe_filepath=str(
+            project_root / "data" / "universe_test.json"
+        ),  # 只需文件名，路径在 main.py 处理?
     ),
 )
 
 # ==========================================
-# 4. 最终导出 (Export)
+# 4. 运行选择 (Active Configuration)
 # ==========================================
 
-current_config = BackTestConfig(
-    # 子集配置
-    instrument=active_instrument,
-    # 核心：使用 data_feeds 列表支持无限扩展的数据供给框架
-    data_feeds=[
-        # stores labels as different INSTRUMENT
-        data_main,
-        data_trend,
-        data_benchmark_trend,
-        data_benchmark_rs,
-    ],
-    strategy=RS_SQUEEZE_STRATEGY,  # 在这里切换策略
-    # 策略里面永远都不能明显指定交易标的，交易标的应该人工指定，策略只管在特定的标的上计算和发送订单
-    # 基础配置
-    start_date=START_DATE,
-    end_date=END_DATE,
-    initial_balances=INIT_BALANCES,
-    output_html_report=False,
-    # 其他配置
-    logging=LOGGING_SETTINGS,
-    ml=None,
-)
+# 在这里切换你想跑的策略
+ACTIVE_STRATEGY = RS_SQUEEZE_STRATEGY
+# 默认主标的 (当不是 Universe 模式时使用)
+PRIMARY_SYMBOL = "SOLUSDT"
+
+# ==========================================
+# 5. 自动化构建 BackTestConfig
+# ==========================================
+
+
+def build_config() -> BackTestConfig:
+    # 1. 初始化列表
+    final_instruments = []
+    final_data_feeds = []
+
+    # 2. 检查策略是否带有 Universe
+    params = ACTIVE_STRATEGY.params
+    universe_file = (
+        getattr(params, "universe_filename", None)
+        if not isinstance(params, dict)
+        else params.get("universe_filename")
+    )
+
+    if universe_file:
+        # --- 多标的模式 ---
+        print(f"🌐 Building Multi-Asset Config from {universe_file}...")
+        # 注意：这里的 Instrument 加载在 main.py 里会根据 Universe 文件进一步补全
+        # 这里我们至少放一个主标的作为种子，或者留空让 main.py 填充
+        pass
+    else:
+        # --- 单标的模式 ---
+        print(f"🎯 Building Single-Asset Config for {PRIMARY_SYMBOL}...")
+        inst = InstrumentConfig(
+            venue_name=VENUE,
+            quote_currency=PRIMARY_SYMBOL.replace("USDT", ""),
+            base_currency="USDT",
+            type=INSTRUMENT_TYPE,
+        )
+        final_instruments.append(inst)
+        # 添加数据流
+        final_data_feeds.append(create_data_cfg(PRIMARY_SYMBOL, MAIN_TIMEFRAME, "main"))
+        final_data_feeds.append(
+            create_data_cfg(PRIMARY_SYMBOL, TREND_TIMEFRAME, "trend")
+        )
+
+    # 3. 无论什么策略，通常都需要一个 Benchmark (如 BTC)?
+    final_data_feeds.append(create_data_cfg("BTCUSDT", MAIN_TIMEFRAME, "benchmark"))
+
+    return BackTestConfig(
+        instrument=final_instruments[0] if final_instruments else None,  # type: ignore
+        instruments=final_instruments,
+        data_feeds=final_data_feeds,
+        strategy=ACTIVE_STRATEGY,
+        start_date=START_DATE,
+        end_date=END_DATE,
+        initial_balances=INITIAL_BALANCES,
+        logging=LogConfig(log_level="INFO"),
+    )
+
+
+# 导出给 main.py 使用
+current_config = build_config()
