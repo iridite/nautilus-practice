@@ -307,9 +307,11 @@ def catalog_loader(
     # 日志输出已移至调用方，此处不再打印
 
     # 3. 高效加载 CSV
+    # 注意：必须使用 index_col='datetime' 而非 index_col=0
+    # 因为 usecols 会改变列的相对位置，index_col=0 会错误地把 'open' 作为索引
     df: DataFrame = CSVBarDataLoader.load(
         file_path=csv_path,
-        index_col=0,
+        index_col="datetime",
         usecols=["datetime", "open", "high", "low", "close", "volume"],
         parse_dates=True,
     )
