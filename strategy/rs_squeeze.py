@@ -224,17 +224,17 @@ class RSSqueezeStrategy(BaseStrategy):
 
         # 1. Trading Instrument (e.g. SOLUSDT 1H)
         self.subscribe_bars(self.bar_type)
-        self.log.info(f"📊 Subscribed to main bar: {self.bar_type}")
+        self.log.debug(f"📊 Subscribed to main bar: {self.bar_type}")
 
         # 2. Benchmark for RS (e.g. BTCUSDT 1H)
         self.subscribe_bars(self.benchmark_bar_type)
-        self.log.info(f"📊 Subscribed to benchmark bar: {self.benchmark_bar_type}")
+        self.log.debug(f"📊 Subscribed to benchmark bar: {self.benchmark_bar_type}")
 
         # 3. Benchmark for Trend (e.g. BTCUSDT 4H)
         self.subscribe_bars(self.btc_4h_bar_type)
-        self.log.info(f"📊 Subscribed to BTC 4H bar: {self.btc_4h_bar_type}")
+        self.log.debug(f"📊 Subscribed to BTC 4H bar: {self.btc_4h_bar_type}")
 
-        self.log.info(
+        self.log.debug(
             f"🚀 Strategy started for {self.instrument_id}. "
             f"Benchmark: {self.benchmark_id}, "
             f"Bar types: main={self.bar_type}, benchmark={self.benchmark_bar_type}, "
@@ -255,7 +255,7 @@ class RSSqueezeStrategy(BaseStrategy):
         bar_type_str = str(bar.bar_type)
         if bar_type_str not in self._first_bar_logged:
             self._first_bar_logged.add(bar_type_str)
-            self.log.info(
+            self.log.debug(
                 f"📥 First bar received: {bar_type_str}, "
                 f"ts={bar.ts_event}, close={bar.close}"
             )
@@ -291,11 +291,12 @@ class RSSqueezeStrategy(BaseStrategy):
         self._debug_bar_count += 1
 
         # 每 100 根 bar 输出一次进度日志
-        if self._debug_bar_count % 100 == 0:
-            self.log.info(
-                f"📈 [{self.instrument_id}] Processed {self._debug_bar_count} bars, "
-                f"signal_checks={self._debug_signal_checks}, close={bar.close}"
-            )
+        # 非必要输出，注释加速回测
+        # if self._debug_bar_count % 100 == 0:
+        #     self.log.info(
+        #         f"📈 [{self.instrument_id}] Processed {self._debug_bar_count} bars, "
+        #         f"signal_checks={self._debug_signal_checks}, close={bar.close}"
+        #     )
 
         # 1. Update Indicators & Buffers
         self.asset_closes.append(Decimal(str(bar.close)))
@@ -565,7 +566,7 @@ class RSSqueezeStrategy(BaseStrategy):
         Executes entry orders with risk management.
 
         设计规范：
-        - 单笔风险 = 账户余额 * 3%
+        - 单笔风险 = 账户余额 * 风险%
         - 止损位 = Entry - 1.5 * ATR
         - 仓位 = Risk Amount / (Entry - StopLoss)
         """
@@ -590,7 +591,7 @@ class RSSqueezeStrategy(BaseStrategy):
             if qty <= 0:
                 return
         except Exception as e:
-            self.log.error(f"Qty Calc Error: {e}")
+            self.log.warning(f"Qty Calc Error: {e}")
             return
 
         # Place Orders
@@ -700,30 +701,30 @@ class RSSqueezeStrategy(BaseStrategy):
 
     def on_stop(self):
         """Log debugging summary."""
-        self.log.info(
-            f"🛑 Strategy stopped for {self.instrument_id}. "
-            f"Bars processed: {self._debug_bar_count}, "
-            f"Signal checks: {self._debug_signal_checks}, "
-            f"Asset closes: {len(self.asset_closes)}, "
-            f"Benchmark closes: {len(self.benchmark_closes)}, "
-            f"In universe: {self._is_in_universe}, "
-            f"Warmup complete: {self._last_warmup_log_ts > 0}"
-        )
+        # self.log.info(
+        #     f"🛑 Strategy stopped for {self.instrument_id}. "
+        #     f"Bars processed: {self._debug_bar_count}, "
+        #     f"Signal checks: {self._debug_signal_checks}, "
+        #     f"Asset closes: {len(self.asset_closes)}, "
+        #     f"Benchmark closes: {len(self.benchmark_closes)}, "
+        #     f"In universe: {self._is_in_universe}, "
+        #     f"Warmup complete: {self._last_warmup_log_ts > 0}"
+        # )
 
         # 输出过滤器统计摘要
-        if self._debug_signal_checks > 0:
-            self.log.info(
-                f"📊 Filter stats for {self.instrument_id}: "
-                f"no_breakout={self._filter_stats['no_breakout_level']}, "
-                f"data_sync={self._filter_stats['data_not_synced']}, "
-                f"cooldown={self._filter_stats['in_cooldown']}, "
-                f"trend={self._filter_stats['trend_filter']}, "
-                f"squeeze={self._filter_stats['not_in_squeeze']}, "
-                f"rs={self._filter_stats['rs_filter']}, "
-                f"breakout={self._filter_stats['breakout_filter']}, "
-                f"btc_bear={self._filter_stats['btc_bear_market']}, "
-                f"PASSED={self._filter_stats['all_passed']}"
-            )
+        # if self._debug_signal_checks > 0:
+        #     self.log.info(
+        #         f"📊 Filter stats for {self.instrument_id}: "
+        #         f"no_breakout={self._filter_stats['no_breakout_level']}, "
+        #         f"data_sync={self._filter_stats['data_not_synced']}, "
+        #         f"cooldown={self._filter_stats['in_cooldown']}, "
+        #         f"trend={self._filter_stats['trend_filter']}, "
+        #         f"squeeze={self._filter_stats['not_in_squeeze']}, "
+        #         f"rs={self._filter_stats['rs_filter']}, "
+        #         f"breakout={self._filter_stats['breakout_filter']}, "
+        #         f"btc_bear={self._filter_stats['btc_bear_market']}, "
+        #         f"PASSED={self._filter_stats['all_passed']}"
+        #     )
 
         self.cancel_all_orders(self.instrument_id)
         self.close_all_positions(self.instrument_id)

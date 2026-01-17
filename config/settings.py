@@ -280,13 +280,14 @@ def build_config() -> BackTestConfig:
         end_date=END_DATE,
         initial_balances=INITIAL_BALANCES,
         logging=LogConfig(
-            log_level="WARNING",  # 回测时使用 WARNING 级别减少日志 I/O
-            log_level_file="WARNING",  # 文件日志也改为 WARNING 加速回测
+            log_level="INFO",  # 回测时使用 WARNING 级别减少日志 I/O
+            log_level_file="DEBUG",  # 文件日志也改为 WARNING 加速回测
             log_component_levels={
-                "BacktestEngine": "WARNING",
-                "DataFeed": "WARNING",
-                "RSSqueezeStrategy": "WARNING",
+                "BacktestEngine": "INFO",
+                "DataFeed": "INFO",
+                "RSSqueezeStrategy": "INFO",
             },
+            log_components_only=True,
         ),
     )
 
