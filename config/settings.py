@@ -137,7 +137,7 @@ RS_SQUEEZE_STRATEGY = StrategyConfig(
     params=RSSqueezeConfig(
         rs_threshold=1.05,
         universe_filepath=str(
-            project_root / "data" / "universe_test.json"
+            project_root / "data" / "universe_25.json"
         ),  # 只需文件名，路径在 main.py 处理?
     ),
 )
@@ -246,18 +246,30 @@ def build_config() -> BackTestConfig:
         )
         final_instruments.append(btc_inst)
 
-    # 添加 benchmark 数据流
+    # 添加 benchmark 数据流 (1h 用于 RS 计算)
     benchmark_cfg = create_data_cfg("BTCUSDT", MAIN_TIMEFRAME, "benchmark")
     # 找到 BTC 的 instrument_id
+    btc_instrument_id = None
     for inst in final_instruments:
         if inst.quote_currency == "BTC":
-            benchmark_cfg.instrument_id = inst.instrument_id
+            btc_instrument_id = inst.instrument_id
+            benchmark_cfg.instrument_id = btc_instrument_id
             break
     final_data_feeds.append(benchmark_cfg)
 
+    # 添加 benchmark_trend 数据流 (4h 用于趋势过滤)
+    if btc_instrument_id:
+        benchmark_trend_cfg = create_data_cfg(
+            "BTCUSDT", TREND_TIMEFRAME, "benchmark_trend"
+        )
+        benchmark_trend_cfg.instrument_id = btc_instrument_id
+        final_data_feeds.append(benchmark_trend_cfg)
+
     # 4. 选择主标的 (用于兼容单标的模式的旧代码)
     # 在多标的模式下，选择第一个作为"主标的"用于兼容性
-    primary_instrument = final_instruments[0] if final_instruments else None
+
+    assert final_instruments and len(final_instruments) > 0, "No instruments found"
+    primary_instrument = final_instruments[0]
 
     return BackTestConfig(
         instrument=primary_instrument,

@@ -31,7 +31,13 @@ class RSSqueezeConfig(BaseStrategyConfig):
     """
 
     bar_type: str = ""
-    benchmark_id: str = "BTCUSDT.BINANCE"
+    benchmark_id: str = "BTCUSDT-PERP.BINANCE"  # 默认使用永续合约格式
+    benchmark_bar_type: Optional[str] = (
+        None  # 由引擎注入，如 "BTCUSDT-PERP.BINANCE-1-HOUR-LAST"
+    )
+    benchmark_trend_bar_type: Optional[str] = (
+        None  # 由引擎注入，如 "BTCUSDT-PERP.BINANCE-4-HOUR-LAST"
+    )
 
     # --- Universe Logic ---
     # Path to a JSON file mapping "YYYY-MM" -> [Symbol List]
@@ -90,20 +96,29 @@ class RSSqueezeStrategy(BaseStrategy):
 
         # --- Identifiers ---
         self.instrument_id = InstrumentId.from_str(config.instrument_id)
-        self.benchmark_id = InstrumentId.from_str(config.benchmark_id)
 
         # --- Bar Types ---
         # 1. Trading Bar (e.g. 1-HOUR)
         self.bar_type = BarType.from_str(config.bar_type)
 
         # 2. Benchmark Bar (Same timeframe as trading, e.g. 1-HOUR) for RS Calculation
-        self.benchmark_bar_type = BarType(self.benchmark_id, self.bar_type.spec)
+        # 优先使用引擎注入的 benchmark_bar_type，否则回退到基于 benchmark_id 构造
+        if config.benchmark_bar_type:
+            self.benchmark_bar_type = BarType.from_str(config.benchmark_bar_type)
+            self.benchmark_id = self.benchmark_bar_type.instrument_id
+        else:
+            self.benchmark_id = InstrumentId.from_str(config.benchmark_id)
+            self.benchmark_bar_type = BarType(self.benchmark_id, self.bar_type.spec)
 
         # 3. Benchmark Higher TF Bar (e.g. 4-HOUR) for Regime Filter
-        # We construct this dynamically to match the feed style (Midpoint/Last/Trade)
-        self.btc_4h_bar_type = self._get_higher_timeframe_bar_type(
-            self.bar_type, self.benchmark_id, "4-HOUR"
-        )
+        # 优先使用引擎注入的 benchmark_trend_bar_type，否则动态构造
+        if config.benchmark_trend_bar_type:
+            self.btc_4h_bar_type = BarType.from_str(config.benchmark_trend_bar_type)
+        else:
+            # We construct this dynamically to match the feed style (Midpoint/Last/Trade)
+            self.btc_4h_bar_type = self._get_higher_timeframe_bar_type(
+                self.bar_type, self.benchmark_id, "4-HOUR"
+            )
 
         # --- Indicators ---
         self.bb = BollingerBands(config.bb_period, config.bb_std)
@@ -300,7 +315,7 @@ class RSSqueezeStrategy(BaseStrategy):
             # 1. Exact ID: "BTCUSDT.BINANCE"
             # 2. Symbol: "BTCUSDT"
             # 3. Colon Format (Common in data files): "BTCUSDT:USDT"
-            symbol = self.instrument_id.symbol
+            symbol = str(self.instrument_id.symbol)  # Convert Symbol object to string
             full_id = str(self.instrument_id)
 
             is_in = full_id in month_symbols or symbol in month_symbols
@@ -535,10 +550,10 @@ class RSSqueezeStrategy(BaseStrategy):
         # Fallback to first available
         return accounts[0]
 
-    def on_position_closed(self, position: Position):
-        super().on_position_closed(position)
+    def on_position_closed(self, event):
+        super().on_position_closed(event)
         self.log.info(
-            f"Position Closed: {position.instrument_id}, PnL={position.realized_pnl}"
+            f"Position Closed: {event.instrument_id}, PnL={event.realized_pnl}"
         )
         # Record exit timestamp for Cooldown
         self._last_exit_ts = self.clock.timestamp_ns()
