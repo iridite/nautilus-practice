@@ -67,6 +67,10 @@ class RSSqueezeConfig(BaseStrategyConfig):
     breakeven_mult: float = 5.0
     # BE Offset (Entry + 0.2%)
     breakeven_offset: float = 0.002
+    # 时间保护强制平仓：持仓超过 N 小时后强制市价平仓
+    max_holding_hours: int = 72
+    # 保证金占用限制：已用保证金超过总余额的 N% 时停止新开仓
+    max_margin_usage: float = 0.80
 
     # --- Filters ---
     max_concurrent_positions: int = 3
@@ -162,6 +166,7 @@ class RSSqueezeStrategy(BaseStrategy):
         self._breakeven_triggered = False
         self._last_exit_ts: int = 0  # Timestamp in nanoseconds
         self._last_entry_ts: int = 0  # 记录上次入场时间用于 cooldown
+        self._position_open_ts: int = 0  # 记录仓位开仓时间，用于 72h 强制平仓
         self._last_warmup_log_ts: int = 0
 
         # --- Debug Counters ---
@@ -175,6 +180,7 @@ class RSSqueezeStrategy(BaseStrategy):
             "data_not_synced": 0,
             "in_cooldown": 0,
             "max_positions": 0,
+            "margin_limit": 0,  # 新增：保证金占用限制
             "trend_filter": 0,
             "not_in_squeeze": 0,
             "rs_filter": 0,
@@ -500,6 +506,7 @@ class RSSqueezeStrategy(BaseStrategy):
         Evaluates market conditions for a Long Entry.
 
         优化后的入场门控 (Confluence)：
+        0. 唯一持仓限制：每个币种同时只能持有一个仓位
         1. 趋势在 EMA200 之上
         2. 处于 Squeeze 状态 (BB 完全在 KC 内部)
         3. RS 评分高于 1.0
@@ -507,8 +514,18 @@ class RSSqueezeStrategy(BaseStrategy):
         5. 成交量 > 平均成交量 * 1.2 (放量突破)
         6. BTC 4H > EMA200 (市场环境过滤)
         7. 24 小时冷却期
+        8. 排除 BTC 自交易（RS 相对自己永远是 1.0）
+        9. 保证金占用限制
         """
         self._debug_signal_checks += 1
+
+        # 0. Position Check: 唯一持仓限制 - 每个币种同时只能持有一个仓位
+        if self._has_open_position():
+            return
+
+        # 0.1 排除 BTC 自交易：BTC 的 RS 相对自己永远是 1.0，无法产生有效信号
+        if self.instrument_id == self.benchmark_id:
+            return
 
         # 1. Pre-conditions: 需要前期 high 数据来检测 breakout
         if self._prev_breakout_level is None:
@@ -533,6 +550,23 @@ class RSSqueezeStrategy(BaseStrategy):
         if open_positions >= self.config.max_concurrent_positions:
             self._filter_stats["max_positions"] += 1
             return
+
+        # 4.1 Margin Usage Check: 保证金占用超过 80% 时停止新开仓
+        account = self._get_account()
+        if account:
+            equity = account.balance(self.instrument.quote_currency).total.as_decimal()
+            margin_used = account.balance(
+                self.instrument.quote_currency
+            ).locked.as_decimal()
+            if equity > Decimal("0"):
+                margin_ratio = margin_used / equity
+                if margin_ratio >= Decimal(str(self.config.max_margin_usage)):
+                    self._filter_stats["margin_limit"] += 1
+                    self.log.warning(
+                        f"⚠️ MARGIN LIMIT: {self.instrument_id} margin usage "
+                        f"{margin_ratio:.2%} >= {self.config.max_margin_usage:.0%}. Skipping entry."
+                    )
+                    return
 
         # 5. Market Logic
         current_price = Decimal(str(bar.close))
@@ -689,6 +723,7 @@ class RSSqueezeStrategy(BaseStrategy):
         self._entry_price = current_price
         self._breakeven_triggered = False
         self._last_entry_ts = ts_event  # 记录入场时间用于 cooldown
+        self._position_open_ts = ts_event  # 记录开仓时间用于 72h 强制平仓
 
     def _manage_positions(self, bar: Bar):
         """
@@ -698,6 +733,7 @@ class RSSqueezeStrategy(BaseStrategy):
         1. 止损由初始止损单处理
         2. 移动保本：盈利达到 5 倍 ATR (2.5:1 盈亏比) 后，止损移至开仓价
         3. 🛡️ 紧急止损保护：如果价格跌破止损线但止损单未触发，强制平仓
+        4. ⏰ 时间保护强制平仓：持仓超过 72 小时仍未触发止盈止损，强制市价平仓
 
         注意：已移除 EMA20 趋势退出，避免过早止盈
         """
@@ -708,9 +744,32 @@ class RSSqueezeStrategy(BaseStrategy):
 
         current_price = Decimal(str(bar.close))
 
+        # ⏰ 时间保护强制平仓：持仓超过 72 小时仍未触发止盈止损，强制市价平仓
+        if self._position_open_ts > 0:
+            holding_duration_ns = bar.ts_event - self._position_open_ts
+            max_holding_ns = self.config.max_holding_hours * 3600 * 1_000_000_000
+            if holding_duration_ns >= max_holding_ns:
+                holding_hours = holding_duration_ns / (3600 * 1_000_000_000)
+                self.log.warning(
+                    f"⏰ TIME PROTECTION: {self.instrument_id} held for {holding_hours:.1f}h "
+                    f">= {self.config.max_holding_hours}h. Force closing position!"
+                )
+                # 取消所有挂单
+                self.cancel_all_orders(self.instrument_id)
+                # 市价平仓
+                close_order = self.order_factory.market(
+                    instrument_id=self.instrument_id,
+                    order_side=OrderSide.SELL,
+                    quantity=position.quantity,
+                )
+                self.submit_order(close_order)
+                self._position_open_ts = 0  # 重置开仓时间
+                return
+
         # 🛡️ 紧急止损保护：检查价格是否已跌破止损线
+        # 注意：本策略为 Long Only，只检查多单方向的止损穿透
         # 如果有入场价且 ATR 有效，计算止损位并检查
-        if self._entry_price and self.atr.initialized:
+        if self._entry_price and self.atr.initialized and position.is_long:
             atr = Decimal(str(self.atr.value))
             stop_loss_price = self._entry_price - (
                 atr * Decimal(str(self.config.stop_loss_mult))
