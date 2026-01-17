@@ -35,11 +35,11 @@ def check_data_exists(symbol_str, start_date, end_date, timeframe, exchange):
         return True
     elif filepath.exists() and filepath.stat().st_size < 10 * 1024:
         print(
-            f"⚠️ Data file for {symbol_str} ({exchange} {timeframe}) is un seemingly small"
+            f"❌ Data file for {symbol_str} ({exchange} {timeframe}) is un seemingly small"
         )
         return True
     elif not filepath.exists():
-        print(f"⚠️ Data file for {symbol_str} ({exchange} {timeframe}) does not exist.")
+        print(f"❌ Data file for {symbol_str} ({exchange}-{timeframe}) does not exist.")
         return False
     return False
 
