@@ -17,6 +17,9 @@ class BaseStrategyConfig(StrategyConfig):  # pyright: ignore[reportGeneralTypeIs
     # TODO: check this later for its usability
     """
 
+    # OMS 模式：使用 HEDGING 支持同一标的同时持有多空头寸
+    oms_type: str = "HEDGING"
+
     instrument_id: str = ""
 
     # --- Position Sizing Parameters ---
