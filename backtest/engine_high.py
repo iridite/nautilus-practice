@@ -128,11 +128,13 @@ def run_high_level(cfg: BackTestConfig, base_dir: Path):
                 )
 
         # 2.4 构建回测数据配置
+        # 关键：必须使用 bar_types (list[str]) 而非 bar_type，否则参数被忽略导致无数据加载！
         backtest_data_configs.append(
             BacktestDataConfig(
                 catalog_path=str(catalog_path),
                 data_cls="nautilus_trader.model.data:Bar",
                 instrument_id=inst.id,
+                bar_types=[str(bar_type)],  # 使用 bar_types (list) 而非 bar_type
                 start_time=cfg.start_date,
                 end_time=cfg.end_date,
             )
@@ -174,6 +176,29 @@ def run_high_level(cfg: BackTestConfig, base_dir: Path):
 
     # 换行结束进度显示
     print(f"\n✅ Data import complete. Created {len(strategies)} strategy instances.")
+
+    # 诊断日志：打印数据配置详情
+    print("\n" + "=" * 60)
+    print("📋 BacktestDataConfig Summary:")
+    print("=" * 60)
+    for i, data_cfg in enumerate(backtest_data_configs, 1):
+        print(f"  [{i}] instrument_id: {data_cfg.instrument_id}")
+        print(f"      bar_types: {data_cfg.bar_types}")
+        print(f"      time_range: {data_cfg.start_time} -> {data_cfg.end_time}")
+        print(f"      catalog_path: {data_cfg.catalog_path}")
+    print("=" * 60 + "\n")
+
+    # 验证 catalog 中实际存在的数据
+    print("🔍 Verifying catalog data availability:")
+    for data_cfg in backtest_data_configs:
+        if data_cfg.bar_types:
+            for bt_str in data_cfg.bar_types:
+                intervals = _catalog.get_intervals(data_cls=Bar, identifier=bt_str)
+                if intervals:
+                    print(f"  ✅ {bt_str}: {intervals}")
+                else:
+                    print(f"  ❌ {bt_str}: NO DATA FOUND IN CATALOG!")
+    print()
 
     # 4. 配置交易所 (Venue)
     venue_name = (
@@ -232,8 +257,18 @@ def run_high_level(cfg: BackTestConfig, base_dir: Path):
     gc.collect()
     node = BacktestNode(configs=[run_config])
     print(f"⏳ Running BacktestNode with {len(strategies)} strategy instances...")
-    node.run()
+    print(f"   - Data configs: {len(backtest_data_configs)}")
+    print(f"   - Venue configs: {len(venue_configs)}")
+    print(f"   - Strategy configs: {len(strategies)}")
+
+    results = node.run()
+
     print("✅ Backtest Complete.")
+
+    # 打印回测结果摘要
+    if results:
+        for result in results:
+            _print_results(result)
 
     # if results:
     #     _print_results(results[0])

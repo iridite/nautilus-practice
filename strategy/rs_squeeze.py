@@ -154,6 +154,26 @@ class RSSqueezeStrategy(BaseStrategy):
         self._last_exit_ts: int = 0  # Timestamp in nanoseconds
         self._last_warmup_log_ts: int = 0
 
+        # --- Debug Counters ---
+        self._debug_bar_count: int = 0
+        self._debug_signal_checks: int = 0
+        self._debug_last_status_log: int = 0
+
+        # --- Filter Statistics (用于诊断为什么没有信号通过) ---
+        self._filter_stats: Dict[str, int] = {
+            "no_breakout_level": 0,
+            "data_not_synced": 0,
+            "in_cooldown": 0,
+            "max_positions": 0,
+            "trend_filter": 0,
+            "not_in_squeeze": 0,
+            "rs_filter": 0,
+            "breakout_filter": 0,
+            "btc_bear_market": 0,
+            "all_passed": 0,
+        }
+        self._last_filter_summary_ts: int = 0
+
         # --- Universe State ---
         self._universe_map: Dict[str, Set[str]] = {}
         self._current_month: str = ""
@@ -204,15 +224,21 @@ class RSSqueezeStrategy(BaseStrategy):
 
         # 1. Trading Instrument (e.g. SOLUSDT 1H)
         self.subscribe_bars(self.bar_type)
+        self.log.info(f"📊 Subscribed to main bar: {self.bar_type}")
 
         # 2. Benchmark for RS (e.g. BTCUSDT 1H)
         self.subscribe_bars(self.benchmark_bar_type)
+        self.log.info(f"📊 Subscribed to benchmark bar: {self.benchmark_bar_type}")
 
         # 3. Benchmark for Trend (e.g. BTCUSDT 4H)
         self.subscribe_bars(self.btc_4h_bar_type)
+        self.log.info(f"📊 Subscribed to BTC 4H bar: {self.btc_4h_bar_type}")
 
         self.log.info(
-            f"Strategy started for {self.instrument_id}. Benchmark: {self.benchmark_id}"
+            f"🚀 Strategy started for {self.instrument_id}. "
+            f"Benchmark: {self.benchmark_id}, "
+            f"Bar types: main={self.bar_type}, benchmark={self.benchmark_bar_type}, "
+            f"btc_4h={self.btc_4h_bar_type}"
         )
 
     def on_bar(self, bar: Bar):
@@ -221,6 +247,18 @@ class RSSqueezeStrategy(BaseStrategy):
         Dispatches logic based on the incoming Bar's type.
         """
         super().on_bar(bar)
+
+        # 记录首次接收到的 bar（每种类型只记录一次）
+        if not hasattr(self, "_first_bar_logged"):
+            self._first_bar_logged = set()
+
+        bar_type_str = str(bar.bar_type)
+        if bar_type_str not in self._first_bar_logged:
+            self._first_bar_logged.add(bar_type_str)
+            self.log.info(
+                f"📥 First bar received: {bar_type_str}, "
+                f"ts={bar.ts_event}, close={bar.close}"
+            )
 
         # A. Handle Benchmark 4H (Trend Filter)
         if bar.bar_type == self.btc_4h_bar_type:
@@ -250,6 +288,14 @@ class RSSqueezeStrategy(BaseStrategy):
         Core logic for the trading instrument.
         Called once per bar (e.g. hourly).
         """
+        self._debug_bar_count += 1
+
+        # 每 100 根 bar 输出一次进度日志
+        if self._debug_bar_count % 100 == 0:
+            self.log.info(
+                f"📈 [{self.instrument_id}] Processed {self._debug_bar_count} bars, "
+                f"signal_checks={self._debug_signal_checks}, close={bar.close}"
+            )
 
         # 1. Update Indicators & Buffers
         self.asset_closes.append(Decimal(str(bar.close)))
@@ -279,6 +325,13 @@ class RSSqueezeStrategy(BaseStrategy):
         elif self._is_in_universe:
             # We only look for new entries if we are in the universe this month
             self._check_entry_signal(bar)
+        else:
+            # 每小时打印一次状态日志（避免刷屏）
+            if bar.ts_event - self._debug_last_status_log > 3600 * 1_000_000_000:
+                self._debug_last_status_log = bar.ts_event
+                self.log.debug(
+                    f"[{self.instrument_id}] Not in universe for {self._current_month}"
+                )
 
     def _check_warmup_status(self) -> bool:
         """
@@ -298,7 +351,11 @@ class RSSqueezeStrategy(BaseStrategy):
         # 仅在首次完成 warmup 时输出一次日志
         if is_ready and self._last_warmup_log_ts == 0:
             self._last_warmup_log_ts = self.clock.timestamp_ns()
-            self.log.info(f"✅ Warmup complete for {self.instrument_id}")
+            self.log.info(
+                f"✅ Warmup complete for {self.instrument_id}. "
+                f"EMA200={self.ema_slow.value:.2f}, BB/KC initialized, "
+                f"Asset closes={len(self.asset_closes)}, Benchmark closes={len(self.benchmark_closes)}"
+            )
 
         return is_ready
 
@@ -312,11 +369,22 @@ class RSSqueezeStrategy(BaseStrategy):
         if self._last_asset_ts == 0 or self._last_benchmark_ts == 0:
             return False
 
-        # 允许一定的时间容差（同一小时内视为同步）
-        # 1H bar 的容差：3600秒 = 3600 * 1e9 纳秒
-        tolerance_ns = 3600 * 1_000_000_000
+        # 同步检查：Asset bar 和 Benchmark bar 应该代表同一个时间点
+        # 在回测中，两者的 ts_event 应该相等（同一个 bar 的开始时间）
+        # 使用 <= 确保边界情况也能通过
+        tolerance_ns = 3600 * 1_000_000_000  # 1小时容差
 
-        return abs(self._last_asset_ts - self._last_benchmark_ts) < tolerance_ns
+        is_synced = abs(self._last_asset_ts - self._last_benchmark_ts) <= tolerance_ns
+
+        # 首次同步成功时记录日志
+        if is_synced and not hasattr(self, "_sync_logged"):
+            self._sync_logged = True
+            self.log.info(
+                f"✅ Data sync established for {self.instrument_id}. "
+                f"Asset_ts={self._last_asset_ts}, Benchmark_ts={self._last_benchmark_ts}"
+            )
+
+        return is_synced
 
     def _update_universe_status(self, ts_event: int):
         """Updates `_is_in_universe` flag based on current month."""
@@ -332,21 +400,37 @@ class RSSqueezeStrategy(BaseStrategy):
             self._current_month = current_month
             month_symbols = self._universe_map.get(current_month, set())
 
-            # Check matching logic (Exact Match or Prefix)
-            # 1. Exact ID: "BTCUSDT.BINANCE"
-            # 2. Symbol: "BTCUSDT"
-            # 3. Colon Format (Common in data files): "BTCUSDT:USDT"
-            symbol = str(self.instrument_id.symbol)  # Convert Symbol object to string
-            full_id = str(self.instrument_id)
+            # Check matching logic:
+            # Universe 格式: "BCHUSDT:USDT", "SOLUSDT:USDT"
+            # Instrument ID 格式: "BCHUSDT-PERP.BINANCE"
+            # Symbol 格式: "BCHUSDT-PERP"
+            #
+            # 需要提取 base symbol (去掉 -PERP 后缀和 :USDT 后缀)
+            symbol = str(self.instrument_id.symbol)  # e.g. "BCHUSDT-PERP"
+            full_id = str(self.instrument_id)  # e.g. "BCHUSDT-PERP.BINANCE"
 
+            # 提取 base symbol: "BCHUSDT-PERP" -> "BCHUSDT"
+            base_symbol = symbol.replace("-PERP", "").replace("-SWAP", "")
+
+            # 直接匹配
             is_in = full_id in month_symbols or symbol in month_symbols
 
             if not is_in:
-                # Try finding if symbol is a prefix in the universe list (e.g. "BTCUSDT" matches "BTCUSDT:USDT")
+                # 尝试 base symbol 匹配 (考虑 Universe 中的 :USDT 格式)
                 for valid_sym in month_symbols:
-                    if valid_sym.startswith(symbol):
+                    # "BCHUSDT:USDT" -> "BCHUSDT"
+                    valid_base = valid_sym.split(":")[0]
+                    if base_symbol == valid_base:
                         is_in = True
                         break
+
+            # 仅在状态变化时输出日志
+            if is_in != self._is_in_universe:
+                self.log.info(
+                    f"📋 Universe status changed for {self.instrument_id}: "
+                    f"month={current_month}, in_universe={is_in}, "
+                    f"month_symbols={list(month_symbols)[:5]}..."
+                )
 
             self._is_in_universe = is_in
 
@@ -405,22 +489,29 @@ class RSSqueezeStrategy(BaseStrategy):
         4. 价格突破前 2 根 K 线的最高价
         5. BTC 4H > EMA200 (市场环境过滤)
         """
+        self._debug_signal_checks += 1
+
         # 1. Pre-conditions: 需要前期 high 数据来检测 breakout
         if self._prev_breakout_level is None:
+            self._filter_stats["no_breakout_level"] += 1
             return
 
         # 2. Data Sync Check: 确保 Asset 和 Benchmark 数据同步
         if not self._check_data_sync():
+            self._filter_stats["data_not_synced"] += 1
             return
 
         # 3. Cooldown Check (设计规范：同一个 4H 时间窗内只允许 1 次入场)
         cooldown_ns = self.config.cooldown_period_hours * 3600 * 1_000_000_000
         if bar.ts_event < (self._last_exit_ts + cooldown_ns):
+            self._filter_stats["in_cooldown"] += 1
             return
 
         # 4. Max Concurrency Check (Basic protection)
         # Note: This checks ALL positions in the engine.
-        if len(self.cache.positions_open()) >= self.config.max_concurrent_positions:
+        open_positions = len(self.cache.positions_open())
+        if open_positions >= self.config.max_concurrent_positions:
+            self._filter_stats["max_positions"] += 1
             return
 
         # 5. Market Logic
@@ -429,34 +520,44 @@ class RSSqueezeStrategy(BaseStrategy):
 
         # A. Trend Filter: Price > EMA200
         if current_price <= ema_slow:
+            self._filter_stats["trend_filter"] += 1
             return
 
         # B. Squeeze Filter: BB 完全在 KC 内部
         if not self._is_squeeze:
+            self._filter_stats["not_in_squeeze"] += 1
             return
 
         # C. Relative Strength: RS > 1.0 (Asset 表现优于 BTC)
         rs = self._calculate_rs()
         if rs <= Decimal(str(self.config.rs_threshold)):
+            self._filter_stats["rs_filter"] += 1
             return
 
         # D. Breakout Check
         # 设计规范：价格突破前 2 根 K 线的最高价
         if current_price <= self._prev_breakout_level:
+            self._filter_stats["breakout_filter"] += 1
             return
 
         # E. Benchmark 4H Filter (Bear Market Detector)
         # Only apply if data is available
         if self.btc_ema_4h.initialized:
-            btc_bar = self.cache.bar_last(self.btc_4h_bar_type)
+            btc_bar = self.cache.bar(self.btc_4h_bar_type)
             if btc_bar:
                 btc_price = Decimal(str(btc_bar.close))
                 btc_ema = Decimal(str(self.btc_ema_4h.value))
                 if btc_price < btc_ema:
                     # Bear market -> Filter Longs
+                    self._filter_stats["btc_bear_market"] += 1
                     return
 
         # If we reached here, all systems go
+        self._filter_stats["all_passed"] += 1
+        self.log.info(
+            f"🎯 ALL FILTERS PASSED for {self.instrument_id}! "
+            f"Price={current_price:.2f}, RS={rs:.4f}, Squeeze=True"
+        )
         self._execute_entry(current_price, rs)
 
     def _execute_entry(self, current_price: Decimal, rs_value: Decimal):
@@ -586,7 +687,8 @@ class RSSqueezeStrategy(BaseStrategy):
             return None
         # Try to find account with quote currency (e.g. USDT)
         for acc in accounts:
-            if not acc.balance(self.instrument.quote_currency).is_empty():
+            balance = acc.balance(self.instrument.quote_currency)
+            if balance and balance.total.as_double() > 0:
                 return acc
         # Fallback to first available
         return accounts[0]
@@ -597,6 +699,32 @@ class RSSqueezeStrategy(BaseStrategy):
         self._last_exit_ts = self.clock.timestamp_ns()
 
     def on_stop(self):
+        """Log debugging summary."""
+        self.log.info(
+            f"🛑 Strategy stopped for {self.instrument_id}. "
+            f"Bars processed: {self._debug_bar_count}, "
+            f"Signal checks: {self._debug_signal_checks}, "
+            f"Asset closes: {len(self.asset_closes)}, "
+            f"Benchmark closes: {len(self.benchmark_closes)}, "
+            f"In universe: {self._is_in_universe}, "
+            f"Warmup complete: {self._last_warmup_log_ts > 0}"
+        )
+
+        # 输出过滤器统计摘要
+        if self._debug_signal_checks > 0:
+            self.log.info(
+                f"📊 Filter stats for {self.instrument_id}: "
+                f"no_breakout={self._filter_stats['no_breakout_level']}, "
+                f"data_sync={self._filter_stats['data_not_synced']}, "
+                f"cooldown={self._filter_stats['in_cooldown']}, "
+                f"trend={self._filter_stats['trend_filter']}, "
+                f"squeeze={self._filter_stats['not_in_squeeze']}, "
+                f"rs={self._filter_stats['rs_filter']}, "
+                f"breakout={self._filter_stats['breakout_filter']}, "
+                f"btc_bear={self._filter_stats['btc_bear_market']}, "
+                f"PASSED={self._filter_stats['all_passed']}"
+            )
+
         self.cancel_all_orders(self.instrument_id)
         self.close_all_positions(self.instrument_id)
 
@@ -616,3 +744,6 @@ class RSSqueezeStrategy(BaseStrategy):
         self._breakeven_triggered = False
         self._last_benchmark_ts = 0
         self._last_asset_ts = 0
+        self._debug_bar_count = 0
+        self._debug_signal_checks = 0
+        self._debug_last_status_log = 0
