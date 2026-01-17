@@ -96,17 +96,26 @@ def run_high_level(cfg: BackTestConfig, base_dir: Path):
             feeds_by_inst[inst_id][data_cfg.label] = feed_bar_type_str
 
         # 2.3 高级引擎需要将数据导入 Catalog (Parquet)
-        try:
-            catalog_loader(
-                catalog=_catalog,
-                csv_path=csv_path,
-                instrument=inst,
-                bar_type=BarType.from_str(feed_bar_type_str),
-            )
-        except Exception as e:
-            print(
-                f"[Backtest Engine High] ❌ Error loading {data_cfg.csv_file_name}: {e}"
-            )
+        # 优化：先检查 catalog 中是否已存在该 bar_type 的数据，避免重复导入
+        bar_type = BarType.from_str(feed_bar_type_str)
+        existing_intervals = _catalog.get_intervals(
+            data_cls=Bar, identifier=str(bar_type)
+        )
+
+        if existing_intervals:
+            print(f"⏩ Skipping import: {bar_type} already exists in catalog.")
+        else:
+            try:
+                catalog_loader(
+                    catalog=_catalog,
+                    csv_path=csv_path,
+                    instrument=inst,
+                    bar_type=bar_type,
+                )
+            except Exception as e:
+                print(
+                    f"[Backtest Engine High] ❌ Error loading {data_cfg.csv_file_name}: {e}"
+                )
 
         # 2.4 构建回测数据配置
         backtest_data_configs.append(
@@ -242,29 +251,14 @@ def catalog_loader(
     csv_path: Path,
     instrument: Instrument,
     bar_type: BarType,
-    force_rebuild: bool = False,
 ) -> None:
     """
-    高效构建或加载数据 Catalog。
+    将 CSV 数据导入 Catalog (Parquet)。
 
-    优化点：
-    1. 增加 force_rebuild 开关，默认跳过已存在的数据。
-    2. 使用 get_intervals() 代替 bars() 进行轻量级校验，避免内存溢出。
-    3. 合并路径创建与对象初始化。
+    注意：调用前应先检查数据是否已存在，避免重复解析巨大的 CSV。
+    检查逻辑已移至 run_high_level 主循环中，以减少冗余函数调用。
     """
-
-    # 2. 检查数据是否已存在 (核心优化：避免重复解析巨大的 CSV)
-    if not force_rebuild:
-        # 使用 get_intervals 检查 Catalog 中是否已有该数据的时间区间
-        # 这是比加载全部 bars 更轻量的方法
-        intervals = catalog.get_intervals(data_cls=Bar, identifier=str(bar_type))
-        if intervals:
-            print(
-                f"✅ Data already exists in catalog for {instrument.id}, skipping CSV import."
-            )
-            return
-
-    print(f"📖 Importing CSV to Catalog: {csv_path}")
+    print(f"📖 Importing CSV to Catalog: {bar_type}")
 
     # 3. 高效加载 CSV
     df: DataFrame = CSVBarDataLoader.load(
