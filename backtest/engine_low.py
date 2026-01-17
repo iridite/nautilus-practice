@@ -23,7 +23,6 @@ from backtest.utils import (
     filter_strategy_params,
     load_strategy_class,
     load_strategy_config_class,
-    resolve_instrument_path,
 )
 from config.definitions import (
     BackTestConfig,
@@ -131,8 +130,7 @@ def run_low_level(cfg: BackTestConfig, base_dir: Path):
     # 4. 加载标的定义 (Instruments)
     loaded_instruments = {}
     for inst_cfg in cfg.instruments:
-        symbol_part = inst_cfg.instrument_id.split(".")[0]
-        inst_path = resolve_instrument_path(base_dir, inst_cfg.venue_name, symbol_part)
+        inst_path = inst_cfg.get_json_path()
         if inst_path.exists():
             try:
                 inst = load_instrument(inst_path)
