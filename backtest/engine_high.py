@@ -1,5 +1,5 @@
 import gc
-from datetime import datetime
+from collections import defaultdict
 from pathlib import Path
 
 from nautilus_trader.backtest.config import (
@@ -39,7 +39,6 @@ def run_high_level(cfg: BackTestConfig, base_dir: Path):
 
     data_path: Path = base_dir / "data"
     catalog_path: Path = data_path / "parquet" / f"{cfg.strategy.name}"
-    run_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
     # 1. 准备策略与配置类（用于参数过滤）
     ConfigClass = load_strategy_config_class(
@@ -47,42 +46,54 @@ def run_high_level(cfg: BackTestConfig, base_dir: Path):
     )
 
     strategies = []
-    # (instrument_id, label) -> bar_type_str
-    all_feed_types = {}
     backtest_data_configs = []
-
-    # 2. 加载标的与数据处理
     loaded_instruments = {}
-    for inst_cfg in cfg.instruments:
-        inst_path = inst_cfg.get_json_path()
-        if inst_path.exists():
-            try:
-                loaded_instruments[inst_cfg.instrument_id] = load_instrument(inst_path)
-            except Exception as e:
-                print(f"⚠️ Failed to load instrument {inst_cfg.instrument_id}: {e}")
 
-    # 3.1 预处理并转换所有数据为 Parquet (Nautlius High-level 必须)
-    for i, data_cfg in enumerate(cfg.data_feeds):
-        # 此处的 data_feeds 如果在前面一切正常的话那就应该和 cfg.instruments 是完全一样的内容
-        # data_feeds 来自于 load_instrument，里面已经定义了 data_cfg.csv_file_name
+    # 预分组：将数据流按 InstrumentID 归类，提升大规模 Universe 下的性能
+    feeds_by_inst = defaultdict(dict)
+    global_feeds = {}
 
+    # 创建 instrument_id -> inst_cfg 的映射用于快速查找
+    inst_cfg_map = {ic.instrument_id: ic for ic in cfg.instruments}
+
+    _catalog = ParquetDataCatalog(catalog_path)
+
+    # 2. 数据处理与标的加载 (合并原有循环，减少冗余遍历)
+    for data_cfg in cfg.data_feeds:
         inst_id = data_cfg.instrument_id or str(cfg.instrument.instrument_id)
-        # 同时适配单 inst 和 多 inst
 
-        inst = loaded_instruments.get(inst_id)
+        # 2.1 按需加载标的信息 (仅加载有数据流定义的标的)
+        if inst_id not in loaded_instruments:
+            inst_cfg = inst_cfg_map.get(inst_id)
+            if inst_cfg:
+                inst_path = inst_cfg.get_json_path()
+                if inst_path.exists():
+                    try:
+                        loaded_instruments[inst_id] = load_instrument(inst_path)
+                    except Exception as e:
+                        print(f"⚠️ Failed to load instrument {inst_id}: {e}")
+                        continue
+                else:
+                    print(f"⚠️ Instrument path not found: {inst_path}")
+                    continue
+            else:
+                print(f"⚠️ No instrument configuration found for {inst_id}")
+                continue
 
-        assert inst, f"Failed to find instrument {inst_id}"
-
+        inst = loaded_instruments[inst_id]
         csv_path = data_cfg.full_path
         assert csv_path.exists(), f"CSV file not found: {csv_path}"
 
         feed_bar_type_str = f"{inst.id}-{data_cfg.bar_type_str}"
-        all_feed_types[(inst_id, data_cfg.label)] = feed_bar_type_str
 
-        _catalog = ParquetDataCatalog(catalog_path)
+        # 2.2 归类数据流标签 (benchmark 为全局，其余归属特定标的)
+        if data_cfg.label == "benchmark":
+            global_feeds[data_cfg.label] = feed_bar_type_str
+        else:
+            feeds_by_inst[inst_id][data_cfg.label] = feed_bar_type_str
 
+        # 2.3 高级引擎需要将数据导入 Catalog (Parquet)
         try:
-            # 高级引擎需要将数据导入 Catalog (Parquet)
             catalog_loader(
                 catalog=_catalog,
                 csv_path=csv_path,
@@ -94,31 +105,18 @@ def run_high_level(cfg: BackTestConfig, base_dir: Path):
                 f"[Backtest Engine High] ❌ Error loading {data_cfg.csv_file_name}: {e}"
             )
 
-        _BDC = BacktestDataConfig(
-            catalog_path=str(catalog_path),
-            data_cls="nautilus_trader.model.data:Bar",
-            instrument_id=inst.id,
-            start_time=cfg.start_date,
-            end_time=cfg.end_date,
+        # 2.4 构建回测数据配置
+        backtest_data_configs.append(
+            BacktestDataConfig(
+                catalog_path=str(catalog_path),
+                data_cls="nautilus_trader.model.data:Bar",
+                instrument_id=inst.id,
+                start_time=cfg.start_date,
+                end_time=cfg.end_date,
+            )
         )
 
-        backtest_data_configs.append(_BDC)
-
-    # --- 优化后的策略实例化逻辑 ---
-
-    # 1. 预分组：将数据流按 InstrumentID 归类，提升大规模 Universe 下的性能
-    from collections import defaultdict
-
-    feeds_by_inst = defaultdict(dict)
-    global_feeds = {}
-
-    for (iid, label), bt_str in all_feed_types.items():
-        if label == "benchmark":
-            global_feeds[label] = bt_str
-        else:
-            feeds_by_inst[iid][label] = bt_str
-
-    # 2. 循环生成策略配置
+    # 3. 循环生成策略配置
     strategy_path = f"{cfg.strategy.module_path}:{cfg.strategy.name}"
     config_path = f"{cfg.strategy.module_path}:{cfg.strategy.resolve_config_class()}"
 
@@ -142,7 +140,7 @@ def run_high_level(cfg: BackTestConfig, base_dir: Path):
 
         final_params = filter_strategy_params(strat_params, ConfigClass)
 
-        # 3. 封装为 Nautilus 可识别的导入配置
+        # 封装为 Nautilus 可识别的导入配置
         strategies.append(
             ImportableStrategyConfig(
                 strategy_path=strategy_path,
@@ -161,7 +159,7 @@ def run_high_level(cfg: BackTestConfig, base_dir: Path):
             account_type="MARGIN",
             base_currency="USDT",  # TODO：到时候使用内置的货币类型
             starting_balances=cfg.initial_balances,
-            fee_model=ImportableFeeModelConfig(  # TODO: 看看能不能就进行简单的加密手续费模型
+            fee_model=ImportableFeeModelConfig(
                 fee_model_path="nautilus_trader.backtest.models:MakerTakerFeeModel",
                 config_path="nautilus_trader.backtest.config:MakerTakerFeeModelConfig",
                 config={},
@@ -204,7 +202,7 @@ def run_high_level(cfg: BackTestConfig, base_dir: Path):
     gc.collect()
     node = BacktestNode(configs=[run_config])
     print(f"⏳ Running BacktestNode with {len(strategies)} strategy instances...")
-    results = node.run()
+    node.run()
     print("✅ Backtest Complete.")
 
     # if results:
@@ -259,7 +257,6 @@ def catalog_loader(
     print(f"📖 Importing CSV to Catalog: {csv_path}")
 
     # 3. 高效加载 CSV
-    # 建议：如果 datetime 是标准格式，不指定 date_format 有时反而更快 (pandas 内部优化)
     df: DataFrame = CSVBarDataLoader.load(
         file_path=csv_path,
         index_col=0,
@@ -276,7 +273,6 @@ def catalog_loader(
     catalog.write_data(instrument)
 
     # 写入 Bar 数据
-    # 注意：对于极大数据量，这里可以考虑分块写入，但通常 1GB 以下的 CSV 这样写没问题
     catalog.write_data(wrangler.process(df))
 
     # 5. 轻量级校验
