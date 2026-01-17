@@ -210,6 +210,10 @@ def main():
         # 任务分组: (exchange, timeframe, start, end) -> set(symbols)
         tasks = {}
 
+        # 统计计数器
+        data_exists_count = 0
+        data_missing_count = 0
+
         # 1.1 遍历 data_feeds 收集需要更新的行情数据
         for feed in current_config.data_feeds:
             try:
@@ -224,10 +228,20 @@ def main():
                 ):
                     key = (exchange, timeframe, START_DATE, END_DATE)
                     tasks.setdefault(key, set()).add(symbol_quote)
+                    data_missing_count += 1
                 else:
-                    print(f"✅ Data exists for {symbol_quote} ({exchange} {timeframe})")
+                    data_exists_count += 1
+                    # 单行刷新显示进度
+                    sys.stdout.write(
+                        f"\r✅ Data exists: {symbol_quote} ({exchange} {timeframe}){' ' * 20}"
+                    )
+                    sys.stdout.flush()
             except Exception as e:
-                print(f"⚠️ Failed to parse data feed config: {feed.label}, error: {e}")
+                print(f"\n⚠️ Failed to parse data feed config: {feed.label}, error: {e}")
+
+        # 换行结束 data_feeds 进度显示
+        if data_exists_count > 0:
+            print()  # 确保后续输出不会覆盖进度行
 
         # 1.2 如果存在 Universe，为其中的每个币种补充到任务列表 (使用 main feed 的参数)
         if universe_symbols:
@@ -262,7 +276,9 @@ def main():
                 ):
                     key = (exchange, timeframe, START_DATE, END_DATE)
                     tasks.setdefault(key, set()).add(symbol_str)
+                    data_missing_count += 1
                 else:
+                    data_exists_count += 1
                     # 使用单行刷新避免大量日志输出
                     sys.stdout.write(
                         f"\r✅ Data exists: {symbol_str} ({exchange} {timeframe}){' ' * 20}"
@@ -272,6 +288,11 @@ def main():
         # 换行结束进度显示
         if universe_symbols:
             print()  # 确保后续输出不会覆盖进度行
+
+        # 打印数据检查摘要
+        print(
+            f"📊 Data check summary: {data_exists_count} exists, {data_missing_count} missing"
+        )
 
         # 1.3 执行批量抓取并实时更新 current_config
         # 记录已经存在的 csv，防止重复添加

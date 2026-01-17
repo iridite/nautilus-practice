@@ -177,28 +177,43 @@ def run_high_level(cfg: BackTestConfig, base_dir: Path):
     # 换行结束进度显示
     print(f"\n✅ Data import complete. Created {len(strategies)} strategy instances.")
 
-    # 诊断日志：打印数据配置详情
-    print("\n" + "=" * 60)
-    print("📋 BacktestDataConfig Summary:")
-    print("=" * 60)
+    # 诊断日志：单行刷新显示数据配置进度
+    total_configs = len(backtest_data_configs)
+    print(f"\n📋 BacktestDataConfig Summary: {total_configs} configs")
     for i, data_cfg in enumerate(backtest_data_configs, 1):
-        print(f"  [{i}] instrument_id: {data_cfg.instrument_id}")
-        print(f"      bar_types: {data_cfg.bar_types}")
-        print(f"      time_range: {data_cfg.start_time} -> {data_cfg.end_time}")
-        print(f"      catalog_path: {data_cfg.catalog_path}")
-    print("=" * 60 + "\n")
+        sys.stdout.write(
+            f"\r  Processing [{i}/{total_configs}]: {data_cfg.instrument_id}{'':20}"
+        )
+        sys.stdout.flush()
+    print(f"\r  ✅ Loaded {total_configs} data configs{'':40}")
 
-    # 验证 catalog 中实际存在的数据
-    print("🔍 Verifying catalog data availability:")
+    # 验证 catalog 中实际存在的数据（单行刷新）
+    print("🔍 Verifying catalog data availability...")
+    verified_count = 0
+    missing_count = 0
+    total_bar_types = sum(
+        len(data_cfg.bar_types or []) for data_cfg in backtest_data_configs
+    )
+    checked = 0
     for data_cfg in backtest_data_configs:
         if data_cfg.bar_types:
             for bt_str in data_cfg.bar_types:
+                checked += 1
                 intervals = _catalog.get_intervals(data_cls=Bar, identifier=bt_str)
                 if intervals:
-                    print(f"  ✅ {bt_str}: {intervals}")
+                    verified_count += 1
                 else:
-                    print(f"  ❌ {bt_str}: NO DATA FOUND IN CATALOG!")
-    print()
+                    missing_count += 1
+                    # 只打印缺失数据的警告
+                    print(f"\n  ❌ {bt_str}: NO DATA FOUND IN CATALOG!")
+                # 单行刷新进度
+                sys.stdout.write(
+                    f"\r  Verifying [{checked}/{total_bar_types}] ✅ {verified_count} | ❌ {missing_count}{'':20}"
+                )
+                sys.stdout.flush()
+    print(
+        f"\r  📊 Catalog verification: {verified_count} OK, {missing_count} missing{'':30}"
+    )
 
     # 4. 配置交易所 (Venue)
     venue_name = (

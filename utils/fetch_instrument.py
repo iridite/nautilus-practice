@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -119,7 +120,7 @@ class InstrumentFetcher:
 
         file_path = self.output_dir / venue / f"{symbol}.json"
         if file_path.exists():
-            logger.info(f"✅ Already exists: {venue}/{symbol} (skipping)")
+            # 返回 skipped 状态，由 fetch_all 统一处理进度显示
             return file_path, False
 
         for attempt in range(1, retries + 1):
@@ -170,14 +171,39 @@ class InstrumentFetcher:
                     logger.error(f"🔥 Final error fetching {instrument_id_str}: {e}")
                     return None, False
 
+        # 如果 retries=0 或循环未执行，返回失败
+        return None, False
+
     async def fetch_all(self, instrument_ids: List[str]):
         """Batch fetch with shared clients"""
-        logger.info(f"🚀 Starting batch fetch for {len(instrument_ids)} instruments")
-        for pid in instrument_ids:
-            _, was_fetched = await self.fetch_one(pid)
-            if was_fetched:
+        total = len(instrument_ids)
+        skipped_count = 0
+        fetched_count = 0
+        failed_count = 0
+
+        for i, pid in enumerate(instrument_ids, 1):
+            path, was_fetched = await self.fetch_one(pid)
+
+            if path is None:
+                failed_count += 1
+            elif was_fetched:
+                fetched_count += 1
                 # Small delay between instruments to be polite to the API
                 await asyncio.sleep(0.2)
+            else:
+                skipped_count += 1
+
+            # 单行刷新进度显示
+            sys.stdout.write(
+                f"\r🔄 Instruments: [{i}/{total}] ✅ Exists: {skipped_count} | 📥 Fetched: {fetched_count} | ❌ Failed: {failed_count}    "
+            )
+            sys.stdout.flush()
+
+        # 换行结束进度显示
+        print()
+        logger.info(
+            f"📊 Instrument fetch complete: {fetched_count} new, {skipped_count} existed, {failed_count} failed"
+        )
 
 
 def update_instruments(
