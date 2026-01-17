@@ -51,7 +51,7 @@ def _load_data_for_feed(
     feed_bar_type_str = f"{inst.id}-{data_cfg.bar_type_str}"
     feed_bar_type = BarType.from_str(feed_bar_type_str)
 
-    csv_path = base_dir / "data" / "raw" / data_cfg.csv_file_name
+    csv_path = data_cfg.full_path
     if not csv_path.exists():
         print(f"⚠️ CSV file not found: {csv_path}")
         return None

@@ -73,7 +73,7 @@ def run_high_level(cfg: BackTestConfig, base_dir: Path):
 
         assert inst, f"Failed to find instrument {inst_id}"
 
-        csv_path = Path(data_cfg.csv_file_name)
+        csv_path = data_cfg.full_path
         assert csv_path.exists(), f"CSV file not found: {csv_path}"
 
         feed_bar_type_str = f"{inst.id}-{data_cfg.bar_type_str}"
