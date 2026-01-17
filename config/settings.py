@@ -137,7 +137,7 @@ RS_SQUEEZE_STRATEGY = StrategyConfig(
     params=RSSqueezeConfig(
         rs_threshold=1.1,  # 设计规范：RS > 1.0 表示 Asset 表现优于 BTC
         universe_filepath=str(
-            project_root / "data" / "universe_5.json"
+            project_root / "data" / "universe_50.json"
         ),  # 只需文件名，路径在 main.py 处理?
     ),
 )
