@@ -47,8 +47,11 @@ def run_high_level(cfg: BackTestConfig, base_dir: Path):
     )
 
     strategies = []
-    backtest_data_configs = []
     loaded_instruments = {}
+
+    # 用于合并同一 instrument_id 的多个 bar_types
+    # 结构: {instrument_id: {"bar_types": [str], "catalog_path": str}}
+    data_config_by_inst = {}
 
     # 预分组：将数据流按 InstrumentID 归类，提升大规模 Universe 下的性能
     feeds_by_inst = defaultdict(dict)
@@ -127,20 +130,21 @@ def run_high_level(cfg: BackTestConfig, base_dir: Path):
                     f"\n[Backtest Engine High] ❌ Error loading {data_cfg.csv_file_name}: {e}"
                 )
 
-        # 2.4 构建回测数据配置
+        # 2.4 合并同一 instrument_id 的 bar_types
         # 关键：必须使用 bar_types (list[str]) 而非 bar_type，否则参数被忽略导致无数据加载！
-        backtest_data_configs.append(
-            BacktestDataConfig(
-                catalog_path=str(catalog_path),
-                data_cls="nautilus_trader.model.data:Bar",
-                instrument_id=inst.id,
-                bar_types=[str(bar_type)],  # 使用 bar_types (list) 而非 bar_type
-                start_time=cfg.start_date,
-                end_time=cfg.end_date,
-            )
-        )
+        inst_id_str = str(inst.id)
+        if inst_id_str not in data_config_by_inst:
+            data_config_by_inst[inst_id_str] = {
+                "instrument_id": inst.id,
+                "bar_types": [],
+                "catalog_path": str(catalog_path),
+            }
+        # 避免添加重复的 bar_type
+        bar_type_str = str(bar_type)
+        if bar_type_str not in data_config_by_inst[inst_id_str]["bar_types"]:
+            data_config_by_inst[inst_id_str]["bar_types"].append(bar_type_str)
 
-    # 3. 循环生成策略配置
+    # 4. 循环生成策略配置
     strategy_path = f"{cfg.strategy.module_path}:{cfg.strategy.name}"
     config_path = f"{cfg.strategy.module_path}:{cfg.strategy.resolve_config_class()}"
 
@@ -174,8 +178,24 @@ def run_high_level(cfg: BackTestConfig, base_dir: Path):
             )
         )
 
+    # 3. 从合并后的配置生成 BacktestDataConfig 列表
+    backtest_data_configs = []
+    for inst_id_str, cfg_data in data_config_by_inst.items():
+        backtest_data_configs.append(
+            BacktestDataConfig(
+                catalog_path=cfg_data["catalog_path"],
+                data_cls="nautilus_trader.model.data:Bar",
+                instrument_id=cfg_data["instrument_id"],
+                bar_types=cfg_data["bar_types"],  # 合并后的 bar_types 列表
+                start_time=cfg.start_date,
+                end_time=cfg.end_date,
+            )
+        )
+
     # 换行结束进度显示
-    print(f"\n✅ Data import complete. Created {len(strategies)} strategy instances.")
+    print(
+        f"\n✅ Data import complete. Created {len(backtest_data_configs)} data configs (merged by instrument)."
+    )
 
     # 诊断日志：单行刷新显示数据配置进度
     total_configs = len(backtest_data_configs)
@@ -215,7 +235,7 @@ def run_high_level(cfg: BackTestConfig, base_dir: Path):
         f"\r  📊 Catalog verification: {verified_count} OK, {missing_count} missing{'':30}"
     )
 
-    # 4. 配置交易所 (Venue)
+    # 5. 配置交易所 (Venue)
     venue_name = (
         cfg.instrument.venue_name
         if cfg.instrument
@@ -238,7 +258,7 @@ def run_high_level(cfg: BackTestConfig, base_dir: Path):
         ),
     ]
 
-    # 5. 配置日志 (Logging)
+    # 6. 配置日志 (Logging)
     logging_config = None
     if cfg.logging:
         logging_config = LoggingConfig(
@@ -249,7 +269,7 @@ def run_high_level(cfg: BackTestConfig, base_dir: Path):
             log_directory=str(base_dir / "log" / "backtest" / "high_level"),
         )
 
-    # 6. 执行回测 (Execution)
+    # 7. 执行回测 (Execution)
     if not strategies:
         print(
             "❌ No strategy instances were created. Please check your config and data paths."
