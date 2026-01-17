@@ -8,9 +8,21 @@ from tqdm import tqdm
 
 # 配置常量
 DATA_DIR = Path(__file__).parent.parent.parent / "data" / "top"
-STABLECOINS = ["USDT", "USDC", "BUSD", "DAI", "TUSD", "UST", "EURS", "EUR", "GBP"]
+STABLECOINS = [
+    "USDT",
+    "USDC",
+    "BUSD",
+    "DAI",
+    "TUSD",
+    "UST",
+    "EURS",
+    "EUR",
+    "GBP",
+    "ETH",
+    "BTC",
+]
 MIN_COUNT_RATIO = 0.85  # 当月数据完整度阈值
-TOP_Ns = [25, 50]  # 选取前 N 个币种
+TOP_Ns = [1]  # 选取前 N 个币种
 
 
 def is_stablecoin(symbol: str) -> bool:
