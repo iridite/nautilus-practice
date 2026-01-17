@@ -316,9 +316,9 @@ def _print_results(result: BacktestResult):
     print("\n" + "=" * 65)
     print("🏆 Backtest Report")
     print("=" * 65)
-    print(f"⏱️ \tDuration:       {result.elapsed_time:.4f}s")
-    print(f"📝 \tOrders:         {result.total_orders}")
-    print(f"📍 \tPositions:      {result.total_positions}")
+    print(f"Duration:\t       {result.elapsed_time:.4f}s")
+    print(f"Orders:\t         {result.total_orders}")
+    print(f"Positions:\t      {result.total_positions}")
 
     if result.stats_pnls:
         for currency, metrics in result.stats_pnls.items():
@@ -326,6 +326,10 @@ def _print_results(result: BacktestResult):
             for k, v in metrics.items():
                 if v == v:  # Check for NaN
                     print(f"   * {k:<25}: {v:,.4f}")
+
+    if result.stats_returns:
+        for currency, val in result.stats_returns.items():
+            print(f"- {currency:<25} {val:,.4f}")
     print("=" * 65 + "\n")
 
 
