@@ -1,5 +1,6 @@
 import argparse
 import json
+import shutil
 import sys
 from pathlib import Path
 
@@ -136,6 +137,11 @@ def main():
         action="store_true",
         help="Skip automatic data retrieval",
     )
+    bt_parser.add_argument(
+        "--erase",
+        action="store_true",
+        help="Erase existing parquet catalog data before running backtest (forces re-import of all CSV data)",
+    )
 
     # Sandbox Command
     sb_parser = subparsers.add_parser(
@@ -152,6 +158,20 @@ def main():
     if not args.command:
         parser.print_help()
         return
+
+    # 处理 --erase 参数：清除 catalog 数据
+    if args.command == "backtest" and args.erase:
+        strategy_name = current_config.strategy.name
+        catalog_path = BASE_DIR / "data" / "parquet" / strategy_name
+        if catalog_path.exists():
+            print(f"🗑️  Erasing existing catalog data: {catalog_path}")
+            try:
+                shutil.rmtree(catalog_path)
+                print(f"✅ Catalog data erased successfully.")
+            except Exception as e:
+                print(f"⚠️ Failed to erase catalog: {e}")
+        else:
+            print(f"📂 No existing catalog found at: {catalog_path}")
 
     # 检测是否有关联的 Universe 文件
     universe_symbols = set()
