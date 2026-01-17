@@ -56,7 +56,7 @@ class RSSqueezeConfig(BaseStrategyConfig):
 
     # --- Relative Strength (RS) Params ---
     rs_lookback: int = 24  # Lookback for RS calculation (24 hours)
-    rs_threshold: float = 1.03  # 强化规范：RS > 1.03（约等于跑赢 BTC 3 个百分点）
+    rs_threshold: float = 1.1  # 强化规范：RS > 1.03（约等于跑赢 BTC 3 个百分点）
 
     # --- Squeeze Tightness Params ---
     bb_width_period: int = 100  # BB Width 分位数计算周期
