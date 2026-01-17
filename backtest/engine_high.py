@@ -61,6 +61,7 @@ def run_high_level(cfg: BackTestConfig, base_dir: Path):
 
     # (instrument_id, label) -> bar_type_str
     all_feed_types = {}
+    backtest_data_configs = []
 
     # 3.1 预处理并转换所有数据为 Parquet (Nautlius High-level 必须)
     for i, data_cfg in enumerate(cfg.data_feeds):
@@ -93,13 +94,15 @@ def run_high_level(cfg: BackTestConfig, base_dir: Path):
         except Exception as e:
             print(f"❌ Error loading {data_cfg.csv_file_name}: {e}")
 
-        BacktestDataConfig(
+        _BDC = BacktestDataConfig(
             catalog_path=str(catalog_path),
             data_cls="nautilus_trader.model.data:Bar",
             instrument_id=inst.id,
             start_time=cfg.start_date,
             end_time=cfg.end_date,
         )
+
+        backtest_data_configs.append(_BDC)
 
     # 3.2 实例化策略配置
     global_feeds = {
@@ -179,9 +182,11 @@ def run_high_level(cfg: BackTestConfig, base_dir: Path):
         risk_engine=RiskEngineConfig(bypass=False),
     )
 
+    assert len(backtest_data_configs) != 0, "No data feeds were configured."
+
     run_config = BacktestRunConfig(
         engine=eng_cfg,
-        data=data_configs,
+        data=backtest_data_configs,
         venues=venue_configs,
         raise_exception=True,
     )
