@@ -15,7 +15,7 @@ from nautilus_trader.backtest.node import (
 from nautilus_trader.backtest.results import BacktestResult
 from nautilus_trader.common.config import LoggingConfig
 from nautilus_trader.config import ImportableStrategyConfig, RiskEngineConfig
-from nautilus_trader.model.data import BarType
+from nautilus_trader.model.data import Bar, BarType
 from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.persistence.catalog import ParquetDataCatalog
 from nautilus_trader.persistence.loaders import CSVBarDataLoader
@@ -90,7 +90,9 @@ def run_high_level(cfg: BackTestConfig, base_dir: Path):
                 bar_type=BarType.from_str(feed_bar_type_str),
             )
         except Exception as e:
-            print(f"❌ Error loading {data_cfg.csv_file_name}: {e}")
+            print(
+                f"[Backtest Engine High] ❌ Error loading {data_cfg.csv_file_name}: {e}"
+            )
 
         _BDC = BacktestDataConfig(
             catalog_path=str(catalog_path),
@@ -205,8 +207,8 @@ def run_high_level(cfg: BackTestConfig, base_dir: Path):
     results = node.run()
     print("✅ Backtest Complete.")
 
-    if results:
-        _print_results(results[0])
+    # if results:
+    #     _print_results(results[0])
 
 
 def _print_results(result: BacktestResult):
@@ -239,15 +241,16 @@ def catalog_loader(
 
     优化点：
     1. 增加 force_rebuild 开关，默认跳过已存在的数据。
-    2. 使用 header() 代替 bars() 进行轻量级校验，避免内存溢出。
+    2. 使用 get_intervals() 代替 bars() 进行轻量级校验，避免内存溢出。
     3. 合并路径创建与对象初始化。
     """
 
     # 2. 检查数据是否已存在 (核心优化：避免重复解析巨大的 CSV)
     if not force_rebuild:
-        # header 仅读取元数据，极快且不占内存
-        existing_header = catalog.header(bar_type=bar_type, instrument_id=instrument.id)
-        if existing_header:
+        # 使用 get_intervals 检查 Catalog 中是否已有该数据的时间区间
+        # 这是比加载全部 bars 更轻量的方法
+        intervals = catalog.get_intervals(data_cls=Bar, identifier=str(bar_type))
+        if intervals:
             print(
                 f"✅ Data already exists in catalog for {instrument.id}, skipping CSV import."
             )
@@ -261,7 +264,7 @@ def catalog_loader(
         file_path=csv_path,
         index_col=0,
         usecols=["datetime", "open", "high", "low", "close", "volume"],
-        parse_dates=["datetime"],
+        parse_dates=True,
     )
     df.sort_index(inplace=True)
 
@@ -277,9 +280,9 @@ def catalog_loader(
     catalog.write_data(wrangler.process(df))
 
     # 5. 轻量级校验
-    header = catalog.header(bar_type=bar_type, instrument_id=instrument.id)
-    if header:
-        print(f"🚀 Successfully indexed {header.count} bars for {instrument.id}.")
+    intervals = catalog.get_intervals(data_cls=Bar, identifier=str(bar_type))
+    if intervals:
+        print(f"🚀 Successfully indexed bars for {instrument.id}.")
         return
     else:
         raise ValueError(f"❌ Failed to verify data in catalog for {instrument.id}")
