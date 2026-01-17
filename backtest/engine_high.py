@@ -60,7 +60,10 @@ def run_high_level(cfg: BackTestConfig, base_dir: Path):
 
     # 2. 数据处理与标的加载 (合并原有循环，减少冗余遍历)
     for data_cfg in cfg.data_feeds:
-        inst_id = data_cfg.instrument_id or str(cfg.instrument.instrument_id)
+        # 优先使用 data_cfg 中的 instrument_id，如果为 None 则回退到主标的配置
+        inst_id = data_cfg.instrument_id
+        if inst_id is None and cfg.instrument is not None:
+            inst_id = cfg.instrument.instrument_id
 
         # 2.1 按需加载标的信息 (仅加载有数据流定义的标的)
         if inst_id not in loaded_instruments:
@@ -134,7 +137,8 @@ def run_high_level(cfg: BackTestConfig, base_dir: Path):
         # 注意：resolve_params 内部会自动处理 cfg.strategy.params 中的原始参数
         strat_params = cfg.strategy.resolve_params(
             instrument_id=inst.id,
-            leverage=cfg.instrument.leverage,
+            leverage=cfg.instrument.leverage if cfg.instrument else 1,
+            # TODO：所以说杠杆不能跟 inst 绑定
             feed_bar_types=combined_feeds,
         )
 
@@ -152,9 +156,15 @@ def run_high_level(cfg: BackTestConfig, base_dir: Path):
     print(f"✅ Created {len(strategies)} strategy instances.")
 
     # 4. 配置交易所 (Venue)
+    venue_name = (
+        cfg.instrument.venue_name
+        if cfg.instrument
+        else cfg.data_feeds[0].csv_file_name.split("/")[-1].split("-")[0]
+    )
+
     venue_configs = [
         BacktestVenueConfig(
-            name=cfg.instrument.venue_name,
+            name=venue_name,
             oms_type="HEDGING",
             account_type="MARGIN",
             base_currency="USDT",  # TODO：到时候使用内置的货币类型
@@ -270,7 +280,7 @@ def catalog_loader(
     wrangler = BarDataWrangler(bar_type, instrument)
 
     # 写入标的信息 (NT 的写入是幂等的，多次写入同一个 Instrument 不会报错)
-    catalog.write_data(instrument)
+    catalog.write_data([instrument])
 
     # 写入 Bar 数据
     catalog.write_data(wrangler.process(df))

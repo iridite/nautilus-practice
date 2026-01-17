@@ -12,7 +12,9 @@ from backtest.engine_low import run_low_level
 from config.definitions import InstrumentConfig, InstrumentType
 from config.settings import (
     END_DATE,
+    INSTRUMENT_TYPE,
     START_DATE,
+    VENUE,
     current_config,
 )
 from utils.data_retrival import batch_fetch_ohlcv
@@ -69,6 +71,53 @@ def run_batch_data_retrieval(
         return []
 
 
+def get_default_venue_and_type():
+    """
+    获取默认的交易所和标的类型。
+    优先从 current_config.instrument 读取，如果为 None 则从全局设置读取。
+    """
+    if current_config.instrument:
+        return (
+            current_config.instrument.venue_name,
+            current_config.instrument.base_currency,
+            current_config.instrument.type,
+        )
+    else:
+        # 多标的模式：从全局设置读取默认值
+        return VENUE, "USDT", INSTRUMENT_TYPE
+
+
+def parse_universe_symbols(universe_symbols, venue, base_currency, inst_type):
+    """
+    从 Universe 符号列表中解析出 InstrumentID 列表。
+
+    Args:
+        universe_symbols: Universe 中的符号集合 (如 {"SOLUSDT:USDT", "BTCUSDT:USDT", ...})
+        venue: 交易所名称
+        base_currency: 基准货币
+        inst_type: 标的类型
+
+    Returns:
+        set: Instrument ID 集合
+    """
+    instrument_ids = set()
+    for symbol in universe_symbols:
+        raw_pair = symbol.split(":")[0]  # SOLUSDT:USDT -> SOLUSDT
+        # 提取 quote_currency (如 SOLUSDT -> SOL)
+        clean_quote = raw_pair.replace(base_currency, "")
+
+        # 使用 InstrumentConfig.get_id_for 动态生成符合交易所规范的 ID
+        inst_id = InstrumentConfig.get_id_for(
+            venue_name=venue,
+            base_currency=base_currency,
+            quote_currency=clean_quote,
+            inst_type=inst_type,
+        )
+        instrument_ids.add(inst_id)
+
+    return instrument_ids
+
+
 def main():
     parser = argparse.ArgumentParser(description="Nautilus Trader Unified Runner")
 
@@ -108,13 +157,19 @@ def main():
     universe_symbols = set()
     if args.command == "backtest":
         params = current_config.strategy.params
-        u_name = (
-            params.get("universe_filename")
-            if isinstance(params, dict)
-            else getattr(params, "universe_filename", None)
-        )
+        u_name = None
+        if isinstance(params, dict):
+            u_name = params.get("universe_filename") or params.get("universe_filepath")
+        else:
+            u_name = getattr(params, "universe_filename", None) or getattr(
+                params, "universe_filepath", None
+            )
         if u_name:
-            u_path = BASE_DIR / "data" / u_name
+            u_path = (
+                Path(u_name)
+                if Path(u_name).is_absolute()
+                else BASE_DIR / "data" / Path(u_name).name
+            )
             if u_path.exists():
                 try:
                     with open(u_path, "r") as f:
@@ -156,29 +211,41 @@ def main():
 
         # 1.2 如果存在 Universe，为其中的每个币种补充到任务列表 (使用 main feed 的参数)
         if universe_symbols:
+            # 尝试从 main feed 获取参数，如果没有则使用默认值
             main_feed = next(
                 (f for f in current_config.data_feeds if f.label == "main"), None
             )
+
+            # 获取默认参数
+            venue, base_currency, inst_type = get_default_venue_and_type()
+
             if main_feed:
                 try:
                     parts = main_feed.csv_file_name.split("/")
                     file_parts = parts[1].split("-")
                     exchange = file_parts[0]
                     timeframe = file_parts[2]
-
-                    for symbol in sorted(list(universe_symbols)):
-                        symbol_str = symbol.split(":")[0]  # SOLUSDT:USDT -> SOLUSDT
-                        if not check_data_exists(
-                            symbol_str, START_DATE, END_DATE, timeframe, exchange
-                        ):
-                            key = (exchange, timeframe, START_DATE, END_DATE)
-                            tasks.setdefault(key, set()).add(symbol_str)
-                        else:
-                            print(
-                                f"✅ Data exists for universe symbol: {symbol_str} ({exchange} {timeframe})"
-                            )
                 except Exception as e:
-                    print(f"⚠️ Failed to process universe data retrieval logic: {e}")
+                    print(f"⚠️ Failed to parse main feed, using defaults: {e}")
+                    exchange = venue.lower()
+                    timeframe = "1h"
+            else:
+                # 如果没有 main feed (纯 Universe 模式)，使用默认值
+                exchange = venue.lower()
+                timeframe = "1h"
+                print(f"📌 No main feed found, using defaults: {exchange} {timeframe}")
+
+            for symbol in sorted(list(universe_symbols)):
+                symbol_str = symbol.split(":")[0]  # SOLUSDT:USDT -> SOLUSDT
+                if not check_data_exists(
+                    symbol_str, START_DATE, END_DATE, timeframe, exchange
+                ):
+                    key = (exchange, timeframe, START_DATE, END_DATE)
+                    tasks.setdefault(key, set()).add(symbol_str)
+                else:
+                    print(
+                        f"✅ Data exists for universe symbol: {symbol_str} ({exchange} {timeframe})"
+                    )
 
         # 1.3 执行批量抓取并实时更新 current_config
         # 记录已经存在的 csv，防止重复添加
@@ -199,30 +266,33 @@ def main():
 
     # 2. Fetch & Update Instruments
     try:
-        instrument_ids = {current_config.instrument.instrument_id}
+        instrument_ids = set()
+
+        # 2.1 从 current_config.instrument 获取 (单标的模式)
+        if current_config.instrument:
+            instrument_ids.add(current_config.instrument.instrument_id)
+
+        # 2.2 从 data_feeds 获取已定义的 instrument_id
         for feed in current_config.data_feeds:
             if feed.instrument_id:
                 instrument_ids.add(feed.instrument_id)
 
-        for symbol in universe_symbols:
-            raw_pair = symbol.split(":")[0]
-            # 改进：不再硬编码 USDT 和 SWAP，而是从配置中读取
-            base_cur = current_config.instrument.base_currency
-            clean_base = raw_pair.replace(base_cur, "")
-            venue = current_config.instrument.venue_name
-            # 使用 InstrumentConfig.get_id_for 动态生成符合交易所规范的 ID
-            inst_id = InstrumentConfig.get_id_for(
-                venue_name=venue,
-                base_currency=base_cur,
-                quote_currency=clean_base,
-                inst_type=current_config.instrument.type,
+        # 2.3 从 Universe 解析 Instrument IDs (多标的模式)
+        if universe_symbols:
+            venue, base_currency, inst_type = get_default_venue_and_type()
+            universe_inst_ids = parse_universe_symbols(
+                universe_symbols, venue, base_currency, inst_type
             )
-            instrument_ids.add(inst_id)
+            instrument_ids.update(universe_inst_ids)
 
-        print(
-            f"🔄 Updating instrument definitions for: {len(instrument_ids)} instruments"
-        )
-        update_instruments(list(instrument_ids))
+        if instrument_ids:
+            print(
+                f"🔄 Updating instrument definitions for: {len(instrument_ids)} instruments"
+            )
+            update_instruments(list(instrument_ids))
+        else:
+            print("⚠️ No instruments to update.")
+
     except Exception as e:
         print(f"\t ⚠️ Failed to update instruments: {e}")
         print("\t Continuing with existing local files (if any)...")

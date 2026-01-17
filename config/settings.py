@@ -63,6 +63,59 @@ def create_data_cfg(symbol: str, timeframe: str, label: str = "main") -> DataCon
     )
 
 
+def create_instrument_cfg(symbol: str) -> InstrumentConfig:
+    """
+    根据符号创建 InstrumentConfig。
+    支持格式: "SOLUSDT", "SOLUSDT:USDT", "SOL"
+    """
+    # 解析符号
+    if ":" in symbol:
+        raw_pair = symbol.split(":")[0]  # SOLUSDT:USDT -> SOLUSDT
+    else:
+        raw_pair = symbol
+
+    # 提取 quote_currency (如 SOLUSDT -> SOL, BTCUSDT -> BTC)
+    base_currency = "USDT"
+    quote_currency = raw_pair.replace(base_currency, "")
+
+    return InstrumentConfig(
+        venue_name=VENUE,
+        quote_currency=quote_currency,
+        base_currency=base_currency,
+        type=INSTRUMENT_TYPE,
+    )
+
+
+def load_universe_symbols(universe_file: str) -> set:
+    """
+    从 Universe 文件加载所有符号。
+
+    Args:
+        universe_file: Universe 文件路径 (可以是绝对路径或相对于 data 目录的路径)
+
+    Returns:
+        set: 所有唯一符号的集合
+    """
+    u_path = Path(universe_file)
+    if not u_path.is_absolute():
+        u_path = project_root / "data" / u_path.name
+
+    if not u_path.exists():
+        print(f"⚠️ Universe file not found: {u_path}")
+        return set()
+
+    try:
+        with open(u_path, "r") as f:
+            u_data = json.load(f)
+            symbols = set()
+            for month_list in u_data.values():
+                symbols.update(month_list)
+            return symbols
+    except Exception as e:
+        print(f"⚠️ Failed to load universe file: {e}")
+        return set()
+
+
 # ==========================================
 # 3. 策略库定义 (Strategy Library)
 # ==========================================
@@ -110,18 +163,58 @@ def build_config() -> BackTestConfig:
 
     # 2. 检查策略是否带有 Universe
     params = ACTIVE_STRATEGY.params
-    universe_file = (
-        getattr(params, "universe_filename", None)
-        if not isinstance(params, dict)
-        else params.get("universe_filename")
-    )
+    universe_file = None
+    if isinstance(params, dict):
+        universe_file = params.get("universe_filename") or params.get(
+            "universe_filepath"
+        )
+    else:
+        universe_file = getattr(params, "universe_filename", None) or getattr(
+            params, "universe_filepath", None
+        )
 
     if universe_file:
         # --- 多标的模式 ---
         print(f"🌐 Building Multi-Asset Config from {universe_file}...")
-        # 注意：这里的 Instrument 加载在 main.py 里会根据 Universe 文件进一步补全
-        # 这里我们至少放一个主标的作为种子，或者留空让 main.py 填充
-        pass
+
+        # 加载 Universe 中的所有符号
+        universe_symbols = load_universe_symbols(universe_file)
+
+        if universe_symbols:
+            print(f"🌌 Universe loaded: {len(universe_symbols)} unique symbols found.")
+
+            # 为每个符号创建 InstrumentConfig 和 DataConfig
+            for symbol in sorted(universe_symbols):
+                raw_symbol = symbol.split(":")[0]  # SOLUSDT:USDT -> SOLUSDT
+
+                # 创建 InstrumentConfig
+                inst_cfg = create_instrument_cfg(symbol)
+                final_instruments.append(inst_cfg)
+
+                # 创建主数据流 (main)
+                data_cfg = create_data_cfg(raw_symbol, MAIN_TIMEFRAME, "main")
+                # 绑定 instrument_id 到 data_cfg
+                data_cfg.instrument_id = inst_cfg.instrument_id
+                final_data_feeds.append(data_cfg)
+
+                # 可选：为每个标的创建趋势数据流 (trend)
+                # 注意：这会大幅增加数据量，如果不需要可以注释掉
+                # trend_cfg = create_data_cfg(raw_symbol, TREND_TIMEFRAME, "trend")
+                # trend_cfg.instrument_id = inst_cfg.instrument_id
+                # final_data_feeds.append(trend_cfg)
+        else:
+            print("⚠️ No symbols found in universe, falling back to single-asset mode.")
+            # 回退到单标的模式
+            inst = InstrumentConfig(
+                venue_name=VENUE,
+                quote_currency=PRIMARY_SYMBOL.replace("USDT", ""),
+                base_currency="USDT",
+                type=INSTRUMENT_TYPE,
+            )
+            final_instruments.append(inst)
+            final_data_feeds.append(
+                create_data_cfg(PRIMARY_SYMBOL, MAIN_TIMEFRAME, "main")
+            )
     else:
         # --- 单标的模式 ---
         print(f"🎯 Building Single-Asset Config for {PRIMARY_SYMBOL}...")
@@ -133,16 +226,41 @@ def build_config() -> BackTestConfig:
         )
         final_instruments.append(inst)
         # 添加数据流
-        final_data_feeds.append(create_data_cfg(PRIMARY_SYMBOL, MAIN_TIMEFRAME, "main"))
-        final_data_feeds.append(
-            create_data_cfg(PRIMARY_SYMBOL, TREND_TIMEFRAME, "trend")
-        )
+        main_cfg = create_data_cfg(PRIMARY_SYMBOL, MAIN_TIMEFRAME, "main")
+        main_cfg.instrument_id = inst.instrument_id
+        final_data_feeds.append(main_cfg)
 
-    # 3. 无论什么策略，通常都需要一个 Benchmark (如 BTC)?
-    final_data_feeds.append(create_data_cfg("BTCUSDT", MAIN_TIMEFRAME, "benchmark"))
+        trend_cfg = create_data_cfg(PRIMARY_SYMBOL, TREND_TIMEFRAME, "trend")
+        trend_cfg.instrument_id = inst.instrument_id
+        final_data_feeds.append(trend_cfg)
+
+    # 3. 无论什么策略，通常都需要一个 Benchmark (如 BTC)
+    # 检查 BTC 是否已经在列表中
+    btc_exists = any(inst.quote_currency == "BTC" for inst in final_instruments)
+    if not btc_exists:
+        btc_inst = InstrumentConfig(
+            venue_name=VENUE,
+            quote_currency="BTC",
+            base_currency="USDT",
+            type=INSTRUMENT_TYPE,
+        )
+        final_instruments.append(btc_inst)
+
+    # 添加 benchmark 数据流
+    benchmark_cfg = create_data_cfg("BTCUSDT", MAIN_TIMEFRAME, "benchmark")
+    # 找到 BTC 的 instrument_id
+    for inst in final_instruments:
+        if inst.quote_currency == "BTC":
+            benchmark_cfg.instrument_id = inst.instrument_id
+            break
+    final_data_feeds.append(benchmark_cfg)
+
+    # 4. 选择主标的 (用于兼容单标的模式的旧代码)
+    # 在多标的模式下，选择第一个作为"主标的"用于兼容性
+    primary_instrument = final_instruments[0] if final_instruments else None
 
     return BackTestConfig(
-        instrument=final_instruments[0] if final_instruments else None,  # type: ignore
+        instrument=primary_instrument,
         instruments=final_instruments,
         data_feeds=final_data_feeds,
         strategy=ACTIVE_STRATEGY,
@@ -150,11 +268,13 @@ def build_config() -> BackTestConfig:
         end_date=END_DATE,
         initial_balances=INITIAL_BALANCES,
         logging=LogConfig(
+            log_level="INFO",
+            log_level_file="DEBUG",
             log_component_levels={
                 "BacktestEngine": "INFO",
                 "DataFeed": "DEBUG",
                 "RSSqueezeStrategy": "INFO",
-            }
+            },
         ),
     )
 
