@@ -20,9 +20,10 @@ STABLECOINS = [
     "GBP",
     "ETH",
     "BTC",
+    "KNC",
 ]
-MIN_COUNT_RATIO = 0.85  # 当月数据完整度阈值
-TOP_Ns = [1]  # 选取前 N 个币种
+MIN_COUNT_RATIO = 0.9  # 当月数据完整度阈值
+TOP_Ns = [1, 25, 50]  # 选取前 N 个币种
 
 
 def is_stablecoin(symbol: str) -> bool:

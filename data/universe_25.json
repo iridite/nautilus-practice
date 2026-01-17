@@ -1,12 +1,8 @@
 {
     "2020-02": [
-        "BTCUSDT:USDT",
-        "BCHUSDT:USDT",
-        "ETHUSDT:USDT"
+        "BCHUSDT:USDT"
     ],
     "2020-03": [
-        "BTCUSDT:USDT",
-        "ETHUSDT:USDT",
         "BCHUSDT:USDT",
         "ETCUSDT:USDT",
         "LTCUSDT:USDT",
@@ -15,13 +11,9 @@
         "TRXUSDT:USDT",
         "ADAUSDT:USDT",
         "XMRUSDT:USDT",
-        "XLMUSDT:USDT",
-        "DASHUSDT:USDT",
-        "ZECUSDT:USDT"
+        "XLMUSDT:USDT"
     ],
     "2020-04": [
-        "BTCUSDT:USDT",
-        "ETHUSDT:USDT",
         "BCHUSDT:USDT",
         "LINKUSDT:USDT",
         "LTCUSDT:USDT",
@@ -45,8 +37,6 @@
         "IOTAUSDT:USDT"
     ],
     "2020-05": [
-        "BTCUSDT:USDT",
-        "ETHUSDT:USDT",
         "LINKUSDT:USDT",
         "BCHUSDT:USDT",
         "XTZUSDT:USDT",
@@ -70,8 +60,6 @@
         "IOTAUSDT:USDT"
     ],
     "2020-06": [
-        "BTCUSDT:USDT",
-        "ETHUSDT:USDT",
         "BCHUSDT:USDT",
         "LINKUSDT:USDT",
         "ETCUSDT:USDT",
@@ -95,8 +83,6 @@
         "IOTAUSDT:USDT"
     ],
     "2020-07": [
-        "BTCUSDT:USDT",
-        "ETHUSDT:USDT",
         "ADAUSDT:USDT",
         "BCHUSDT:USDT",
         "LINKUSDT:USDT",
@@ -121,8 +107,6 @@
         "IOTAUSDT:USDT"
     ],
     "2020-08": [
-        "BTCUSDT:USDT",
-        "ETHUSDT:USDT",
         "LINKUSDT:USDT",
         "ADAUSDT:USDT",
         "VETUSDT:USDT",
@@ -134,7 +118,6 @@
         "BNBUSDT:USDT",
         "ATOMUSDT:USDT",
         "ETCUSDT:USDT",
-        "KNCUSDT:USDT",
         "TRXUSDT:USDT",
         "ALGOUSDT:USDT",
         "COMPUSDT:USDT",
@@ -145,11 +128,12 @@
         "BATUSDT:USDT",
         "ZILUSDT:USDT",
         "QTUMUSDT:USDT",
-        "XMRUSDT:USDT"
+        "XMRUSDT:USDT",
+        "ZRXUSDT:USDT",
+        "THETAUSDT:USDT",
+        "DASHUSDT:USDT"
     ],
     "2020-09": [
-        "BTCUSDT:USDT",
-        "ETHUSDT:USDT",
         "LINKUSDT:USDT",
         "XRPUSDT:USDT",
         "BANDUSDT:USDT",
@@ -172,11 +156,11 @@
         "RLCUSDT:USDT",
         "THETAUSDT:USDT",
         "QTUMUSDT:USDT",
-        "BATUSDT:USDT"
+        "BATUSDT:USDT",
+        "ONTUSDT:USDT",
+        "IOSTUSDT:USDT"
     ],
     "2020-10": [
-        "BTCUSDT:USDT",
-        "ETHUSDT:USDT",
         "LINKUSDT:USDT",
         "SUSHIUSDT:USDT",
         "TRXUSDT:USDT",
@@ -199,11 +183,11 @@
         "ETCUSDT:USDT",
         "IOSTUSDT:USDT",
         "ALGOUSDT:USDT",
-        "ZECUSDT:USDT"
+        "ZECUSDT:USDT",
+        "RLCUSDT:USDT",
+        "SNXUSDT:USDT"
     ],
     "2020-11": [
-        "BTCUSDT:USDT",
-        "ETHUSDT:USDT",
         "LINKUSDT:USDT",
         "YFIUSDT:USDT",
         "BCHUSDT:USDT",
@@ -226,11 +210,11 @@
         "XTZUSDT:USDT",
         "COMPUSDT:USDT",
         "NEOUSDT:USDT",
-        "ETCUSDT:USDT"
+        "ETCUSDT:USDT",
+        "XLMUSDT:USDT",
+        "VETUSDT:USDT"
     ],
     "2020-12": [
-        "BTCUSDT:USDT",
-        "ETHUSDT:USDT",
         "XRPUSDT:USDT",
         "LINKUSDT:USDT",
         "YFIUSDT:USDT",
@@ -253,11 +237,11 @@
         "VETUSDT:USDT",
         "COMPUSDT:USDT",
         "XMRUSDT:USDT",
-        "RSRUSDT:USDT"
+        "RSRUSDT:USDT",
+        "TRBUSDT:USDT",
+        "DASHUSDT:USDT"
     ],
     "2021-01": [
-        "BTCUSDT:USDT",
-        "ETHUSDT:USDT",
         "XRPUSDT:USDT",
         "LTCUSDT:USDT",
         "LINKUSDT:USDT",
@@ -280,11 +264,11 @@
         "CRVUSDT:USDT",
         "VETUSDT:USDT",
         "XMRUSDT:USDT",
-        "SNXUSDT:USDT"
+        "SNXUSDT:USDT",
+        "BANDUSDT:USDT",
+        "XTZUSDT:USDT"
     ],
     "2021-02": [
-        "BTCUSDT:USDT",
-        "ETHUSDT:USDT",
         "XRPUSDT:USDT",
         "LINKUSDT:USDT",
         "LTCUSDT:USDT",
@@ -307,11 +291,11 @@
         "SOLUSDT:USDT",
         "IOSTUSDT:USDT",
         "VETUSDT:USDT",
-        "AVAXUSDT:USDT"
+        "AVAXUSDT:USDT",
+        "ZECUSDT:USDT",
+        "ATOMUSDT:USDT"
     ],
     "2021-03": [
-        "BTCUSDT:USDT",
-        "ETHUSDT:USDT",
         "BNBUSDT:USDT",
         "XRPUSDT:USDT",
         "ADAUSDT:USDT",
@@ -334,11 +318,11 @@
         "XTZUSDT:USDT",
         "EGLDUSDT:USDT",
         "ATOMUSDT:USDT",
-        "DASHUSDT:USDT"
+        "DASHUSDT:USDT",
+        "SOLUSDT:USDT",
+        "IOSTUSDT:USDT"
     ],
     "2021-04": [
-        "BTCUSDT:USDT",
-        "ETHUSDT:USDT",
         "BNBUSDT:USDT",
         "ADAUSDT:USDT",
         "CHZUSDT:USDT",
@@ -361,11 +345,11 @@
         "XLMUSDT:USDT",
         "SOLUSDT:USDT",
         "ETCUSDT:USDT",
-        "DOGEUSDT:USDT"
+        "DOGEUSDT:USDT",
+        "CRVUSDT:USDT",
+        "SKLUSDT:USDT"
     ],
     "2021-05": [
-        "BTCUSDT:USDT",
-        "ETHUSDT:USDT",
         "XRPUSDT:USDT",
         "BNBUSDT:USDT",
         "DOGEUSDT:USDT",
@@ -388,11 +372,11 @@
         "ENJUSDT:USDT",
         "AAVEUSDT:USDT",
         "AVAXUSDT:USDT",
-        "DENTUSDT:USDT"
+        "DENTUSDT:USDT",
+        "SUSHIUSDT:USDT",
+        "XTZUSDT:USDT"
     ],
     "2021-06": [
-        "BTCUSDT:USDT",
-        "ETHUSDT:USDT",
         "DOGEUSDT:USDT",
         "XRPUSDT:USDT",
         "ETCUSDT:USDT",
@@ -415,11 +399,11 @@
         "NEOUSDT:USDT",
         "QTUMUSDT:USDT",
         "AVAXUSDT:USDT",
-        "THETAUSDT:USDT"
+        "THETAUSDT:USDT",
+        "CHZUSDT:USDT",
+        "ZECUSDT:USDT"
     ],
     "2021-07": [
-        "BTCUSDT:USDT",
-        "ETHUSDT:USDT",
         "DOGEUSDT:USDT",
         "BNBUSDT:USDT",
         "XRPUSDT:USDT",
@@ -442,11 +426,11 @@
         "UNIUSDT:USDT",
         "RUNEUSDT:USDT",
         "SUSHIUSDT:USDT",
-        "1INCHUSDT:USDT"
+        "1INCHUSDT:USDT",
+        "CRVUSDT:USDT",
+        "YFIUSDT:USDT"
     ],
     "2021-08": [
-        "BTCUSDT:USDT",
-        "ETHUSDT:USDT",
         "AXSUSDT:USDT",
         "BNBUSDT:USDT",
         "DOGEUSDT:USDT",
@@ -469,11 +453,11 @@
         "1000SHIBUSDT:USDT",
         "FILUSDT:USDT",
         "CHZUSDT:USDT",
-        "COMPUSDT:USDT"
+        "COMPUSDT:USDT",
+        "XLMUSDT:USDT",
+        "SNXUSDT:USDT"
     ],
     "2021-09": [
-        "BTCUSDT:USDT",
-        "ETHUSDT:USDT",
         "XRPUSDT:USDT",
         "ADAUSDT:USDT",
         "DOGEUSDT:USDT",
@@ -496,11 +480,11 @@
         "DENTUSDT:USDT",
         "1000SHIBUSDT:USDT",
         "CHZUSDT:USDT",
-        "TRXUSDT:USDT"
+        "TRXUSDT:USDT",
+        "XLMUSDT:USDT",
+        "VETUSDT:USDT"
     ],
     "2021-10": [
-        "BTCUSDT:USDT",
-        "ETHUSDT:USDT",
         "SOLUSDT:USDT",
         "ADAUSDT:USDT",
         "XRPUSDT:USDT",
@@ -523,11 +507,11 @@
         "COTIUSDT:USDT",
         "UNIUSDT:USDT",
         "ALICEUSDT:USDT",
-        "SUSHIUSDT:USDT"
+        "SUSHIUSDT:USDT",
+        "1000SHIBUSDT:USDT",
+        "C98USDT:USDT"
     ],
     "2021-11": [
-        "BTCUSDT:USDT",
-        "ETHUSDT:USDT",
         "1000SHIBUSDT:USDT",
         "SOLUSDT:USDT",
         "AXSUSDT:USDT",
@@ -550,11 +534,11 @@
         "ETCUSDT:USDT",
         "ALGOUSDT:USDT",
         "1INCHUSDT:USDT",
-        "NEARUSDT:USDT"
+        "NEARUSDT:USDT",
+        "CRVUSDT:USDT",
+        "BCHUSDT:USDT"
     ],
     "2021-12": [
-        "BTCUSDT:USDT",
-        "ETHUSDT:USDT",
         "SANDUSDT:USDT",
         "1000SHIBUSDT:USDT",
         "MANAUSDT:USDT",
@@ -577,11 +561,11 @@
         "ENJUSDT:USDT",
         "FILUSDT:USDT",
         "ALGOUSDT:USDT",
-        "DYDXUSDT:USDT"
+        "DYDXUSDT:USDT",
+        "CRVUSDT:USDT",
+        "ATOMUSDT:USDT"
     ],
     "2022-01": [
-        "BTCUSDT:USDT",
-        "ETHUSDT:USDT",
         "SANDUSDT:USDT",
         "SOLUSDT:USDT",
         "GALAUSDT:USDT",
@@ -604,11 +588,11 @@
         "XTZUSDT:USDT",
         "DYDXUSDT:USDT",
         "FILUSDT:USDT",
-        "AXSUSDT:USDT"
+        "AXSUSDT:USDT",
+        "EGLDUSDT:USDT",
+        "YFIUSDT:USDT"
     ],
     "2022-02": [
-        "BTCUSDT:USDT",
-        "ETHUSDT:USDT",
         "ATOMUSDT:USDT",
         "NEARUSDT:USDT",
         "ADAUSDT:USDT",
@@ -631,11 +615,11 @@
         "LRCUSDT:USDT",
         "ROSEUSDT:USDT",
         "DYDXUSDT:USDT",
-        "AXSUSDT:USDT"
+        "AXSUSDT:USDT",
+        "FILUSDT:USDT",
+        "AAVEUSDT:USDT"
     ],
     "2022-03": [
-        "BTCUSDT:USDT",
-        "ETHUSDT:USDT",
         "GALAUSDT:USDT",
         "1000SHIBUSDT:USDT",
         "SOLUSDT:USDT",
@@ -658,11 +642,11 @@
         "THETAUSDT:USDT",
         "ONEUSDT:USDT",
         "XTZUSDT:USDT",
-        "FILUSDT:USDT"
+        "FILUSDT:USDT",
+        "LRCUSDT:USDT",
+        "DYDXUSDT:USDT"
     ],
     "2022-04": [
-        "BTCUSDT:USDT",
-        "ETHUSDT:USDT",
         "SOLUSDT:USDT",
         "AVAXUSDT:USDT",
         "ETCUSDT:USDT",
@@ -685,11 +669,11 @@
         "LINKUSDT:USDT",
         "FILUSDT:USDT",
         "PEOPLEUSDT:USDT",
-        "IMXUSDT:USDT"
+        "IMXUSDT:USDT",
+        "LTCUSDT:USDT",
+        "ZECUSDT:USDT"
     ],
     "2022-05": [
-        "BTCUSDT:USDT",
-        "ETHUSDT:USDT",
         "GMTUSDT:USDT",
         "APEUSDT:USDT",
         "NEARUSDT:USDT",
@@ -700,7 +684,6 @@
         "AVAXUSDT:USDT",
         "XRPUSDT:USDT",
         "ADAUSDT:USDT",
-        "KNCUSDT:USDT",
         "ETCUSDT:USDT",
         "MTLUSDT:USDT",
         "BNBUSDT:USDT",
@@ -712,11 +695,12 @@
         "ATOMUSDT:USDT",
         "AAVEUSDT:USDT",
         "RUNEUSDT:USDT",
-        "OGNUSDT:USDT"
+        "OGNUSDT:USDT",
+        "LINKUSDT:USDT",
+        "LTCUSDT:USDT",
+        "ZRXUSDT:USDT"
     ],
     "2022-06": [
-        "BTCUSDT:USDT",
-        "ETHUSDT:USDT",
         "GMTUSDT:USDT",
         "APEUSDT:USDT",
         "SOLUSDT:USDT",
@@ -727,7 +711,6 @@
         "BNBUSDT:USDT",
         "ZILUSDT:USDT",
         "XRPUSDT:USDT",
-        "KNCUSDT:USDT",
         "DOTUSDT:USDT",
         "GALAUSDT:USDT",
         "SANDUSDT:USDT",
@@ -739,11 +722,12 @@
         "MANAUSDT:USDT",
         "ATOMUSDT:USDT",
         "ETCUSDT:USDT",
-        "ALGOUSDT:USDT"
+        "ALGOUSDT:USDT",
+        "BELUSDT:USDT",
+        "LTCUSDT:USDT",
+        "LINKUSDT:USDT"
     ],
     "2022-07": [
-        "BTCUSDT:USDT",
-        "ETHUSDT:USDT",
         "SOLUSDT:USDT",
         "GMTUSDT:USDT",
         "ADAUSDT:USDT",
@@ -766,11 +750,11 @@
         "LTCUSDT:USDT",
         "STORJUSDT:USDT",
         "ATOMUSDT:USDT",
-        "RSRUSDT:USDT"
+        "RSRUSDT:USDT",
+        "MANAUSDT:USDT",
+        "SNXUSDT:USDT"
     ],
     "2022-08": [
-        "BTCUSDT:USDT",
-        "ETHUSDT:USDT",
         "ETCUSDT:USDT",
         "SOLUSDT:USDT",
         "GMTUSDT:USDT",
@@ -793,11 +777,11 @@
         "AXSUSDT:USDT",
         "AAVEUSDT:USDT",
         "LTCUSDT:USDT",
-        "TRBUSDT:USDT"
+        "TRBUSDT:USDT",
+        "GALAUSDT:USDT",
+        "BCHUSDT:USDT"
     ],
     "2022-09": [
-        "BTCUSDT:USDT",
-        "ETHUSDT:USDT",
         "ETCUSDT:USDT",
         "SOLUSDT:USDT",
         "BNBUSDT:USDT",
@@ -820,11 +804,11 @@
         "FLOWUSDT:USDT",
         "LTCUSDT:USDT",
         "CRVUSDT:USDT",
-        "ANKRUSDT:USDT"
+        "ANKRUSDT:USDT",
+        "GALAUSDT:USDT",
+        "AXSUSDT:USDT"
     ],
     "2022-10": [
-        "BTCUSDT:USDT",
-        "ETHUSDT:USDT",
         "XRPUSDT:USDT",
         "ETCUSDT:USDT",
         "SOLUSDT:USDT",
@@ -847,11 +831,11 @@
         "CRVUSDT:USDT",
         "BCHUSDT:USDT",
         "RSRUSDT:USDT",
-        "TRBUSDT:USDT"
+        "TRBUSDT:USDT",
+        "AXSUSDT:USDT",
+        "SANDUSDT:USDT"
     ],
     "2022-11": [
-        "BTCUSDT:USDT",
-        "ETHUSDT:USDT",
         "DOGEUSDT:USDT",
         "XRPUSDT:USDT",
         "SOLUSDT:USDT",
@@ -874,11 +858,11 @@
         "LUNA2USDT:USDT",
         "MASKUSDT:USDT",
         "AXSUSDT:USDT",
-        "ENSUSDT:USDT"
+        "ENSUSDT:USDT",
+        "LTCUSDT:USDT",
+        "DYDXUSDT:USDT"
     ],
     "2022-12": [
-        "BTCUSDT:USDT",
-        "ETHUSDT:USDT",
         "DOGEUSDT:USDT",
         "SOLUSDT:USDT",
         "BNBUSDT:USDT",
@@ -901,11 +885,11 @@
         "NEARUSDT:USDT",
         "AVAXUSDT:USDT",
         "SUSHIUSDT:USDT",
-        "PEOPLEUSDT:USDT"
+        "PEOPLEUSDT:USDT",
+        "ALGOUSDT:USDT",
+        "OPUSDT:USDT"
     ],
     "2023-01": [
-        "BTCUSDT:USDT",
-        "ETHUSDT:USDT",
         "DOGEUSDT:USDT",
         "BNBUSDT:USDT",
         "XRPUSDT:USDT",
@@ -928,11 +912,11 @@
         "BANDUSDT:USDT",
         "RLCUSDT:USDT",
         "1000LUNCUSDT:USDT",
-        "1000SHIBUSDT:USDT"
+        "1000SHIBUSDT:USDT",
+        "GMTUSDT:USDT",
+        "CRVUSDT:USDT"
     ],
     "2023-02": [
-        "BTCUSDT:USDT",
-        "ETHUSDT:USDT",
         "APTUSDT:USDT",
         "SOLUSDT:USDT",
         "DOGEUSDT:USDT",
@@ -955,11 +939,11 @@
         "SANDUSDT:USDT",
         "MASKUSDT:USDT",
         "LDOUSDT:USDT",
-        "DOTUSDT:USDT"
+        "DOTUSDT:USDT",
+        "FILUSDT:USDT",
+        "CRVUSDT:USDT"
     ],
     "2023-03": [
-        "BTCUSDT:USDT",
-        "ETHUSDT:USDT",
         "APTUSDT:USDT",
         "SOLUSDT:USDT",
         "OPUSDT:USDT",
@@ -982,11 +966,11 @@
         "MASKUSDT:USDT",
         "DOTUSDT:USDT",
         "MAGICUSDT:USDT",
-        "FETUSDT:USDT"
+        "FETUSDT:USDT",
+        "NEARUSDT:USDT",
+        "GMTUSDT:USDT"
     ],
     "2023-04": [
-        "BTCUSDT:USDT",
-        "ETHUSDT:USDT",
         "XRPUSDT:USDT",
         "CFXUSDT:USDT",
         "MASKUSDT:USDT",
@@ -1009,11 +993,11 @@
         "1000SHIBUSDT:USDT",
         "MAGICUSDT:USDT",
         "DOTUSDT:USDT",
-        "SANDUSDT:USDT"
+        "SANDUSDT:USDT",
+        "SNXUSDT:USDT",
+        "ATOMUSDT:USDT"
     ],
     "2023-05": [
-        "BTCUSDT:USDT",
-        "ETHUSDT:USDT",
         "ARBUSDT:USDT",
         "DOGEUSDT:USDT",
         "XRPUSDT:USDT",
@@ -1036,12 +1020,11 @@
         "GALAUSDT:USDT",
         "DYDXUSDT:USDT",
         "1000SHIBUSDT:USDT",
-        "LDOUSDT:USDT"
+        "LDOUSDT:USDT",
+        "DOTUSDT:USDT",
+        "APEUSDT:USDT"
     ],
     "2023-06": [
-        "BTCUSDT:USDT",
-        "ETHUSDT:USDT",
-        "1000PEPEUSDT:USDT",
         "XRPUSDT:USDT",
         "ARPAUSDT:USDT",
         "ARBUSDT:USDT",
@@ -1063,11 +1046,12 @@
         "STXUSDT:USDT",
         "IDUSDT:USDT",
         "CTSIUSDT:USDT",
-        "LINKUSDT:USDT"
+        "LINKUSDT:USDT",
+        "AVAXUSDT:USDT",
+        "RLCUSDT:USDT",
+        "FILUSDT:USDT"
     ],
     "2023-07": [
-        "BTCUSDT:USDT",
-        "ETHUSDT:USDT",
         "BCHUSDT:USDT",
         "1000PEPEUSDT:USDT",
         "XRPUSDT:USDT",
@@ -1090,11 +1074,11 @@
         "LINKUSDT:USDT",
         "MASKUSDT:USDT",
         "SANDUSDT:USDT",
-        "FILUSDT:USDT"
+        "FILUSDT:USDT",
+        "1000SHIBUSDT:USDT",
+        "LDOUSDT:USDT"
     ],
     "2023-08": [
-        "BTCUSDT:USDT",
-        "ETHUSDT:USDT",
         "XRPUSDT:USDT",
         "BCHUSDT:USDT",
         "SOLUSDT:USDT",
@@ -1113,15 +1097,15 @@
         "FILUSDT:USDT",
         "APEUSDT:USDT",
         "ETCUSDT:USDT",
-        "XVGUSDT:USDT",
         "APTUSDT:USDT",
         "AVAXUSDT:USDT",
         "OGNUSDT:USDT",
-        "1INCHUSDT:USDT"
+        "1INCHUSDT:USDT",
+        "MASKUSDT:USDT",
+        "INJUSDT:USDT",
+        "CFXUSDT:USDT"
     ],
     "2023-09": [
-        "BTCUSDT:USDT",
-        "ETHUSDT:USDT",
         "XRPUSDT:USDT",
         "SOLUSDT:USDT",
         "1000SHIBUSDT:USDT",
@@ -1129,7 +1113,6 @@
         "BCHUSDT:USDT",
         "LTCUSDT:USDT",
         "DOGEUSDT:USDT",
-        "YGGUSDT:USDT",
         "OPUSDT:USDT",
         "1000PEPEUSDT:USDT",
         "RUNEUSDT:USDT",
@@ -1144,11 +1127,12 @@
         "APTUSDT:USDT",
         "ADAUSDT:USDT",
         "COMPUSDT:USDT",
-        "CFXUSDT:USDT"
+        "CFXUSDT:USDT",
+        "ARBUSDT:USDT",
+        "C98USDT:USDT",
+        "SFPUSDT:USDT"
     ],
     "2023-10": [
-        "BTCUSDT:USDT",
-        "ETHUSDT:USDT",
         "TRBUSDT:USDT",
         "SOLUSDT:USDT",
         "WLDUSDT:USDT",
@@ -1171,11 +1155,11 @@
         "RUNEUSDT:USDT",
         "ADAUSDT:USDT",
         "CFXUSDT:USDT",
-        "APTUSDT:USDT"
+        "APTUSDT:USDT",
+        "GALAUSDT:USDT",
+        "1000SHIBUSDT:USDT"
     ],
     "2023-11": [
-        "BTCUSDT:USDT",
-        "ETHUSDT:USDT",
         "SOLUSDT:USDT",
         "TRBUSDT:USDT",
         "XRPUSDT:USDT",
@@ -1198,11 +1182,11 @@
         "MINAUSDT:USDT",
         "CFXUSDT:USDT",
         "OPUSDT:USDT",
-        "ADAUSDT:USDT"
+        "ADAUSDT:USDT",
+        "APEUSDT:USDT",
+        "DOTUSDT:USDT"
     ],
     "2023-12": [
-        "BTCUSDT:USDT",
-        "ETHUSDT:USDT",
         "SOLUSDT:USDT",
         "GASUSDT:USDT",
         "XRPUSDT:USDT",
@@ -1225,11 +1209,11 @@
         "1000PEPEUSDT:USDT",
         "RUNEUSDT:USDT",
         "LTCUSDT:USDT",
-        "OPUSDT:USDT"
+        "OPUSDT:USDT",
+        "SEIUSDT:USDT",
+        "STORJUSDT:USDT"
     ],
     "2024-01": [
-        "BTCUSDT:USDT",
-        "ETHUSDT:USDT",
         "SOLUSDT:USDT",
         "ORDIUSDT:USDT",
         "AVAXUSDT:USDT",
@@ -1252,11 +1236,11 @@
         "NEARUSDT:USDT",
         "WLDUSDT:USDT",
         "MEMEUSDT:USDT",
-        "ICPUSDT:USDT"
+        "ICPUSDT:USDT",
+        "ATOMUSDT:USDT",
+        "STXUSDT:USDT"
     ],
     "2024-02": [
-        "BTCUSDT:USDT",
-        "ETHUSDT:USDT",
         "SOLUSDT:USDT",
         "ORDIUSDT:USDT",
         "ARBUSDT:USDT",
@@ -1279,11 +1263,11 @@
         "ENSUSDT:USDT",
         "GMTUSDT:USDT",
         "BLURUSDT:USDT",
-        "NEARUSDT:USDT"
+        "NEARUSDT:USDT",
+        "LTCUSDT:USDT",
+        "ICPUSDT:USDT"
     ],
     "2024-03": [
-        "BTCUSDT:USDT",
-        "ETHUSDT:USDT",
         "SOLUSDT:USDT",
         "WLDUSDT:USDT",
         "XRPUSDT:USDT",
@@ -1306,11 +1290,11 @@
         "LPTUSDT:USDT",
         "INJUSDT:USDT",
         "COTIUSDT:USDT",
-        "ETCUSDT:USDT"
+        "ETCUSDT:USDT",
+        "ALTUSDT:USDT",
+        "WIFUSDT:USDT"
     ],
     "2024-04": [
-        "BTCUSDT:USDT",
-        "ETHUSDT:USDT",
         "SOLUSDT:USDT",
         "DOGEUSDT:USDT",
         "1000PEPEUSDT:USDT",
@@ -1333,11 +1317,11 @@
         "1000BONKUSDT:USDT",
         "FETUSDT:USDT",
         "SUIUSDT:USDT",
-        "LINKUSDT:USDT"
+        "LINKUSDT:USDT",
+        "DOTUSDT:USDT",
+        "POLYXUSDT:USDT"
     ],
     "2024-05": [
-        "BTCUSDT:USDT",
-        "ETHUSDT:USDT",
         "SOLUSDT:USDT",
         "DOGEUSDT:USDT",
         "ENAUSDT:USDT",
@@ -1356,15 +1340,15 @@
         "FILUSDT:USDT",
         "NEOUSDT:USDT",
         "ONGUSDT:USDT",
-        "ETHFIUSDT:USDT",
         "ADAUSDT:USDT",
         "JTOUSDT:USDT",
         "ARBUSDT:USDT",
-        "ONDOUSDT:USDT"
+        "ONDOUSDT:USDT",
+        "WUSDT:USDT",
+        "ETCUSDT:USDT",
+        "LINKUSDT:USDT"
     ],
     "2024-06": [
-        "BTCUSDT:USDT",
-        "ETHUSDT:USDT",
         "SOLUSDT:USDT",
         "1000PEPEUSDT:USDT",
         "DOGEUSDT:USDT",
@@ -1381,17 +1365,17 @@
         "BOMEUSDT:USDT",
         "NEARUSDT:USDT",
         "LINKUSDT:USDT",
-        "ETHFIUSDT:USDT",
         "1000FLOKIUSDT:USDT",
         "AVAXUSDT:USDT",
         "ETCUSDT:USDT",
         "ARBUSDT:USDT",
         "OPUSDT:USDT",
-        "BCHUSDT:USDT"
+        "BCHUSDT:USDT",
+        "JTOUSDT:USDT",
+        "FILUSDT:USDT",
+        "ADAUSDT:USDT"
     ],
     "2024-07": [
-        "BTCUSDT:USDT",
-        "ETHUSDT:USDT",
         "SOLUSDT:USDT",
         "NOTUSDT:USDT",
         "1000PEPEUSDT:USDT",
@@ -1414,11 +1398,11 @@
         "INJUSDT:USDT",
         "CRVUSDT:USDT",
         "1000BONKUSDT:USDT",
-        "ONDOUSDT:USDT"
+        "ONDOUSDT:USDT",
+        "UNIUSDT:USDT",
+        "ENAUSDT:USDT"
     ],
     "2024-08": [
-        "BTCUSDT:USDT",
-        "ETHUSDT:USDT",
         "SOLUSDT:USDT",
         "1000PEPEUSDT:USDT",
         "XRPUSDT:USDT",
@@ -1441,11 +1425,11 @@
         "TIAUSDT:USDT",
         "ADAUSDT:USDT",
         "1000FLOKIUSDT:USDT",
-        "BCHUSDT:USDT"
+        "BCHUSDT:USDT",
+        "1000RATSUSDT:USDT",
+        "TURBOUSDT:USDT"
     ],
     "2024-09": [
-        "BTCUSDT:USDT",
-        "ETHUSDT:USDT",
         "SOLUSDT:USDT",
         "1000PEPEUSDT:USDT",
         "WIFUSDT:USDT",
@@ -1468,11 +1452,11 @@
         "MEWUSDT:USDT",
         "TRXUSDT:USDT",
         "SAGAUSDT:USDT",
-        "BCHUSDT:USDT"
+        "BCHUSDT:USDT",
+        "ADAUSDT:USDT",
+        "FETUSDT:USDT"
     ],
     "2024-10": [
-        "BTCUSDT:USDT",
-        "ETHUSDT:USDT",
         "SOLUSDT:USDT",
         "1000PEPEUSDT:USDT",
         "SUIUSDT:USDT",
@@ -1495,11 +1479,11 @@
         "TONUSDT:USDT",
         "BIGTIMEUSDT:USDT",
         "PEOPLEUSDT:USDT",
-        "TAOUSDT:USDT"
+        "TAOUSDT:USDT",
+        "NEARUSDT:USDT",
+        "POPCATUSDT:USDT"
     ],
     "2024-11": [
-        "BTCUSDT:USDT",
-        "ETHUSDT:USDT",
         "SOLUSDT:USDT",
         "NEIROUSDT:USDT",
         "1000PEPEUSDT:USDT",
@@ -1522,11 +1506,11 @@
         "MEWUSDT:USDT",
         "ORDIUSDT:USDT",
         "PEOPLEUSDT:USDT",
-        "SAGAUSDT:USDT"
+        "SAGAUSDT:USDT",
+        "DIAUSDT:USDT",
+        "TAOUSDT:USDT"
     ],
     "2024-12": [
-        "BTCUSDT:USDT",
-        "ETHUSDT:USDT",
         "DOGEUSDT:USDT",
         "SOLUSDT:USDT",
         "XRPUSDT:USDT",
@@ -1549,11 +1533,11 @@
         "ORDIUSDT:USDT",
         "1000FLOKIUSDT:USDT",
         "HBARUSDT:USDT",
-        "APTUSDT:USDT"
+        "APTUSDT:USDT",
+        "ENAUSDT:USDT",
+        "NEARUSDT:USDT"
     ],
     "2025-01": [
-        "BTCUSDT:USDT",
-        "ETHUSDT:USDT",
         "XRPUSDT:USDT",
         "DOGEUSDT:USDT",
         "SOLUSDT:USDT",
@@ -1576,11 +1560,11 @@
         "TRXUSDT:USDT",
         "XLMUSDT:USDT",
         "CRVUSDT:USDT",
-        "DOTUSDT:USDT"
+        "DOTUSDT:USDT",
+        "FILUSDT:USDT",
+        "SANDUSDT:USDT"
     ],
     "2025-02": [
-        "BTCUSDT:USDT",
-        "ETHUSDT:USDT",
         "SOLUSDT:USDT",
         "XRPUSDT:USDT",
         "DOGEUSDT:USDT",
@@ -1603,11 +1587,11 @@
         "AAVEUSDT:USDT",
         "PENGUUSDT:USDT",
         "NEIROUSDT:USDT",
-        "ACTUSDT:USDT"
+        "ACTUSDT:USDT",
+        "VIRTUALUSDT:USDT",
+        "AVAXUSDT:USDT"
     ],
     "2025-03": [
-        "BTCUSDT:USDT",
-        "ETHUSDT:USDT",
         "SOLUSDT:USDT",
         "XRPUSDT:USDT",
         "TRUMPUSDT:USDT",
@@ -1630,11 +1614,11 @@
         "VINEUSDT:USDT",
         "WLDUSDT:USDT",
         "AAVEUSDT:USDT",
-        "JUPUSDT:USDT"
+        "JUPUSDT:USDT",
+        "TAOUSDT:USDT",
+        "VVVUSDT:USDT"
     ],
     "2025-04": [
-        "BTCUSDT:USDT",
-        "ETHUSDT:USDT",
         "SOLUSDT:USDT",
         "XRPUSDT:USDT",
         "ADAUSDT:USDT",
@@ -1657,11 +1641,11 @@
         "LAYERUSDT:USDT",
         "HBARUSDT:USDT",
         "BCHUSDT:USDT",
-        "ALCHUSDT:USDT"
+        "ALCHUSDT:USDT",
+        "CAKEUSDT:USDT",
+        "WLDUSDT:USDT"
     ],
     "2025-05": [
-        "BTCUSDT:USDT",
-        "ETHUSDT:USDT",
         "SOLUSDT:USDT",
         "XRPUSDT:USDT",
         "SUIUSDT:USDT",
@@ -1672,7 +1656,6 @@
         "ADAUSDT:USDT",
         "BNBUSDT:USDT",
         "OMUSDT:USDT",
-        "BABYUSDT:USDT",
         "LINKUSDT:USDT",
         "AVAXUSDT:USDT",
         "ENAUSDT:USDT",
@@ -1684,11 +1667,12 @@
         "CRVUSDT:USDT",
         "ONDOUSDT:USDT",
         "AAVEUSDT:USDT",
-        "TAOUSDT:USDT"
+        "TAOUSDT:USDT",
+        "BCHUSDT:USDT",
+        "MAGICUSDT:USDT",
+        "FILUSDT:USDT"
     ],
     "2025-06": [
-        "BTCUSDT:USDT",
-        "ETHUSDT:USDT",
         "SOLUSDT:USDT",
         "XRPUSDT:USDT",
         "1000PEPEUSDT:USDT",
@@ -1711,11 +1695,11 @@
         "AVAXUSDT:USDT",
         "LTCUSDT:USDT",
         "WLDUSDT:USDT",
-        "LPTUSDT:USDT"
+        "LPTUSDT:USDT",
+        "LAYERUSDT:USDT",
+        "UNIUSDT:USDT"
     ],
     "2025-07": [
-        "BTCUSDT:USDT",
-        "ETHUSDT:USDT",
         "SOLUSDT:USDT",
         "1000PEPEUSDT:USDT",
         "XRPUSDT:USDT",
@@ -1738,11 +1722,11 @@
         "VIRTUALUSDT:USDT",
         "LPTUSDT:USDT",
         "RVNUSDT:USDT",
-        "SEIUSDT:USDT"
+        "SEIUSDT:USDT",
+        "TRBUSDT:USDT",
+        "ANIMEUSDT:USDT"
     ],
     "2025-08": [
-        "ETHUSDT:USDT",
-        "BTCUSDT:USDT",
         "SOLUSDT:USDT",
         "XRPUSDT:USDT",
         "DOGEUSDT:USDT",
@@ -1765,11 +1749,11 @@
         "AAVEUSDT:USDT",
         "AVAXUSDT:USDT",
         "HUSDT:USDT",
-        "HYPEUSDT:USDT"
+        "HYPEUSDT:USDT",
+        "BCHUSDT:USDT",
+        "HBARUSDT:USDT"
     ],
     "2025-09": [
-        "ETHUSDT:USDT",
-        "BTCUSDT:USDT",
         "SOLUSDT:USDT",
         "XRPUSDT:USDT",
         "DOGEUSDT:USDT",
@@ -1788,15 +1772,15 @@
         "PENGUUSDT:USDT",
         "HYPEUSDT:USDT",
         "ARBUSDT:USDT",
-        "PROVEUSDT:USDT",
         "WIFUSDT:USDT",
         "UNIUSDT:USDT",
         "AAVEUSDT:USDT",
-        "1000BONKUSDT:USDT"
+        "1000BONKUSDT:USDT",
+        "TRUMPUSDT:USDT",
+        "SOONUSDT:USDT",
+        "NMRUSDT:USDT"
     ],
     "2025-10": [
-        "ETHUSDT:USDT",
-        "BTCUSDT:USDT",
         "SOLUSDT:USDT",
         "DOGEUSDT:USDT",
         "XRPUSDT:USDT",
@@ -1819,11 +1803,11 @@
         "MUSDT:USDT",
         "PENGUUSDT:USDT",
         "LTCUSDT:USDT",
-        "WIFUSDT:USDT"
+        "WIFUSDT:USDT",
+        "HEMIUSDT:USDT",
+        "AAVEUSDT:USDT"
     ],
     "2025-11": [
-        "ETHUSDT:USDT",
-        "BTCUSDT:USDT",
         "SOLUSDT:USDT",
         "BNBUSDT:USDT",
         "DOGEUSDT:USDT",
@@ -1846,11 +1830,11 @@
         "FARTCOINUSDT:USDT",
         "EVAAUSDT:USDT",
         "PAXGUSDT:USDT",
-        "WLFIUSDT:USDT"
+        "WLFIUSDT:USDT",
+        "WLDUSDT:USDT",
+        "BLESSUSDT:USDT"
     ],
     "2025-12": [
-        "ETHUSDT:USDT",
-        "BTCUSDT:USDT",
         "SOLUSDT:USDT",
         "ZECUSDT:USDT",
         "XRPUSDT:USDT",
@@ -1873,6 +1857,8 @@
         "ZENUSDT:USDT",
         "UNIUSDT:USDT",
         "PIPPINUSDT:USDT",
-        "JELLYJELLYUSDT:USDT"
+        "JELLYJELLYUSDT:USDT",
+        "TAOUSDT:USDT",
+        "PUMPUSDT:USDT"
     ]
 }

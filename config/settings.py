@@ -135,7 +135,7 @@ RS_SQUEEZE_STRATEGY = StrategyConfig(
     name="RSSqueezeStrategy",
     module_path="strategy.rs_squeeze",
     params=RSSqueezeConfig(
-        rs_threshold=1.05,
+        rs_threshold=1.0,  # 设计规范：RS > 1.0 表示 Asset 表现优于 BTC
         universe_filepath=str(
             project_root / "data" / "universe_25.json"
         ),  # 只需文件名，路径在 main.py 处理?
@@ -280,12 +280,12 @@ def build_config() -> BackTestConfig:
         end_date=END_DATE,
         initial_balances=INITIAL_BALANCES,
         logging=LogConfig(
-            log_level="INFO",
-            log_level_file="DEBUG",
+            log_level="WARNING",  # 回测时使用 WARNING 级别减少日志 I/O
+            log_level_file="WARNING",  # 文件日志也改为 WARNING 加速回测
             log_component_levels={
-                "BacktestEngine": "INFO",
-                "DataFeed": "DEBUG",
-                "RSSqueezeStrategy": "INFO",
+                "BacktestEngine": "WARNING",
+                "DataFeed": "WARNING",
+                "RSSqueezeStrategy": "WARNING",
             },
         ),
     )

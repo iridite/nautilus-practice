@@ -243,9 +243,15 @@ def main():
                     key = (exchange, timeframe, START_DATE, END_DATE)
                     tasks.setdefault(key, set()).add(symbol_str)
                 else:
-                    print(
-                        f"✅ Data exists for universe symbol: {symbol_str} ({exchange} {timeframe})"
+                    # 使用单行刷新避免大量日志输出
+                    sys.stdout.write(
+                        f"\r✅ Data exists: {symbol_str} ({exchange} {timeframe}){' ' * 20}"
                     )
+                    sys.stdout.flush()
+
+        # 换行结束进度显示
+        if universe_symbols:
+            print()  # 确保后续输出不会覆盖进度行
 
         # 1.3 执行批量抓取并实时更新 current_config
         # 记录已经存在的 csv，防止重复添加
