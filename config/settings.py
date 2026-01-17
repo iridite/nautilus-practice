@@ -24,9 +24,9 @@ from strategy.rs_squeeze import RSSqueezeConfig
 # ==========================================
 VENUE = "BINANCE"
 INSTRUMENT_TYPE = InstrumentType.SWAP
-START_DATE = "2024-01-01"
-END_DATE = "2024-12-31"
-INITIAL_BALANCES = [Money("10000", USDT)]
+START_DATE = "2022-01-01"
+END_DATE = "2026-01-14"
+INITIAL_BALANCES = [Money("100", USDT)]
 
 # 默认时间周期
 MAIN_TIMEFRAME = "1h"
@@ -149,7 +149,13 @@ def build_config() -> BackTestConfig:
         start_date=START_DATE,
         end_date=END_DATE,
         initial_balances=INITIAL_BALANCES,
-        logging=LogConfig(log_level="INFO"),
+        logging=LogConfig(
+            log_component_levels={
+                "BacktestEngine": "INFO",
+                "DataFeed": "DEBUG",
+                "RSSqueezeStrategy": "INFO",
+            }
+        ),
     )
 
 

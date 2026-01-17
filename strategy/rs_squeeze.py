@@ -277,7 +277,7 @@ class RSSqueezeStrategy(BaseStrategy):
                         f"BenchmarkHistory({len(self.benchmark_closes)}/{self.config.rs_lookback})"
                     )
                 self.log.info(
-                    f"Warming up {self.instrument_id}... Missing: {', '.join(missing)}"
+                    f"Warming up {self.instrument_id}... \nMissing: {', '.join(missing)}"
                 )
 
         return is_ready
