@@ -245,7 +245,7 @@ def run_high_level(cfg: BackTestConfig, base_dir: Path):
     venue_configs = [
         BacktestVenueConfig(
             name=venue_name,
-            oms_type="HEDGING",
+            oms_type="NETTING",
             account_type="MARGIN",
             base_currency="USDT",  # TODO：到时候使用内置的货币类型
             starting_balances=cfg.initial_balances,

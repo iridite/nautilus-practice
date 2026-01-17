@@ -118,7 +118,7 @@ def run_low_level(cfg: BackTestConfig, base_dir: Path):
     # 3. 配置交易所 (Venue/Exchange)
     engine.add_venue(
         venue=Venue(cfg.instrument.venue_name),
-        oms_type=OmsType.HEDGING,
+        oms_type=OmsType.NETTING,
         book_type=BookType.L1_MBP,
         account_type=AccountType.MARGIN,
         base_currency=USDT,
