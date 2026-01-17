@@ -49,12 +49,18 @@ class RSSqueezeConfig(BaseStrategyConfig):
     ema_slow_period: int = 200
 
     # --- Volume Filter Params ---
-    volume_period: int = 20  # 成交量 MA 周期
-    volume_filter_mult: float = 0.0  # 暂时禁用成交量过滤 (设为 0 表示不检查)
+    volume_ma_period: int = 20  # 成交量 MA 周期（用于计算 20 周期平均成交量）
+    volume_filter_mult: float = (
+        1.3  # 成交量爆发验证：current_volume > avg_volume_20 * 1.3
+    )
 
     # --- Relative Strength (RS) Params ---
     rs_lookback: int = 24  # Lookback for RS calculation (24 hours)
-    rs_threshold: float = 1.0  # 设计规范：RS > 1.0 (Asset_Return > BTC_Return)
+    rs_threshold: float = 1.03  # 强化规范：RS > 1.03（约等于跑赢 BTC 3 个百分点）
+
+    # --- Squeeze Tightness Params ---
+    bb_width_period: int = 100  # BB Width 分位数计算周期
+    bb_width_percentile: float = 0.25  # BB Width 必须处于过去 N 根线的前 25% 分位数
 
     # --- Risk Management ---
     # 设计规范：单笔风险 3%
@@ -96,14 +102,15 @@ class RSSqueezeStrategy(BaseStrategy):
     2.  **Universe Check**: Only trade if the instrument is in the allowed list for the current month.
     3.  **Data Sync**: Ensure Asset and Benchmark bars are time-aligned.
     4.  **Market State**:
-        -   Calculate 'Squeeze': BB(20,2) 完全在 KC(20,1.2) 内部
+        -   Calculate 'Squeeze': BB(20,2) 完全在 KC(20,1.4) 内部
         -   Calculate 'RS': Asset_Return / BTC_Return over 24h (RS > 1)
-    5.  **Entry Signal (Long Only)**:
+    5.  **Entry Signal (Long Only)** - 强化版 Universe-50 过滤：
         -   Price > EMA200 (Uptrend).
-        -   In Squeeze State.
-        -   RS > 1.0 (Outperforming BTC).
-        -   Breakout: Close > 前 2 根 K 线的最高价
-        -   Volume > 20-period Average Volume * 1.2 (放量突破)
+        -   In Squeeze State (BB 完全在 KC 内部).
+        -   BB Width Tightness: BB Width 处于过去 100 根线的前 25% 分位数（极度收缩）.
+        -   RS > 1.03（约等于跑赢 BTC 3 个百分点，只捕捉真正的强势龙头）.
+        -   Breakout: Close > 前 2 根 K 线的最高价.
+        -   Volume > 20-period Average Volume * 1.3 (成交量爆发验证).
         -   BTC 4H > EMA200 (Market Regime Filter).
     6.  **Exit Logic**:
         -   Stop Loss: Entry - 2 * ATR
@@ -153,8 +160,10 @@ class RSSqueezeStrategy(BaseStrategy):
         self.benchmark_closes = deque(maxlen=config.rs_lookback + 1)
         # 设计规范：保留前 N 根 K 线的 high 用于 breakout 检测
         self.asset_highs = deque(maxlen=config.breakout_lookback)
-        # 成交量缓冲区：用于计算平均成交量
-        self.asset_volumes = deque(maxlen=config.volume_period)
+        # 成交量缓冲区：用于计算 20 周期平均成交量
+        self.asset_volumes = deque(maxlen=config.volume_ma_period)
+        # BB Width 缓冲区：用于计算 BB Width 分位数
+        self.bb_widths = deque(maxlen=config.bb_width_period)
 
         # --- Data Sync: 记录最后一个 benchmark bar 的时间戳 ---
         self._last_benchmark_ts: int = 0
@@ -183,6 +192,7 @@ class RSSqueezeStrategy(BaseStrategy):
             "margin_limit": 0,  # 新增：保证金占用限制
             "trend_filter": 0,
             "not_in_squeeze": 0,
+            "bb_width_not_tight": 0,  # 新增：BB Width 不够紧
             "rs_filter": 0,
             "breakout_filter": 0,
             "low_volume": 0,  # 新增：成交量过滤
@@ -359,7 +369,7 @@ class RSSqueezeStrategy(BaseStrategy):
             and self.kc.initialized
             and len(self.asset_closes) > self.config.rs_lookback
             and len(self.benchmark_closes) > self.config.rs_lookback
-            and len(self.asset_volumes) >= self.config.volume_period  # 新增：成交量缓冲
+            and len(self.asset_volumes) >= self.config.volume_ma_period  # 成交量缓冲
         )
 
         # 仅在首次完成 warmup 时输出一次日志
@@ -459,6 +469,9 @@ class RSSqueezeStrategy(BaseStrategy):
         BB(20, 2) 完全在 KC(20, 1.2) 内部，即：
         - BB_Upper < KC_Upper
         - BB_Lower > KC_Lower
+
+        强化规范（针对 Universe-50 噪音过滤）：
+        - BB Width 必须处于过去 100 根线的前 25% 分位数（极度收缩）
         """
         if not self.bb.initialized or not self.kc.initialized:
             return
@@ -466,12 +479,46 @@ class RSSqueezeStrategy(BaseStrategy):
         # Safely get values
         bb_upper = getattr(self.bb.upper, "value", self.bb.upper)
         bb_lower = getattr(self.bb.lower, "value", self.bb.lower)
+        bb_middle = getattr(self.bb.middle, "value", self.bb.middle)
         kc_upper = getattr(self.kc.upper, "value", self.kc.upper)
         kc_lower = getattr(self.kc.lower, "value", self.kc.lower)
+
+        # 计算 BB Width（标准化的布林带宽度）
+        # BB Width = (BB_Upper - BB_Lower) / BB_Middle
+        if bb_middle > 0:
+            bb_width = (bb_upper - bb_lower) / bb_middle
+            self.bb_widths.append(bb_width)
 
         # 设计规范：Squeeze 条件 = BB 完全嵌套在 KC 内部
         # BB_Upper < KC_Upper AND BB_Lower > KC_Lower
         self._is_squeeze = (bb_upper < kc_upper) and (bb_lower > kc_lower)
+
+    def _is_bb_width_tight(self) -> bool:
+        """
+        检查当前 BB Width 是否处于过去 N 根线的前 percentile 分位数。
+
+        强化规范：确保只有在波动率"极度"收缩后才入场。
+        """
+        if len(self.bb_widths) < self.config.bb_width_period:
+            # 数据不足时，暂不启用此过滤（允许通过）
+            return True
+
+        current_width = self.bb_widths[-1]
+        sorted_widths = sorted(self.bb_widths)
+
+        # 计算当前宽度在历史数据中的分位数位置
+        # 找到当前宽度在排序列表中的位置
+        position = 0
+        for w in sorted_widths:
+            if w < current_width:
+                position += 1
+            else:
+                break
+
+        percentile = position / len(sorted_widths)
+
+        # 如果当前宽度处于前 percentile（如前 25%），则视为足够紧
+        return percentile <= self.config.bb_width_percentile
 
     def _calculate_rs(self) -> Decimal:
         """
@@ -490,6 +537,7 @@ class RSSqueezeStrategy(BaseStrategy):
 
         # RS = Asset 价格比率 / Benchmark 价格比率
         # 当 RS > 1 时，意味着 Asset 收益率 > Benchmark 收益率
+        # 强化规范：RS > 1.03 约等于跑赢 BTC 3 个百分点
         return asset_ratio / bench_ratio
 
     def _calculate_avg_volume(self) -> Decimal:
@@ -505,13 +553,14 @@ class RSSqueezeStrategy(BaseStrategy):
         """
         Evaluates market conditions for a Long Entry.
 
-        优化后的入场门控 (Confluence)：
+        优化后的入场门控 (Confluence) - 强化版 Universe-50 过滤：
         0. 唯一持仓限制：每个币种同时只能持有一个仓位
         1. 趋势在 EMA200 之上
         2. 处于 Squeeze 状态 (BB 完全在 KC 内部)
-        3. RS 评分高于 1.0
+        2.1 BB Width 紧度验证：BB Width 必须处于过去 100 根线的前 25% 分位数
+        3. RS > 1.03（约等于跑赢 BTC 3 个百分点，只捕捉真正的强势龙头）
         4. 价格突破前 2 根 K 线的最高价
-        5. 成交量 > 平均成交量 * 1.2 (放量突破)
+        5. 成交量 > 20 周期平均成交量 * 1.3 (成交量爆发验证)
         6. BTC 4H > EMA200 (市场环境过滤)
         7. 24 小时冷却期
         8. 排除 BTC 自交易（RS 相对自己永远是 1.0）
@@ -583,7 +632,14 @@ class RSSqueezeStrategy(BaseStrategy):
             self._filter_stats["not_in_squeeze"] += 1
             return
 
-        # C. Relative Strength: RS > 1.0 (Asset 表现优于 BTC)
+        # B.1 BB Width Tightness Filter: BB Width 必须处于极低分位数
+        # 强化规范：确保只有在波动率"极度"收缩后才入场
+        if not self._is_bb_width_tight():
+            self._filter_stats["bb_width_not_tight"] += 1
+            return
+
+        # C. Relative Strength: RS > 1.03（约等于跑赢 BTC 3 个百分点）
+        # 强化规范：只捕捉真正的强势龙头，剔除平庸的跟风币
         rs = self._calculate_rs()
         if rs <= Decimal(str(self.config.rs_threshold)):
             self._filter_stats["rs_filter"] += 1
@@ -855,6 +911,7 @@ class RSSqueezeStrategy(BaseStrategy):
                 f"cooldown={self._filter_stats['in_cooldown']}, "
                 f"trend={self._filter_stats['trend_filter']}, "
                 f"squeeze={self._filter_stats['not_in_squeeze']}, "
+                f"bb_width={self._filter_stats['bb_width_not_tight']}, "
                 f"rs={self._filter_stats['rs_filter']}, "
                 f"breakout={self._filter_stats['breakout_filter']}, "
                 f"low_volume={self._filter_stats['low_volume']}, "
@@ -877,6 +934,7 @@ class RSSqueezeStrategy(BaseStrategy):
         self.benchmark_closes.clear()
         self.asset_highs.clear()
         self.asset_volumes.clear()
+        self.bb_widths.clear()
         self._is_squeeze = False
         self._entry_price = None
         self._breakeven_triggered = False
