@@ -15,6 +15,7 @@ data/record/**
 data/raw/**
 data/models/**
 data/top/**
+data/universe_*.json
 output/**
 log/**
 
