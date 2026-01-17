@@ -352,7 +352,7 @@ class RSSqueezeStrategy(BaseStrategy):
         # 仅在首次完成 warmup 时输出一次日志
         if is_ready and self._last_warmup_log_ts == 0:
             self._last_warmup_log_ts = self.clock.timestamp_ns()
-            self.log.info(
+            self.log.debug(
                 f"✅ Warmup complete for {self.instrument_id}. "
                 f"EMA200={self.ema_slow.value:.2f}, BB/KC initialized, "
                 f"Asset closes={len(self.asset_closes)}, Benchmark closes={len(self.benchmark_closes)}"
@@ -380,7 +380,7 @@ class RSSqueezeStrategy(BaseStrategy):
         # 首次同步成功时记录日志
         if is_synced and not hasattr(self, "_sync_logged"):
             self._sync_logged = True
-            self.log.info(
+            self.log.debug(
                 f"✅ Data sync established for {self.instrument_id}. "
                 f"Asset_ts={self._last_asset_ts}, Benchmark_ts={self._last_benchmark_ts}"
             )
@@ -427,7 +427,7 @@ class RSSqueezeStrategy(BaseStrategy):
 
             # 仅在状态变化时输出日志
             if is_in != self._is_in_universe:
-                self.log.info(
+                self.log.debug(
                     f"📋 Universe status changed for {self.instrument_id}: "
                     f"month={current_month}, in_universe={is_in}, "
                     f"month_symbols={list(month_symbols)[:5]}..."
@@ -555,7 +555,7 @@ class RSSqueezeStrategy(BaseStrategy):
 
         # If we reached here, all systems go
         self._filter_stats["all_passed"] += 1
-        self.log.info(
+        self.log.debug(
             f"🎯 ALL FILTERS PASSED for {self.instrument_id}! "
             f"Price={current_price:.2f}, RS={rs:.4f}, Squeeze=True"
         )

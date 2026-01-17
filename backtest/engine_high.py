@@ -244,6 +244,8 @@ def run_high_level(cfg: BackTestConfig, base_dir: Path):
         logging_config = LoggingConfig(
             log_level=cfg.logging.log_level,
             log_level_file=cfg.logging.log_level_file,
+            log_component_levels=cfg.logging.log_component_levels,
+            log_components_only=cfg.logging.log_components_only,
             log_directory=str(base_dir / "log" / "backtest" / "high_level"),
         )
 
