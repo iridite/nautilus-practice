@@ -134,11 +134,7 @@ DUAL_THRUST_STRATEGY = StrategyConfig(
 RS_SQUEEZE_STRATEGY = StrategyConfig(
     name="RSSqueezeStrategy",
     module_path="strategy.rs_squeeze",
-    params=RSSqueezeConfig(
-        universe_filepath=str(
-            project_root / "data" / "universe_25.json"
-        ),  # 只需文件名，路径在 main.py 处理?
-    ),
+    params=RSSqueezeConfig(),
 )
 
 # ==========================================

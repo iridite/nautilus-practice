@@ -2,6 +2,7 @@ import json
 from collections import deque
 from datetime import datetime, timezone
 from decimal import Decimal
+from pathlib import Path
 from typing import Dict, Optional, Set
 
 # Indicators
@@ -53,7 +54,9 @@ class RSSqueezeConfig(BaseStrategyConfig):
     # --- Universe Logic ---
     # Path to a JSON file mapping "YYYY-MM" -> [Symbol List]
     # 注意：列表中的顺序即为成交量排名（降序），用于 Adaptive RS Gap
-    universe_filepath: Optional[str] = None
+    universe_filepath: str = str(
+        Path(__file__).parent.parent.resolve() / "data" / "universe_25.json"
+    )
 
     # --- Indicator Params ---
     bb_period: int = 20
