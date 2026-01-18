@@ -39,7 +39,12 @@ def researcher_node(state: AgentState):
         last_report = get_latest_json_report()
 
     best_sharpe = state.get("best_sharpe", 0.0)
+    best_strategy_code = state.get("best_code", "")
     strategy_code = state.get("strategy_code", "")
+
+    if best_strategy_code == "":
+        best_strategy_code = strategy_code
+
     if not strategy_code:
         print("Strategy code not in state, reading from file...")
         try:
@@ -57,8 +62,19 @@ def researcher_node(state: AgentState):
 
     fail_count = state.get("fail_count", 0)
 
-    user_msg = f"当前最高Sharpe: {best_sharpe}\n最新回测结果: {last_report}\n当前代码: {strategy_code}"
+    user_msg = f"""
+    --- 任务目标 ---
+    当前最高Sharpe: {best_sharpe}
+    历史上表现最好的代码参考: {best_strategy_code}
 
+    --- 最新反馈 ---
+    最新回测结果: {last_report}
+    刚才尝试的代码（表现一般）: {strategy_code}
+    连续失败次数: {fail_count}
+
+    --- 规则 ---
+    如果连续失败，请务必参考【历史上表现最好的代码】重新进行逻辑突变。
+    """
     # 这里我们让 DeepSeek 决定是微调还是突变
     model = None
     if fail_count < 3:
@@ -101,7 +117,12 @@ def backtester_node(state: AgentState):
         )
     except subprocess.CalledProcessError as e:
         print(f"❌ 回测运行崩溃: {e.stderr}")
-        return {"fail_count": state.get("fail_count", 0) + 1}  # 增加失败计数
+        # 注入一个极差的结果，强制触发失败逻辑
+        report = {"sharpe": -1.0, "total_trades": 0, "returns": {}}
+        return {
+            "backtest_history": state.get("backtest_history", []) + [report],
+            "fail_count": state.get("fail_count", 0) + 1,
+        }
 
     report = get_latest_json_report(run_time)
 
@@ -125,14 +146,22 @@ def backtester_node(state: AgentState):
     fail_count = state.get("fail_count", 0)
     history = state.get("backtest_history", [])
 
-    best = max(best_sharpe, sharpe)
-    fail_inc = 1 if sharpe < best_sharpe else 0
+    new_best_sharpe = max(best_sharpe, sharpe)
 
-    return {
+    update = {
         "backtest_history": history + [report],
-        "best_sharpe": best,
-        "fail_count": fail_count + fail_inc if fail_inc else 0,
+        "best_sharpe": new_best_sharpe,
     }
+
+    if sharpe > best_sharpe:
+        # 破了新高，重置失败计数，更新最佳代码
+        update["best_strategy_code"] = state.get("strategy_code")
+        update["fail_count"] = 0
+    else:
+        # 没破新高，累加失败计数
+        update["fail_count"] = fail_count + 1
+
+    return update
 
 
 def extract_code(text: str) -> str:
@@ -156,10 +185,16 @@ def get_latest_json_report(run_time: Optional[float] = None) -> dict:
 
     if not files and run_time:
         print(f"⚠️ No backtest result JSON files after {run_time} found.")
-        return {"returns": {}, "trade_metrics": {"analysis": {"total_trades": 0}}}
+        return {
+            "returns": {"Sharpe Ratio": 0.0},
+            "trade_metrics": {"analysis": {"total_trades": 0}},
+        }
     elif not files:
         print("⚠️ No backtest result JSON files found.")
-        return {"returns": {}, "trade_metrics": {"analysis": {"total_trades": 0}}}
+        return {
+            "returns": {"Sharpe Ratio": 0.0},
+            "trade_metrics": {"analysis": {"total_trades": 0}},
+        }
 
     latest_file = max(files, key=os.path.getmtime)
     with open(latest_file, "r") as f:

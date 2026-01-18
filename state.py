@@ -10,6 +10,8 @@ class AgentState(TypedDict):
     backtest_history: List[dict]
     # 历史最高夏普比率
     best_sharpe: float
+    best_strategy_code: str
+
     # 尝试失败的计数器 (用于触发深度回溯)
     fail_count: int
     # 迷宫寻路日志 (Claude 自己的思考记录)
