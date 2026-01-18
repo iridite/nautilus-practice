@@ -24,6 +24,21 @@ class RSSqueezeConfig(BaseStrategyConfig):
 
     This config defines parameters for a specific instrument instance,
     while also handling global settings like Universe and Benchmark.
+
+    === V3.0 核心优化: "Early Momentum Explosion" 入场逻辑 ===
+    诊断发现:
+    - V2.0 "Pullback to EMA20" 失败，因为它捕捉的是疲惫的动能
+    - Avg Winner 0.67 USDT 不可接受，需要追求 "Big Win"
+    - 高 RS 在回调入场逻辑下变成了逆势指标（买在吹顶）
+
+    新逻辑 (Lift-off Trigger):
+    1. 入场方式: MARKET ORDER (Taker) - 抓住行情启动的第一时间
+    2. RS 加速检测: Asset_Return_6h > BTC_Return_6h + 0.03
+       AND Asset_Return_6h > Asset_Return_24h (确保捕捉行情开始，而非结束)
+    3. 防疲惫过滤: Close < Upper_BB (价格未突破布林带上轨)
+    4. Squeeze: 至少连续 2 根 K 线处于挤压状态
+    5. 出场: 移除 EMA 趋势退出，仅靠 Trailing Stop 追踪利润
+    6. 目标: 捕捉 30u+ 的 Max Winner，而不是 0.6u 的小赢
     """
 
     bar_type: str = ""
@@ -48,24 +63,25 @@ class RSSqueezeConfig(BaseStrategyConfig):
     atr_period: int = 20
     ema_fast_period: int = 20
     ema_slow_period: int = 200
-    # 趋势退出 EMA 周期 (EMA30 用于更长趋势追踪)
-    ema_trend_exit_period: int = 30
+    # V3.0: EMA 趋势退出已移除，保留指标仅供参考
+    ema_trend_exit_period: int = 50
 
     # --- Volume Filter Params ---
     volume_ma_period: int = 20  # 成交量 MA 周期（用于计算 20 周期平均成交量）
-    volume_filter_mult: float = (
-        1.3  # 成交量爆发验证：current_volume > avg_volume_20 * 1.3
-    )
+    volume_filter_mult: float = 1.6  # 成交量爆发验证（V3.0 仅用于记录，不作为过滤条件）
 
-    # --- Laddered Relative Strength (RS) Params ---
-    # 阶梯式 RS 过滤器：任一窗口满足即可入场
-    # (Asset_Return_Nh > BTC_Return_Nh + gap_threshold)
-    rs_lookback_6h: int = 6  # 6 小时窗口
-    rs_lookback_12h: int = 12  # 12 小时窗口
-    rs_lookback_24h: int = 24  # 24 小时窗口
-    rs_gap_6h: float = 0.04  # 6h 窗口需跑赢 BTC 4%
-    rs_gap_12h: float = 0.06  # 12h 窗口需跑赢 BTC 6%
-    rs_gap_24h: float = 0.10  # 24h 窗口需跑赢 BTC 10%
+    # --- V3.0 RS Acceleration Params ---
+    # RS 加速检测：捕捉行情启动的第一时间
+    # Entry if: Asset_Return_6h > BTC_Return_6h + rs_acceleration_gap
+    #       AND Asset_Return_6h > Asset_Return_24h (6h 收益 > 24h 收益 = 动能加速)
+    rs_lookback_6h: int = 6  # 6 小时窗口 (用于加速检测)
+    rs_lookback_12h: int = 12  # 12 小时窗口 (保留用于记录)
+    rs_lookback_24h: int = 24  # 24 小时窗口 (用于加速对比)
+    rs_acceleration_gap: float = 0.03  # V3.0: 6h 必须跑赢 BTC 3%
+    # 以下参数保留用于向后兼容，V3.0 不再使用阶梯式 RS
+    rs_gap_6h: float = 0.03  # V3.0: 统一使用 rs_acceleration_gap
+    rs_gap_12h: float = 0.05  # (保留)
+    rs_gap_24h: float = 0.07  # (保留)
 
     # --- Adaptive RS Gap for Mid-Caps ---
     # 中盘币 (排名 > 50) 需要更高的 RS Gap 确信度
@@ -74,27 +90,36 @@ class RSSqueezeConfig(BaseStrategyConfig):
 
     # --- Squeeze Tightness Params ---
     bb_width_period: int = 100  # BB Width 分位数计算周期
-    bb_width_percentile: float = 0.30  # BB Width 必须处于过去 N 根线的前 30% 分位数
+    bb_width_percentile: float = 0.50  # BB Width 分位数阈值 (V3.0 仅用于记录)
 
     # --- Squeeze Maturity Filter ---
     # 挤压成熟度过滤：挤压状态必须连续保持至少 N 根 K 线
-    squeeze_maturity_bars: int = 3  # 最小连续挤压 K 线数
+    squeeze_maturity_bars: int = 2  # V3.0: 至少连续 2 根 K 线处于挤压状态
 
-    # --- Dynamic Extension Filter (Anti-Chase Guard) ---
-    # 防止追高过滤器：仅在价格接近 EMA(20) 支撑时入场
-    # Entry ONLY if: Current_Price < EMA(20) * (1 + ATR_Relative)
-    # ATR_Relative = ATR(20) / Close，使过滤器适应币种波动性
-    extension_filter_enabled: bool = True
+    # --- V3.0 Anti-Exhaustion Filter (防疲惫过滤器) ---
+    # 替代 V2.0 的 Extension Filter
+    # Entry ONLY if: Close < Upper_Bollinger_Band
+    # 如果价格已在布林带外，不入场，等待下一次挤压
+    anti_exhaustion_enabled: bool = True
+
+    # --- V2.0 Pullback Entry Logic (V3.0 已禁用) ---
+    # 回调入场逻辑已废弃，V3.0 使用市价单直接入场
+    pullback_entry_enabled: bool = False  # V3.0: 禁用回调入场，改用市价单
+    pullback_order_expiry_hours: int = 4  # 限价单过期时间（保留用于向后兼容）
+
+    # --- V2.0 Extension Filter (V3.0 已废弃) ---
+    # 已被 Anti-Exhaustion Filter 替代
+    extension_filter_enabled: bool = False  # V3.0: 禁用
 
     # --- Risk Management ---
-    # 单笔风险 3% (复利模式)
-    risk_per_trade: float = 0.03
+    # V3.0: 单笔风险 5% (更激进，配合紧止损)
+    risk_per_trade: float = 0.05
     # 杠杆封顶：最大杠杆倍数 3.0x (防止 ATR 过小时杠杆失控)
     max_leverage: float = 3.0
-    # 止损距离 = 2 * ATR
-    stop_loss_mult: float = 2.0
-    # 保本触发：盈利 > 2.0 * ATR 后移动止损至开仓价 + fee (已废弃，改用追踪止损)
-    breakeven_mult: float = 2.0
+    # V3.0: 止损距离 = 1.5 * ATR (紧止损允许更大仓位)
+    stop_loss_mult: float = 1.5
+    # 保本触发：盈利 > 4.0 * ATR 后才移动止损至保本价 (延迟保本，给交易更多呼吸空间)
+    breakeven_mult: float = 4.0
     # BE Offset (Entry + 0.2%)
     breakeven_offset: float = 0.002
     # 时间保护强制平仓：持仓超过 N 小时后强制市价平仓
@@ -102,12 +127,16 @@ class RSSqueezeConfig(BaseStrategyConfig):
     # 保证金占用限制：已用保证金超过总余额的 N% 时停止新开仓
     max_margin_usage: float = 0.80
 
-    # --- Trailing Stop (Breathing Room Exit) ---
-    # 追踪止损：给交易更多呼吸空间
-    # 触发条件：盈利 >= 1.5 * ATR 后激活追踪止损
-    trailing_stop_trigger_mult: float = 1.5
-    # 追踪止损距离：Highest_High - 2.5 * ATR
-    trailing_stop_atr_mult: float = 2.5
+    # --- V3.0 Trailing Stop ("Big Win" Exit Logic) ---
+    # 核心目标：捕捉 30u+ 的 Max Winner，而不是 0.6u 的小赢
+    # 触发条件：盈利 >= 2.5 * ATR 后激活追踪止损
+    trailing_stop_trigger_mult: float = 2.5
+    # V3.0: 追踪止损距离 = Highest_High - 3.0 * ATR (更宽松的追踪，给利润更多奔跑空间)
+    trailing_stop_atr_mult: float = 3.0
+
+    # --- V3.0 EMA Trend Exit (已移除) ---
+    # V2.0 的 EMA 趋势退出会扼杀赢家，V3.0 移除此逻辑
+    ema_trend_exit_enabled: bool = False
 
     # --- Filters ---
     max_concurrent_positions: int = 5  # 最大并发仓位数
@@ -120,46 +149,56 @@ class RSSqueezeConfig(BaseStrategyConfig):
 
 class RSSqueezeStrategy(BaseStrategy):
     """
-    RS-Squeeze (Relative Strength + Squeeze Momentum) 狙击策略 - Universe-100 版本
-    "Healthy Breakout" Filter 优化版
+    RS-Squeeze (Relative Strength + Squeeze Momentum) 狙击策略 - V3.0 Early Momentum Explosion
+    "Lift-off Trigger" 动能爆发捕捉版
 
-    核心哲学：
-    - 强者恒强 (Relative Strength)：只交易表现优于大盘（BTC）的币种
+    类变量用于收集所有实例的过滤器统计，供回测结束后统一输出。
+
+    === V3.0 核心优化: "Early Momentum Explosion" 动能爆发入场 ===
+    失败分析 (V2.0):
+    - "Pullback to EMA20" 失败，因为它捕捉的是疲惫的动能
+    - Avg Winner 0.67 USDT 不可接受，需要追求 "Big Win"
+    - 高 RS 在回调入场逻辑下变成了逆势指标（买在吹顶）
+
+    核心哲学 (V3.0):
+    - RS 加速 (RS Acceleration)：捕捉动能爆发的起点，而非终点
     - 静极思动 (Volatility Squeeze)：寻找波动率极度收缩（蓄势）的状态
-    - 二段确认 (The Trigger)：价格必须突破近期的物理高点
-    - 放量确认 (Volume Filter)：突破时成交量必须高于平均
-    - 健康突破 (Anti-Chase Guard)：防止追高，只在接近均线支撑时入场
+    - 防疲惫过滤 (Anti-Exhaustion)：价格未突破布林带上轨才入场
+    - 市价入场 (Market Order)：抓住行情启动的第一时间，不等回调
+    - 宽松追踪 (Wide Trailing)：给赢家更多呼吸空间，追求 30u+ 的 Max Winner
 
-    Logic Overview:
+    Logic Overview (V3.0 "Lift-off Trigger"):
     1.  **Warmup**: Wait for indicators (EMA, BB, KC) and History buffers to fill.
-    2.  **Universe Check**: Only trade if the instrument is in the allowed list for the current month.
+    2.  **Universe Check**: Only trade Universe-25 (top liquidity leaders).
     3.  **Data Sync**: Ensure Asset and Benchmark bars are time-aligned.
     4.  **Market State**:
-        -   Calculate 'Squeeze': BB(20,2) 完全在 KC(20,1.4) 内部
-        -   Calculate 'RS': Laddered RS across 6h/12h/24h windows
-    5.  **Entry Signal (Long Only)** - Healthy Breakout 过滤：
+        -   Calculate 'Squeeze': BB(20,2) 完全在 KC(20,1.4) 内部，至少连续 2 根 K 线
+        -   Calculate 'RS Acceleration': Asset_6h_Return > BTC_6h_Return + 3%
+            AND Asset_6h_Return > Asset_24h_Return (动能加速，而非疲惫)
+    5.  **Entry Signal (Lift-off Trigger)** - 单阶段市价入场：
         -   Price > EMA200 (Uptrend).
-        -   In Squeeze State (BB 完全在 KC 内部).
-        -   Squeeze Maturity: 挤压状态必须连续保持至少 3 根 K 线.
-        -   BB Width Tightness: BB Width 处于过去 100 根线的前 30% 分位数.
-        -   Dynamic Extension Filter: Price < EMA(20) * (1 + ATR_Relative) 防止追高.
-        -   Adaptive Laddered RS: 任一窗口满足 (Asset_Return > BTC_Return + Gap).
-            - Top 50: 6h: +4%, 12h: +6%, 24h: +10%
-            - Mid-cap (rank > 50): 额外 +2% gap 要求
-        -   Breakout: Close > 前 2 根 K 线的最高价.
-        -   Volume > 20-period Average Volume * 1.3.
+        -   In Squeeze State >= 2 bars (BB 完全在 KC 内部).
+        -   RS Acceleration: 6h 跑赢 BTC 3%，且 6h 收益 > 24h 收益.
+        -   Anti-Exhaustion: Close < Upper_BB (价格未在布林带外).
         -   BTC 4H > EMA200 (Market Regime Filter).
-    6.  **Exit Logic (Breathing Room)**:
-        -   Stop Loss: Entry - 2 * ATR
-        -   Trailing Stop: 盈利 >= 1.5 * ATR 后，追踪止损 = Highest_High - 2.5 * ATR
-        -   Trend Exit: Price < EMA30 (仅在盈利时触发，给趋势更多呼吸空间)
+        -   → MARKET ORDER 入场
+    6.  **Exit Logic ("Big Win" Focus)**:
+        -   Stop Loss: Entry - 1.5 * ATR (紧止损允许更大仓位)
+        -   Trailing Stop: 盈利 >= 2.5 * ATR 后激活
+        -   Trailing Distance: Highest_High - 3.0 * ATR (宽松追踪，让利润奔跑)
+        -   **移除** EMA 趋势退出 (会扼杀赢家)
 
     Risk Model:
-        -   Risk Per Trade: 3% of equity (Compounding)
+        -   Risk Per Trade: 5% of equity (Compounding)
+        -   Stop Loss: 1.5 * ATR
         -   Max Leverage: 3.0x
         -   Max Concurrent Trades: 5
-        -   Target: Avg Winner > 2x Avg Loser
+        -   Target: 捕捉 30u+ 的 Max Winner，Avg Winner >= 5.0 USDT
     """
+
+    # --- 类变量：收集所有实例的过滤器统计 (用于回测结束后统一输出) ---
+    _all_filter_stats: Dict[str, Dict[str, int]] = {}
+    _all_trade_metrics: list = []  # 收集所有交易的入场指标
 
     def __init__(self, config: RSSqueezeConfig):
         super().__init__(config)
@@ -229,6 +268,15 @@ class RSSqueezeStrategy(BaseStrategy):
         self._position_open_ts: int = 0  # 记录仓位开仓时间，用于 72h 强制平仓
         self._last_warmup_log_ts: int = 0
 
+        # --- Pullback Entry State (V2.0 新增) ---
+        # 回调入场状态：记录待成交的限价买单信息
+        self._pending_pullback_order_id: Optional[str] = (
+            None  # 待成交限价单的 ClientOrderId
+        )
+        self._pullback_order_expiry_ts: int = 0  # 限价单过期时间戳 (纳秒)
+        self._pullback_order_qty: Optional[Decimal] = None  # 限价单数量
+        self._pullback_entry_metrics: Optional[Dict] = None  # 限价单入场时的指标记录
+
         # --- Universe Rank State ---
         # 排名直接从 universe_map 的列表顺序推导（列表已按成交量降序排列）
         self._universe_rank_map: Dict[
@@ -242,24 +290,31 @@ class RSSqueezeStrategy(BaseStrategy):
         self._debug_last_status_log: int = 0
 
         # --- Filter Statistics (用于诊断为什么没有信号通过) ---
+        # 按照诊断要求的分类组织
         self._filter_stats: Dict[str, int] = {
+            # 预检查类
             "no_breakout_level": 0,
             "data_not_synced": 0,
             "in_cooldown": 0,
             "max_positions": 0,
-            "margin_limit": 0,  # 保证金占用限制
-            "trend_filter": 0,
-            "not_in_squeeze": 0,
-            "squeeze_immature": 0,  # 新增：挤压不成熟
-            "bb_width_not_tight": 0,  # BB Width 不够紧
-            "extension_filter": 0,  # 新增：追高过滤
-            "laddered_rs_filter": 0,  # 阶梯式 RS 过滤
-            "breakout_filter": 0,
-            "low_volume": 0,  # 成交量过滤
-            "btc_bear_market": 0,
+            "margin_limit": 0,
+            # 核心过滤器类 (对应诊断分类)
+            "fail_trend": 0,  # Price < EMA200
+            "fail_squeeze": 0,  # Not in Squeeze
+            "fail_squeeze_maturity": 0,  # Squeeze < N bars
+            "fail_bb_width": 0,  # BB Width not tight
+            "fail_extension": 0,  # Price overextended from EMA20
+            "fail_rs": 0,  # RS Gap not met
+            "fail_breakout": 0,  # No price breakout
+            "fail_volume": 0,  # Volume < threshold
+            "fail_btc_bear": 0,  # BTC 4H < EMA200
+            # 成功通过
             "all_passed": 0,
         }
         self._last_filter_summary_ts: int = 0
+
+        # --- Entry Metrics (用于交易关闭时输出) ---
+        self._entry_metrics: Dict[str, Dict] = {}
 
         # --- Universe State ---
         self._universe_map: Dict[str, Set[str]] = {}
@@ -415,6 +470,10 @@ class RSSqueezeStrategy(BaseStrategy):
         Called once per bar (e.g. hourly).
         """
         self._debug_bar_count += 1
+
+        # 0. Pullback 限价单过期检查 (V2.0 新增)
+        # 如果有待成交的限价单且已过期，取消订单
+        self._check_pullback_order_expiry(bar.ts_event)
 
         # 1. Update Indicators & Buffers
         self.asset_closes.append(Decimal(str(bar.close)))
@@ -693,6 +752,92 @@ class RSSqueezeStrategy(BaseStrategy):
 
         return (close_now - close_ago) / close_ago
 
+    def _check_anti_exhaustion(self, current_price: Decimal) -> bool:
+        """
+        V3.0 防疲惫过滤器 (Anti-Exhaustion Filter)。
+
+        设计规范：
+        Entry ONLY if: Close < Upper_Bollinger_Band
+
+        核心逻辑：
+        - 如果价格已经突破布林带上轨，说明动能已经释放（blow-off top）
+        - 此时不入场，等待下一次挤压蓄势
+        - 我们要捕捉的是挤压后的第一次动能爆发，而非已经过度拉伸的状态
+
+        Returns:
+            True if price is below Upper BB (允许入场)
+            False if price is at or above Upper BB (禁止入场 - 疲惫)
+        """
+        if not self.config.anti_exhaustion_enabled:
+            return True
+
+        if not self.bb.initialized:
+            return True
+
+        bb_upper = Decimal(str(getattr(self.bb.upper, "value", self.bb.upper)))
+
+        # 如果价格 >= 布林带上轨，视为疲惫/过度拉伸
+        return current_price < bb_upper
+
+    def _check_rs_acceleration(self) -> tuple[bool, str, Decimal, Decimal]:
+        """
+        V3.0 RS 加速检测：捕捉动能爆发的起点，而非终点。
+
+        设计规范：
+        Entry if:
+        1. Asset_Return_6h > BTC_Return_6h + rs_acceleration_gap (3%)
+        2. AND Asset_Return_6h > Asset_Return_24h (动能加速，而非疲惫)
+
+        核心逻辑：
+        - 条件1 确保币种在短期内显著跑赢大盘
+        - 条件2 确保我们捕捉的是行情的"开始"而非"结束"
+          如果 6h 收益 < 24h 收益，说明动能正在衰减（疲惫上涨）
+
+        Returns:
+            (is_passed, reason, asset_return_6h, rs_gap_6h)
+        """
+        # 检查数据是否足够
+        if len(self.asset_closes) < self.config.rs_lookback_24h + 1:
+            return (False, "insufficient_data", Decimal("0"), Decimal("0"))
+        if len(self.benchmark_closes) < self.config.rs_lookback_6h + 1:
+            return (False, "insufficient_benchmark_data", Decimal("0"), Decimal("0"))
+
+        # 计算 6h 和 24h 的 Asset 收益率
+        asset_return_6h = self._calculate_return(
+            self.asset_closes, self.config.rs_lookback_6h
+        )
+        asset_return_24h = self._calculate_return(
+            self.asset_closes, self.config.rs_lookback_24h
+        )
+
+        # 计算 6h BTC 收益率
+        btc_return_6h = self._calculate_return(
+            self.benchmark_closes, self.config.rs_lookback_6h
+        )
+
+        # RS Gap = Asset_6h - BTC_6h
+        rs_gap_6h = asset_return_6h - btc_return_6h
+
+        # Adaptive RS Gap: 中盘币需要更高的 RS Gap
+        rank = self._get_current_rank()
+        gap_addon = Decimal("0")
+        if rank > self.config.mid_cap_rank_threshold:
+            gap_addon = Decimal(str(self.config.mid_cap_rs_gap_addon))
+
+        required_gap = Decimal(str(self.config.rs_acceleration_gap)) + gap_addon
+
+        # 条件1: Asset_Return_6h > BTC_Return_6h + 3%
+        if rs_gap_6h <= required_gap:
+            return (False, "rs_gap_insufficient", asset_return_6h, rs_gap_6h)
+
+        # 条件2: Asset_Return_6h > Asset_Return_24h (动能加速)
+        # 如果 6h 收益 <= 24h 收益，说明动能正在衰减
+        if asset_return_6h <= asset_return_24h:
+            return (False, "momentum_exhausting", asset_return_6h, rs_gap_6h)
+
+        # 两个条件都满足 - 动能爆发中！
+        return (True, "acceleration_confirmed", asset_return_6h, rs_gap_6h)
+
     def _check_laddered_rs(self) -> tuple[bool, str]:
         """
         阶梯式 RS 过滤器：检查任一窗口是否满足 RS 条件。
@@ -705,6 +850,8 @@ class RSSqueezeStrategy(BaseStrategy):
         Adaptive RS Gap for Mid-Caps:
         对于排名 > 50 的中盘币，增加额外的 RS Gap 要求 (+2%)
         以要求更高的确信度过滤噪音。
+
+        注意：V3.0 已改用 _check_rs_acceleration()，此方法保留用于向后兼容。
 
         Returns:
             (is_passed, window_name) - 是否通过及通过的窗口名称
@@ -759,22 +906,59 @@ class RSSqueezeStrategy(BaseStrategy):
     def _has_open_position(self) -> bool:
         return len(self.cache.positions_open(instrument_id=self.instrument_id)) > 0
 
+    def _has_pending_pullback_order(self) -> bool:
+        """
+        检查是否有待成交的回调限价单。
+        V2.0 新增：防止在已有限价单的情况下重复下单。
+        """
+        return self._pending_pullback_order_id is not None
+
+    def _check_pullback_order_expiry(self, current_ts: int):
+        """
+        检查并处理回调限价单的过期。
+        V2.0 新增：限价单在 N 小时内未成交则取消。
+
+        Args:
+            current_ts: 当前时间戳 (纳秒)
+        """
+        if not self._pending_pullback_order_id:
+            return
+
+        if current_ts >= self._pullback_order_expiry_ts:
+            # 限价单已过期，取消订单
+            self.log.info(
+                f"⏰ PULLBACK ORDER EXPIRED: {self.instrument_id} "
+                f"Limit order did not fill within {self.config.pullback_order_expiry_hours}h. Cancelling."
+            )
+            # 取消所有挂单（包括限价买单）
+            self.cancel_all_orders(self.instrument_id)
+            # 重置状态
+            self._pending_pullback_order_id = None
+            self._pullback_order_expiry_ts = 0
+            self._pullback_order_qty = None
+            self._pullback_entry_metrics = None
+
     def _check_entry_signal(self, bar: Bar):
         """
         Evaluates market conditions for a Long Entry.
 
-        优化后的入场门控 (Confluence) - Universe-150 阶梯式过滤：
-        0. 唯一持仓限制：每个币种同时只能持有一个仓位
-        1. 趋势在 EMA200 之上
-        2. 处于 Squeeze 状态 (BB 完全在 KC 内部)
-        2.1 BB Width 紧度验证：BB Width 必须处于过去 100 根线的前 30% 分位数
-        3. 阶梯式 RS 过滤器：任一窗口满足即可 (6h/12h/24h)
-        4. 价格突破前 2 根 K 线的最高价
-        5. 成交量 > 20 周期平均成交量 * 1.3
-        6. BTC 4H > EMA200 (市场环境过滤)
-        7. 24 小时冷却期
-        8. 排除 BTC 自交易（RS 相对自己永远是 0）
-        9. 保证金占用限制
+        V3.0 "Early Momentum Explosion" - Lift-off Trigger 入场逻辑：
+
+        核心理念：
+        - 捕捉动能爆发的起点，而非终点
+        - 使用市价单 (Taker) 抓住行情启动的第一时间
+        - 移除"等回调"逻辑，因为它捕捉的是疲惫动能
+
+        入场条件：
+        1. 趋势在 EMA200 之上 (Uptrend)
+        2. 处于 Squeeze 状态至少 2 根 K 线 (BB 完全在 KC 内部)
+        3. RS 加速检测:
+           - Asset_Return_6h > BTC_Return_6h + 3% (短期显著跑赢大盘)
+           - AND Asset_Return_6h > Asset_Return_24h (动能加速，非疲惫)
+        4. Anti-Exhaustion: Close < Upper_BB (价格未在布林带外)
+        5. BTC 4H > EMA200 (市场环境过滤)
+
+        入场方式：MARKET ORDER (Taker)
         """
         self._debug_signal_checks += 1
 
@@ -782,35 +966,33 @@ class RSSqueezeStrategy(BaseStrategy):
         if self._has_open_position():
             return
 
-        # 0.1 排除 BTC 自交易：BTC 的 RS 相对自己永远是 0，无法产生有效信号
+        # 0.1 Pending Order Check: 如果已有待成交的回调限价单，不再下新单
+        # V3.0: 此逻辑保留用于向后兼容，但 pullback_entry_enabled=False
+        if self._has_pending_pullback_order():
+            return
+
+        # 0.2 排除 BTC 自交易：BTC 的 RS 相对自己永远是 0，无法产生有效信号
         if self.instrument_id == self.benchmark_id:
             return
 
-        # 1. Pre-conditions: 需要前期 high 数据来检测 breakout
-        if self._prev_breakout_level is None:
-            self._filter_stats["no_breakout_level"] += 1
-            return
-
-        # 2. Data Sync Check: 确保 Asset 和 Benchmark 数据同步
+        # 1. Data Sync Check: 确保 Asset 和 Benchmark 数据同步
         if not self._check_data_sync():
             self._filter_stats["data_not_synced"] += 1
             return
 
-        # 3. Cooldown Check (同一个币种 24 小时内最多开仓 1 次)
-        # 使用入场时间而不是出场时间，防止连续入场
+        # 2. Cooldown Check (同一个币种 24 小时内最多开仓 1 次)
         cooldown_ns = self.config.cooldown_period_hours * 3600 * 1_000_000_000
         if bar.ts_event < (self._last_entry_ts + cooldown_ns):
             self._filter_stats["in_cooldown"] += 1
             return
 
-        # 4. Max Concurrency Check (Basic protection)
-        # Note: This checks ALL positions in the engine.
+        # 3. Max Concurrency Check (Basic protection)
         open_positions = len(self.cache.positions_open())
         if open_positions >= self.config.max_concurrent_positions:
             self._filter_stats["max_positions"] += 1
             return
 
-        # 4.1 Margin Usage Check: 保证金占用超过 80% 时停止新开仓
+        # 4. Margin Usage Check: 保证金占用超过 80% 时停止新开仓
         account = self._get_account()
         if account:
             equity = account.balance(self.instrument.quote_currency).total.as_decimal()
@@ -827,63 +1009,43 @@ class RSSqueezeStrategy(BaseStrategy):
                     )
                     return
 
-        # 5. Market Logic
+        # === V3.0 Lift-off Trigger Detection ===
         current_price = Decimal(str(bar.close))
-        current_volume = Decimal(str(bar.volume))
         ema_slow = Decimal(str(self.ema_slow.value))
 
         # A. Trend Filter: Price > EMA200
         if current_price <= ema_slow:
-            self._filter_stats["trend_filter"] += 1
+            self._filter_stats["fail_trend"] += 1
             return
 
         # B. Squeeze Filter: BB(20,2) 完全在 KC(20,1.4) 内部
         if not self._is_squeeze:
-            self._filter_stats["not_in_squeeze"] += 1
+            self._filter_stats["fail_squeeze"] += 1
             return
 
-        # B.1 Squeeze Maturity Filter: 挤压状态必须连续保持至少 N 根 K 线
-        # 消除由瞬间价格尖峰引起的"假挤压"
+        # B.1 Squeeze Maturity Filter: 挤压状态必须连续保持至少 2 根 K 线
+        # V3.0: 确保挤压是"真实"的蓄势，而非瞬间噪音
         if not self._is_squeeze_mature():
-            self._filter_stats["squeeze_immature"] += 1
+            self._filter_stats["fail_squeeze_maturity"] += 1
             return
 
-        # B.2 BB Width Tightness Filter: BB Width 必须处于极低分位数
-        # 强化规范：确保只有在波动率"极度"收缩后才入场
-        if not self._is_bb_width_tight():
-            self._filter_stats["bb_width_not_tight"] += 1
-            return
-
-        # B.3 Dynamic Extension Filter (Anti-Chase Guard): 防止追高
-        # Entry ONLY if: Current_Price < EMA(20) * (1 + ATR_Relative)
-        if not self._check_extension_filter(current_price):
-            self._filter_stats["extension_filter"] += 1
-            return
-
-        # C. Laddered Relative Strength Filter
-        # 阶梯式 RS：任一窗口满足即可通过
-        rs_passed, rs_window = self._check_laddered_rs()
+        # C. V3.0 RS Acceleration Filter (核心变化)
+        # 替代 V2.0 的阶梯式 RS，要求同时满足：
+        # 1. Asset_6h > BTC_6h + 3%
+        # 2. Asset_6h > Asset_24h (动能加速)
+        rs_passed, rs_reason, asset_return_6h, rs_gap_6h = self._check_rs_acceleration()
         if not rs_passed:
-            self._filter_stats["laddered_rs_filter"] += 1
+            self._filter_stats["fail_rs"] += 1
             return
 
-        # D. Breakout Check
-        # 设计规范：价格突破前 2 根 K 线的最高价
-        if current_price <= self._prev_breakout_level:
-            self._filter_stats["breakout_filter"] += 1
+        # D. V3.0 Anti-Exhaustion Filter (替代 V2.0 Extension Filter)
+        # Entry ONLY if: Close < Upper_BB
+        # 如果价格已在布林带外，说明动能已释放（blow-off top），不入场
+        if not self._check_anti_exhaustion(current_price):
+            self._filter_stats["fail_extension"] += 1  # 复用 extension 统计键
             return
 
-        # E. Volume Filter (可选): 过滤无量突破
-        # 当 volume_filter_mult > 0 时启用：当前成交量必须 > 平均成交量 * mult
-        if self.config.volume_filter_mult > 0:
-            avg_volume = self._calculate_avg_volume()
-            volume_threshold = avg_volume * Decimal(str(self.config.volume_filter_mult))
-            if current_volume <= volume_threshold:
-                self._filter_stats["low_volume"] += 1
-                return
-
-        # F. Benchmark 4H Filter (Bear Market Detector)
-        # Only apply if data is available
+        # E. Benchmark 4H Filter (Bear Market Detector)
         if self.btc_ema_4h.initialized:
             btc_bar = self.cache.bar(self.btc_4h_bar_type)
             if btc_bar:
@@ -891,28 +1053,227 @@ class RSSqueezeStrategy(BaseStrategy):
                 btc_ema = Decimal(str(self.btc_ema_4h.value))
                 if btc_price < btc_ema:
                     # Bear market -> Filter Longs
-                    self._filter_stats["btc_bear_market"] += 1
+                    self._filter_stats["fail_btc_bear"] += 1
                     return
 
-        # If we reached here, all systems go
+        # If we reached here, all conditions passed - Lift-off confirmed!
         self._filter_stats["all_passed"] += 1
 
-        # 构建日志消息（volume_threshold 仅在启用过滤时有值）
-        vol_info = ""
-        if self.config.volume_filter_mult > 0:
-            avg_volume = self._calculate_avg_volume()
-            volume_threshold = avg_volume * Decimal(str(self.config.volume_filter_mult))
-            vol_info = (
-                f", Volume={current_volume:.2f} > Threshold={volume_threshold:.2f}"
+        # 计算入场时的关键指标用于后期分析
+        bb_width_pct = self._get_bb_width_percentile()
+        rs_score = self._calculate_rs_score()
+
+        # 计算成交量倍数用于记录
+        current_volume = Decimal(str(bar.volume))
+        avg_volume = self._calculate_avg_volume()
+        volume_mult = Decimal("0")
+        if avg_volume > 0:
+            volume_mult = current_volume / avg_volume
+
+        self.log.info(
+            f"🚀 LIFT-OFF DETECTED for {self.instrument_id}! "
+            f"Price={current_price:.2f}, RS_Reason={rs_reason}, "
+            f"Asset_6h_Ret={asset_return_6h:.4f}, RS_Gap_6h={rs_gap_6h:.4f}, "
+            f"RS_Score={rs_score:.4f}, BB_Width_Pct={bb_width_pct:.2f}, "
+            f"Volume_Mult={volume_mult:.2f}"
+        )
+
+        # === V3.0: 直接市价入场 (Taker) ===
+        # 不再等待回调，抓住动能爆发的第一时间
+        if self.config.pullback_entry_enabled:
+            # 保留 V2.0 回调逻辑用于向后兼容（默认禁用）
+            self._place_pullback_limit_order(
+                bar.ts_event, rs_reason, rs_score, bb_width_pct, volume_mult
+            )
+        else:
+            # V3.0 默认逻辑：直接市价入场
+            self._execute_entry(
+                current_price,
+                rs_reason,
+                bar.ts_event,
+                rs_score,
+                bb_width_pct,
+                volume_mult,
             )
 
-        self.log.debug(
-            f"🎯 ALL FILTERS PASSED for {self.instrument_id}! "
-            f"Price={current_price:.2f}, RS_Window={rs_window}, Squeeze=True{vol_info}"
+    def _calculate_rs_score(self) -> Decimal:
+        """
+        计算当前的 RS Score：所有窗口中最大的 RS Gap。
+        用于后期分析 Winner vs Loser 的特征差异。
+        """
+        max_lookback = max(
+            self.config.rs_lookback_6h,
+            self.config.rs_lookback_12h,
+            self.config.rs_lookback_24h,
         )
-        self._execute_entry(current_price, rs_window, bar.ts_event)
 
-    def _execute_entry(self, current_price: Decimal, rs_window: str, ts_event: int):
+        if len(self.asset_closes) < max_lookback + 1:
+            return Decimal("0")
+        if len(self.benchmark_closes) < max_lookback + 1:
+            return Decimal("0")
+
+        max_rs_gap = Decimal("0")
+        for lookback in [
+            self.config.rs_lookback_6h,
+            self.config.rs_lookback_12h,
+            self.config.rs_lookback_24h,
+        ]:
+            asset_return = self._calculate_return(self.asset_closes, lookback)
+            btc_return = self._calculate_return(self.benchmark_closes, lookback)
+            rs_gap = asset_return - btc_return
+            if rs_gap > max_rs_gap:
+                max_rs_gap = rs_gap
+
+        return max_rs_gap
+
+    def _get_bb_width_percentile(self) -> Decimal:
+        """
+        获取当前 BB Width 在历史分布中的分位数位置。
+        用于后期分析。
+        """
+        if len(self.bb_widths) < 2:
+            return Decimal("0.5")
+
+        current_width = self.bb_widths[-1]
+        sorted_widths = sorted(self.bb_widths)
+
+        position = 0
+        for w in sorted_widths:
+            if w < current_width:
+                position += 1
+            else:
+                break
+
+        return Decimal(str(position / len(sorted_widths)))
+
+    def _place_pullback_limit_order(
+        self,
+        ts_event: int,
+        rs_window: str,
+        rs_score: Decimal,
+        bb_width_pct: Decimal,
+        volume_mult: Decimal,
+    ):
+        """
+        V2.0 核心方法：在 EMA(20) 价位挂限价买单等待回调。
+
+        "Breakout-then-Pullback" 入场逻辑：
+        - 检测到突破信号后，不立即市价买入
+        - 在 EMA(20) 挂限价买单等待价格回调
+        - 限价单 4 小时内未成交则取消
+        - 止损 = Entry - 1.2 * ATR（更紧的止损，提高仓位和风险回报比）
+
+        Args:
+            ts_event: 信号触发时间戳 (纳秒)
+            rs_window: 触发 RS 信号的时间窗口
+            rs_score: RS Score 用于后期分析
+            bb_width_pct: BB Width 分位数用于后期分析
+            volume_mult: 成交量倍数用于后期分析
+        """
+        if not self.ema_fast.initialized or not self.atr.initialized:
+            self.log.warning(
+                f"⚠️ PULLBACK ORDER SKIP: {self.instrument_id} EMA/ATR not initialized."
+            )
+            return
+
+        # 限价单入场价 = EMA(20)
+        ema_fast = Decimal(str(self.ema_fast.value))
+        limit_price = self.instrument.make_price(ema_fast)
+
+        # 止损距离 = 1.2 * ATR (V2.0 更紧的止损)
+        atr = Decimal(str(self.atr.value))
+        risk_dist = atr * Decimal(str(self.config.stop_loss_mult))
+
+        # Calculate Position Size
+        account = self._get_account()
+        if not account:
+            return
+
+        equity = account.balance(self.instrument.quote_currency).total.as_decimal()
+
+        # 🛡️ 负余额保护：账户余额 <= 0 时禁止开仓
+        if equity <= Decimal("0"):
+            self.log.warning(
+                f"⚠️ NEGATIVE BALANCE PROTECTION: equity={equity}, "
+                f"refusing to place pullback order on {self.instrument_id}"
+            )
+            return
+
+        risk_amt = equity * Decimal(str(self.config.risk_per_trade))
+
+        # 设计规范：Qty = Risk Amount / Risk Distance per Unit
+        if risk_dist <= 0:
+            return
+        raw_qty = risk_amt / risk_dist
+
+        # 🛡️ 杠杆封顶：计算实际杠杆并限制在 max_leverage 以内
+        max_leverage = Decimal(str(self.config.max_leverage))
+        notional_value = raw_qty * ema_fast
+        effective_leverage = notional_value / equity
+
+        if effective_leverage > max_leverage:
+            # 重新计算仓位使杠杆不超过上限
+            old_qty = raw_qty
+            raw_qty = (equity * max_leverage) / ema_fast
+            self.log.info(
+                f"🛡️ LEVERAGE CAP: {self.instrument_id} leverage {effective_leverage:.2f}x "
+                f"exceeded {max_leverage}x limit. Qty reduced: {old_qty:.6f} -> {raw_qty:.6f}"
+            )
+
+        try:
+            qty = self.instrument.make_qty(raw_qty)
+            if qty <= 0:
+                return
+        except Exception as e:
+            self.log.warning(f"Qty Calc Error: {e}")
+            return
+
+        # 计算限价单过期时间
+        expiry_ns = self.config.pullback_order_expiry_hours * 3600 * 1_000_000_000
+        expiry_ts = ts_event + expiry_ns
+
+        self.log.info(
+            f"📥 PULLBACK LIMIT ORDER: {self.instrument_id} "
+            f"Limit Buy @ EMA(20)={limit_price}, Qty={qty}, "
+            f"SL_dist={risk_dist:.4f}, Expiry={self.config.pullback_order_expiry_hours}h"
+        )
+
+        # 1. Place Limit Buy Order at EMA(20)
+        limit_order = self.order_factory.limit(
+            instrument_id=self.instrument_id,
+            order_side=OrderSide.BUY,
+            quantity=qty,
+            price=limit_price,
+            time_in_force=TimeInForce.GTC,
+        )
+        self.submit_order(limit_order)
+
+        # 保存限价单状态用于后续处理
+        self._pending_pullback_order_id = str(limit_order.client_order_id)
+        self._pullback_order_expiry_ts = expiry_ts
+        self._pullback_order_qty = qty
+
+        # 保存入场指标用于订单成交后记录
+        self._pullback_entry_metrics = {
+            "asset": str(self.instrument_id.symbol),
+            "limit_price": float(ema_fast),
+            "rs_window": rs_window,
+            "rs_score": float(rs_score),
+            "bb_width_pct": float(bb_width_pct),
+            "volume_mult": float(volume_mult),
+            "atr": float(atr),
+            "order_ts": ts_event,
+        }
+
+    def _execute_entry(
+        self,
+        current_price: Decimal,
+        rs_window: str,
+        ts_event: int,
+        rs_score: Decimal = Decimal("0"),
+        bb_width_pct: Decimal = Decimal("0"),
+        volume_mult: Decimal = Decimal("0"),
+    ):
         """
         Executes entry orders with risk management.
 
@@ -1005,16 +1366,31 @@ class RSSqueezeStrategy(BaseStrategy):
         self._last_entry_ts = ts_event  # 记录入场时间用于 cooldown
         self._position_open_ts = ts_event  # 记录开仓时间用于 72h 强制平仓
 
+        # 记录入场时的关键指标，用于交易关闭时输出分析
+        self._entry_metrics[str(self.instrument_id)] = {
+            "asset": str(self.instrument_id.symbol),
+            "entry_price": float(current_price),
+            "rs_window": rs_window,
+            "rs_score": float(rs_score),
+            "bb_width_pct": float(bb_width_pct),
+            "volume_mult": float(volume_mult),
+            "entry_ts": ts_event,
+        }
+
     def _manage_positions(self, bar: Bar):
         """
         Manages open positions:
 
-        Breathing Room 出场逻辑：
-        1. 止损由初始止损单处理
-        2. 追踪止损：盈利 >= 1.5 * ATR 后，追踪止损 = Highest_High - 2.5 * ATR
-        3. 趋势退出：Price < EMA30 (趋势转弱时退出，给交易更多呼吸空间)
-        4. 🛡️ 紧急止损保护：如果价格跌破止损线但止损单未触发，强制平仓
-        5. ⏰ 时间保护强制平仓：持仓超过 72 小时仍未触发止盈止损，强制市价平仓
+        V3.0 "Big Win" 出场逻辑 - 让利润奔跑：
+        1. 止损由初始止损单处理 (Entry - 1.5 * ATR)
+        2. 追踪止损：盈利 >= 2.5 * ATR 后激活，追踪止损 = Highest_High - 3.0 * ATR
+        3. 🛡️ 紧急止损保护：如果价格跌破止损线但止损单未触发，强制平仓
+        4. ⏰ 时间保护强制平仓：持仓超过 72 小时仍未触发止盈止损，强制市价平仓
+
+        V3.0 核心变化：
+        - **移除** EMA 趋势退出 (会扼杀赢家，导致 Avg Winner 过低)
+        - 追踪止损更宽松 (3.0 * ATR)，给利润更多呼吸空间
+        - 目标：捕捉 30u+ 的 Max Winner，而非 0.6u 的小赢
         """
         positions = self.cache.positions_open(instrument_id=self.instrument_id)
         if not positions:
@@ -1078,8 +1454,9 @@ class RSSqueezeStrategy(BaseStrategy):
                 self.submit_order(close_order)
                 return
 
-        # 📈 追踪止损逻辑 (Trailing Stop - Breathing Room)
-        # 盈利 >= 1.5 * ATR 后激活追踪止损
+        # 📈 V3.0 追踪止损逻辑 (Trailing Stop - "Big Win" Focus)
+        # 盈利 >= 2.5 * ATR 后激活追踪止损
+        # 追踪距离 = 3.0 * ATR (更宽松，让利润奔跑)
         if self._entry_price and self.atr.initialized and position.is_long:
             atr = Decimal(str(self.atr.value))
             profit = current_price - self._entry_price
@@ -1088,7 +1465,7 @@ class RSSqueezeStrategy(BaseStrategy):
             if profit >= trigger_profit:
                 # 追踪止损激活或更新
                 if self._highest_high_since_entry:
-                    # 追踪止损价 = Highest_High - 2.5 * ATR
+                    # V3.0: 追踪止损价 = Highest_High - 3.0 * ATR (更宽松)
                     trailing_sl_price = self._highest_high_since_entry - (
                         atr * Decimal(str(self.config.trailing_stop_atr_mult))
                     )
@@ -1102,9 +1479,9 @@ class RSSqueezeStrategy(BaseStrategy):
                     if not self._trailing_stop_active:
                         # 首次激活追踪止损
                         self.log.info(
-                            f"📈 TRAILING STOP ACTIVATED: {self.instrument_id} "
+                            f"📈 TRAILING STOP ACTIVATED (V3.0 Big Win): {self.instrument_id} "
                             f"profit {profit:.4f} >= {trigger_profit:.4f}. "
-                            f"Trailing SL = {trailing_sl_price:.4f}"
+                            f"Trailing SL = {trailing_sl_price:.4f} (HH - {self.config.trailing_stop_atr_mult} * ATR)"
                         )
                         self._trailing_stop_active = True
 
@@ -1122,31 +1499,34 @@ class RSSqueezeStrategy(BaseStrategy):
                     )
                     self.submit_order(sl_order)
 
-        # 📉 趋势退出：Price < EMA30
-        # 当价格跌破中期均线时，说明趋势转弱，提前止盈
-        # 使用 EMA30 而非 EMA20，给交易更多呼吸空间
-        if self.ema_trend_exit.initialized and position.is_long:
-            ema_trend_exit = Decimal(str(self.ema_trend_exit.value))
-            if current_price < ema_trend_exit:
-                # 仅在有盈利时才执行趋势退出（避免趋势退出变成提前止损）
-                if self._entry_price and current_price > self._entry_price:
-                    pnl_pct = (
-                        (current_price - self._entry_price) / self._entry_price * 100
-                    )
-                    self.log.info(
-                        f"📉 TREND EXIT: {self.instrument_id} price {current_price:.4f} "
-                        f"< EMA30 {ema_trend_exit:.4f}. Closing with +{pnl_pct:.2f}% profit."
-                    )
-                    # 取消所有挂单
-                    self.cancel_all_orders(self.instrument_id)
-                    # 市价平仓
-                    close_order = self.order_factory.market(
-                        instrument_id=self.instrument_id,
-                        order_side=OrderSide.SELL,
-                        quantity=position.quantity,
-                    )
-                    self.submit_order(close_order)
-                    return
+        # V3.0: 移除 EMA 趋势退出
+        # V2.0 的 EMA 趋势退出会扼杀赢家，导致 Avg Winner 仅 0.67 USDT
+        # V3.0 仅依靠追踪止损让利润奔跑，目标 Avg Winner >= 5.0 USDT
+        #
+        # 如果需要启用趋势退出（向后兼容），可通过 config.ema_trend_exit_enabled 控制
+        if getattr(self.config, "ema_trend_exit_enabled", False):
+            if self.ema_trend_exit.initialized and position.is_long:
+                ema_trend_exit = Decimal(str(self.ema_trend_exit.value))
+                if current_price < ema_trend_exit:
+                    # 仅在有盈利时才执行趋势退出
+                    if self._entry_price and current_price > self._entry_price:
+                        pnl_pct = (
+                            (current_price - self._entry_price)
+                            / self._entry_price
+                            * 100
+                        )
+                        self.log.info(
+                            f"📉 TREND EXIT (Legacy): {self.instrument_id} price {current_price:.4f} "
+                            f"< EMA50 {ema_trend_exit:.4f}. Closing with +{pnl_pct:.2f}% profit."
+                        )
+                        self.cancel_all_orders(self.instrument_id)
+                        close_order = self.order_factory.market(
+                            instrument_id=self.instrument_id,
+                            order_side=OrderSide.SELL,
+                            quantity=position.quantity,
+                        )
+                        self.submit_order(close_order)
+                        return
 
     def _get_account(self):
         """Helper to find the correct account with quote currency balance."""
@@ -1162,34 +1542,318 @@ class RSSqueezeStrategy(BaseStrategy):
         # Fallback to first available
         return accounts[0]
 
+    def on_order_filled(self, event):
+        """
+        V2.0 核心回调：处理限价单成交后的止损设置。
+
+        当回调限价买单成交时：
+        1. 设置止损单 = Entry - 1.2 * ATR
+        2. 更新入场状态变量
+        3. 记录入场指标用于后期分析
+        """
+        super().on_order_filled(event)
+
+        # 检查是否为我们的回调限价买单
+        if self._pending_pullback_order_id is None:
+            return
+
+        order_id = str(event.client_order_id)
+        if order_id != self._pending_pullback_order_id:
+            return
+
+        # 限价买单已成交！
+        fill_price = Decimal(str(event.last_px))
+        fill_qty = event.last_qty
+
+        self.log.info(
+            f"✅ PULLBACK LIMIT ORDER FILLED: {self.instrument_id} "
+            f"Entry @ {fill_price}, Qty={fill_qty}"
+        )
+
+        # 设置止损单 = Entry - 1.2 * ATR
+        if self._pullback_entry_metrics and "atr" in self._pullback_entry_metrics:
+            atr = Decimal(str(self._pullback_entry_metrics["atr"]))
+            risk_dist = atr * Decimal(str(self.config.stop_loss_mult))
+            sl_price_raw = fill_price - risk_dist
+            sl_price = self.instrument.make_price(sl_price_raw)
+
+            sl_order = self.order_factory.stop_market(
+                instrument_id=self.instrument_id,
+                order_side=OrderSide.SELL,
+                quantity=fill_qty,
+                trigger_price=sl_price,
+                time_in_force=TimeInForce.GTC,
+            )
+            self.submit_order(sl_order)
+
+            self.log.info(
+                f"🛡️ STOP LOSS SET: {self.instrument_id} SL @ {sl_price} "
+                f"(Entry - {self.config.stop_loss_mult} * ATR)"
+            )
+
+        # 更新入场状态
+        self._entry_price = fill_price
+        self._breakeven_triggered = False
+        self._trailing_stop_active = False
+        self._highest_high_since_entry = fill_price
+        self._last_entry_ts = event.ts_event
+        self._position_open_ts = event.ts_event
+
+        # 记录入场指标用于交易关闭时分析
+        if self._pullback_entry_metrics:
+            self._entry_metrics[str(self.instrument_id)] = {
+                "asset": self._pullback_entry_metrics["asset"],
+                "entry_price": float(fill_price),
+                "rs_window": self._pullback_entry_metrics["rs_window"],
+                "rs_score": self._pullback_entry_metrics["rs_score"],
+                "bb_width_pct": self._pullback_entry_metrics["bb_width_pct"],
+                "volume_mult": self._pullback_entry_metrics["volume_mult"],
+                "entry_ts": event.ts_event,
+            }
+
+        # 清理待成交状态
+        self._pending_pullback_order_id = None
+        self._pullback_order_expiry_ts = 0
+        self._pullback_order_qty = None
+        self._pullback_entry_metrics = None
+
+    def on_order_canceled(self, event):
+        """
+        V2.0 回调：处理限价单被取消的状态清理。
+
+        当回调限价买单被取消（过期或手动取消）时：
+        - 清理待成交状态变量
+        """
+        super().on_order_canceled(event)
+
+        # 检查是否为我们的回调限价买单
+        if self._pending_pullback_order_id is None:
+            return
+
+        order_id = str(event.client_order_id)
+        if order_id != self._pending_pullback_order_id:
+            return
+
+        # 限价买单已取消，清理状态
+        self.log.debug(
+            f"📤 PULLBACK ORDER CANCELED: {self.instrument_id} "
+            f"Order {order_id} was canceled."
+        )
+
+        self._pending_pullback_order_id = None
+        self._pullback_order_expiry_ts = 0
+        self._pullback_order_qty = None
+        self._pullback_entry_metrics = None
+
     def on_position_closed(self, event):
         super().on_position_closed(event)
         # Record exit timestamp for Cooldown (保留以便调试)
         self._last_exit_ts = self.clock.timestamp_ns()
 
+        # 输出交易关闭时的详细信息并收集到类变量供统一输出
+        instrument_key = str(self.instrument_id)
+        if instrument_key in self._entry_metrics:
+            metrics = self._entry_metrics[instrument_key]
+            # 计算 PnL
+            entry_price = Decimal(str(metrics["entry_price"]))
+            exit_price = (
+                Decimal(str(event.avg_px_close))
+                if hasattr(event, "avg_px_close")
+                else Decimal("0")
+            )
+            pnl_pct = Decimal("0")
+            if entry_price > 0 and exit_price > 0:
+                pnl_pct = (exit_price - entry_price) / entry_price * 100
+
+            result = "WINNER" if pnl_pct > 0 else "LOSER"
+
+            # 收集到类变量供回测结束后统一输出
+            trade_record = {
+                "asset": metrics["asset"],
+                "result": result,
+                "pnl_pct": float(pnl_pct),
+                "entry_rs_score": metrics["rs_score"],
+                "entry_bb_width_pct": metrics["bb_width_pct"],
+                "entry_volume_mult": metrics["volume_mult"],
+            }
+            RSSqueezeStrategy._all_trade_metrics.append(trade_record)
+
+            self.log.info(
+                f"📈 TRADE CLOSED [{result}]: {metrics['asset']} | "
+                f"RS_Score={metrics['rs_score']:.4f} | "
+                f"BB_Width_Pct={metrics['bb_width_pct']:.2f} | "
+                f"Volume_Mult={metrics['volume_mult']:.2f} | "
+                f"PnL={pnl_pct:+.2f}%"
+            )
+
+            # 清理已关闭的记录
+            del self._entry_metrics[instrument_key]
+
     def on_stop(self):
         """Log debugging summary."""
-        # 输出过滤器统计摘要
+        # 将本实例的过滤器统计保存到类变量，供回测结束后统一输出
         if self._debug_signal_checks > 0:
-            self.log.info(
-                f"📊 Filter stats for {self.instrument_id}: "
-                f"no_breakout={self._filter_stats['no_breakout_level']}, "
-                f"data_sync={self._filter_stats['data_not_synced']}, "
-                f"cooldown={self._filter_stats['in_cooldown']}, "
-                f"trend={self._filter_stats['trend_filter']}, "
-                f"squeeze={self._filter_stats['not_in_squeeze']}, "
-                f"squeeze_immature={self._filter_stats['squeeze_immature']}, "
-                f"bb_width={self._filter_stats['bb_width_not_tight']}, "
-                f"extension={self._filter_stats['extension_filter']}, "
-                f"laddered_rs={self._filter_stats['laddered_rs_filter']}, "
-                f"breakout={self._filter_stats['breakout_filter']}, "
-                f"low_volume={self._filter_stats['low_volume']}, "
-                f"btc_bear={self._filter_stats['btc_bear_market']}, "
-                f"PASSED={self._filter_stats['all_passed']}"
-            )
+            RSSqueezeStrategy._all_filter_stats[str(self.instrument_id)] = {
+                "signal_checks": self._debug_signal_checks,
+                **self._filter_stats.copy(),
+            }
 
         self.cancel_all_orders(self.instrument_id)
         self.close_all_positions(self.instrument_id)
+
+    @classmethod
+    def get_filter_stats_summary(cls) -> Dict[str, Dict[str, int]]:
+        """
+        获取所有实例的过滤器统计汇总。
+        供 engine_high.py 在回测结束后调用并统一输出。
+        """
+        return cls._all_filter_stats.copy()
+
+    @classmethod
+    def get_trade_metrics(cls) -> list:
+        """
+        获取所有交易的入场指标记录。
+        供 engine_high.py 在回测结束后调用并统一输出。
+        """
+        return cls._all_trade_metrics.copy()
+
+    @classmethod
+    def reset_class_stats(cls):
+        """
+        重置类变量统计数据。
+        在每次回测开始前调用，避免多次回测数据累积。
+        """
+        cls._all_filter_stats.clear()
+        cls._all_trade_metrics.clear()
+
+    @classmethod
+    def print_filter_stats_report(cls):
+        """
+        打印格式化的过滤器统计汇总报告。
+        供 engine_high.py 在回测结束后调用。
+        V3.0: 更新为 "Early Momentum Explosion" 报告格式。
+        """
+        if not cls._all_filter_stats:
+            return
+
+        # 汇总所有实例的统计
+        total_stats = {
+            "signal_checks": 0,
+            "no_breakout_level": 0,
+            "data_not_synced": 0,
+            "in_cooldown": 0,
+            "max_positions": 0,
+            "margin_limit": 0,
+            "fail_trend": 0,
+            "fail_squeeze": 0,
+            "fail_squeeze_maturity": 0,
+            "fail_bb_width": 0,
+            "fail_extension": 0,
+            "fail_rs": 0,
+            "fail_breakout": 0,
+            "fail_volume": 0,
+            "fail_btc_bear": 0,
+            "all_passed": 0,
+        }
+
+        for inst_id, stats in cls._all_filter_stats.items():
+            for key in total_stats:
+                total_stats[key] += stats.get(key, 0)
+
+        # 打印汇总报告
+        print("\n" + "=" * 70)
+        print("📊 FILTER STATISTICS SUMMARY (V3.0 Early Momentum Explosion)")
+        print("=" * 70)
+        print(f"Total Instruments: {len(cls._all_filter_stats)}")
+        print(f"Total Signal Checks: {total_stats['signal_checks']:,}")
+        print("-" * 70)
+        print("PRE-CHECKS (Infrastructure):")
+        print(f"  data_not_synced:      {total_stats['data_not_synced']:>8,}")
+        print(f"  in_cooldown:          {total_stats['in_cooldown']:>8,}")
+        print(f"  max_positions:        {total_stats['max_positions']:>8,}")
+        print(f"  margin_limit:         {total_stats['margin_limit']:>8,}")
+        print("-" * 70)
+        print("CORE FILTERS (V3.0 Lift-off Trigger):")
+        print(
+            f"  fail_trend:           {total_stats['fail_trend']:>8,}  (Price < EMA200)"
+        )
+        print(
+            f"  fail_squeeze:         {total_stats['fail_squeeze']:>8,}  (Not in Squeeze)"
+        )
+        print(
+            f"  fail_squeeze_maturity:{total_stats['fail_squeeze_maturity']:>8,}  (Squeeze < 2 bars)"
+        )
+        print(
+            f"  fail_rs:              {total_stats['fail_rs']:>8,}  (RS Acceleration not met)"
+        )
+        print(
+            f"  fail_extension:       {total_stats['fail_extension']:>8,}  (Anti-Exhaustion: Close >= Upper_BB)"
+        )
+        print(
+            f"  fail_btc_bear:        {total_stats['fail_btc_bear']:>8,}  (BTC 4H < EMA200)"
+        )
+        print("-" * 70)
+        print(
+            f"🚀 ALL_PASSED (Lift-off): {total_stats['all_passed']:>8,}  (→ MARKET ORDER 入场)"
+        )
+        print("=" * 70)
+        print(
+            "📝 V3.0 说明: RS 加速检测 (6h > BTC+3% AND 6h > 24h) + 防疲惫过滤 (Close < Upper_BB)"
+        )
+        print("   目标: Avg Winner >= 5.0 USDT, 捕捉 30u+ 的 Max Winner")
+
+        # 打印交易指标分析（如果有交易）
+        if cls._all_trade_metrics:
+            winners = [t for t in cls._all_trade_metrics if t["result"] == "WINNER"]
+            losers = [t for t in cls._all_trade_metrics if t["result"] == "LOSER"]
+
+            print("\n" + "=" * 70)
+            print("📈 TRADE METRICS ANALYSIS (V3.0 Early Momentum Explosion)")
+            print("=" * 70)
+            print(
+                f"Total Trades: {len(cls._all_trade_metrics)} | Winners: {len(winners)} | Losers: {len(losers)}"
+            )
+
+            # 计算 Avg Winner / Avg Loser
+            if winners:
+                avg_pnl_win = sum(t["pnl_pct"] for t in winners) / len(winners)
+            else:
+                avg_pnl_win = 0
+            if losers:
+                avg_pnl_lose = sum(t["pnl_pct"] for t in losers) / len(losers)
+            else:
+                avg_pnl_lose = 0
+
+            print("\nPnL Summary:")
+            print(f"  Avg Winner PnL:  {avg_pnl_win:+.2f}%")
+            print(f"  Avg Loser PnL:   {avg_pnl_lose:+.2f}%")
+            if losers and avg_pnl_lose != 0:
+                rr_ratio = abs(avg_pnl_win / avg_pnl_lose)
+                print(f"  R/R Ratio:       {rr_ratio:.2f}")
+
+            if winners:
+                avg_rs_win = sum(t["entry_rs_score"] for t in winners) / len(winners)
+                avg_bb_win = sum(t["entry_bb_width_pct"] for t in winners) / len(
+                    winners
+                )
+                avg_vol_win = sum(t["entry_volume_mult"] for t in winners) / len(
+                    winners
+                )
+                print("\nWINNERS (avg entry metrics):")
+                print(f"  RS_Score:       {avg_rs_win:.4f}")
+                print(f"  BB_Width_Pct:   {avg_bb_win:.2f}")
+                print(f"  Volume_Mult:    {avg_vol_win:.2f}")
+
+            if losers:
+                avg_rs_lose = sum(t["entry_rs_score"] for t in losers) / len(losers)
+                avg_bb_lose = sum(t["entry_bb_width_pct"] for t in losers) / len(losers)
+                avg_vol_lose = sum(t["entry_volume_mult"] for t in losers) / len(losers)
+                print("\nLOSERS (avg entry metrics):")
+                print(f"  RS_Score:       {avg_rs_lose:.4f}")
+                print(f"  BB_Width_Pct:   {avg_bb_lose:.2f}")
+                print(f"  Volume_Mult:    {avg_vol_lose:.2f}")
+
+            print("=" * 70 + "\n")
 
     def on_reset(self):
         super().on_reset()
@@ -1217,6 +1881,13 @@ class RSSqueezeStrategy(BaseStrategy):
         self._debug_bar_count = 0
         self._debug_signal_checks = 0
         self._debug_last_status_log = 0
+        # Reset Pullback Entry state (V2.0 新增)
+        self._pending_pullback_order_id = None
+        self._pullback_order_expiry_ts = 0
+        self._pullback_order_qty = None
+        self._pullback_entry_metrics = None
         # Reset filter stats
         for key in self._filter_stats:
             self._filter_stats[key] = 0
+        # Reset entry metrics
+        self._entry_metrics.clear()

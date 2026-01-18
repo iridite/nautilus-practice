@@ -24,7 +24,7 @@ from strategy.rs_squeeze import RSSqueezeConfig
 # ==========================================
 VENUE = "BINANCE"
 INSTRUMENT_TYPE = InstrumentType.SWAP
-START_DATE = "2022-01-01"
+START_DATE = "2024-01-01"
 END_DATE = "2026-01-14"
 INITIAL_BALANCES = [Money("100", USDT)]
 
