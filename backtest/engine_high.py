@@ -2,8 +2,9 @@ import gc
 import json
 import sys
 from collections import defaultdict
+from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Optional, Type
+from typing import Any, Dict, List, Optional
 
 from nautilus_trader.backtest.config import (
     BacktestDataConfig,
@@ -73,7 +74,7 @@ def run_high_level(cfg: BackTestConfig, base_dir: Path):
             inst_id = cfg.instrument.instrument_id
 
         # 2.1 按需加载标的信息 (仅加载有数据流定义的标的)
-        if inst_id not in loaded_instruments:
+        if inst_id is not None and inst_id not in loaded_instruments:
             inst_cfg = inst_cfg_map.get(inst_id)
             if inst_cfg:
                 inst_path = inst_cfg.get_json_path()
@@ -304,11 +305,17 @@ def run_high_level(cfg: BackTestConfig, base_dir: Path):
 
     print("✅ Backtest Complete.")
 
-    # 输出策略过滤器统计汇总报告
-    # 尝试导入策略类并调用其类方法输出统计
+    # 获取策略过滤器统计和交易指标
+    filter_stats = None
+    trade_metrics = None
     try:
         from strategy.rs_squeeze import RSSqueezeStrategy
 
+        # 获取统计数据（在打印之前）
+        filter_stats = RSSqueezeStrategy.get_filter_stats_summary()
+        trade_metrics = RSSqueezeStrategy.get_trade_metrics()
+
+        # 输出策略过滤器统计汇总报告
         RSSqueezeStrategy.print_filter_stats_report()
         # 重置类变量，避免多次回测数据累积
         RSSqueezeStrategy.reset_class_stats()
@@ -331,16 +338,195 @@ def run_high_level(cfg: BackTestConfig, base_dir: Path):
     else:
         strategy_config = {}
 
-    # 打印回测结果摘要
+    # 构建回测配置信息
+    backtest_config = {
+        "start_date": str(cfg.start_date),
+        "end_date": str(cfg.end_date),
+        "initial_balances": cfg.initial_balances,
+        "instruments_count": len(loaded_instruments),
+        "data_feeds_count": len(cfg.data_feeds),
+        "strategies_count": len(strategies),
+    }
+
+    # 打印回测结果摘要并保存为 JSON
     if results:
         for result in results:
+            # 终端输出
             _print_results(
                 result,
                 strategy_config=strategy_config,
             )
 
-    # if results:
-    #     _print_results(results[0])
+            # 构建完整结果字典
+            result_dict = _build_result_dict(
+                result=result,
+                strategy_name=cfg.strategy.name,
+                strategy_config=strategy_config,
+                filter_stats=filter_stats,
+                trade_metrics=trade_metrics,
+                backtest_config=backtest_config,
+            )
+
+            # 保存为 JSON 文件
+            json_path = _save_results_to_json(
+                result_dict=result_dict,
+                strategy_name=cfg.strategy.name,
+                base_dir=base_dir,
+            )
+            print(f"📁 Results saved to: {json_path}")
+
+
+def _build_result_dict(
+    result: BacktestResult,
+    strategy_name: str,
+    strategy_config: Optional[Dict[str, Any]] = None,
+    filter_stats: Optional[Dict[str, Dict[str, int]]] = None,
+    trade_metrics: Optional[List[Dict]] = None,
+    backtest_config: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """
+    构建完整的回测结果字典，用于 JSON 保存和终端输出。
+
+    Args:
+        result: BacktestResult 对象
+        strategy_name: 策略名称
+        strategy_config: 策略配置参数
+        filter_stats: 过滤器统计 (来自策略类变量)
+        trade_metrics: 交易指标 (来自策略类变量)
+        backtest_config: 回测配置信息
+
+    Returns:
+        完整的结果字典
+    """
+    result_dict = {
+        "meta": {
+            "strategy_name": strategy_name,
+            "timestamp": datetime.now().isoformat(),
+            "elapsed_time_seconds": result.elapsed_time,
+        },
+        "summary": {
+            "total_orders": result.total_orders,
+            "total_positions": result.total_positions,
+        },
+        "pnl": {},
+        "returns": {},
+        "strategy_config": strategy_config or {},
+        "backtest_config": backtest_config or {},
+        "filter_stats": {},
+        "trade_metrics": {
+            "trades": trade_metrics or [],
+            "analysis": {},
+        },
+    }
+
+    # 处理 PnL 指标
+    if result.stats_pnls:
+        for currency, metrics in result.stats_pnls.items():
+            result_dict["pnl"][str(currency)] = {
+                k: v if v == v else None
+                for k, v in metrics.items()  # NaN -> None
+            }
+
+    # 处理收益率指标
+    if result.stats_returns:
+        for currency, val in result.stats_returns.items():
+            result_dict["returns"][str(currency)] = val if val == val else None
+
+    # 处理过滤器统计
+    if filter_stats:
+        # 汇总所有实例的统计
+        total_stats = {}
+        for inst_id, stats in filter_stats.items():
+            for key, value in stats.items():
+                total_stats[key] = total_stats.get(key, 0) + value
+        result_dict["filter_stats"] = {
+            "by_instrument": filter_stats,
+            "total": total_stats,
+        }
+
+    # 处理交易指标分析
+    if trade_metrics:
+        winners = [t for t in trade_metrics if t.get("result") == "WINNER"]
+        losers = [t for t in trade_metrics if t.get("result") == "LOSER"]
+
+        analysis = {
+            "total_trades": len(trade_metrics),
+            "winners": len(winners),
+            "losers": len(losers),
+            "win_rate": len(winners) / len(trade_metrics) if trade_metrics else 0,
+        }
+
+        if winners:
+            analysis["avg_winner_pnl_pct"] = sum(
+                t.get("pnl_pct", 0) for t in winners
+            ) / len(winners)
+            analysis["avg_winner_rs_score"] = sum(
+                t.get("entry_rs_score", 0) for t in winners
+            ) / len(winners)
+            analysis["avg_winner_bb_width_pct"] = sum(
+                t.get("entry_bb_width_pct", 0) for t in winners
+            ) / len(winners)
+            analysis["avg_winner_volume_mult"] = sum(
+                t.get("entry_volume_mult", 0) for t in winners
+            ) / len(winners)
+
+        if losers:
+            analysis["avg_loser_pnl_pct"] = sum(
+                t.get("pnl_pct", 0) for t in losers
+            ) / len(losers)
+            analysis["avg_loser_rs_score"] = sum(
+                t.get("entry_rs_score", 0) for t in losers
+            ) / len(losers)
+            analysis["avg_loser_bb_width_pct"] = sum(
+                t.get("entry_bb_width_pct", 0) for t in losers
+            ) / len(losers)
+            analysis["avg_loser_volume_mult"] = sum(
+                t.get("entry_volume_mult", 0) for t in losers
+            ) / len(losers)
+
+        if winners and losers and analysis.get("avg_loser_pnl_pct", 0) != 0:
+            analysis["rr_ratio"] = abs(
+                analysis["avg_winner_pnl_pct"] / analysis["avg_loser_pnl_pct"]
+            )
+
+        result_dict["trade_metrics"]["analysis"] = analysis
+
+    return result_dict
+
+
+def _save_results_to_json(
+    result_dict: Dict[str, Any],
+    strategy_name: str,
+    base_dir: Path,
+) -> Path:
+    """
+    将回测结果保存为 JSON 文件。
+
+    文件命名格式: {策略名称}_{YYYY-MM-DD_HH-MM-SS}.json
+    存放路径: log/backtest/result/
+
+    Args:
+        result_dict: 完整的结果字典
+        strategy_name: 策略名称
+        base_dir: 项目根目录
+
+    Returns:
+        保存的文件路径
+    """
+    # 创建目录
+    result_dir = base_dir / "log" / "backtest" / "result"
+    result_dir.mkdir(parents=True, exist_ok=True)
+
+    # 生成文件名
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    filename = f"{strategy_name}_{timestamp}.json"
+    filepath = result_dir / filename
+
+    # 保存 JSON
+    with open(filepath, "w", encoding="utf-8") as f:
+        json.dump(result_dict, f, indent=2, ensure_ascii=False, default=str)
+
+    return filepath
 
 
 def _print_results(
