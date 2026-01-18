@@ -1,7 +1,9 @@
 import gc
+import json
 import sys
 from collections import defaultdict
 from pathlib import Path
+from typing import Any, Dict, Optional
 
 from nautilus_trader.backtest.config import (
     BacktestDataConfig,
@@ -302,23 +304,44 @@ def run_high_level(cfg: BackTestConfig, base_dir: Path):
 
     print("✅ Backtest Complete.")
 
+    # 获取 Universe 文件路径和策略配置参数
+    # 注意：cfg.strategy.params 可能是 dict 或 Pydantic 对象
+    strategy_params = cfg.strategy.params
+    if hasattr(strategy_params, "model_dump"):
+        # Pydantic v2 对象
+        strategy_config = strategy_params.model_dump()
+    elif hasattr(strategy_params, "dict"):
+        # Pydantic v1 对象
+        strategy_config = strategy_params.dict()
+    elif isinstance(strategy_params, dict):
+        strategy_config = strategy_params
+    else:
+        strategy_config = {}
+
+
     # 打印回测结果摘要
     if results:
         for result in results:
-            _print_results(result)
+            _print_results(
+                result,
+                strategy_config=strategy_config,
+            )
 
     # if results:
     #     _print_results(results[0])
 
 
-def _print_results(result: BacktestResult):
-    """打印回测结果摘要"""
+def _print_results(
+    result: BacktestResult
+    strategy_config: Optional[Dict[str, Any]] = None,
+):
+    """打印回测结果摘要，包含 Universe 路径和策略配置"""
     print("\n" + "=" * 65)
     print("🏆 Backtest Report")
     print("=" * 65)
-    print(f"Duration:\t       {result.elapsed_time:.4f}s")
-    print(f"Orders:\t         {result.total_orders}")
-    print(f"Positions:\t      {result.total_positions}")
+    print(f"Duration:       {result.elapsed_time:.4f}s")
+    print(f"Orders:         {result.total_orders}")
+    print(f"Positions:      {result.total_positions}")
 
     if result.stats_pnls:
         for currency, metrics in result.stats_pnls.items():
@@ -330,6 +353,15 @@ def _print_results(result: BacktestResult):
     if result.stats_returns:
         for currency, val in result.stats_returns.items():
             print(f"- {currency:<25} {val:,.4f}")
+
+    # 打印策略配置（供 AI 分析使用）
+    if strategy_config:
+        print("-" * 65)
+        print("📋 Strategy Config (for AI feedback):")
+        # 使用 JSON 格式输出，紧凑但可读
+        config_json = json.dumps(strategy_config, indent=2, default=str)
+        print(config_json)
+
     print("=" * 65 + "\n")
 
 
