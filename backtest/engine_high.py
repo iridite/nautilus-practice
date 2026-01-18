@@ -3,7 +3,7 @@ import json
 import sys
 from collections import defaultdict
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Type
 
 from nautilus_trader.backtest.config import (
     BacktestDataConfig,
@@ -303,6 +303,19 @@ def run_high_level(cfg: BackTestConfig, base_dir: Path):
     results = node.run()
 
     print("✅ Backtest Complete.")
+
+    # 输出策略过滤器统计汇总报告
+    # 尝试导入策略类并调用其类方法输出统计
+    try:
+        from strategy.rs_squeeze import RSSqueezeStrategy
+
+        RSSqueezeStrategy.print_filter_stats_report()
+        # 重置类变量，避免多次回测数据累积
+        RSSqueezeStrategy.reset_class_stats()
+    except ImportError:
+        pass  # 非 RS Squeeze 策略时跳过
+    except AttributeError:
+        pass  # 策略没有该方法时跳过
 
     # 获取 Universe 文件路径和策略配置参数
     # 注意：cfg.strategy.params 可能是 dict 或 Pydantic 对象
