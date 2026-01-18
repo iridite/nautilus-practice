@@ -520,6 +520,7 @@ def _save_results_to_json(
     # 生成文件名
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     filename = f"{strategy_name}_{timestamp}.json"
+    # filename = f"{strategy_name}"
     filepath = result_dir / filename
 
     # 保存 JSON
