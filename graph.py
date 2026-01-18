@@ -1,3 +1,4 @@
+import glob
 import json
 import os
 from typing import Literal
@@ -28,7 +29,13 @@ def researcher_node(state: AgentState):
     """DeepSeek 读取回测历史，判断是否需要回溯或突变"""
 
     # 提取最新的回测报表
-    last_report = state["backtest_history"][-1] if state["backtest_history"] else "无"
+    last_report: dict | None = (
+        state["backtest_history"][-1] if state["backtest_history"] else None
+    )
+
+    if last_report is None:
+        print("No report available, loading actuall json file...")
+        last_report = get_latest_json_report()
 
     system_msg = """你是一个量化系统架构师。你的任务是通过回测数据优化 RS-Squeeze 策略。
     规则：
@@ -74,14 +81,7 @@ def backtester_node(state: AgentState):
     # report = json.loads(stream.read())
 
     _ = os.popen("uv run main.py backtest --type high")
-
-    import glob
-
-    # 获取最新的结果文件
-    files = glob.glob("log/backtest/result/RSSqueezeStrategy_*.json")
-    latest_file = max(files, key=os.path.getmtime)
-    with open(latest_file, "r") as f:
-        report: dict = json.load(f)
+    report = get_latest_json_report()
 
     # 读取并标准化关键指标 (处理动态键名和深层嵌套)
     sharpe: float = next(
@@ -107,6 +107,15 @@ def backtester_node(state: AgentState):
         "best_sharpe": best,
         "fail_count": state["fail_count"] + fail_inc if fail_inc else 0,
     }
+
+
+def get_latest_json_report() -> dict:
+    # 获取最新的结果文件
+    files = glob.glob("log/backtest/result/RSSqueezeStrategy_*.json")
+    latest_file = max(files, key=os.path.getmtime)
+    with open(latest_file, "r") as f:
+        report: dict = json.load(f)
+        return report
 
 
 # --- 路由逻辑：迷宫出口或回溯 ---
@@ -135,4 +144,4 @@ workflow.add_conditional_edges(
 )
 
 # 编译，并在修改代码前设置人工审查断点
-graph = workflow.compile(interrupt_before=["backtester"])
+graph = workflow.compile(interrupt_before=["researcher"])
