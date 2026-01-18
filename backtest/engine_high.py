@@ -318,7 +318,6 @@ def run_high_level(cfg: BackTestConfig, base_dir: Path):
     else:
         strategy_config = {}
 
-
     # 打印回测结果摘要
     if results:
         for result in results:
@@ -332,7 +331,7 @@ def run_high_level(cfg: BackTestConfig, base_dir: Path):
 
 
 def _print_results(
-    result: BacktestResult
+    result: BacktestResult,
     strategy_config: Optional[Dict[str, Any]] = None,
 ):
     """打印回测结果摘要，包含 Universe 路径和策略配置"""
