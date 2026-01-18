@@ -37,6 +37,7 @@ class RSSqueezeConfig(BaseStrategyConfig):
 
     # --- Universe Logic ---
     # Path to a JSON file mapping "YYYY-MM" -> [Symbol List]
+    # 注意：列表中的顺序即为成交量排名（降序），用于 Adaptive RS Gap
     universe_filepath: Optional[str] = None
 
     # --- Indicator Params ---
@@ -47,6 +48,8 @@ class RSSqueezeConfig(BaseStrategyConfig):
     atr_period: int = 20
     ema_fast_period: int = 20
     ema_slow_period: int = 200
+    # 趋势退出 EMA 周期 (EMA30 用于更长趋势追踪)
+    ema_trend_exit_period: int = 30
 
     # --- Volume Filter Params ---
     volume_ma_period: int = 20  # 成交量 MA 周期（用于计算 20 周期平均成交量）
@@ -54,23 +57,44 @@ class RSSqueezeConfig(BaseStrategyConfig):
         1.3  # 成交量爆发验证：current_volume > avg_volume_20 * 1.3
     )
 
-    # --- Relative Strength (RS) Params ---
-    rs_lookback: int = 24  # Lookback for RS calculation (24 hours)
-    rs_threshold: float = 1.1  # 强化规范：RS > 1.03（约等于跑赢 BTC 3 个百分点）
+    # --- Laddered Relative Strength (RS) Params ---
+    # 阶梯式 RS 过滤器：任一窗口满足即可入场
+    # (Asset_Return_Nh > BTC_Return_Nh + gap_threshold)
+    rs_lookback_6h: int = 6  # 6 小时窗口
+    rs_lookback_12h: int = 12  # 12 小时窗口
+    rs_lookback_24h: int = 24  # 24 小时窗口
+    rs_gap_6h: float = 0.04  # 6h 窗口需跑赢 BTC 4%
+    rs_gap_12h: float = 0.06  # 12h 窗口需跑赢 BTC 6%
+    rs_gap_24h: float = 0.10  # 24h 窗口需跑赢 BTC 10%
+
+    # --- Adaptive RS Gap for Mid-Caps ---
+    # 中盘币 (排名 > 50) 需要更高的 RS Gap 确信度
+    mid_cap_rank_threshold: int = 50  # 排名阈值：> 50 视为中盘币
+    mid_cap_rs_gap_addon: float = 0.02  # 中盘币额外 RS Gap 要求 (+2%)
 
     # --- Squeeze Tightness Params ---
     bb_width_period: int = 100  # BB Width 分位数计算周期
-    bb_width_percentile: float = 0.25  # BB Width 必须处于过去 N 根线的前 25% 分位数
+    bb_width_percentile: float = 0.30  # BB Width 必须处于过去 N 根线的前 30% 分位数
+
+    # --- Squeeze Maturity Filter ---
+    # 挤压成熟度过滤：挤压状态必须连续保持至少 N 根 K 线
+    squeeze_maturity_bars: int = 3  # 最小连续挤压 K 线数
+
+    # --- Dynamic Extension Filter (Anti-Chase Guard) ---
+    # 防止追高过滤器：仅在价格接近 EMA(20) 支撑时入场
+    # Entry ONLY if: Current_Price < EMA(20) * (1 + ATR_Relative)
+    # ATR_Relative = ATR(20) / Close，使过滤器适应币种波动性
+    extension_filter_enabled: bool = True
 
     # --- Risk Management ---
-    # 设计规范：单笔风险 3%
+    # 单笔风险 3% (复利模式)
     risk_per_trade: float = 0.03
-    # 杠杆封顶：最大杠杆倍数 (防止 ATR 过小时杠杆失控)
+    # 杠杆封顶：最大杠杆倍数 3.0x (防止 ATR 过小时杠杆失控)
     max_leverage: float = 3.0
-    # 优化：止损距离 = 2 * ATR (放宽止损，减少被震出)
+    # 止损距离 = 2 * ATR
     stop_loss_mult: float = 2.0
-    # 优化：盈亏比 2.5:1 后才启动保本 (2 ATR 止损 * 2.5 = 5 ATR 盈利)
-    breakeven_mult: float = 5.0
+    # 保本触发：盈利 > 2.0 * ATR 后移动止损至开仓价 + fee (已废弃，改用追踪止损)
+    breakeven_mult: float = 2.0
     # BE Offset (Entry + 0.2%)
     breakeven_offset: float = 0.002
     # 时间保护强制平仓：持仓超过 N 小时后强制市价平仓
@@ -78,9 +102,16 @@ class RSSqueezeConfig(BaseStrategyConfig):
     # 保证金占用限制：已用保证金超过总余额的 N% 时停止新开仓
     max_margin_usage: float = 0.80
 
+    # --- Trailing Stop (Breathing Room Exit) ---
+    # 追踪止损：给交易更多呼吸空间
+    # 触发条件：盈利 >= 1.5 * ATR 后激活追踪止损
+    trailing_stop_trigger_mult: float = 1.5
+    # 追踪止损距离：Highest_High - 2.5 * ATR
+    trailing_stop_atr_mult: float = 2.5
+
     # --- Filters ---
-    max_concurrent_positions: int = 3
-    # 优化：同一个币种 24 小时内最多开仓 1 次
+    max_concurrent_positions: int = 5  # 最大并发仓位数
+    # 同一个币种 24 小时内最多开仓 1 次
     cooldown_period_hours: int = 24
     # Breakout 窗口：前 2 根 K 线
     breakout_lookback: int = 2
@@ -89,13 +120,15 @@ class RSSqueezeConfig(BaseStrategyConfig):
 
 class RSSqueezeStrategy(BaseStrategy):
     """
-    RS-Squeeze (Relative Strength + Squeeze Momentum) 狙击策略
+    RS-Squeeze (Relative Strength + Squeeze Momentum) 狙击策略 - Universe-100 版本
+    "Healthy Breakout" Filter 优化版
 
     核心哲学：
     - 强者恒强 (Relative Strength)：只交易表现优于大盘（BTC）的币种
     - 静极思动 (Volatility Squeeze)：寻找波动率极度收缩（蓄势）的状态
     - 二段确认 (The Trigger)：价格必须突破近期的物理高点
     - 放量确认 (Volume Filter)：突破时成交量必须高于平均
+    - 健康突破 (Anti-Chase Guard)：防止追高，只在接近均线支撑时入场
 
     Logic Overview:
     1.  **Warmup**: Wait for indicators (EMA, BB, KC) and History buffers to fill.
@@ -103,18 +136,29 @@ class RSSqueezeStrategy(BaseStrategy):
     3.  **Data Sync**: Ensure Asset and Benchmark bars are time-aligned.
     4.  **Market State**:
         -   Calculate 'Squeeze': BB(20,2) 完全在 KC(20,1.4) 内部
-        -   Calculate 'RS': Asset_Return / BTC_Return over 24h (RS > 1)
-    5.  **Entry Signal (Long Only)** - 强化版 Universe-50 过滤：
+        -   Calculate 'RS': Laddered RS across 6h/12h/24h windows
+    5.  **Entry Signal (Long Only)** - Healthy Breakout 过滤：
         -   Price > EMA200 (Uptrend).
         -   In Squeeze State (BB 完全在 KC 内部).
-        -   BB Width Tightness: BB Width 处于过去 100 根线的前 25% 分位数（极度收缩）.
-        -   RS > 1.03（约等于跑赢 BTC 3 个百分点，只捕捉真正的强势龙头）.
+        -   Squeeze Maturity: 挤压状态必须连续保持至少 3 根 K 线.
+        -   BB Width Tightness: BB Width 处于过去 100 根线的前 30% 分位数.
+        -   Dynamic Extension Filter: Price < EMA(20) * (1 + ATR_Relative) 防止追高.
+        -   Adaptive Laddered RS: 任一窗口满足 (Asset_Return > BTC_Return + Gap).
+            - Top 50: 6h: +4%, 12h: +6%, 24h: +10%
+            - Mid-cap (rank > 50): 额外 +2% gap 要求
         -   Breakout: Close > 前 2 根 K 线的最高价.
-        -   Volume > 20-period Average Volume * 1.3 (成交量爆发验证).
+        -   Volume > 20-period Average Volume * 1.3.
         -   BTC 4H > EMA200 (Market Regime Filter).
-    6.  **Exit Logic**:
+    6.  **Exit Logic (Breathing Room)**:
         -   Stop Loss: Entry - 2 * ATR
-        -   Trailing Stop to Breakeven: 盈利 > 5 * ATR (2.5:1 盈亏比) 时移动止损至开仓价
+        -   Trailing Stop: 盈利 >= 1.5 * ATR 后，追踪止损 = Highest_High - 2.5 * ATR
+        -   Trend Exit: Price < EMA30 (仅在盈利时触发，给趋势更多呼吸空间)
+
+    Risk Model:
+        -   Risk Per Trade: 3% of equity (Compounding)
+        -   Max Leverage: 3.0x
+        -   Max Concurrent Trades: 5
+        -   Target: Avg Winner > 2x Avg Loser
     """
 
     def __init__(self, config: RSSqueezeConfig):
@@ -152,12 +196,16 @@ class RSSqueezeStrategy(BaseStrategy):
         self.atr = AverageTrueRange(config.atr_period)
         self.ema_fast = ExponentialMovingAverage(config.ema_fast_period)
         self.ema_slow = ExponentialMovingAverage(config.ema_slow_period)
+        self.ema_trend_exit = ExponentialMovingAverage(config.ema_trend_exit_period)
         self.btc_ema_4h = ExponentialMovingAverage(config.btc_ema_period)
 
         # --- Data Buffers ---
-        # +1 to calculate returns (need T-24 close to compare with T-0)
-        self.asset_closes = deque(maxlen=config.rs_lookback + 1)
-        self.benchmark_closes = deque(maxlen=config.rs_lookback + 1)
+        # 阶梯式 RS 需要 24 小时窗口的数据 (+1 for comparison)
+        max_lookback = max(
+            config.rs_lookback_6h, config.rs_lookback_12h, config.rs_lookback_24h
+        )
+        self.asset_closes = deque(maxlen=max_lookback + 1)
+        self.benchmark_closes = deque(maxlen=max_lookback + 1)
         # 设计规范：保留前 N 根 K 线的 high 用于 breakout 检测
         self.asset_highs = deque(maxlen=config.breakout_lookback)
         # 成交量缓冲区：用于计算 20 周期平均成交量
@@ -171,12 +219,22 @@ class RSSqueezeStrategy(BaseStrategy):
 
         # --- State Flags ---
         self._is_squeeze = False
+        self._squeeze_consecutive_bars: int = 0  # 连续挤压 K 线计数
         self._entry_price: Optional[Decimal] = None
         self._breakeven_triggered = False
+        self._trailing_stop_active = False  # 追踪止损是否激活
+        self._highest_high_since_entry: Optional[Decimal] = None  # 入场后最高价
         self._last_exit_ts: int = 0  # Timestamp in nanoseconds
         self._last_entry_ts: int = 0  # 记录上次入场时间用于 cooldown
         self._position_open_ts: int = 0  # 记录仓位开仓时间，用于 72h 强制平仓
         self._last_warmup_log_ts: int = 0
+
+        # --- Universe Rank State ---
+        # 排名直接从 universe_map 的列表顺序推导（列表已按成交量降序排列）
+        self._universe_rank_map: Dict[
+            str, Dict[str, int]
+        ] = {}  # month -> {symbol -> rank}
+        self._current_rank: int = 0  # 当前币种排名 (0 = 未知)
 
         # --- Debug Counters ---
         self._debug_bar_count: int = 0
@@ -189,13 +247,15 @@ class RSSqueezeStrategy(BaseStrategy):
             "data_not_synced": 0,
             "in_cooldown": 0,
             "max_positions": 0,
-            "margin_limit": 0,  # 新增：保证金占用限制
+            "margin_limit": 0,  # 保证金占用限制
             "trend_filter": 0,
             "not_in_squeeze": 0,
-            "bb_width_not_tight": 0,  # 新增：BB Width 不够紧
-            "rs_filter": 0,
+            "squeeze_immature": 0,  # 新增：挤压不成熟
+            "bb_width_not_tight": 0,  # BB Width 不够紧
+            "extension_filter": 0,  # 新增：追高过滤
+            "laddered_rs_filter": 0,  # 阶梯式 RS 过滤
             "breakout_filter": 0,
-            "low_volume": 0,  # 新增：成交量过滤
+            "low_volume": 0,  # 成交量过滤
             "btc_bear_market": 0,
             "all_passed": 0,
         }
@@ -224,20 +284,59 @@ class RSSqueezeStrategy(BaseStrategy):
         return BarType(instrument_id, BarSpecification.from_str(new_spec_str))
 
     def _load_universe_config(self):
-        """Loads the universe JSON file into memory."""
+        """
+        Loads the universe JSON file into memory.
+
+        Universe 文件格式: {"YYYY-MM": ["BTCUSDT:USDT", "ETHUSDT:USDT", ...]}
+        列表顺序即为成交量排名（降序），用于 Adaptive RS Gap。
+        """
         if not self.config.universe_filepath:
             return
 
         try:
             with open(self.config.universe_filepath, "r") as f:
                 data = json.load(f)
-                # Optimize: Convert lists to sets for O(1) lookup
-                self._universe_map = {k: set(v) for k, v in data.items()}
+                # 同时构建 set（用于 O(1) 查找）和 rank map（用于排名）
+                for month, symbols_list in data.items():
+                    self._universe_map[month] = set(symbols_list)
+                    # 构建排名映射：列表索引 + 1 = 排名（1-based）
+                    self._universe_rank_map[month] = {
+                        sym: idx + 1 for idx, sym in enumerate(symbols_list)
+                    }
             self.log.debug(
                 f"[{self.instrument_id}] Universe config loaded: {len(self._universe_map)} months."
             )
         except Exception as e:
             self.log.error(f"Failed to load universe file: {e}")
+
+    def _get_current_rank(self) -> int:
+        """
+        获取当前币种在当前月份的 Universe 排名。
+
+        排名直接从 universe_map 的列表顺序推导（列表已按成交量降序排列）。
+
+        Returns: 排名 (1-based)，0 表示未知或不在 Universe 中
+        """
+        if not self._universe_rank_map or not self._current_month:
+            return 0
+
+        month_ranks = self._universe_rank_map.get(self._current_month)
+        if not month_ranks:
+            return 0
+
+        symbol = str(self.instrument_id.symbol)  # e.g. "BCHUSDT-PERP"
+        base_symbol = symbol.replace("-PERP", "").replace("-SWAP", "")
+
+        # 直接查找
+        if base_symbol in month_ranks:
+            return month_ranks[base_symbol]
+
+        # 尝试带 :USDT 格式
+        usdt_symbol = f"{base_symbol}:USDT"
+        if usdt_symbol in month_ranks:
+            return month_ranks[usdt_symbol]
+
+        return 0
 
     def on_start(self):
         """Subscribe to data feeds."""
@@ -333,6 +432,7 @@ class RSSqueezeStrategy(BaseStrategy):
         self.atr.handle_bar(bar)
         self.ema_fast.handle_bar(bar)
         self.ema_slow.handle_bar(bar)
+        self.ema_trend_exit.handle_bar(bar)
 
         # 2. Update Context (Universe & Squeeze State)
         self._update_universe_status(bar.ts_event)
@@ -361,15 +461,19 @@ class RSSqueezeStrategy(BaseStrategy):
         Returns True if all required data is ready.
         Logs status only once when warmup completes.
         """
-        # Note: BTC 4H EMA is soft-required (code handles if it's not ready),
-        # so we don't block the whole strategy on it.
+        # 阶梯式 RS 需要至少 24h 的数据
+        max_lookback = max(
+            self.config.rs_lookback_6h,
+            self.config.rs_lookback_12h,
+            self.config.rs_lookback_24h,
+        )
         is_ready = (
             self.ema_slow.initialized
             and self.bb.initialized
             and self.kc.initialized
-            and len(self.asset_closes) > self.config.rs_lookback
-            and len(self.benchmark_closes) > self.config.rs_lookback
-            and len(self.asset_volumes) >= self.config.volume_ma_period  # 成交量缓冲
+            and len(self.asset_closes) > max_lookback
+            and len(self.benchmark_closes) > max_lookback
+            and len(self.asset_volumes) >= self.config.volume_ma_period
         )
 
         # 仅在首次完成 warmup 时输出一次日志
@@ -466,12 +570,13 @@ class RSSqueezeStrategy(BaseStrategy):
         计算是否处于 'Squeeze' (波动率挤压) 状态。
 
         设计规范：
-        BB(20, 2) 完全在 KC(20, 1.2) 内部，即：
+        BB(20, 2) 完全在 KC(20, 1.4) 内部，即：
         - BB_Upper < KC_Upper
         - BB_Lower > KC_Lower
 
-        强化规范（针对 Universe-50 噪音过滤）：
-        - BB Width 必须处于过去 100 根线的前 25% 分位数（极度收缩）
+        强化规范（Squeeze Maturity Filter）：
+        - BB Width 必须处于过去 100 根线的前 30% 分位数（极度收缩）
+        - 挤压状态必须连续保持至少 3 根 K 线（消除假挤压）
         """
         if not self.bb.initialized or not self.kc.initialized:
             return
@@ -491,7 +596,57 @@ class RSSqueezeStrategy(BaseStrategy):
 
         # 设计规范：Squeeze 条件 = BB 完全嵌套在 KC 内部
         # BB_Upper < KC_Upper AND BB_Lower > KC_Lower
-        self._is_squeeze = (bb_upper < kc_upper) and (bb_lower > kc_lower)
+        current_squeeze = (bb_upper < kc_upper) and (bb_lower > kc_lower)
+
+        # Squeeze Maturity Filter: 追踪连续挤压 K 线数
+        if current_squeeze:
+            self._squeeze_consecutive_bars += 1
+        else:
+            self._squeeze_consecutive_bars = 0
+
+        self._is_squeeze = current_squeeze
+
+    def _is_squeeze_mature(self) -> bool:
+        """
+        检查挤压是否"成熟"：连续挤压状态至少持续 N 根 K 线。
+        消除由瞬间价格尖峰引起的"假挤压"。
+        """
+        return self._squeeze_consecutive_bars >= self.config.squeeze_maturity_bars
+
+    def _check_extension_filter(self, current_price: Decimal) -> bool:
+        """
+        动态扩展过滤器 (Anti-Chase Guard)：防止追高。
+
+        设计规范：
+        Entry ONLY permitted if: Current_Price < EMA(20) * (1 + ATR_Relative)
+        其中 ATR_Relative = ATR(20) / Close，使过滤器适应币种波动性。
+
+        目标：确保在突破期间尽可能接近移动均线支撑入场。
+
+        Returns:
+            True if price is within acceptable extension range (允许入场)
+            False if price is overextended (禁止入场)
+        """
+        if not self.config.extension_filter_enabled:
+            return True
+
+        if not self.ema_fast.initialized or not self.atr.initialized:
+            return True
+
+        ema_fast = Decimal(str(self.ema_fast.value))
+        atr = Decimal(str(self.atr.value))
+
+        if current_price <= 0:
+            return True
+
+        # ATR_Relative = ATR(20) / Close
+        atr_relative = atr / current_price
+
+        # 最大允许扩展 = EMA(20) * (1 + ATR_Relative)
+        max_extension = ema_fast * (Decimal("1") + atr_relative)
+
+        # 如果当前价格超过最大扩展，则视为"追高"
+        return current_price < max_extension
 
     def _is_bb_width_tight(self) -> bool:
         """
@@ -517,28 +672,83 @@ class RSSqueezeStrategy(BaseStrategy):
 
         percentile = position / len(sorted_widths)
 
-        # 如果当前宽度处于前 percentile（如前 25%），则视为足够紧
+        # 如果当前宽度处于前 percentile（如前 30%），则视为足够紧
         return percentile <= self.config.bb_width_percentile
 
-    def _calculate_rs(self) -> Decimal:
+    def _calculate_return(self, closes: deque, lookback: int) -> Decimal:
         """
-        相对强度 (Relative Strength) 计算
+        计算指定窗口的收益率。
 
-        设计规范：
-        Asset_Return = (Close_Now - Close_24h_ago) / Close_24h_ago
-        BTC_Return = (BTC_Close_Now - BTC_Close_24h_ago) / BTC_Close_24h_ago
-        RS = (1 + Asset_Return) / (1 + BTC_Return)
-
-        当 RS > 1 时，表示 Asset 表现优于 BTC (Asset_Return > BTC_Return)
+        Returns:
+            (Close_Now - Close_N_ago) / Close_N_ago
         """
-        # 计算价格比率（等价于 1 + Return）
-        asset_ratio = self.asset_closes[-1] / self.asset_closes[0]
-        bench_ratio = self.benchmark_closes[-1] / self.benchmark_closes[0]
+        if len(closes) < lookback + 1:
+            return Decimal("0")
 
-        # RS = Asset 价格比率 / Benchmark 价格比率
-        # 当 RS > 1 时，意味着 Asset 收益率 > Benchmark 收益率
-        # 强化规范：RS > 1.03 约等于跑赢 BTC 3 个百分点
-        return asset_ratio / bench_ratio
+        close_now = closes[-1]
+        close_ago = closes[-(lookback + 1)]
+
+        if close_ago == 0:
+            return Decimal("0")
+
+        return (close_now - close_ago) / close_ago
+
+    def _check_laddered_rs(self) -> tuple[bool, str]:
+        """
+        阶梯式 RS 过滤器：检查任一窗口是否满足 RS 条件。
+
+        设计规范（基础版）：
+        (Asset_Return_6h > BTC_Return_6h + 0.04) OR
+        (Asset_Return_12h > BTC_Return_12h + 0.06) OR
+        (Asset_Return_24h > BTC_Return_24h + 0.10)
+
+        Adaptive RS Gap for Mid-Caps:
+        对于排名 > 50 的中盘币，增加额外的 RS Gap 要求 (+2%)
+        以要求更高的确信度过滤噪音。
+
+        Returns:
+            (is_passed, window_name) - 是否通过及通过的窗口名称
+        """
+        # 检查数据是否足够
+        max_lookback = max(
+            self.config.rs_lookback_6h,
+            self.config.rs_lookback_12h,
+            self.config.rs_lookback_24h,
+        )
+
+        if len(self.asset_closes) < max_lookback + 1:
+            return (False, "insufficient_data")
+        if len(self.benchmark_closes) < max_lookback + 1:
+            return (False, "insufficient_benchmark_data")
+
+        # Adaptive RS Gap: 中盘币需要更高的 RS Gap
+        rank = self._get_current_rank()
+        gap_addon = Decimal("0")
+        if rank > self.config.mid_cap_rank_threshold:
+            gap_addon = Decimal(str(self.config.mid_cap_rs_gap_addon))
+
+        # 计算各窗口的 Asset 和 Benchmark 收益率
+        windows = [
+            (self.config.rs_lookback_6h, self.config.rs_gap_6h, "6h"),
+            (self.config.rs_lookback_12h, self.config.rs_gap_12h, "12h"),
+            (self.config.rs_lookback_24h, self.config.rs_gap_24h, "24h"),
+        ]
+
+        for lookback, gap_threshold, window_name in windows:
+            asset_return = self._calculate_return(self.asset_closes, lookback)
+            btc_return = self._calculate_return(self.benchmark_closes, lookback)
+
+            # 计算 RS Gap = Asset_Return - BTC_Return
+            rs_gap = asset_return - btc_return
+
+            # 应用 Adaptive Gap: 基础阈值 + 中盘币额外要求
+            required_gap = Decimal(str(gap_threshold)) + gap_addon
+
+            # 如果 RS Gap > 阈值，则满足条件
+            if rs_gap > required_gap:
+                return (True, window_name)
+
+        return (False, "none")
 
     def _calculate_avg_volume(self) -> Decimal:
         """计算过去 N 周期的平均成交量"""
@@ -553,17 +763,17 @@ class RSSqueezeStrategy(BaseStrategy):
         """
         Evaluates market conditions for a Long Entry.
 
-        优化后的入场门控 (Confluence) - 强化版 Universe-50 过滤：
+        优化后的入场门控 (Confluence) - Universe-150 阶梯式过滤：
         0. 唯一持仓限制：每个币种同时只能持有一个仓位
         1. 趋势在 EMA200 之上
         2. 处于 Squeeze 状态 (BB 完全在 KC 内部)
-        2.1 BB Width 紧度验证：BB Width 必须处于过去 100 根线的前 25% 分位数
-        3. RS > 1.03（约等于跑赢 BTC 3 个百分点，只捕捉真正的强势龙头）
+        2.1 BB Width 紧度验证：BB Width 必须处于过去 100 根线的前 30% 分位数
+        3. 阶梯式 RS 过滤器：任一窗口满足即可 (6h/12h/24h)
         4. 价格突破前 2 根 K 线的最高价
-        5. 成交量 > 20 周期平均成交量 * 1.3 (成交量爆发验证)
+        5. 成交量 > 20 周期平均成交量 * 1.3
         6. BTC 4H > EMA200 (市场环境过滤)
         7. 24 小时冷却期
-        8. 排除 BTC 自交易（RS 相对自己永远是 1.0）
+        8. 排除 BTC 自交易（RS 相对自己永远是 0）
         9. 保证金占用限制
         """
         self._debug_signal_checks += 1
@@ -572,7 +782,7 @@ class RSSqueezeStrategy(BaseStrategy):
         if self._has_open_position():
             return
 
-        # 0.1 排除 BTC 自交易：BTC 的 RS 相对自己永远是 1.0，无法产生有效信号
+        # 0.1 排除 BTC 自交易：BTC 的 RS 相对自己永远是 0，无法产生有效信号
         if self.instrument_id == self.benchmark_id:
             return
 
@@ -586,7 +796,7 @@ class RSSqueezeStrategy(BaseStrategy):
             self._filter_stats["data_not_synced"] += 1
             return
 
-        # 3. Cooldown Check (优化：同一个币种 24 小时内最多开仓 1 次)
+        # 3. Cooldown Check (同一个币种 24 小时内最多开仓 1 次)
         # 使用入场时间而不是出场时间，防止连续入场
         cooldown_ns = self.config.cooldown_period_hours * 3600 * 1_000_000_000
         if bar.ts_event < (self._last_entry_ts + cooldown_ns):
@@ -627,22 +837,34 @@ class RSSqueezeStrategy(BaseStrategy):
             self._filter_stats["trend_filter"] += 1
             return
 
-        # B. Squeeze Filter: BB(20,2) 完全在 KC(20,1.2) 内部
+        # B. Squeeze Filter: BB(20,2) 完全在 KC(20,1.4) 内部
         if not self._is_squeeze:
             self._filter_stats["not_in_squeeze"] += 1
             return
 
-        # B.1 BB Width Tightness Filter: BB Width 必须处于极低分位数
+        # B.1 Squeeze Maturity Filter: 挤压状态必须连续保持至少 N 根 K 线
+        # 消除由瞬间价格尖峰引起的"假挤压"
+        if not self._is_squeeze_mature():
+            self._filter_stats["squeeze_immature"] += 1
+            return
+
+        # B.2 BB Width Tightness Filter: BB Width 必须处于极低分位数
         # 强化规范：确保只有在波动率"极度"收缩后才入场
         if not self._is_bb_width_tight():
             self._filter_stats["bb_width_not_tight"] += 1
             return
 
-        # C. Relative Strength: RS > 1.03（约等于跑赢 BTC 3 个百分点）
-        # 强化规范：只捕捉真正的强势龙头，剔除平庸的跟风币
-        rs = self._calculate_rs()
-        if rs <= Decimal(str(self.config.rs_threshold)):
-            self._filter_stats["rs_filter"] += 1
+        # B.3 Dynamic Extension Filter (Anti-Chase Guard): 防止追高
+        # Entry ONLY if: Current_Price < EMA(20) * (1 + ATR_Relative)
+        if not self._check_extension_filter(current_price):
+            self._filter_stats["extension_filter"] += 1
+            return
+
+        # C. Laddered Relative Strength Filter
+        # 阶梯式 RS：任一窗口满足即可通过
+        rs_passed, rs_window = self._check_laddered_rs()
+        if not rs_passed:
+            self._filter_stats["laddered_rs_filter"] += 1
             return
 
         # D. Breakout Check
@@ -686,16 +908,16 @@ class RSSqueezeStrategy(BaseStrategy):
 
         self.log.debug(
             f"🎯 ALL FILTERS PASSED for {self.instrument_id}! "
-            f"Price={current_price:.2f}, RS={rs:.4f}, Squeeze=True{vol_info}"
+            f"Price={current_price:.2f}, RS_Window={rs_window}, Squeeze=True{vol_info}"
         )
-        self._execute_entry(current_price, rs, bar.ts_event)
+        self._execute_entry(current_price, rs_window, bar.ts_event)
 
-    def _execute_entry(self, current_price: Decimal, rs_value: Decimal, ts_event: int):
+    def _execute_entry(self, current_price: Decimal, rs_window: str, ts_event: int):
         """
         Executes entry orders with risk management.
 
-        设计规范：
-        - 单笔风险 = 账户余额 * 3%
+        设计规范（复利风险模型）：
+        - 单笔风险 = 账户余额 * 3% (Compounding)
         - 止损位 = Entry - 2 * ATR
         - 仓位 = Risk Amount / (Entry - StopLoss)
         - 杠杆封顶 = 3x (防止 ATR 过小时杠杆失控)
@@ -750,7 +972,7 @@ class RSSqueezeStrategy(BaseStrategy):
         # Place Orders
         self.log.info(
             f"ENTRY SIGNAL: {self.instrument_id} Price={current_price:.2f}, "
-            f"RS={rs_value:.4f}, Qty={qty}, SL_dist={risk_dist:.2f}"
+            f"RS_Window={rs_window}, Qty={qty}, SL_dist={risk_dist:.2f}"
         )
 
         # 1. Market Buy
@@ -762,7 +984,7 @@ class RSSqueezeStrategy(BaseStrategy):
         self.submit_order(entry_order)
 
         # 2. Stop Loss (Stop Market)
-        # 优化：止损位 = Entry - 2 * ATR
+        # 止损位 = Entry - 2 * ATR
         sl_price_raw = current_price - risk_dist
         sl_price = self.instrument.make_price(sl_price_raw)
 
@@ -778,6 +1000,8 @@ class RSSqueezeStrategy(BaseStrategy):
         # Update State
         self._entry_price = current_price
         self._breakeven_triggered = False
+        self._trailing_stop_active = False  # 重置追踪止损状态
+        self._highest_high_since_entry = current_price  # 初始化最高价
         self._last_entry_ts = ts_event  # 记录入场时间用于 cooldown
         self._position_open_ts = ts_event  # 记录开仓时间用于 72h 强制平仓
 
@@ -785,13 +1009,12 @@ class RSSqueezeStrategy(BaseStrategy):
         """
         Manages open positions:
 
-        优化后的出场逻辑（移除微小止盈条件）：
+        Breathing Room 出场逻辑：
         1. 止损由初始止损单处理
-        2. 移动保本：盈利达到 5 倍 ATR (2.5:1 盈亏比) 后，止损移至开仓价
-        3. 🛡️ 紧急止损保护：如果价格跌破止损线但止损单未触发，强制平仓
-        4. ⏰ 时间保护强制平仓：持仓超过 72 小时仍未触发止盈止损，强制市价平仓
-
-        注意：已移除 EMA20 趋势退出，避免过早止盈
+        2. 追踪止损：盈利 >= 1.5 * ATR 后，追踪止损 = Highest_High - 2.5 * ATR
+        3. 趋势退出：Price < EMA30 (趋势转弱时退出，给交易更多呼吸空间)
+        4. 🛡️ 紧急止损保护：如果价格跌破止损线但止损单未触发，强制平仓
+        5. ⏰ 时间保护强制平仓：持仓超过 72 小时仍未触发止盈止损，强制市价平仓
         """
         positions = self.cache.positions_open(instrument_id=self.instrument_id)
         if not positions:
@@ -799,6 +1022,15 @@ class RSSqueezeStrategy(BaseStrategy):
         position = positions[0]
 
         current_price = Decimal(str(bar.close))
+        current_high = Decimal(str(bar.high))
+
+        # 更新入场后最高价（用于追踪止损）
+        if self._highest_high_since_entry is not None:
+            self._highest_high_since_entry = max(
+                self._highest_high_since_entry, current_high
+            )
+        else:
+            self._highest_high_since_entry = current_high
 
         # ⏰ 时间保护强制平仓：持仓超过 72 小时仍未触发止盈止损，强制市价平仓
         if self._position_open_ts > 0:
@@ -824,7 +1056,6 @@ class RSSqueezeStrategy(BaseStrategy):
 
         # 🛡️ 紧急止损保护：检查价格是否已跌破止损线
         # 注意：本策略为 Long Only，只检查多单方向的止损穿透
-        # 如果有入场价且 ATR 有效，计算止损位并检查
         if self._entry_price and self.atr.initialized and position.is_long:
             atr = Decimal(str(self.atr.value))
             stop_loss_price = self._entry_price - (
@@ -847,39 +1078,75 @@ class RSSqueezeStrategy(BaseStrategy):
                 self.submit_order(close_order)
                 return
 
-        # 移动保本逻辑
-        # 优化：盈利达到 5 倍 ATR (2.5:1 盈亏比) 后，止损移至开仓价
-        if not self._breakeven_triggered and self._entry_price:
+        # 📈 追踪止损逻辑 (Trailing Stop - Breathing Room)
+        # 盈利 >= 1.5 * ATR 后激活追踪止损
+        if self._entry_price and self.atr.initialized and position.is_long:
             atr = Decimal(str(self.atr.value))
-            # Target to move SL: Entry + 5 * ATR (2.5:1 R:R with 2 ATR stop)
-            target = self._entry_price + (
-                atr * Decimal(str(self.config.breakeven_mult))
-            )
+            profit = current_price - self._entry_price
+            trigger_profit = atr * Decimal(str(self.config.trailing_stop_trigger_mult))
 
-            if current_price >= target:
-                # New SL Price: Entry + 0.2% (slight profit protection)
-                new_sl_price = self.instrument.make_price(
-                    self._entry_price * (1 + Decimal(str(self.config.breakeven_offset)))
-                )
+            if profit >= trigger_profit:
+                # 追踪止损激活或更新
+                if self._highest_high_since_entry:
+                    # 追踪止损价 = Highest_High - 2.5 * ATR
+                    trailing_sl_price = self._highest_high_since_entry - (
+                        atr * Decimal(str(self.config.trailing_stop_atr_mult))
+                    )
 
-                self.log.info(
-                    f"MOVING SL to Breakeven: {new_sl_price} "
-                    f"(Price reached {current_price:.2f} >= Target {target:.2f})"
-                )
+                    # 确保追踪止损价至少在保本价之上
+                    breakeven_price = self._entry_price * (
+                        1 + Decimal(str(self.config.breakeven_offset))
+                    )
+                    trailing_sl_price = max(trailing_sl_price, breakeven_price)
 
-                # Cancel old SLs
-                self.cancel_all_orders(self.instrument_id)
+                    if not self._trailing_stop_active:
+                        # 首次激活追踪止损
+                        self.log.info(
+                            f"📈 TRAILING STOP ACTIVATED: {self.instrument_id} "
+                            f"profit {profit:.4f} >= {trigger_profit:.4f}. "
+                            f"Trailing SL = {trailing_sl_price:.4f}"
+                        )
+                        self._trailing_stop_active = True
 
-                # Submit New SL
-                sl_order = self.order_factory.stop_market(
-                    instrument_id=self.instrument_id,
-                    order_side=OrderSide.SELL,
-                    quantity=position.quantity,
-                    trigger_price=new_sl_price,
-                    time_in_force=TimeInForce.GTC,
-                )
-                self.submit_order(sl_order)
-                self._breakeven_triggered = True
+                    # 更新止损单到追踪止损价
+                    new_sl_price = self.instrument.make_price(trailing_sl_price)
+
+                    # Cancel old SLs and submit new one
+                    self.cancel_all_orders(self.instrument_id)
+                    sl_order = self.order_factory.stop_market(
+                        instrument_id=self.instrument_id,
+                        order_side=OrderSide.SELL,
+                        quantity=position.quantity,
+                        trigger_price=new_sl_price,
+                        time_in_force=TimeInForce.GTC,
+                    )
+                    self.submit_order(sl_order)
+
+        # 📉 趋势退出：Price < EMA30
+        # 当价格跌破中期均线时，说明趋势转弱，提前止盈
+        # 使用 EMA30 而非 EMA20，给交易更多呼吸空间
+        if self.ema_trend_exit.initialized and position.is_long:
+            ema_trend_exit = Decimal(str(self.ema_trend_exit.value))
+            if current_price < ema_trend_exit:
+                # 仅在有盈利时才执行趋势退出（避免趋势退出变成提前止损）
+                if self._entry_price and current_price > self._entry_price:
+                    pnl_pct = (
+                        (current_price - self._entry_price) / self._entry_price * 100
+                    )
+                    self.log.info(
+                        f"📉 TREND EXIT: {self.instrument_id} price {current_price:.4f} "
+                        f"< EMA30 {ema_trend_exit:.4f}. Closing with +{pnl_pct:.2f}% profit."
+                    )
+                    # 取消所有挂单
+                    self.cancel_all_orders(self.instrument_id)
+                    # 市价平仓
+                    close_order = self.order_factory.market(
+                        instrument_id=self.instrument_id,
+                        order_side=OrderSide.SELL,
+                        quantity=position.quantity,
+                    )
+                    self.submit_order(close_order)
+                    return
 
     def _get_account(self):
         """Helper to find the correct account with quote currency balance."""
@@ -911,8 +1178,10 @@ class RSSqueezeStrategy(BaseStrategy):
                 f"cooldown={self._filter_stats['in_cooldown']}, "
                 f"trend={self._filter_stats['trend_filter']}, "
                 f"squeeze={self._filter_stats['not_in_squeeze']}, "
+                f"squeeze_immature={self._filter_stats['squeeze_immature']}, "
                 f"bb_width={self._filter_stats['bb_width_not_tight']}, "
-                f"rs={self._filter_stats['rs_filter']}, "
+                f"extension={self._filter_stats['extension_filter']}, "
+                f"laddered_rs={self._filter_stats['laddered_rs_filter']}, "
                 f"breakout={self._filter_stats['breakout_filter']}, "
                 f"low_volume={self._filter_stats['low_volume']}, "
                 f"btc_bear={self._filter_stats['btc_bear_market']}, "
@@ -929,6 +1198,7 @@ class RSSqueezeStrategy(BaseStrategy):
         self.atr.reset()
         self.ema_fast.reset()
         self.ema_slow.reset()
+        self.ema_trend_exit.reset()
         self.btc_ema_4h.reset()
         self.asset_closes.clear()
         self.benchmark_closes.clear()
@@ -936,8 +1206,11 @@ class RSSqueezeStrategy(BaseStrategy):
         self.asset_volumes.clear()
         self.bb_widths.clear()
         self._is_squeeze = False
+        self._squeeze_consecutive_bars = 0
         self._entry_price = None
         self._breakeven_triggered = False
+        self._trailing_stop_active = False
+        self._highest_high_since_entry = None
         self._last_benchmark_ts = 0
         self._last_asset_ts = 0
         self._last_entry_ts = 0
