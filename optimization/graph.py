@@ -1,15 +1,16 @@
 ### 13. `optimization/graph.py` - **完整版**
 
-```python
 """
 Graph 定义和构建
 """
+
 from typing import Literal
+
 from langgraph.graph import END, StateGraph
 
-from .state import AgentState
-from .nodes import researcher_node, backtester_node
 from .config import MAX_ITERATIONS
+from .nodes import backtester_node, researcher_node
+from .state import AgentState
 
 
 def should_continue_router(state: AgentState) -> Literal["backtester", "end"]:
@@ -18,9 +19,9 @@ def should_continue_router(state: AgentState) -> Literal["backtester", "end"]:
     """
     # 检查是否达成目标
     if state.get("goal_achieved", False):
-        print("\n" + "="*80)
+        print("\n" + "=" * 80)
         print("🎉🎉🎉 优化目标已达成！")
-        print("="*80)
+        print("=" * 80)
         return "end"
 
     # 检查是否需要初始回测
@@ -77,7 +78,7 @@ def create_optimization_graph():
         {
             "backtester": "backtester",
             "end": END,
-        }
+        },
     )
 
     # 回测节点 → 研究节点（继续循环）
