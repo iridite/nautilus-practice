@@ -22,7 +22,7 @@ from ..prompts.researcher import (
     get_parameter_tuning_system_prompt,
 )
 from ..state import AgentState, BacktestMetrics
-from ..utils.code_parser import extract_code
+from ..utils.code_parser import extract_code, validate_strategy_code
 from ..utils.file_handler import read_strategy_file
 
 # 初始化模型
@@ -527,15 +527,76 @@ def generate_optimized_strategy(
     user_msg = "\n".join(user_msg_parts)
 
     # 调用 LLM
-    response = model.invoke(
-        [
-            {"role": "system", "content": system_msg},
-            {"role": "user", "content": user_msg},
-        ]
-    )
+    max_retries = 3
+    for attempt in range(max_retries):
+        print(f"\n🤖 调用 AI 生成策略代码 (尝试 {attempt + 1}/{max_retries})...")
 
-    new_code = extract_code(str(response.content))
+        response = model.invoke(
+            [
+                {"role": "system", "content": system_msg},
+                {"role": "user", "content": user_msg},
+            ]
+        )
 
-    print(f"\n✅ 新策略代码已生成 ({len(new_code)} 字符)\n")
+        response_content = str(response.content)
 
-    return new_code
+        # 尝试提取代码
+        try:
+            new_code = extract_code(response_content)
+
+            # 额外验证代码完整性
+            is_valid, error_msg = validate_strategy_code(new_code)
+            if not is_valid:
+                print(f"⚠️ 代码验证失败: {error_msg}")
+                if attempt < max_retries - 1:
+                    print(f"🔄 重试中...")
+                    # 修改用户消息，强调完整性要求
+                    user_msg_parts.append(
+                        f"\n⚠️ 上次生成失败，原因: {error_msg}\n"
+                        "**请务必返回完整的策略代码**，包括：\n"
+                        "1. 所有必要的 import 语句\n"
+                        "2. 完整的 Config 类定义（包含所有参数）\n"
+                        "3. 完整的 Strategy 类定义（包含所有方法）\n"
+                        "4. 不要只返回注释说明，必须包含完整的可执行代码\n"
+                    )
+                    user_msg = "\n".join(user_msg_parts)
+                    continue
+                else:
+                    raise ValueError(f"多次尝试后仍无法生成有效代码: {error_msg}")
+
+            # 验证通过
+            print(f"\n✅ 新策略代码已生成并验证通过 ({len(new_code)} 字符)")
+            print(f"   - 包含 Config 类: ✓")
+            print(f"   - 包含 Strategy 类: ✓")
+            print(f"   - 包含 import 语句: ✓")
+            print(f"   - 代码长度合理: ✓\n")
+
+            return new_code
+
+        except ValueError as e:
+            print(f"❌ 代码提取失败: {str(e)}")
+
+            if attempt < max_retries - 1:
+                print(f"🔄 重试中...")
+                # 修改用户消息，强调完整性要求
+                user_msg_parts.append(
+                    f"\n⚠️ 上次生成失败，原因: {str(e)}\n"
+                    "**请务必返回完整的策略代码**，包括：\n"
+                    "1. 所有必要的 import 语句\n"
+                    "2. 完整的 Config 类定义（包含所有参数）\n"
+                    "3. 完整的 Strategy 类定义（包含所有方法）\n"
+                    "4. 不要只返回注释说明或改动总结，必须包含完整的可执行代码\n"
+                    "5. 使用 ```python 代码块包裹完整代码\n"
+                )
+                user_msg = "\n".join(user_msg_parts)
+            else:
+                # 最后一次尝试也失败了
+                print(f"\n❌ 经过 {max_retries} 次尝试，AI 仍未能生成有效的策略代码")
+                print(f"错误信息: {str(e)}")
+                print(f"\n⚠️ 返回原始策略代码，避免覆盖")
+
+                # 返回当前代码，避免覆盖为无效内容
+                return current_code
+
+    # 理论上不会到达这里，但为了安全起见
+    return current_code
