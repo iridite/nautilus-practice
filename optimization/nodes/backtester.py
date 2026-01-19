@@ -6,7 +6,7 @@ import subprocess
 import time
 import traceback
 from datetime import datetime
-from typing import Optional, Tuple
+from typing import Tuple
 
 from langchain_anthropic import ChatAnthropic
 
@@ -18,7 +18,7 @@ from ..config import (
     TEMPERATURE_DEBUGGER,
 )
 from ..prompts.debugger import get_debugger_system_prompt
-from ..state import AgentState, BacktestMetrics, DebugRecord
+from ..state import AgentState, DebugRecord
 from ..utils.code_parser import extract_code
 from ..utils.file_handler import (
     get_latest_json_report,
@@ -28,7 +28,7 @@ from ..utils.file_handler import (
 from ..utils.metrics import extract_metrics_from_report
 
 # 初始化 Debug 模型
-model_debugger = ChatAnthropic(
+model_debugger = ChatAnthropic(  # type: ignore
     model=MODEL_DEBUGGER["name"],
     anthropic_api_key=MODEL_DEBUGGER["api_key"],
     anthropic_api_url=MODEL_DEBUGGER["base_url"],
@@ -54,7 +54,7 @@ def backtester_node(state: AgentState) -> dict:
     # 如果 strategy_code 为空（首次运行），从文件读取现有策略
     if not strategy_code:
         strategy_code = read_strategy_file()
-        print(f"📋 从文件读取现有策略代码 ({len(strategy_code)} 字符)")
+        print("📋 从文件读取现有策略代码 ({} 字符)".format(len(strategy_code)))
 
     # 保存当前代码为"上一个版本"（用于可能的回滚）
     if not previous_code:
@@ -73,14 +73,13 @@ def backtester_node(state: AgentState) -> dict:
     backtest_successful = False
     current_code = strategy_code
     debug_records = []
+    run_time = time.time()  # 初始化 run_time
 
     while debug_attempts < MAX_DEBUG_ATTEMPTS and not backtest_successful:
         print(f"\n🚀 执行回测 (尝试 {debug_attempts + 1}/{MAX_DEBUG_ATTEMPTS})...")
 
-        run_time = time.time()
-
         try:
-            result = subprocess.run(
+            _result = subprocess.run(
                 ["uv", "run", "main.py", "backtest", "--type", "high"],
                 capture_output=True,
                 text=True,
@@ -191,12 +190,12 @@ def backtester_node(state: AgentState) -> dict:
     try:
         # 读取完整的 JSON 报告
         full_report = get_latest_json_report(run_time)
-        print(f"\n📄 读取完整回测报告 (大小: {len(str(full_report))} 字符)")
+        print("\n📄 读取完整回测报告 (大小: {} 字符)".format(len(str(full_report))))
 
         # 提取简化版指标（用于快速查看）
         metrics = extract_metrics_from_report(full_report)
 
-        print(f"\n📊 回测结果摘要:")
+        print("\n📊 回测结果摘要:")
         print(f"  夏普率: {metrics['sharpe']:.3f}")
         print(f"  交易次数: {metrics['total_trades']}")
         print(f"  盈亏百分比: {metrics['profit_pct']:.2%}")
@@ -207,7 +206,7 @@ def backtester_node(state: AgentState) -> dict:
 
         # 显示策略参数
         if metrics.get("strategy_parameters"):
-            print(f"\n⚙️  策略参数:")
+            print("\n⚙️  策略参数:")
             for key, value in list(metrics["strategy_parameters"].items())[:5]:
                 print(f"  {key}: {value}")
             if len(metrics["strategy_parameters"]) > 5:
@@ -235,7 +234,7 @@ def backtester_node(state: AgentState) -> dict:
         successful_debug = debug_records[-1]
         successful_debug["fix_successful"] = True
         update["debug_record"] = successful_debug
-        print(f"✨ 代码经过 {len(debug_records)} 次修复后成功运行")
+        print("✨ 代码经过 {} 次修复后成功运行".format(len(debug_records)))
 
     # 更新历史最佳
     if not best_metrics or metrics["sharpe"] > best_metrics["sharpe"]:
@@ -260,7 +259,7 @@ def attempt_fix_code(
     尝试自动修复代码错误
     返回: (修复后的代码, Debug记录)
     """
-    print(f"\n🔧 尝试自动修复错误...")
+    print("\n🔧 尝试自动修复错误...")
 
     system_msg = get_debugger_system_prompt()
 
@@ -295,7 +294,7 @@ def attempt_fix_code(
         fix_summary_line = lines[0].strip() if lines else "自动修复"
         fixed_code = extract_code(result_text)
 
-        print(f"✅ 修复完成: {fix_summary_line}")
+        print("✅ 修复完成: {}".format(fix_summary_line))
 
         # 生成完整的修复总结
         fix_summary = generate_debug_summary(
@@ -303,35 +302,37 @@ def attempt_fix_code(
         )
 
         # 创建 debug 记录
-        debug_record: DebugRecord = {
+        new_debug_record: DebugRecord = {
             "error_type": error_type,
             "error_message": error_message[:500],  # 截断过长的消息
             "error_traceback": error_traceback[:1000],  # 截断过长的堆栈
-            "fix_attempts": state.get("debug_record", {}).get("fix_attempts", 0) + 1,
+            "fix_attempts": (state.get("debug_record") or {}).get("fix_attempts", 0)
+            + 1,
             "fix_successful": False,  # 暂时标记为未成功，等回测验证
             "fix_summary": fix_summary,
             "fixed_code": fixed_code,
             "timestamp": datetime.now().isoformat(),
         }
 
-        return fixed_code, debug_record
+        return fixed_code, new_debug_record
 
     except Exception as e:
         print(f"❌ 自动修复失败: {e}")
 
         # 返回原代码和失败记录
-        debug_record: DebugRecord = {
+        failed_debug_record: DebugRecord = {
             "error_type": error_type,
             "error_message": error_message[:500],
             "error_traceback": error_traceback[:1000],
-            "fix_attempts": state.get("debug_record", {}).get("fix_attempts", 0) + 1,
+            "fix_attempts": (state.get("debug_record") or {}).get("fix_attempts", 0)
+            + 1,
             "fix_successful": False,
             "fix_summary": f"# 自动修复失败\n\n修复过程中发生错误: {str(e)}",
             "fixed_code": None,
             "timestamp": datetime.now().isoformat(),
         }
 
-        return code, debug_record
+        return code, failed_debug_record
 
 
 def generate_debug_summary(

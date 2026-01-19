@@ -21,26 +21,26 @@ from ..prompts.researcher import (
     get_logic_rewrite_system_prompt,
     get_parameter_tuning_system_prompt,
 )
-from ..state import AgentState, BacktestMetrics, OptimizationTarget
+from ..state import AgentState, BacktestMetrics
 from ..utils.code_parser import extract_code
 from ..utils.file_handler import read_strategy_file
 
 # 初始化模型
-model_parameter_tuning = ChatAnthropic(
+model_parameter_tuning = ChatAnthropic(  # type: ignore
     model=MODEL_PARAMETER_TUNING["name"],
     anthropic_api_key=MODEL_PARAMETER_TUNING["api_key"],
     anthropic_api_url=MODEL_PARAMETER_TUNING["base_url"],
     temperature=TEMPERATURE_PARAMETER_TUNING,
 )
 
-model_logic_rewrite = ChatAnthropic(
+model_logic_rewrite = ChatAnthropic(  # type: ignore
     model=MODEL_LOGIC_REWRITE["name"],
     anthropic_api_key=MODEL_LOGIC_REWRITE["api_key"],
     anthropic_api_url=MODEL_LOGIC_REWRITE["base_url"],
     temperature=TEMPERATURE_LOGIC_REWRITE,
 )
 
-model_evaluator = ChatAnthropic(
+model_evaluator = ChatAnthropic(  # type: ignore
     model=MODEL_EVALUATOR["name"],
     anthropic_api_key=MODEL_EVALUATOR["api_key"],
     anthropic_api_url=MODEL_EVALUATOR["base_url"],
@@ -136,7 +136,6 @@ def evaluate_goals(state: AgentState) -> dict:
     """
     target = state.get("optimization_target", {})
     current_result = state.get("current_backtest_result")
-    full_report = state.get("current_backtest_report")
 
     # 如果没有目标或没有结果，返回未达成
     if not target or not current_result:
@@ -219,7 +218,7 @@ def should_count_as_failure(state: AgentState) -> bool:
 
     if target.get("target_trades") is not None or target.get("min_trades") is not None:
         # 计算与目标的距离
-        target_trades = target.get("target_trades", target.get("min_trades", 0))
+        target_trades = target.get("target_trades") or target.get("min_trades") or 0
         current_distance = abs(current_result["total_trades"] - target_trades)
         best_distance = abs(best_metrics["total_trades"] - target_trades)
         if current_distance < best_distance:
@@ -327,10 +326,11 @@ def generate_optimized_strategy(
             "信号统计": {
                 "total_signals": backtest_data["total_signals"],
                 "filtered_signals": backtest_data["filtered_signals"],
-                "signal_pass_rate": backtest_data["filtered_signals"]
-                / backtest_data["total_signals"]
-                if backtest_data["total_signals"] > 0
-                else 0,
+                "signal_pass_rate": (
+                    backtest_data["filtered_signals"] / backtest_data["total_signals"]
+                    if backtest_data["total_signals"] > 0
+                    else 0.0
+                ),
             },
             "策略参数数量": len(backtest_data.get("strategy_parameters", {})),
         }
