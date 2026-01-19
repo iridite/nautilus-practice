@@ -78,10 +78,20 @@ def researcher_node(state: AgentState) -> dict:
         backtest_data = None
     elif current_result is None:
         print("📋 首次运行，需要先进行回测获取基准数据")
+
+        # 读取现有策略代码
+        current_code = state.get("strategy_code", "")
+        if not current_code:
+            current_code = state.get("initial_strategy_code", "")
+        if not current_code:
+            current_code = read_strategy_file()
+            print(f"📋 从文件读取现有策略代码 ({len(current_code)} 字符)")
+
         return {
             "needs_initial_backtest": True,
             "iteration": iteration,
             "evaluation_report": evaluation_result["report"],
+            "strategy_code": current_code,
         }
     else:
         backtest_data = current_result

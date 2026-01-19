@@ -20,7 +20,11 @@ from ..config import (
 from ..prompts.debugger import get_debugger_system_prompt
 from ..state import AgentState, BacktestMetrics, DebugRecord
 from ..utils.code_parser import extract_code
-from ..utils.file_handler import get_latest_json_report, write_strategy_file
+from ..utils.file_handler import (
+    get_latest_json_report,
+    read_strategy_file,
+    write_strategy_file,
+)
 from ..utils.metrics import extract_metrics_from_report
 
 # 初始化 Debug 模型
@@ -46,6 +50,11 @@ def backtester_node(state: AgentState) -> dict:
 
     strategy_code = state.get("strategy_code", "")
     previous_code = state.get("previous_strategy_code", "")
+
+    # 如果 strategy_code 为空（首次运行），从文件读取现有策略
+    if not strategy_code:
+        strategy_code = read_strategy_file()
+        print(f"📋 从文件读取现有策略代码 ({len(strategy_code)} 字符)")
 
     # 保存当前代码为"上一个版本"（用于可能的回滚）
     if not previous_code:
