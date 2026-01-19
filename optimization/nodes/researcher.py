@@ -5,13 +5,13 @@
 import json
 from typing import Optional
 
-from langchain_openai import ChatOpenAI
+from langchain_anthropic import ChatAnthropic
 
 from ..config import (
-    API_KEY,
-    BASE_URL,
     FAIL_COUNT_THRESHOLD_FOR_REWRITE,
-    MODEL_NAME,
+    MODEL_EVALUATOR,
+    MODEL_LOGIC_REWRITE,
+    MODEL_PARAMETER_TUNING,
     TEMPERATURE_EVALUATOR,
     TEMPERATURE_LOGIC_REWRITE,
     TEMPERATURE_PARAMETER_TUNING,
@@ -26,24 +26,24 @@ from ..utils.code_parser import extract_code
 from ..utils.file_handler import read_strategy_file
 
 # 初始化模型
-model_parameter_tuning = ChatOpenAI(
-    model=MODEL_NAME,
-    api_key=API_KEY,
-    base_url=BASE_URL,
+model_parameter_tuning = ChatAnthropic(
+    model=MODEL_PARAMETER_TUNING["name"],
+    anthropic_api_key=MODEL_PARAMETER_TUNING["api_key"],
+    anthropic_api_url=MODEL_PARAMETER_TUNING["base_url"],
     temperature=TEMPERATURE_PARAMETER_TUNING,
 )
 
-model_logic_rewrite = ChatOpenAI(
-    model=MODEL_NAME,
-    api_key=API_KEY,
-    base_url=BASE_URL,
+model_logic_rewrite = ChatAnthropic(
+    model=MODEL_LOGIC_REWRITE["name"],
+    anthropic_api_key=MODEL_LOGIC_REWRITE["api_key"],
+    anthropic_api_url=MODEL_LOGIC_REWRITE["base_url"],
     temperature=TEMPERATURE_LOGIC_REWRITE,
 )
 
-model_evaluator = ChatOpenAI(
-    model=MODEL_NAME,
-    api_key=API_KEY,
-    base_url=BASE_URL,
+model_evaluator = ChatAnthropic(
+    model=MODEL_EVALUATOR["name"],
+    anthropic_api_key=MODEL_EVALUATOR["api_key"],
+    anthropic_api_url=MODEL_EVALUATOR["base_url"],
     temperature=TEMPERATURE_EVALUATOR,
 )
 

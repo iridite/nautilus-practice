@@ -8,14 +8,12 @@ import traceback
 from datetime import datetime
 from typing import Optional, Tuple
 
-from langchain_openai import ChatOpenAI
+from langchain_anthropic import ChatAnthropic
 
 from ..config import (
-    API_KEY,
     BACKTEST_TIMEOUT,
-    BASE_URL,
     MAX_DEBUG_ATTEMPTS,
-    MODEL_NAME,
+    MODEL_DEBUGGER,
     STRATEGY_FILE_PATH,
     TEMPERATURE_DEBUGGER,
 )
@@ -26,10 +24,10 @@ from ..utils.file_handler import get_latest_json_report, write_strategy_file
 from ..utils.metrics import extract_metrics_from_report
 
 # 初始化 Debug 模型
-model_debugger = ChatOpenAI(
-    model=MODEL_NAME,
-    api_key=API_KEY,
-    base_url=BASE_URL,
+model_debugger = ChatAnthropic(
+    model=MODEL_DEBUGGER["name"],
+    anthropic_api_key=MODEL_DEBUGGER["api_key"],
+    anthropic_api_url=MODEL_DEBUGGER["base_url"],
     temperature=TEMPERATURE_DEBUGGER,
 )
 
