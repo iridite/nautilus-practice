@@ -540,6 +540,19 @@ def generate_optimized_strategy(
 
         response_content = str(response.content)
 
+        # 预处理响应内容：处理可能的转义字符
+        # AI 有时会返回字面的 \n 而不是真正的换行符
+        if "\\n" in response_content:
+            actual_newlines = response_content.count("\n")
+            escaped_newlines = response_content.count("\\n")
+
+            # 如果转义换行符远多于实际换行符，说明需要修复
+            if escaped_newlines > actual_newlines * 2:
+                print("⚠️ 检测到 AI 返回内容包含转义字符，正在修复...")
+                response_content = response_content.replace("\\n", "\n")
+                response_content = response_content.replace("\\t", "    ")
+                print("✅ 已修复转义字符")
+
         # 尝试提取代码
         try:
             new_code = extract_code(response_content)
@@ -549,7 +562,7 @@ def generate_optimized_strategy(
             if not is_valid:
                 print(f"⚠️ 代码验证失败: {error_msg}")
                 if attempt < max_retries - 1:
-                    print(f"🔄 重试中...")
+                    print("🔄 重试中...")
                     # 修改用户消息，强调完整性要求
                     user_msg_parts.append(
                         f"\n⚠️ 上次生成失败，原因: {error_msg}\n"
@@ -558,6 +571,9 @@ def generate_optimized_strategy(
                         "2. 完整的 Config 类定义（包含所有参数）\n"
                         "3. 完整的 Strategy 类定义（包含所有方法）\n"
                         "4. 不要只返回注释说明，必须包含完整的可执行代码\n"
+                        "5. 确保代码使用正确的 Python 语法，可以直接执行\n"
+                        "6. 代码开头的注释要简洁（不超过10行）\n"
+                        "7. 使用 ```python 代码块包裹完整代码\n"
                     )
                     user_msg = "\n".join(user_msg_parts)
                     continue
@@ -566,10 +582,10 @@ def generate_optimized_strategy(
 
             # 验证通过
             print(f"\n✅ 新策略代码已生成并验证通过 ({len(new_code)} 字符)")
-            print(f"   - 包含 Config 类: ✓")
-            print(f"   - 包含 Strategy 类: ✓")
-            print(f"   - 包含 import 语句: ✓")
-            print(f"   - 代码长度合理: ✓\n")
+            print("   - 包含 Config 类: ✓")
+            print("   - 包含 Strategy 类: ✓")
+            print("   - 包含 import 语句: ✓")
+            print("   - 代码长度合理: ✓\n")
 
             return new_code
 
@@ -577,7 +593,7 @@ def generate_optimized_strategy(
             print(f"❌ 代码提取失败: {str(e)}")
 
             if attempt < max_retries - 1:
-                print(f"🔄 重试中...")
+                print("🔄 重试中...")
                 # 修改用户消息，强调完整性要求
                 user_msg_parts.append(
                     f"\n⚠️ 上次生成失败，原因: {str(e)}\n"
@@ -587,13 +603,15 @@ def generate_optimized_strategy(
                     "3. 完整的 Strategy 类定义（包含所有方法）\n"
                     "4. 不要只返回注释说明或改动总结，必须包含完整的可执行代码\n"
                     "5. 使用 ```python 代码块包裹完整代码\n"
+                    "6. 确保代码使用正确的 Python 语法，可以直接执行\n"
+                    "7. 代码开头的注释要简洁（不超过10行）\n"
                 )
                 user_msg = "\n".join(user_msg_parts)
             else:
                 # 最后一次尝试也失败了
                 print(f"\n❌ 经过 {max_retries} 次尝试，AI 仍未能生成有效的策略代码")
                 print(f"错误信息: {str(e)}")
-                print(f"\n⚠️ 返回原始策略代码，避免覆盖")
+                print("\n⚠️ 返回原始策略代码，避免覆盖")
 
                 # 返回当前代码，避免覆盖为无效内容
                 return current_code

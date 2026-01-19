@@ -32,6 +32,26 @@ def extract_code(text: str) -> str:
     if not code:
         raise ValueError("未能提取到任何代码内容")
 
+    # 处理转义的换行符（AI 可能返回 \n 作为字面字符串）
+    # 检查是否包含大量的 \n 字面字符串（而不是真正的换行符）
+    if r"\n" in code or "\\n" in code:
+        # 计算实际换行符和转义换行符的比例
+        actual_newlines = code.count("\n")
+        escaped_newlines = code.count(r"\n") + code.count("\\n")
+
+        # 如果转义的换行符远多于实际换行符，说明需要反转义
+        if escaped_newlines > actual_newlines * 2:
+            print(f"⚠️ 检测到转义的换行符 (\\n)，正在修复...")
+            # 替换所有转义的换行符为真正的换行符
+            code = code.replace(r"\n", "\n")
+            code = code.replace("\\n", "\n")
+            print(f"✅ 已将 {escaped_newlines} 个转义换行符替换为真正的换行符")
+
+    # 处理其他常见的转义字符
+    if r"\t" in code or "\\t" in code:
+        code = code.replace(r"\t", "    ")  # 替换为4个空格
+        code = code.replace("\\t", "    ")
+
     # 检查是否只是注释（超过90%的行都是注释或空行）
     lines = code.split("\n")
     non_comment_lines = 0
@@ -133,6 +153,13 @@ def validate_strategy_code(code: str) -> tuple[bool, str]:
         if len(lines) > 0 and (non_comment_lines / len(lines)) < 0.1:
             return False, "代码主要由注释组成，缺少实际逻辑"
 
+        # 检查是否有转义的换行符（说明代码格式有问题）
+        if r"\n" in code or "\\n" in code:
+            escaped_count = code.count(r"\n") + code.count("\\n")
+            actual_count = code.count("\n")
+            if escaped_count > actual_count * 2:
+                return False, f"代码包含大量转义的换行符（\\n），格式不正确"
+
         return True, "验证通过"
 
     except Exception as e:
@@ -150,6 +177,6 @@ def extract_parameters(code: str) -> Dict[str, str]:
                     key = parts[0].strip()
                     value = parts[1].strip().split("#")[0].strip()
                     params[key] = value
-            except:
+            except Exception:
                 pass
     return params

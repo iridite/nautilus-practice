@@ -86,7 +86,7 @@ def create_optimization_graph():
 
     # 编译，设置人工审查点
     graph = workflow.compile(
-        interrupt_before=["researcher"],  # 在研究节点前暂停，允许人工审查
+        # interrupt_before=["researcher"],  # 在研究节点前暂停，允许人工审查
     )
 
     return graph
