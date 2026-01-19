@@ -189,17 +189,30 @@ def backtester_node(state: AgentState) -> dict:
 
     # ===== 步骤 4: 读取回测结果 =====
     try:
-        report = get_latest_json_report(run_time)
-        metrics = extract_metrics_from_report(report)
+        # 读取完整的 JSON 报告
+        full_report = get_latest_json_report(run_time)
+        print(f"\n📄 读取完整回测报告 (大小: {len(str(full_report))} 字符)")
 
-        print(f"\n📊 回测结果:")
+        # 提取简化版指标（用于快速查看）
+        metrics = extract_metrics_from_report(full_report)
+
+        print(f"\n📊 回测结果摘要:")
         print(f"  夏普率: {metrics['sharpe']:.3f}")
         print(f"  交易次数: {metrics['total_trades']}")
         print(f"  盈亏百分比: {metrics['profit_pct']:.2%}")
         print(f"  盈亏比: {metrics['profit_loss_ratio']:.2f}")
         print(f"  胜率: {metrics['win_rate']:.2%}")
         print(f"  预期值: {metrics['expectancy']:.4f}")
-        print(f"  最大回撤: {metrics['max_drawdown']:.2%}\n")
+        print(f"  最大回撤: {metrics['max_drawdown']:.2%}")
+
+        # 显示策略参数
+        if metrics.get("strategy_parameters"):
+            print(f"\n⚙️  策略参数:")
+            for key, value in list(metrics["strategy_parameters"].items())[:5]:
+                print(f"  {key}: {value}")
+            if len(metrics["strategy_parameters"]) > 5:
+                print(f"  ... 共 {len(metrics['strategy_parameters'])} 个参数")
+        print()
 
     except Exception as e:
         print(f"❌ 读取回测结果失败: {e}")
@@ -211,7 +224,8 @@ def backtester_node(state: AgentState) -> dict:
     best_metrics = state.get("best_metrics")
     update = {
         "code_run_successful": True,
-        "current_backtest_result": metrics,
+        "current_backtest_result": metrics,  # 简化版指标（快速查看）
+        "current_backtest_report": full_report,  # 完整 JSON 报告（AI 参考）
         "previous_strategy_code": current_code,  # 保存成功的代码
         "debug_record": None,  # 清空 debug 记录
     }
@@ -367,4 +381,5 @@ def create_error_state(
         "code_run_successful": False,
         "debug_record": debug_record,
         "current_backtest_result": None,
+        "current_backtest_report": None,
     }

@@ -136,6 +136,7 @@ def evaluate_goals(state: AgentState) -> dict:
     """
     target = state.get("optimization_target", {})
     current_result = state.get("current_backtest_result")
+    full_report = state.get("current_backtest_report")
 
     # 如果没有目标或没有结果，返回未达成
     if not target or not current_result:
@@ -308,28 +309,180 @@ def generate_optimized_strategy(
 
     # 如果代码运行成功，包含回测数据
     if code_run_successful and backtest_data:
+        # 获取完整的回测报告
+        full_report = state.get("current_backtest_report")
+
+        # 首先提供简化版指标（快速查看）
+        summary_data = {
+            "核心绩效": {
+                "sharpe": backtest_data["sharpe"],
+                "total_trades": backtest_data["total_trades"],
+                "profit_pct": backtest_data["profit_pct"],
+                "win_rate": backtest_data["win_rate"],
+                "profit_loss_ratio": backtest_data["profit_loss_ratio"],
+                "expectancy": backtest_data["expectancy"],
+                "max_drawdown": backtest_data["max_drawdown"],
+                "profit_factor": backtest_data.get("profit_factor", 0),
+            },
+            "信号统计": {
+                "total_signals": backtest_data["total_signals"],
+                "filtered_signals": backtest_data["filtered_signals"],
+                "signal_pass_rate": backtest_data["filtered_signals"]
+                / backtest_data["total_signals"]
+                if backtest_data["total_signals"] > 0
+                else 0,
+            },
+            "策略参数数量": len(backtest_data.get("strategy_parameters", {})),
+        }
+
         user_msg_parts.extend(
             [
-                "--- 当前回测结果 ---",
-                json.dumps(
-                    {
-                        "sharpe": backtest_data["sharpe"],
-                        "total_trades": backtest_data["total_trades"],
-                        "profit_pct": backtest_data["profit_pct"],
-                        "profit_loss_ratio": backtest_data["profit_loss_ratio"],
-                        "win_rate": backtest_data["win_rate"],
-                        "expectancy": backtest_data["expectancy"],
-                        "max_drawdown": backtest_data["max_drawdown"],
-                        "filtered_signals": backtest_data["filtered_signals"],
-                        "total_signals": backtest_data["total_signals"],
-                        "strategy_parameters": backtest_data["strategy_parameters"],
-                    },
-                    indent=2,
-                    ensure_ascii=False,
-                ),
+                "--- 回测结果摘要（快速查看）---",
+                json.dumps(summary_data, indent=2, ensure_ascii=False),
                 "",
             ]
         )
+
+        # 然后提供关键信息提取（重点分析）
+        if full_report:
+            # 提取关键洞察
+            insights = {}
+
+            # 1. 信号过滤分析
+            filter_stats = full_report.get("filter_stats", {})
+            if filter_stats:
+                filter_rates = filter_stats.get("rates", {})
+                insights["信号过滤分析"] = {
+                    "通过率": filter_rates.get("pass_rate", 0),
+                    "过滤率": filter_rates.get("filter_rate", 0),
+                    "主要过滤原因": {
+                        "趋势不符": filter_rates.get("fail_trend_rate", 0),
+                        "挤压条件": filter_rates.get("fail_squeeze_rate", 0),
+                        "相对强度": filter_rates.get("fail_rs_rate", 0),
+                        "突破条件": filter_rates.get("fail_breakout_rate", 0),
+                        "成交量": filter_rates.get("fail_volume_rate", 0),
+                        "BTC趋势": filter_rates.get("fail_btc_bear_rate", 0),
+                    },
+                    "标的数量": filter_stats.get("instrument_count", 0),
+                }
+
+            # 2. 赢家 vs 输家对比
+            trade_metrics = full_report.get("trade_metrics", {})
+            detailed = trade_metrics.get("detailed_analysis", {})
+            if detailed:
+                winners = detailed.get("winners", {})
+                losers = detailed.get("losers", {})
+                insights["赢家输家对比"] = {
+                    "赢家": {
+                        "数量": winners.get("count", 0),
+                        "平均盈利%": winners.get("avg_pnl_pct", 0),
+                        "平均RS评分": winners.get("avg_rs_score", 0),
+                        "平均BB宽度%": winners.get("avg_bb_width_pct", 0),
+                        "平均成交量倍数": winners.get("avg_volume_mult", 0),
+                    },
+                    "输家": {
+                        "数量": losers.get("count", 0),
+                        "平均亏损%": losers.get("avg_pnl_pct", 0),
+                        "平均RS评分": losers.get("avg_rs_score", 0),
+                        "平均BB宽度%": losers.get("avg_bb_width_pct", 0),
+                        "平均成交量倍数": losers.get("avg_volume_mult", 0),
+                    },
+                    "关键差异": {
+                        "RS评分差": winners.get("avg_rs_score", 0)
+                        - losers.get("avg_rs_score", 0),
+                        "BB宽度差": winners.get("avg_bb_width_pct", 0)
+                        - losers.get("avg_bb_width_pct", 0),
+                        "成交量倍数差": winners.get("avg_volume_mult", 0)
+                        - losers.get("avg_volume_mult", 0),
+                    },
+                }
+
+            # 3. 性能摘要
+            performance = full_report.get("performance", {})
+            if performance:
+                insights["性能摘要"] = {
+                    "总交易数": performance.get("total_trades", 0),
+                    "总订单数": performance.get("total_orders", 0),
+                    "夏普率": performance.get("sharpe_ratio", 0),
+                    "胜率": performance.get("win_rate", 0),
+                    "盈亏比": performance.get("profit_loss_ratio", 0),
+                    "总收益%": performance.get("total_pnl_pct", 0),
+                    "信号通过率": performance.get("signal_pass_rate", 0),
+                }
+
+            # 4. 策略配置关键参数
+            strategy_config = full_report.get("strategy_config", {})
+            if strategy_config:
+                key_params = {
+                    "技术指标": {
+                        "BB周期": strategy_config.get("bb_period", 20),
+                        "BB标准差": strategy_config.get("bb_std", 2.0),
+                        "KC周期": strategy_config.get("kc_period_ema", 20),
+                        "KC倍数": strategy_config.get("kc_mult", 1.4),
+                        "ATR周期": strategy_config.get("atr_period", 20),
+                    },
+                    "相对强度": {
+                        "RS回溯6h": strategy_config.get("rs_lookback_6h", 6),
+                        "RS回溯12h": strategy_config.get("rs_lookback_12h", 12),
+                        "RS回溯24h": strategy_config.get("rs_lookback_24h", 24),
+                        "RS加速差": strategy_config.get("rs_acceleration_gap", 0.03),
+                        "RS差6h": strategy_config.get("rs_gap_6h", 0.03),
+                        "RS差12h": strategy_config.get("rs_gap_12h", 0.05),
+                        "RS差24h": strategy_config.get("rs_gap_24h", 0.07),
+                    },
+                    "过滤条件": {
+                        "BB宽度周期": strategy_config.get("bb_width_period", 100),
+                        "BB宽度百分位": strategy_config.get("bb_width_percentile", 0.5),
+                        "挤压成熟K线": strategy_config.get("squeeze_maturity_bars", 2),
+                        "成交量倍数": strategy_config.get("volume_filter_mult", 1.6),
+                    },
+                    "风险管理": {
+                        "每笔风险": strategy_config.get("risk_per_trade", 0.05),
+                        "最大杠杆": strategy_config.get("max_leverage", 3.0),
+                        "止损倍数": strategy_config.get("stop_loss_mult", 1.5),
+                        "保本倍数": strategy_config.get("breakeven_mult", 4.0),
+                        "最大持仓时间": strategy_config.get("max_holding_hours", 72),
+                        "最大并发仓位": strategy_config.get(
+                            "max_concurrent_positions", 5
+                        ),
+                        "冷却期小时": strategy_config.get("cooldown_period_hours", 24),
+                    },
+                }
+                insights["当前策略关键参数"] = key_params
+
+            user_msg_parts.extend(
+                [
+                    "--- 关键信息提取（重点分析）---",
+                    json.dumps(insights, indent=2, ensure_ascii=False),
+                    "",
+                    "**优化建议方向**:",
+                    "1. 如果信号过滤率过高，考虑放宽过滤条件（如降低RS阈值、BB宽度要求等）",
+                    "2. 如果胜率低但盈亏比高，考虑优化入场时机，提高成功率",
+                    "3. 如果盈亏比低，考虑优化止损止盈策略，扩大盈利空间",
+                    "4. 根据赢家输家对比，调整RS评分、BB宽度、成交量等过滤条件",
+                    "5. 如果交易次数不足，降低过滤严格度；如果过多，提高过滤严格度",
+                    "",
+                ]
+            )
+
+            # 最后提供完整的 JSON 报告（供深度分析）
+            user_msg_parts.extend(
+                [
+                    "--- 完整回测报告（详细数据，供深度分析）---",
+                    "以下是完整的回测 JSON 报告，包含所有原始数据：",
+                    "- strategy_config: 完整策略配置（62个参数）",
+                    "- trade_metrics.trades: 所有交易明细（包含入场指标）",
+                    "- filter_stats.by_instrument: 每个标的的过滤统计",
+                    "- returns: 收益率相关指标",
+                    "",
+                    "```json",
+                    json.dumps(full_report, indent=2, ensure_ascii=False),
+                    "```",
+                    "",
+                    "**注意**: 请根据上述关键信息提取和优化建议，结合完整报告进行精准优化。",
+                    "",
+                ]
+            )
 
     # 如果代码运行失败，专注于 Debug 信息
     if not code_run_successful and debug_record:

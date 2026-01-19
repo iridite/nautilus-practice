@@ -72,8 +72,14 @@ class AgentState(TypedDict):
     code_run_successful: bool  # 代码是否成功运行
 
     # ===== 回测结果 =====
-    current_backtest_result: Optional[BacktestMetrics]  # 当前回测结果
-    backtest_history: Annotated[Sequence[BacktestMetrics], add]  # 历史回测结果
+    current_backtest_result: Optional[
+        BacktestMetrics
+    ]  # 当前回测结果（简化版，快速查看）
+    current_backtest_report: Optional[dict]  # 完整的 JSON 回测报告（包含所有原始数据）
+    backtest_history: Annotated[
+        Sequence[BacktestMetrics], add
+    ]  # 历史回测结果（简化版）
+    backtest_report_history: Annotated[Sequence[dict], add]  # 历史完整报告
 
     # ===== 最佳记录 =====
     best_metrics: Optional[BacktestMetrics]  # 历史最佳指标
