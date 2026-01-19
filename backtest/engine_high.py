@@ -305,27 +305,29 @@ def run_high_level(cfg: BackTestConfig, base_dir: Path):
 
     print("✅ Backtest Complete.")
 
-    # 获取策略过滤器统计和交易指标
-    filter_stats = None
-    trade_metrics = None
+    # ===== 收集策略统计数据（用于保存到 JSON） =====
+    # 注意：这些数据会被保存到 JSON 文件中供 AI 分析，但不会全部输出到终端
+    filter_stats = None  # 信号过滤统计
+    trade_metrics = None  # 交易明细列表
     try:
         from strategy.rs_squeeze import RSSqueezeStrategy
 
-        # 获取统计数据（在打印之前）
+        # 获取统计数据（在终端打印之前先保存，避免打印后清空）
         filter_stats = RSSqueezeStrategy.get_filter_stats_summary()
         trade_metrics = RSSqueezeStrategy.get_trade_metrics()
 
-        # 输出策略过滤器统计汇总报告
+        # 终端输出策略过滤器统计报告（详细格式化输出）
         RSSqueezeStrategy.print_filter_stats_report()
-        # 重置类变量，避免多次回测数据累积
+
+        # 重置类变量，避免多次回测时数据累积
         RSSqueezeStrategy.reset_class_stats()
     except ImportError:
         pass  # 非 RS Squeeze 策略时跳过
     except AttributeError:
-        pass  # 策略没有该方法时跳过
+        pass  # 策略没有相关方法时跳过
 
-    # 获取 Universe 文件路径和策略配置参数
-    # 注意：cfg.strategy.params 可能是 dict 或 Pydantic 对象
+    # ===== 提取策略配置参数（完整保存到 JSON，不输出到终端） =====
+    # 注意：cfg.strategy.params 可能是 dict 或 Pydantic 对象，需要统一转换
     strategy_params = cfg.strategy.params
     if hasattr(strategy_params, "model_dump"):
         # Pydantic v2 对象
@@ -338,7 +340,7 @@ def run_high_level(cfg: BackTestConfig, base_dir: Path):
     else:
         strategy_config = {}
 
-    # 构建回测配置信息
+    # ===== 构建回测配置信息（元数据） =====
     backtest_config = {
         "start_date": str(cfg.start_date),
         "end_date": str(cfg.end_date),
@@ -348,20 +350,21 @@ def run_high_level(cfg: BackTestConfig, base_dir: Path):
         "strategies_count": len(strategies),
     }
 
-    # 打印回测结果摘要并保存为 JSON
+    # ===== 终端输出 + JSON 保存 =====
+    # 策略：终端只显示核心摘要（简洁），JSON 保存完整数据（供 AI 分析）
     if results:
         for result in results:
-            # 终端输出
+            # 终端输出（简化版，不包含策略配置）
             _print_results(
                 result,
-                strategy_config=strategy_config,
+                strategy_config=None,  # 不传递配置到终端输出
             )
 
-            # 构建完整结果字典
+            # 构建完整结果字典（包含所有数据）
             result_dict = _build_result_dict(
                 result=result,
                 strategy_name=cfg.strategy.name,
-                strategy_config=strategy_config,
+                strategy_config=strategy_config,  # 完整配置保存到 JSON
                 filter_stats=filter_stats,
                 trade_metrics=trade_metrics,
                 backtest_config=backtest_config,
@@ -373,7 +376,13 @@ def run_high_level(cfg: BackTestConfig, base_dir: Path):
                 strategy_name=cfg.strategy.name,
                 base_dir=base_dir,
             )
-            print(f"📁 Results saved to: {json_path}")
+            # 提示用户 JSON 文件位置和包含的数据量
+            print(f"📁 Complete results saved to: {json_path}")
+            print(f"    ├─ Strategy parameters: {len(strategy_config)}")
+            print(f"    ├─ Trade records: {len(trade_metrics) if trade_metrics else 0}")
+            print(
+                f"    └─ Filter stats: {len(filter_stats) if filter_stats else 0} instruments"
+            )
 
 
 def _build_result_dict(
@@ -385,18 +394,41 @@ def _build_result_dict(
     backtest_config: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """
-    构建完整的回测结果字典，用于 JSON 保存和终端输出。
+    构建完整的回测结果字典，包含所有可用的回测数据。
+
+    设计目标：
+    1. 包含回测引擎能产生的所有数据，不遗漏任何信息
+    2. 结构化组织，便于 AI 和人工分析
+    3. 同时支持快速查看（performance）和深度分析（详细数据）
+
+    JSON 结构：
+    - meta: 元数据（策略名、时间戳、执行时长）
+    - summary: 摘要统计（订单数、持仓数）
+    - pnl: 盈亏数据（按货币分组）
+    - returns: 收益率数据（夏普率、最大回撤、总回报等）
+    - strategy_config: 完整的策略配置参数（供 AI 分析优化）
+    - backtest_config: 回测配置信息（时间范围、标的数量等）
+    - filter_stats: 信号过滤统计
+        - by_instrument: 按标的分组的详细统计
+        - total: 汇总统计
+        - rates: 各种过滤率（通过率、各过滤器占比）
+        - instrument_count: 标的数量
+    - trade_metrics: 交易数据
+        - trades: 所有交易的明细列表
+        - analysis: 基础分析（胜率、盈亏比、均值等）
+        - detailed_analysis: 详细分析（胜者 vs 败者对比）
+    - performance: 性能摘要（整合关键指标，便于快速查看）
 
     Args:
         result: BacktestResult 对象
         strategy_name: 策略名称
-        strategy_config: 策略配置参数
-        filter_stats: 过滤器统计 (来自策略类变量)
-        trade_metrics: 交易指标 (来自策略类变量)
+        strategy_config: 策略配置参数（完整保存，供 AI 优化参考）
+        filter_stats: 过滤器统计（来自策略类变量）
+        trade_metrics: 交易指标（来自策略类变量）
         backtest_config: 回测配置信息
 
     Returns:
-        完整的结果字典
+        完整的结果字典，包含回测引擎能输出的所有信息
     """
     result_dict = {
         "meta": {
@@ -416,7 +448,9 @@ def _build_result_dict(
         "trade_metrics": {
             "trades": trade_metrics or [],
             "analysis": {},
+            "detailed_analysis": {},  # 新增：更详细的交易分析
         },
+        "performance": {},  # 新增：性能摘要
     }
 
     # 处理 PnL 指标
@@ -432,34 +466,73 @@ def _build_result_dict(
         for currency, val in result.stats_returns.items():
             result_dict["returns"][str(currency)] = val if val == val else None
 
-    # 处理过滤器统计
+    # ===== 处理过滤器统计（完整保存所有过滤器细节） =====
     if filter_stats:
         # 汇总所有实例的统计
         total_stats = {}
         for inst_id, stats in filter_stats.items():
             for key, value in stats.items():
                 total_stats[key] = total_stats.get(key, 0) + value
+
+        # 计算过滤率
+        signal_checks = total_stats.get("signal_checks", 0)
+        all_passed = total_stats.get("all_passed", 0)
+
+        filter_rates = {}
+        if signal_checks > 0:
+            filter_rates = {
+                "pass_rate": (all_passed / signal_checks * 100)
+                if signal_checks > 0
+                else 0,
+                "filter_rate": ((signal_checks - all_passed) / signal_checks * 100)
+                if signal_checks > 0
+                else 0,
+            }
+            # 计算各个过滤器的占比
+            for key in [
+                "fail_trend",
+                "fail_squeeze",
+                "fail_squeeze_maturity",
+                "fail_rs",
+                "fail_extension",
+                "fail_btc_bear",
+                "fail_breakout",
+                "fail_volume",
+            ]:
+                if key in total_stats:
+                    filter_rates[f"{key}_rate"] = total_stats[key] / signal_checks * 100
+
         result_dict["filter_stats"] = {
             "by_instrument": filter_stats,
             "total": total_stats,
+            "rates": filter_rates,  # 新增：各种过滤率
+            "instrument_count": len(filter_stats),
         }
 
-    # 处理交易指标分析
+    # ===== 处理交易指标分析（完整保存所有交易统计） =====
     if trade_metrics:
         winners = [t for t in trade_metrics if t.get("result") == "WINNER"]
         losers = [t for t in trade_metrics if t.get("result") == "LOSER"]
 
+        # 基础统计
         analysis = {
             "total_trades": len(trade_metrics),
-            "winners": len(winners),
-            "losers": len(losers),
+            "winning_trades": len(winners),
+            "losing_trades": len(losers),
             "win_rate": len(winners) / len(trade_metrics) if trade_metrics else 0,
         }
 
+        # 盈亏统计
+        all_pnls = [t.get("pnl_pct", 0) for t in trade_metrics]
+        analysis["total_pnl_pct"] = sum(all_pnls)
+        analysis["avg_pnl_pct"] = sum(all_pnls) / len(all_pnls) if all_pnls else 0
+        analysis["max_winning_trade"] = max(all_pnls) if all_pnls else 0
+        analysis["max_losing_trade"] = min(all_pnls) if all_pnls else 0
+
+        # 胜者统计
         if winners:
-            analysis["avg_winner_pnl_pct"] = sum(
-                t.get("pnl_pct", 0) for t in winners
-            ) / len(winners)
+            winner_pnls = [t.get("pnl_pct", 0) for t in winners]
+            analysis["avg_winning_trade"] = sum(winner_pnls) / len(winners)
             analysis["avg_winner_rs_score"] = sum(
                 t.get("entry_rs_score", 0) for t in winners
             ) / len(winners)
@@ -470,10 +543,10 @@ def _build_result_dict(
                 t.get("entry_volume_mult", 0) for t in winners
             ) / len(winners)
 
+        # 败者统计
         if losers:
-            analysis["avg_loser_pnl_pct"] = sum(
-                t.get("pnl_pct", 0) for t in losers
-            ) / len(losers)
+            loser_pnls = [t.get("pnl_pct", 0) for t in losers]
+            analysis["avg_losing_trade"] = sum(loser_pnls) / len(losers)
             analysis["avg_loser_rs_score"] = sum(
                 t.get("entry_rs_score", 0) for t in losers
             ) / len(losers)
@@ -484,12 +557,83 @@ def _build_result_dict(
                 t.get("entry_volume_mult", 0) for t in losers
             ) / len(losers)
 
-        if winners and losers and analysis.get("avg_loser_pnl_pct", 0) != 0:
-            analysis["rr_ratio"] = abs(
-                analysis["avg_winner_pnl_pct"] / analysis["avg_loser_pnl_pct"]
+        # 盈亏比和利润因子
+        if winners and losers and analysis.get("avg_losing_trade", 0) != 0:
+            analysis["profit_loss_ratio"] = abs(
+                analysis["avg_winning_trade"] / analysis["avg_losing_trade"]
             )
 
+            total_wins = sum([t.get("pnl_pct", 0) for t in winners])
+            total_losses = abs(sum([t.get("pnl_pct", 0) for t in losers]))
+            if total_losses > 0:
+                analysis["profit_factor"] = total_wins / total_losses
+
+        # 详细分析（胜者 vs 败者对比）
+        detailed_analysis = {}
+        if winners and losers:
+            detailed_analysis["winners"] = {
+                "count": len(winners),
+                "avg_pnl_pct": analysis.get("avg_winning_trade", 0),
+                "avg_rs_score": analysis.get("avg_winner_rs_score", 0),
+                "avg_bb_width_pct": analysis.get("avg_winner_bb_width_pct", 0),
+                "avg_volume_mult": analysis.get("avg_winner_volume_mult", 0),
+            }
+            detailed_analysis["losers"] = {
+                "count": len(losers),
+                "avg_pnl_pct": analysis.get("avg_losing_trade", 0),
+                "avg_rs_score": analysis.get("avg_loser_rs_score", 0),
+                "avg_bb_width_pct": analysis.get("avg_loser_bb_width_pct", 0),
+                "avg_volume_mult": analysis.get("avg_loser_volume_mult", 0),
+            }
+
         result_dict["trade_metrics"]["analysis"] = analysis
+        result_dict["trade_metrics"]["detailed_analysis"] = detailed_analysis
+
+    # ===== 添加性能摘要（整合关键指标，方便快速查看） =====
+    # 这个部分从各个详细数据中提取关键指标，便于：
+    # 1. AI 快速评估回测结果
+    # 2. 人工快速浏览 JSON 时了解整体表现
+    # 3. 与 current_backtest_result 对应，用于 LangGraph State
+    performance_summary = {
+        "total_trades": result.total_positions,
+        "total_orders": result.total_orders,
+        "elapsed_time_seconds": result.elapsed_time,
+    }
+
+    # 从 returns 中提取关键指标
+    if result.stats_returns:
+        for key, val in result.stats_returns.items():
+            if "Sharpe Ratio" in str(key):
+                performance_summary["sharpe_ratio"] = val if val == val else None
+            elif "Max Drawdown" in str(key):
+                performance_summary["max_drawdown"] = val if val == val else None
+            elif "Total Return" in str(key):
+                performance_summary["total_return"] = val if val == val else None
+
+    # 从交易分析中提取关键指标
+    if trade_metrics:
+        analysis = result_dict["trade_metrics"]["analysis"]
+        performance_summary["win_rate"] = analysis.get("win_rate", 0)
+        performance_summary["profit_loss_ratio"] = analysis.get("profit_loss_ratio", 0)
+        performance_summary["avg_winning_trade"] = analysis.get("avg_winning_trade", 0)
+        performance_summary["avg_losing_trade"] = analysis.get("avg_losing_trade", 0)
+        performance_summary["total_pnl_pct"] = analysis.get("total_pnl_pct", 0)
+
+    # 从过滤统计中提取信息
+    if filter_stats:
+        filter_data = result_dict["filter_stats"]
+        performance_summary["total_signals"] = filter_data["total"].get(
+            "signal_checks", 0
+        )
+        performance_summary["signals_passed"] = filter_data["total"].get(
+            "all_passed", 0
+        )
+        if "rates" in filter_data:
+            performance_summary["signal_pass_rate"] = filter_data["rates"].get(
+                "pass_rate", 0
+            )
+
+    result_dict["performance"] = performance_summary
 
     return result_dict
 
@@ -534,7 +678,16 @@ def _print_results(
     result: BacktestResult,
     strategy_config: Optional[Dict[str, Any]] = None,
 ):
-    """打印回测结果摘要，包含 Universe 路径和策略配置"""
+    """
+    打印回测结果摘要到终端（简化版）
+
+    目标：保持终端输出简洁，只显示核心性能指标
+    完整数据（包括策略配置、交易明细等）已保存到 JSON 文件中
+
+    Args:
+        result: 回测结果对象
+        strategy_config: 策略配置（已移除，设为 None 以简化输出）
+    """
     print("\n" + "=" * 65)
     print("🏆 Backtest Report")
     print("=" * 65)
@@ -553,13 +706,12 @@ def _print_results(
         for currency, val in result.stats_returns.items():
             print(f"- {currency:<25} {val:,.4f}")
 
-    # 打印策略配置（供 AI 分析使用）
-    if strategy_config:
-        print("-" * 65)
-        print("📋 Strategy Config (for AI feedback):")
-        # 使用 JSON 格式输出，紧凑但可读
-        config_json = json.dumps(strategy_config, indent=2, default=str)
-        print(config_json)
+    # 注意：策略配置参数已保存到 JSON 文件中，终端不再打印
+    # 原因：
+    # 1. 保持终端输出简洁，只显示关键性能指标
+    # 2. 策略配置可能有几十个参数，会使终端输出过长
+    # 3. AI 可以从 JSON 文件中读取完整配置进行分析
+    # 4. 人工查看时也更倾向于查看 JSON 文件而非终端滚动输出
 
     print("=" * 65 + "\n")
 
