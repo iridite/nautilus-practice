@@ -3,7 +3,7 @@
 """
 
 import re
-from typing import Dict
+from typing import Any, Dict
 
 
 def extract_code(text: str) -> str:
@@ -127,7 +127,7 @@ def validate_strategy_code(code: str) -> tuple[bool, str]:
 
         # 检查基本结构
         if not code or len(code.strip()) < 500:
-            return False, "代码为空或过短"
+            return False, "代码为空或过短（至少需要500字符）"
 
         if "class" not in code:
             return False, "缺少类定义"
@@ -144,6 +144,12 @@ def validate_strategy_code(code: str) -> tuple[bool, str]:
         if "def __init__" not in code:
             return False, "缺少 __init__ 方法"
 
+        # 检查关键方法是否存在
+        required_methods = ["on_start", "on_bar"]
+        missing_methods = [m for m in required_methods if f"def {m}" not in code]
+        if missing_methods:
+            return False, f"缺少关键方法: {', '.join(missing_methods)}"
+
         # 检查是否主要是注释
         lines = code.split("\n")
         non_comment_lines = sum(
@@ -158,12 +164,93 @@ def validate_strategy_code(code: str) -> tuple[bool, str]:
             escaped_count = code.count(r"\n") + code.count("\\n")
             actual_count = code.count("\n")
             if escaped_count > actual_count * 2:
-                return False, f"代码包含大量转义的换行符（\\n），格式不正确"
+                return False, "代码包含大量转义的换行符（\\n），格式不正确"
+
+        # 深度检查：验证代码的完整性
+        completeness_check = check_code_completeness(code)
+        if not completeness_check["is_complete"]:
+            return False, completeness_check["reason"]
 
         return True, "验证通过"
 
     except Exception as e:
         return False, f"验证失败: {str(e)}"
+
+
+def check_code_completeness(code: str) -> Dict[str, Any]:
+    """
+    深度检查代码的完整性
+
+    Args:
+        code: 策略代码
+
+    Returns:
+        包含 is_complete 和 reason 的字典
+    """
+    # 检查代码长度（完整策略通常至少 3000 字符）
+    if len(code) < 3000:
+        return {
+            "is_complete": False,
+            "reason": f"代码过短（{len(code)}字符），完整策略通常至少3000字符。可能缺少方法实现。",
+        }
+
+    # 检查是否有方法只包含 pass 或 ... (占位符)
+    # 匹配: def method(): \n    pass 或 def method(): \n    ...
+    method_pattern = r"def\s+(\w+)\s*\([^)]*\):\s*\n\s+(?:pass|\.\.\.)\s*(?:\n|$)"
+    placeholder_methods = re.findall(method_pattern, code, re.MULTILINE)
+    if placeholder_methods:
+        return {
+            "is_complete": False,
+            "reason": f"发现占位符方法（只有pass或...）: {', '.join(placeholder_methods[:3])}。请提供完整实现。",
+        }
+
+    # 检查关键策略方法是否有实际逻辑
+    critical_methods = {
+        "on_bar": r"def\s+on_bar\s*\([^)]*\):\s*\n((?:\s+.+\n){5,})",  # 至少5行逻辑
+        "on_start": r"def\s+on_start\s*\([^)]*\):\s*\n((?:\s+.+\n){3,})",  # 至少3行逻辑
+        "__init__": r"def\s+__init__\s*\([^)]*\):\s*\n((?:\s+.+\n){10,})",  # 至少10行逻辑
+    }
+
+    for method, pattern in critical_methods.items():
+        if not re.search(pattern, code):
+            return {
+                "is_complete": False,
+                "reason": f"方法 {method} 缺少足够的实现逻辑。请确保包含完整的方法体。",
+            }
+
+    # 检查是否包含关键的策略组件
+    required_components = {
+        "indicators": [
+            "BollingerBands",
+            "KeltnerChannel",
+            "AverageTrueRange",
+            "ExponentialMovingAverage",
+        ],
+        "data_structures": ["deque", "Dict", "Optional"],
+        "trading_operations": ["submit_order", "cancel_all_orders"],
+    }
+
+    missing_components = []
+    for category, components in required_components.items():
+        found = [c for c in components if c in code]
+        if len(found) < len(components) // 2:  # 至少要有一半的组件
+            missing_components.append(category)
+
+    if missing_components:
+        return {
+            "is_complete": False,
+            "reason": f"缺少关键策略组件: {', '.join(missing_components)}。代码可能被过度简化。",
+        }
+
+    # 检查是否有足够的方法定义（完整策略通常有10+个方法）
+    method_count = len(re.findall(r"def\s+\w+\s*\(", code))
+    if method_count < 8:
+        return {
+            "is_complete": False,
+            "reason": f"方法数量过少（{method_count}个）。完整策略通常包含10+个方法。",
+        }
+
+    return {"is_complete": True, "reason": "代码完整性检查通过"}
 
 
 def extract_parameters(code: str) -> Dict[str, str]:

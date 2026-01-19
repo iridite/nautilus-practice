@@ -522,7 +522,23 @@ def generate_optimized_strategy(
             ]
         )
 
-    user_msg_parts.append("请生成优化后的完整策略代码。")
+    # 添加明确的长度和完整性要求
+    user_msg_parts.extend(
+        [
+            "",
+            "--- 重要提示 ---",
+            f"原始策略代码长度: {len(current_code)} 字符",
+            f"原始策略代码行数: {len(current_code.split(chr(10)))} 行",
+            "",
+            "请生成优化后的**完整策略代码**，要求：",
+            "1. 代码长度应该与原始代码相近（至少8000字符）",
+            "2. 必须包含所有方法的完整实现，不能省略或使用占位符",
+            "3. 每个方法都要有实际的逻辑代码，不能只有 pass 或 ...",
+            "4. 必须使用 ```python 代码块包裹",
+            "5. 开头注释要简洁（不超过10行）",
+            "",
+        ]
+    )
 
     user_msg = "\n".join(user_msg_parts)
 
@@ -561,31 +577,52 @@ def generate_optimized_strategy(
             is_valid, error_msg = validate_strategy_code(new_code)
             if not is_valid:
                 print(f"⚠️ 代码验证失败: {error_msg}")
+                print(f"   代码长度: {len(new_code)} 字符")
+                print(f"   代码行数: {len(new_code.split(chr(10)))} 行")
+
                 if attempt < max_retries - 1:
                     print("🔄 重试中...")
                     # 修改用户消息，强调完整性要求
                     user_msg_parts.append(
                         f"\n⚠️ 上次生成失败，原因: {error_msg}\n"
-                        "**请务必返回完整的策略代码**，包括：\n"
-                        "1. 所有必要的 import 语句\n"
-                        "2. 完整的 Config 类定义（包含所有参数）\n"
-                        "3. 完整的 Strategy 类定义（包含所有方法）\n"
-                        "4. 不要只返回注释说明，必须包含完整的可执行代码\n"
-                        "5. 确保代码使用正确的 Python 语法，可以直接执行\n"
-                        "6. 代码开头的注释要简洁（不超过10行）\n"
-                        "7. 使用 ```python 代码块包裹完整代码\n"
+                        f"生成的代码长度: {len(new_code)} 字符，行数: {len(new_code.split(chr(10)))} 行\n"
+                        "\n**请务必返回完整的策略代码**，包括：\n"
+                        "1. 所有必要的 import 语句（至少10个import）\n"
+                        "2. 完整的 Config 类定义（包含所有60+个参数）\n"
+                        "3. 完整的 Strategy 类定义（包含所有10+个方法的完整实现）\n"
+                        "4. 每个方法必须有完整的逻辑实现，不能只有 pass 或 ...\n"
+                        "5. __init__ 方法需要初始化所有指标和状态变量\n"
+                        "6. on_bar 方法需要包含完整的交易逻辑\n"
+                        "7. 代码总长度应该在8000-15000字符之间\n"
+                        "8. 代码开头的注释要简洁（不超过10行）\n"
+                        "9. 使用 ```python 代码块包裹完整代码\n"
+                        "\n**不要做的事情**：\n"
+                        "- 不要省略任何方法的实现\n"
+                        "- 不要使用 '# ... 其他代码 ...' 这样的占位符\n"
+                        "- 不要只返回改动的部分，必须返回完整文件\n"
+                        "- 不要简化或压缩代码，保持原有的完整性\n"
                     )
                     user_msg = "\n".join(user_msg_parts)
                     continue
                 else:
                     raise ValueError(f"多次尝试后仍无法生成有效代码: {error_msg}")
 
-            # 验证通过
-            print(f"\n✅ 新策略代码已生成并验证通过 ({len(new_code)} 字符)")
+            # 验证通过 - 显示详细信息
+            code_lines = new_code.split("\n")
+            method_count = new_code.count("def ")
+            class_count = new_code.count("class ")
+            import_count = new_code.count("import ")
+
+            print(f"\n✅ 新策略代码已生成并验证通过")
+            print(f"   - 代码长度: {len(new_code)} 字符")
+            print(f"   - 代码行数: {len(code_lines)} 行")
+            print(f"   - 类定义数: {class_count} 个")
+            print(f"   - 方法数量: {method_count} 个")
+            print(f"   - Import语句: {import_count} 个")
             print("   - 包含 Config 类: ✓")
             print("   - 包含 Strategy 类: ✓")
-            print("   - 包含 import 语句: ✓")
-            print("   - 代码长度合理: ✓\n")
+            print("   - 包含关键方法: ✓")
+            print("   - 代码完整性检查: ✓\n")
 
             return new_code
 
@@ -597,20 +634,31 @@ def generate_optimized_strategy(
                 # 修改用户消息，强调完整性要求
                 user_msg_parts.append(
                     f"\n⚠️ 上次生成失败，原因: {str(e)}\n"
-                    "**请务必返回完整的策略代码**，包括：\n"
-                    "1. 所有必要的 import 语句\n"
-                    "2. 完整的 Config 类定义（包含所有参数）\n"
-                    "3. 完整的 Strategy 类定义（包含所有方法）\n"
-                    "4. 不要只返回注释说明或改动总结，必须包含完整的可执行代码\n"
-                    "5. 使用 ```python 代码块包裹完整代码\n"
-                    "6. 确保代码使用正确的 Python 语法，可以直接执行\n"
-                    "7. 代码开头的注释要简洁（不超过10行）\n"
+                    "\n**请务必返回完整的策略代码**，包括：\n"
+                    "1. 所有必要的 import 语句（至少10个import）\n"
+                    "2. 完整的 Config 类定义（包含所有60+个参数）\n"
+                    "3. 完整的 Strategy 类定义（包含所有10+个方法的完整实现）\n"
+                    "4. 每个方法必须有完整的逻辑实现，不能只有 pass 或 ...\n"
+                    "5. __init__, on_start, on_bar 等核心方法必须包含完整实现\n"
+                    "6. 代码总长度应该在8000-15000字符之间\n"
+                    "7. 使用 ```python 代码块包裹完整代码\n"
+                    "8. 代码开头的注释要简洁（不超过10行）\n"
+                    "\n**参考原始代码的完整性**：\n"
+                    f"原始代码长度: {len(current_code)} 字符\n"
+                    f"原始代码行数: {len(current_code.split(chr(10)))} 行\n"
+                    "新代码应该与原始代码长度相近（至少80%）\n"
+                    "\n**不要做的事情**：\n"
+                    "- 不要省略任何方法的实现\n"
+                    "- 不要使用 '# ... 其他代码 ...' 这样的占位符\n"
+                    "- 不要只返回改动的部分，必须返回完整文件\n"
+                    "- 不要只返回注释说明或改动总结\n"
                 )
                 user_msg = "\n".join(user_msg_parts)
             else:
                 # 最后一次尝试也失败了
                 print(f"\n❌ 经过 {max_retries} 次尝试，AI 仍未能生成有效的策略代码")
                 print(f"错误信息: {str(e)}")
+                print(f"原始代码长度: {len(current_code)} 字符")
                 print("\n⚠️ 返回原始策略代码，避免覆盖")
 
                 # 返回当前代码，避免覆盖为无效内容

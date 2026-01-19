@@ -55,12 +55,17 @@ def get_parameter_tuning_system_prompt() -> str:
 
 **重要：输出格式要求**:
 1. 必须使用 ```python 代码块包裹完整的策略代码
-2. 必须包含所有 import 语句
-3. 必须包含完整的 Config 类定义（所有参数）
-4. 必须包含完整的 Strategy 类定义（所有方法，包括 __init__, on_start, on_bar 等）
-5. 在代码顶部用简洁注释（3-8行）说明本次调整的参数、原因和预期效果
-6. 不要只返回改动说明或注释，必须返回完整可执行的代码
-7. 代码长度应该在几千字符以上（完整策略代码）
+2. 必须包含所有 import 语句（至少10个）
+3. 必须包含完整的 Config 类定义（所有60+个参数，一个都不能少）
+4. 必须包含完整的 Strategy 类定义（所有10+个方法的完整实现）
+5. 代码总长度必须在 8000-15000 字符之间（完整策略代码）
+6. 代码总行数应该在 300-600 行之间
+7. 在代码顶部用简洁注释（3-8行）说明本次调整的参数、原因和预期效果
+8. 每个方法必须有完整的逻辑实现，不能只有 pass 或 ... 占位符
+9. __init__ 方法至少需要 15 行实际代码（初始化所有指标和状态）
+10. on_bar 方法至少需要 10 行实际代码（包含交易逻辑）
+11. 不要只返回改动说明或注释，必须返回完整可执行的代码
+12. 不要使用 "# ... 其他代码 ..." 这样的省略标记
 
 **错误示例**（不要这样做）:
 ```python
@@ -117,13 +122,18 @@ def get_logic_rewrite_system_prompt() -> str:
 
 **重要：输出格式要求**:
 1. 必须使用 ```python 代码块包裹完整的策略代码
-2. 必须包含所有 import 语句（包括新增的指标）
-3. 必须包含完整的 Config 类定义（所有参数，包括新增参数）
-4. 必须包含完整的 Strategy 类定义（所有方法的完整实现）
-5. 在代码顶部用简洁注释（5-15行）说明本次重构的核心变化、新增逻辑和预期效果
-6. 不要只返回改动说明、架构设计或伪代码，必须返回完整可执行的代码
-7. 代码长度应该在几千字符以上（完整策略代码）
-8. 每个方法都必须有完整实现，不能用 pass 或 ... 占位
+2. 必须包含所有 import 语句（至少10个，包括新增的指标）
+3. 必须包含完整的 Config 类定义（所有参数，包括新增参数，至少60个）
+4. 必须包含完整的 Strategy 类定义（所有方法的完整实现，至少10个方法）
+5. 代码总长度必须在 8000-15000 字符之间（完整策略代码）
+6. 代码总行数应该在 300-600 行之间
+7. 在代码顶部用简洁注释（5-15行）说明本次重构的核心变化、新增逻辑和预期效果
+8. 每个方法都必须有完整实现，不能用 pass 或 ... 占位符
+9. __init__ 方法至少需要 20 行实际代码（初始化所有指标、状态和新组件）
+10. on_bar 方法至少需要 15 行实际代码（包含完整的交易逻辑）
+11. 不要只返回改动说明、架构设计或伪代码，必须返回完整可执行的代码
+12. 不要使用 "# ... 其他代码 ..." 或 "# TODO" 这样的省略标记
+13. 所有辅助方法（如 _check_entry_signal, _manage_positions 等）都必须有完整实现
 
 **错误示例**（不要这样做）:
 ```python
@@ -134,7 +144,7 @@ def get_logic_rewrite_system_prompt() -> str:
 # ...（只有说明，没有实际代码）
 ```
 
-或者：
+或者（省略方法实现）：
 ```python
 class NewStrategy(BaseStrategy):
     def __init__(self, config):
@@ -143,6 +153,23 @@ class NewStrategy(BaseStrategy):
 
     def on_bar(self, bar):
         # TODO: 实现交易逻辑
+        pass
+
+    def _check_entry_signal(self, bar):
+        # ... 其他代码 ...
+        pass
+```
+
+或者（代码过短，只有几百字符）：
+```python
+# 简化版代码，缺少大部分方法
+import json
+class Config(BaseStrategyConfig):
+    param1: int = 10
+class Strategy(BaseStrategy):
+    def __init__(self, config):
+        super().__init__(config)
+    def on_bar(self, bar):
         pass
 ```
 
@@ -187,11 +214,39 @@ class NewStrategy(BaseStrategy):
         ...（完整的交易逻辑实现）
 
     def _detect_market_regime(self) -> str:
-        # 完整的市场状态识别逻辑
-        volatility = ...
-        trend_strength = ...
-        return "trending" if ... else "ranging"
+        # 完整的市场状态识别逻辑（至少5行代码）
+        atr = self.atr.value
+        ema_fast = self.ema_fast.value
+        ema_slow = self.ema_slow.value
 
-    ...（所有其他方法的完整实现）
+        volatility = atr / ema_fast if ema_fast > 0 else 0
+        trend_strength = abs(ema_fast - ema_slow) / ema_slow if ema_slow > 0 else 0
+
+        if volatility > 0.02 and trend_strength > 0.05:
+            return "trending"
+        return "ranging"
+
+    def _analyze_multi_timeframe_rs(self) -> Dict:
+        # 完整的多时间框架RS分析（至少10行代码）
+        rs_1h = self._calculate_rs(self.rs_lookback_1h)
+        rs_4h = self._calculate_rs(self.rs_lookback_4h)
+        rs_1d = self._calculate_rs(self.rs_lookback_1d)
+
+        return {
+            "rs_1h": rs_1h,
+            "rs_4h": rs_4h,
+            "rs_1d": rs_1d,
+            "is_aligned": rs_1h > 0.02 and rs_4h > 0.03 and rs_1d > 0.04
+        }
+
+    ...（所有其他方法的完整实现，每个方法至少5-10行代码）
 ```
+
+**关键检查点**：
+- 代码长度 >= 8000 字符
+- 代码行数 >= 300 行
+- 方法数量 >= 10 个
+- 每个方法都有完整逻辑，不是 pass 或 ...
+- Config 类包含所有参数（60+个）
+- 所有 import 语句都存在（10+个）
 """
