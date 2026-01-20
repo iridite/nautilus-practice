@@ -70,11 +70,20 @@ def _load_data_for_feed(
         # 仅保留核心 OHLCV 列
         df = df[["open", "high", "low", "close", "volume"]]
 
-        # 按需截取时间段
+        # 按需截取时间段（确保时区一致性）
         if cfg.start_date:
-            df = df[df.index >= pd.Timestamp(cfg.start_date)]
+            start_ts = pd.Timestamp(cfg.start_date)
+            # 移除时区信息以统一比较（NautilusTrader 内部使用 UTC 纳秒）
+            if start_ts.tz is not None:
+                start_ts = start_ts.tz_localize(None)
+            df = df[df.index >= start_ts]
+
         if cfg.end_date:
-            df = df[df.index <= pd.Timestamp(cfg.end_date)]
+            end_ts = pd.Timestamp(cfg.end_date)
+            # 移除时区信息以统一比较
+            if end_ts.tz is not None:
+                end_ts = end_ts.tz_localize(None)
+            df = df[df.index <= end_ts]
 
         if len(df) == 0:
             print(f"⚠️ No data available in range for {data_cfg.csv_file_name}")

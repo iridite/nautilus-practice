@@ -48,6 +48,18 @@ uv run python backtest/backtest_oi_divergence.py
 uv run python scripts/prepare_oi_divergence_data.py
 ```
 
+### Backtest Engines
+This project has two backtest engine implementations:
+
+1. **Low-Level Engine** (`backtest/engine_low.py`): Direct BacktestEngine API
+2. **High-Level Engine** (`backtest/engine_high.py`): BacktestNode with Parquet catalog
+
+**Important Notes**:
+- ⚠️ CSV data files must use either "datetime" or "timestamp" as time column name
+- ⚠️ High-level engine expects "datetime" column by default (see BACKTEST_ENGINE_REVIEW.md)
+- ✅ Both engines are verified to work correctly with NautilusTrader 1.223.0
+- ✅ See `BACKTEST_ENGINE_REVIEW.md` for detailed analysis and known issues
+
 ### Python REPL
 ```bash
 # Interactive shell with dependencies available
@@ -114,20 +126,17 @@ Use detailed docstrings with parameter descriptions. Support mixed Chinese/Engli
 
 ```python
 """
-OI Divergence (持仓量背离) 策略
+OI Divergence 策略单元测试
 
-策略逻辑：
-捕捉"杠杆驱动的假突破"，即价格突破关键位置但持仓量（Open Interest）
-反向下降带来的均值回归机会。
+测试内容：
+1. 自定义数据类型（OpenInterestData, FundingRateData）
+2. 策略配置验证
+3. 信号检测逻辑
+4. 数据加载器功能
+5. 策略基本功能
 
-Parameters
-----------
-instrument_id : InstrumentId
-    合约标识符
-open_interest : Decimal
-    持仓量数值（通常为合约张数或 USD 计价）
-ts_event : int
-    事件发生时间戳（纳秒）
+Usage:
+    uv run python -m unittest tests.test_oi_divergence -v
 """
 ```
 
@@ -245,7 +254,19 @@ nautilus-practice/
 
 ## 🔧 Special Notes
 
-- This project uses a custom Nautilus package index: `https://packages.nautechsystems.io/simple`
+### Environment Variables
+- **`.env` files**: Store API keys and secrets (already in `.gitignore`)
+- **`.env.example`**: Template for required environment variables
+- **`live.env`**, **`test.env`**: Environment-specific configurations
+- Never commit secrets to version control
+
+### Linting & Formatting
+- **No automated linting configured**: No black, ruff, flake8, or mypy setup currently
+- Follow PEP 8 style guidelines manually
+- Type hints are required but not enforced by tooling
+
+### NautilusTrader Specifics
+- Custom package index: `https://packages.nautechsystems.io/simple`
 - Allow prereleases in `pyproject.toml` for alpha/dev Nautilus versions
 - Chinese comments are acceptable and common in this codebase
-- Data files are large and gitignored - run data preparation scripts first
+- Data files are large and gitignored - run data preparation scripts first before backtesting

@@ -6,6 +6,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+import pandas as pd
 from nautilus_trader.backtest.config import (
     BacktestDataConfig,
     BacktestRunConfig,
@@ -730,18 +731,32 @@ def catalog_loader(
     """
     # 日志输出已移至调用方，此处不再打印
 
-    # 3. 高效加载 CSV
-    # 注意：必须使用 index_col='datetime' 而非 index_col=0
+    # 1. 读取前几行检查列名（兼容 "datetime" 和 "timestamp" 两种列名）
+    sample_df = pd.read_csv(csv_path, nrows=5)
+
+    # 确定时间列名（优先使用 datetime，兼容 timestamp）
+    if "datetime" in sample_df.columns:
+        time_col = "datetime"
+    elif "timestamp" in sample_df.columns:
+        time_col = "timestamp"
+    else:
+        raise ValueError(
+            f"No valid time column found in {csv_path}. "
+            f"Expected 'datetime' or 'timestamp', got: {list(sample_df.columns)}"
+        )
+
+    # 2. 高效加载 CSV（使用检测到的列名）
+    # 注意：必须使用 index_col='<time_col>' 而非 index_col=0
     # 因为 usecols 会改变列的相对位置，index_col=0 会错误地把 'open' 作为索引
     df: DataFrame = CSVBarDataLoader.load(
         file_path=csv_path,
-        index_col="datetime",
-        usecols=["datetime", "open", "high", "low", "close", "volume"],
+        index_col=time_col,  # 动态使用检测到的列名
+        usecols=[time_col, "open", "high", "low", "close", "volume"],
         parse_dates=True,
     )
     df.sort_index(inplace=True)
 
-    # 4. 转换并写入
+    # 3. 转换并写入
     # Wrangler 将 DataFrame 转换为 NT 内部的 Bar 序列
     wrangler = BarDataWrangler(bar_type, instrument)
 
@@ -751,7 +766,7 @@ def catalog_loader(
     # 写入 Bar 数据
     catalog.write_data(wrangler.process(df))
 
-    # 5. 轻量级校验
+    # 4. 轻量级校验
     intervals = catalog.get_intervals(data_cls=Bar, identifier=str(bar_type))
     if not intervals:
         raise ValueError(f"❌ Failed to verify data in catalog for {instrument.id}")
