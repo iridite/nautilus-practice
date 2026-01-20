@@ -22,4 +22,4 @@ log/**
 # Ignore configuration files
 # config/settings.py # since there is only me doing development, I will keep this unignored for now
 
-.langgraph_api/**
+.langgraph_api/
