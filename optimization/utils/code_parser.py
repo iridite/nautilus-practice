@@ -1,268 +1,236 @@
 """
-代码解析工具
+代码解析与验证工具 (AST 增强版)
 """
 
+import ast
 import re
-from typing import Any, Dict
+from typing import Any, Dict, List, Tuple
 
 
 def extract_code(text: str) -> str:
     """
-    提取 Markdown 中的代码，并验证其有效性
-
-    Args:
-        text: 包含代码块的文本
-
-    Returns:
-        提取的 Python 代码
-
-    Raises:
-        ValueError: 如果提取的代码无效
+    从 LLM 回复中提取 Python 代码，并进行清洗。
+    只负责提取和清洗，不负责逻辑验证。
     """
-    # 尝试提取代码块
     code = ""
-    if "```python" in text:
-        code = text.split("```python")[1].split("```")[0].strip()
-    elif "```" in text:
-        code = text.split("```")[1].split("```")[0].strip()
+    text = text.strip()
+
+    # 1. 提取 Markdown 代码块
+    # 优先匹配 python 标记的代码块
+    python_block_match = re.search(r"```python\s*(.*?)```", text, re.DOTALL)
+    if python_block_match:
+        code = python_block_match.group(1)
     else:
-        code = text.strip()
-
-    # 验证提取的代码
-    if not code:
-        raise ValueError("未能提取到任何代码内容")
-
-    # 处理转义的换行符（AI 可能返回 \n 作为字面字符串）
-    # 检查是否包含大量的 \n 字面字符串（而不是真正的换行符）
-    if r"\n" in code or "\\n" in code:
-        # 计算实际换行符和转义换行符的比例
-        actual_newlines = code.count("\n")
-        escaped_newlines = code.count(r"\n") + code.count("\\n")
-
-        # 如果转义的换行符远多于实际换行符，说明需要反转义
-        if escaped_newlines > actual_newlines * 2:
-            print(f"⚠️ 检测到转义的换行符 (\\n)，正在修复...")
-            # 替换所有转义的换行符为真正的换行符
-            code = code.replace(r"\n", "\n")
-            code = code.replace("\\n", "\n")
-            print(f"✅ 已将 {escaped_newlines} 个转义换行符替换为真正的换行符")
-
-    # 处理其他常见的转义字符
-    if r"\t" in code or "\\t" in code:
-        code = code.replace(r"\t", "    ")  # 替换为4个空格
-        code = code.replace("\\t", "    ")
-
-    # 检查是否只是注释（超过90%的行都是注释或空行）
-    lines = code.split("\n")
-    non_comment_lines = 0
-    comment_or_empty_lines = 0
-
-    for line in lines:
-        stripped = line.strip()
-        if not stripped or stripped.startswith("#"):
-            comment_or_empty_lines += 1
+        # 尝试匹配无语言标记的代码块
+        generic_block_match = re.search(r"```\s*(.*?)```", text, re.DOTALL)
+        if generic_block_match:
+            code = generic_block_match.group(1)
         else:
-            non_comment_lines += 1
+            # 如果没有代码块标记，假设全文都是代码（视情况而定，对于 strict prompt 这是一个兜底）
+            # 但为了安全，如果没找到代码块，我们检查是否有 class 定义，如果有则认为是纯代码
+            if "class " in text and "def " in text:
+                code = text
+            else:
+                # 最后的尝试：可能只有一行代码或开头没有标记
+                code = text
 
-    total_lines = len(lines)
-    if total_lines > 0 and (comment_or_empty_lines / total_lines) > 0.9:
-        raise ValueError(
-            f"提取的内容主要是注释（{comment_or_empty_lines}/{total_lines}行），"
-            "缺少实际的策略代码。请确保 AI 返回完整的策略代码。"
-        )
+    code = code.strip()
 
-    # 检查是否包含必要的策略类定义
-    if "class" not in code:
-        raise ValueError("提取的代码中未找到类定义。请确保返回完整的策略类代码。")
+    if not code:
+        raise ValueError("未能从回复中提取到有效的代码块 (```python ... ```)")
 
-    # 检查是否包含 Config 类
-    has_config_class = bool(re.search(r"class\s+\w+Config\s*\(", code))
-    if not has_config_class:
-        raise ValueError(
-            "提取的代码中未找到 Config 类定义（如 RSSqueezeConfig）。"
-            "请确保返回完整的策略代码。"
-        )
-
-    # 检查是否包含 Strategy 类
-    has_strategy_class = bool(re.search(r"class\s+\w+Strategy\s*\(", code))
-    if not has_strategy_class:
-        raise ValueError(
-            "提取的代码中未找到 Strategy 类定义（如 RSSqueezeStrategy）。"
-            "请确保返回完整的策略代码。"
-        )
-
-    # 检查是否包含必要的 import 语句
-    if "import" not in code:
-        raise ValueError("提取的代码中未找到 import 语句。请确保返回完整的策略代码。")
-
-    # 检查代码长度是否合理（至少应该有一定长度）
-    if len(code) < 500:
-        raise ValueError(
-            f"提取的代码过短（{len(code)}字符），可能不完整。"
-            "完整的策略代码通常至少有几千字符。"
-        )
-
-    # 检查是否包含 __init__ 方法
-    if "def __init__" not in code:
-        raise ValueError(
-            "提取的代码中未找到 __init__ 方法。请确保返回完整的策略类代码。"
-        )
+    # 2. 修复转义字符 (JSON 传输常见问题)
+    code = _fix_escape_sequences(code)
 
     return code
 
 
-def validate_strategy_code(code: str) -> tuple[bool, str]:
-    """
-    验证策略代码的完整性
+def _fix_escape_sequences(code: str) -> str:
+    """修复由 API 传输导致的过度转义问题"""
+    # 检查是否包含字面量的 \n
+    if r"\n" in code or "\\n" in code:
+        actual_newlines = code.count("\n")
+        # 统计字面量 \n 的数量
+        escaped_newlines = code.count(r"\n") + code.count("\\n")
 
-    Args:
-        code: 策略代码
+        # 启发式判断：如果转义符比实际换行符多得多，说明需要反转义
+        if escaped_newlines > actual_newlines or actual_newlines < 5:
+            print(f"🔧 [Parser] 检测到转义换行符，正在修复...")
+            code = code.replace(r"\n", "\n").replace("\\n", "\n")
+            code = code.replace(r"\t", "    ").replace("\\t", "    ")
+            code = code.replace(r"\"", '"').replace("\\'", "'")
 
-    Returns:
-        (is_valid, error_message) 元组
+    return code
+
+
+def validate_strategy_code(code: str) -> Tuple[bool, str]:
     """
+    使用 AST (抽象语法树) 对策略代码进行深度验证。
+    """
+    # 1. 基础长度检查
+    if not code or len(code) < 500:
+        return False, f"代码长度过短 ({len(code)} 字符)，完整策略通常 > 3000 字符。"
+
+    # 2. 语法检查 (Syntax Check)
     try:
-        # 使用 extract_code 的验证逻辑
-        # 这里只是再次验证，不进行提取
-
-        # 检查基本结构
-        if not code or len(code.strip()) < 500:
-            return False, "代码为空或过短（至少需要500字符）"
-
-        if "class" not in code:
-            return False, "缺少类定义"
-
-        if not re.search(r"class\s+\w+Config\s*\(", code):
-            return False, "缺少 Config 类"
-
-        if not re.search(r"class\s+\w+Strategy\s*\(", code):
-            return False, "缺少 Strategy 类"
-
-        if "import" not in code:
-            return False, "缺少 import 语句"
-
-        if "def __init__" not in code:
-            return False, "缺少 __init__ 方法"
-
-        # 检查关键方法是否存在
-        required_methods = ["on_start", "on_bar"]
-        missing_methods = [m for m in required_methods if f"def {m}" not in code]
-        if missing_methods:
-            return False, f"缺少关键方法: {', '.join(missing_methods)}"
-
-        # 检查是否主要是注释
-        lines = code.split("\n")
-        non_comment_lines = sum(
-            1 for line in lines if line.strip() and not line.strip().startswith("#")
-        )
-
-        if len(lines) > 0 and (non_comment_lines / len(lines)) < 0.1:
-            return False, "代码主要由注释组成，缺少实际逻辑"
-
-        # 检查是否有转义的换行符（说明代码格式有问题）
-        if r"\n" in code or "\\n" in code:
-            escaped_count = code.count(r"\n") + code.count("\\n")
-            actual_count = code.count("\n")
-            if escaped_count > actual_count * 2:
-                return False, "代码包含大量转义的换行符（\\n），格式不正确"
-
-        # 深度检查：验证代码的完整性
-        completeness_check = check_code_completeness(code)
-        if not completeness_check["is_complete"]:
-            return False, completeness_check["reason"]
-
-        return True, "验证通过"
-
+        tree = ast.parse(code)
+    except SyntaxError as e:
+        return False, f"Python 语法错误 (Line {e.lineno}): {e.msg}"
     except Exception as e:
-        return False, f"验证失败: {str(e)}"
+        return False, f"代码解析失败: {str(e)}"
+
+    # 3. AST 结构分析
+    analyzer = StrategyVisitor()
+    analyzer.visit(tree)
+
+    # 4. 规则校验
+    errors = []
+
+    # 4.1 检查类定义
+    if not analyzer.has_config_class:
+        errors.append("缺少 Config 类定义 (需继承 BaseStrategyConfig)")
+    if not analyzer.has_strategy_class:
+        errors.append("缺少 Strategy 类定义 (需继承 BaseStrategy)")
+
+    # 4.2 检查关键方法实现
+    required_methods = ["__init__", "on_start", "on_bar"]
+    for method in required_methods:
+        if method not in analyzer.methods_found:
+            errors.append(f"Strategy 类缺少关键方法: {method}")
+        else:
+            # 检查方法体是否有效（不是 pass, ..., 且长度足够）
+            body_stats = analyzer.methods_found[method]
+            if body_stats["is_empty_or_pass"]:
+                errors.append(f"方法 {method} 未实现逻辑 (只有 pass/...)")
+            elif body_stats["stmt_count"] < 3:
+                # 只有一两行代码的关键方法通常是有问题的 (__init__ 除外，可能调用 super)
+                if method != "__init__":
+                    errors.append(
+                        f"方法 {method} 逻辑过于简单 ({body_stats['stmt_count']} 行)"
+                    )
+
+    # 4.3 检查 import 语句
+    if analyzer.import_count < 5:
+        errors.append("Import 语句过少，可能缺少必要的依赖库")
+
+    # 4.4 检查 Nautilus 核心组件引用 (通过 AST 检查是否有特定调用或类型标注)
+    # 这是一个宽松检查，确保代码是针对 Nautilus 写的
+    required_keywords = ["Bar", "InstrumentId", "Config"]
+    missing_keywords = [kw for kw in required_keywords if kw not in code]
+    if len(missing_keywords) > 1:
+        errors.append(f"代码似乎未引用 Nautilus 核心组件: {missing_keywords}")
+
+    if errors:
+        return False, "; ".join(errors)
+
+    return True, "代码结构验证通过"
 
 
-def check_code_completeness(code: str) -> Dict[str, Any]:
+class StrategyVisitor(ast.NodeVisitor):
     """
-    深度检查代码的完整性
-
-    Args:
-        code: 策略代码
-
-    Returns:
-        包含 is_complete 和 reason 的字典
+    AST 访问器，用于提取代码结构信息
     """
-    # 检查代码长度（完整策略通常至少 3000 字符）
-    if len(code) < 3000:
-        return {
-            "is_complete": False,
-            "reason": f"代码过短（{len(code)}字符），完整策略通常至少3000字符。可能缺少方法实现。",
-        }
 
-    # 检查是否有方法只包含 pass 或 ... (占位符)
-    # 匹配: def method(): \n    pass 或 def method(): \n    ...
-    method_pattern = r"def\s+(\w+)\s*\([^)]*\):\s*\n\s+(?:pass|\.\.\.)\s*(?:\n|$)"
-    placeholder_methods = re.findall(method_pattern, code, re.MULTILINE)
-    if placeholder_methods:
-        return {
-            "is_complete": False,
-            "reason": f"发现占位符方法（只有pass或...）: {', '.join(placeholder_methods[:3])}。请提供完整实现。",
-        }
+    def __init__(self):
+        self.has_config_class = False
+        self.has_strategy_class = False
+        self.methods_found = {}  # {method_name: {stmt_count: int, is_empty_or_pass: bool}}
+        self.import_count = 0
+        self.in_strategy_class = False
 
-    # 检查关键策略方法是否有实际逻辑
-    critical_methods = {
-        "on_bar": r"def\s+on_bar\s*\([^)]*\):\s*\n((?:\s+.+\n){5,})",  # 至少5行逻辑
-        "on_start": r"def\s+on_start\s*\([^)]*\):\s*\n((?:\s+.+\n){3,})",  # 至少3行逻辑
-        "__init__": r"def\s+__init__\s*\([^)]*\):\s*\n((?:\s+.+\n){10,})",  # 至少10行逻辑
-    }
+    def visit_Import(self, node):
+        self.import_count += 1
+        self.generic_visit(node)
 
-    for method, pattern in critical_methods.items():
-        if not re.search(pattern, code):
-            return {
-                "is_complete": False,
-                "reason": f"方法 {method} 缺少足够的实现逻辑。请确保包含完整的方法体。",
+    def visit_ImportFrom(self, node):
+        self.import_count += 1
+        self.generic_visit(node)
+
+    def visit_ClassDef(self, node):
+        # 启发式判断类类型
+        if "Config" in node.name:
+            self.has_config_class = True
+
+        # 检查是否是策略类 (通常包含 Strategy 或继承 BaseStrategy)
+        is_strategy = "Strategy" in node.name
+        # 也可以检查基类 (bases)，但这需要解析基类名称，比较复杂，这里用名字简单判断
+
+        if is_strategy:
+            self.has_strategy_class = True
+            self.in_strategy_class = True
+            self.generic_visit(node)  # 继续遍历类内部
+            self.in_strategy_class = False
+        else:
+            self.generic_visit(node)
+
+    def visit_FunctionDef(self, node):
+        # 只关心 Strategy 类中的方法
+        if self.in_strategy_class:
+            stmt_count = 0
+            is_empty_or_pass = False
+
+            # 分析函数体
+            if not node.body:
+                is_empty_or_pass = True
+            else:
+                # 过滤掉 Docstring 和 注释 (ast.parse 会自动忽略 # 注释，但 docstring 是 Expr)
+                real_stmts = []
+                for stmt in node.body:
+                    if (
+                        isinstance(stmt, ast.Expr)
+                        and isinstance(stmt.value, ast.Constant)
+                        and isinstance(stmt.value.value, str)
+                    ):
+                        # 这是一个 Docstring
+                        continue
+                    real_stmts.append(stmt)
+
+                stmt_count = len(real_stmts)
+
+                if stmt_count == 0:
+                    is_empty_or_pass = True
+                elif stmt_count == 1:
+                    # 检查是否是 pass 或 ...
+                    first_stmt = real_stmts[0]
+                    if isinstance(first_stmt, ast.Pass):
+                        is_empty_or_pass = True
+                    elif (
+                        isinstance(first_stmt, ast.Expr)
+                        and isinstance(first_stmt.value, ast.Constant)
+                        and first_stmt.value.value is Ellipsis
+                    ):
+                        is_empty_or_pass = True
+
+            self.methods_found[node.name] = {
+                "stmt_count": stmt_count,
+                "is_empty_or_pass": is_empty_or_pass,
             }
 
-    # 检查是否包含关键的策略组件
-    required_components = {
-        "indicators": [
-            "BollingerBands",
-            "KeltnerChannel",
-            "AverageTrueRange",
-            "ExponentialMovingAverage",
-        ],
-        "data_structures": ["deque", "Dict", "Optional"],
-        "trading_operations": ["submit_order", "cancel_all_orders"],
-    }
-
-    missing_components = []
-    for category, components in required_components.items():
-        found = [c for c in components if c in code]
-        if len(found) < len(components) // 2:  # 至少要有一半的组件
-            missing_components.append(category)
-
-    if missing_components:
-        return {
-            "is_complete": False,
-            "reason": f"缺少关键策略组件: {', '.join(missing_components)}。代码可能被过度简化。",
-        }
-
-    # 检查是否有足够的方法定义（完整策略通常有10+个方法）
-    method_count = len(re.findall(r"def\s+\w+\s*\(", code))
-    if method_count < 8:
-        return {
-            "is_complete": False,
-            "reason": f"方法数量过少（{method_count}个）。完整策略通常包含10+个方法。",
-        }
-
-    return {"is_complete": True, "reason": "代码完整性检查通过"}
+        self.generic_visit(node)
 
 
 def extract_parameters(code: str) -> Dict[str, str]:
-    """从代码中提取参数（简单实现）"""
+    """
+    (保留原有的简单实现，用于快速提取参数，不需要 AST 那么重)
+    从代码中提取参数
+    """
     params = {}
     for line in code.split("\n"):
         if "=" in line and not line.strip().startswith("#"):
             try:
-                parts = line.split("=")
+                # 简单的字符串分割，适用于 Python 的 field = value 语法
+                parts = line.split("=", 1)
                 if len(parts) == 2:
                     key = parts[0].strip()
-                    value = parts[1].strip().split("#")[0].strip()
+                    # 去掉注释和类型标注 (简单的 split 处理)
+                    if ":" in key:
+                        key = key.split(":")[0].strip()
+
+                    value = parts[1].strip()
+                    # 去掉行尾注释
+                    if "#" in value:
+                        value = value.split("#")[0].strip()
+
                     params[key] = value
             except Exception:
                 pass
