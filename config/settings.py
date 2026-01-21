@@ -17,7 +17,6 @@ from config.definitions import (
     project_root,
 )
 from strategy.dual_thrust import DualThrustConfig
-from strategy.oi_divergence import OIDivergenceConfig
 from strategy.oi_divergence_strategy import (
     OIDivergenceStrategy,
     OIDivergenceStrategyConfig,
@@ -182,24 +181,6 @@ OI_DIVERGENCE_STRATEGY_V3 = StrategyConfig(
         # 日志控制
         enable_signal_logging=True,  # 启用详细信号日志
         enable_quality_check=True,  # 启用数据质量检查
-    ),
-)
-
-# 策略 C (旧版): OI Divergence 持仓量背离策略 (保留供旧脚本使用)
-OI_DIVERGENCE_STRATEGY = StrategyConfig(
-    name="OIDivergenceStrategy",
-    module_path="strategy.oi_divergence",
-    params=OIDivergenceConfig(
-        lookback_bars=48,  # 48小时回溯期计算支撑/阻力
-        oi_decline_threshold=0.05,  # OI下降5%触发背离信号
-        funding_rate_threshold_annual=30.0,  # 年化资金费率30%以上表示极度拥挤
-        use_funding_filter=True,  # 启用资金费率过滤
-        breakout_reentry_pct=0.002,  # 回撤0.2%进入
-        tp_use_vwap=True,  # 止盈目标使用VWAP
-        vwap_period=48,  # VWAP周期48小时
-        stop_loss_pct=0.01,  # 硬止损1%
-        time_stop_bars=24,  # 时间止损24小时
-        max_positions=1,  # 最大持仓数
     ),
 )
 
