@@ -56,9 +56,8 @@ This project has two backtest engine implementations:
 
 **Important Notes**:
 - ⚠️ CSV data files must use either "datetime" or "timestamp" as time column name
-- ⚠️ High-level engine expects "datetime" column by default (see BACKTEST_ENGINE_REVIEW.md)
+- ⚠️ High-level engine expects "datetime" column by default
 - ✅ Both engines are verified to work correctly with NautilusTrader 1.223.0
-- ✅ See `BACKTEST_ENGINE_REVIEW.md` for detailed analysis and known issues
 
 ### Python REPL
 ```bash

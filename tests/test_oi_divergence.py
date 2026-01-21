@@ -9,7 +9,7 @@ OI Divergence 策略单元测试
 5. 策略基本功能
 
 Usage:
-    uv run pytest tests/test_oi_divergence.py -v
+    uv run python -m unittest tests.test_oi_divergence -v
 """
 
 import unittest

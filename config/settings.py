@@ -18,6 +18,10 @@ from config.definitions import (
 )
 from strategy.dual_thrust import DualThrustConfig
 from strategy.oi_divergence import OIDivergenceConfig
+from strategy.oi_divergence_strategy import (
+    OIDivergenceStrategy,
+    OIDivergenceStrategyConfig,
+)
 from strategy.rs_squeeze import RSSqueezeConfig
 
 # ==========================================
@@ -25,8 +29,10 @@ from strategy.rs_squeeze import RSSqueezeConfig
 # ==========================================
 VENUE = "BINANCE"
 INSTRUMENT_TYPE = InstrumentType.SWAP
-START_DATE = "2024-01-01"
-END_DATE = "2026-01-14"
+# 🔥 OI 数据限制：Binance 仅提供最近 30 天的 OI 历史数据
+# 当前可用数据范围：2025-12-31 至 2026-01-21 (约 21 天)
+START_DATE = "2025-12-31"
+END_DATE = "2026-01-21"
 INITIAL_BALANCES = [Money("100", USDT)]
 
 # 默认时间周期
@@ -138,7 +144,48 @@ RS_SQUEEZE_STRATEGY = StrategyConfig(
     params=RSSqueezeConfig(),
 )
 
-# 策略 C: OI Divergence 持仓量背离策略
+# 策略 C: OI Divergence 持仓量背离策略 (风控增强版 v3.0)
+OI_DIVERGENCE_STRATEGY_V3 = StrategyConfig(
+    name="OIDivergenceStrategy",
+    module_path="strategy.oi_divergence_strategy",
+    config_class="OIDivergenceStrategyConfig",  # 🔥 明确指定配置类名
+    params=OIDivergenceStrategyConfig(
+        # 数据设定
+        instrument_id="",  # 由系统自动填充
+        bar_type="",  # 由系统自动填充
+        # Research 参数 (策略核心逻辑)
+        lookback_bars=48,  # 48小时回溯期计算支撑/阻力
+        oi_lookback=12,  # OI移动平均周期12小时
+        oi_decline_threshold=0.05,  # OI下降5%触发背离信号
+        funding_rate_threshold_annual=30.0,  # 年化资金费率30%以上表示极度拥挤
+        use_funding_filter=True,  # 启用资金费率过滤
+        breakout_reentry_pct=0.002,  # 回撤0.2%进入
+        # 出场参数
+        tp_use_vwap=True,  # 止盈目标使用VWAP
+        vwap_period=48,  # VWAP周期48小时
+        time_stop_bars=24,  # 时间止损24小时
+        # 🔥 Risk Enhancement: ATR动态止损
+        use_atr_stop=True,  # 启用ATR动态止损
+        atr_period=14,  # ATR计算周期
+        atr_stop_multiplier=2.0,  # ATR止损倍数 (2× ATR)
+        stop_loss_pct=0.01,  # 固定止损1% (ATR未初始化时的后备)
+        # 🔥 Risk Enhancement: ATR动态仓位管理
+        use_atr_position_sizing=True,  # 启用ATR动态仓位
+        max_position_risk_pct=0.1,  # 单笔最大风险10%账户权益
+        # 🔥 Risk Enhancement: 滑点控制
+        max_slippage_pct=0.005,  # 最大允许滑点0.5%
+        enable_slippage_alert=True,  # 启用滑点告警
+        # 仓位控制
+        max_positions=1,  # 最大持仓数
+        qty_percent=Decimal("0.1"),  # 默认仓位10% (ATR仓位未启用时使用)
+        leverage=1,  # 默认杠杆倍数
+        # 日志控制
+        enable_signal_logging=True,  # 启用详细信号日志
+        enable_quality_check=True,  # 启用数据质量检查
+    ),
+)
+
+# 策略 C (旧版): OI Divergence 持仓量背离策略 (保留供旧脚本使用)
 OI_DIVERGENCE_STRATEGY = StrategyConfig(
     name="OIDivergenceStrategy",
     module_path="strategy.oi_divergence",
@@ -160,10 +207,10 @@ OI_DIVERGENCE_STRATEGY = StrategyConfig(
 # 4. 运行选择 (Active Configuration)
 # ==========================================
 
-# 在这里切换你想跑的策略
-ACTIVE_STRATEGY = RS_SQUEEZE_STRATEGY
+# 🔥 切换到 OI Divergence Strategy v3.0 (Risk-Enhanced)
+ACTIVE_STRATEGY = OI_DIVERGENCE_STRATEGY_V3
 # 默认主标的 (当不是 Universe 模式时使用)
-PRIMARY_SYMBOL = "SOLUSDT"
+PRIMARY_SYMBOL = "BTCUSDT"
 
 # ==========================================
 # 5. 自动化构建 BackTestConfig

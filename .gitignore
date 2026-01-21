@@ -23,3 +23,5 @@ log/**
 # config/settings.py # since there is only me doing development, I will keep this unignored for now
 
 .langgraph_api/
+.aider*
+.env

@@ -148,6 +148,8 @@ def run_high_level(cfg: BackTestConfig, base_dir: Path):
         if bar_type_str not in data_config_by_inst[inst_id_str]["bar_types"]:
             data_config_by_inst[inst_id_str]["bar_types"].append(bar_type_str)
 
+    # 注意：自定义数据（OI, Funding）稍后通过 engine.add_data() 直接添加
+
     # 4. 循环生成策略配置
     strategy_path = f"{cfg.strategy.module_path}:{cfg.strategy.name}"
     config_path = f"{cfg.strategy.module_path}:{cfg.strategy.resolve_config_class()}"
@@ -195,6 +197,9 @@ def run_high_level(cfg: BackTestConfig, base_dir: Path):
                 end_time=cfg.end_date,
             )
         )
+
+    # 注意：自定义数据（OI, Funding Rate）将通过 engine.add_data() 直接添加
+    # 而不是通过 BacktestDataConfig（因为不需要序列化到 Parquet）
 
     # 换行结束进度显示
     print(
@@ -302,6 +307,131 @@ def run_high_level(cfg: BackTestConfig, base_dir: Path):
     print(f"   - Venue configs: {len(venue_configs)}")
     print(f"   - Strategy configs: {len(strategies)}")
 
+    # === 🔥 加载自定义数据（OI 和 Funding Rate） ===
+    # 在 node.run() 之前，先 build 引擎，然后直接添加自定义数据
+    print(f"\n📊 Loading custom data (OI, Funding Rate)...")
+
+    # 确保有日期范围
+    if cfg.start_date and cfg.end_date:
+        try:
+            # 1. Build the engine
+            node.build()
+
+            # 2. Get the underlying engine
+            engine = node.get_engine(run_config.id)
+
+            if engine is None:
+                print(f"   ⚠️  Could not get engine from node")
+            else:
+                # 3. Load and add custom data直接从文件
+                from utils.oi_funding_adapter import (
+                    OIFundingDataLoader,
+                    merge_custom_data_with_bars,
+                )
+
+                data_dir = base_dir / "data" / "raw"
+
+                for inst_id_str, inst in loaded_instruments.items():
+                    # inst_id_str 是字符串，inst 是 Instrument 对象
+                    # 获取真正的 InstrumentId 对象
+                    instrument_id = inst.id
+                    symbol = str(instrument_id.symbol).split("-")[
+                        0
+                    ]  # BTCUSDT-PERP -> BTCUSDT
+                    symbol_dir = data_dir / symbol
+
+                    if not symbol_dir.exists():
+                        print(f"   ⚠️  Data directory not found for {symbol}")
+                        continue
+
+                    # 使用 glob 查找文件（灵活匹配日期范围）
+                    oi_files = list(symbol_dir.glob("*-oi-1h-*.csv"))
+                    funding_files = list(symbol_dir.glob("*-funding-*.csv"))
+
+                    oi_data_list = []
+                    funding_data_list = []
+
+                    # 加载 OI 数据
+                    if oi_files:
+                        from decimal import Decimal
+                        from nautilus_trader.core.nautilus_pyo3 import millis_to_nanos
+                        from utils.custom_data import OpenInterestData
+                        import pandas as pd
+
+                        for oi_file in oi_files:
+                            try:
+                                df = pd.read_csv(oi_file)
+                                for _, row in df.iterrows():
+                                    ts_ms = int(row["timestamp"])
+                                    ts_event = millis_to_nanos(ts_ms)
+                                    ts_init = ts_event
+
+                                    oi_data = OpenInterestData(
+                                        instrument_id=instrument_id,  # 使用 InstrumentId 对象
+                                        open_interest=Decimal(
+                                            str(row["open_interest"])
+                                        ),
+                                        ts_event=ts_event,
+                                        ts_init=ts_init,
+                                    )
+                                    oi_data_list.append(oi_data)
+                            except Exception as e:
+                                print(
+                                    f"   ❌ Error loading OI file {oi_file.name}: {e}"
+                                )
+
+                    # 加载 Funding Rate 数据
+                    if funding_files:
+                        from decimal import Decimal
+                        from nautilus_trader.core.nautilus_pyo3 import millis_to_nanos
+                        from utils.custom_data import FundingRateData
+                        import pandas as pd
+
+                        for funding_file in funding_files:
+                            try:
+                                df = pd.read_csv(funding_file)
+                                for _, row in df.iterrows():
+                                    ts_ms = int(row["timestamp"])
+                                    ts_event = millis_to_nanos(ts_ms)
+                                    ts_init = ts_event
+
+                                    funding_data = FundingRateData(
+                                        instrument_id=instrument_id,  # 使用 InstrumentId 对象
+                                        funding_rate=Decimal(str(row["funding_rate"])),
+                                        next_funding_time=None,
+                                        ts_event=ts_event,
+                                        ts_init=ts_init,
+                                    )
+                                    funding_data_list.append(funding_data)
+                            except Exception as e:
+                                print(
+                                    f"   ❌ Error loading Funding file {funding_file.name}: {e}"
+                                )
+
+                    # Merge and add to engine
+                    if oi_data_list or funding_data_list:
+                        merged_data = merge_custom_data_with_bars(
+                            oi_data_list, funding_data_list
+                        )
+                        engine.add_data(merged_data)
+                        print(
+                            f"   ✅ Added {len(merged_data)} custom data points for {symbol}"
+                        )
+                        print(f"      - OI: {len(oi_data_list)} points")
+                        print(f"      - Funding: {len(funding_data_list)} points")
+                    else:
+                        print(f"   ⚠️  No custom data found for {symbol}")
+
+        except Exception as e:
+            import traceback
+
+            print(f"   ⚠️  Custom data loading failed: {e}")
+            traceback.print_exc()
+            print(f"   Strategy will run without OI/Funding data")
+    else:
+        print(f"   ⚠️  No date range specified, skipping custom data loading")
+
+    # Run the backtest
     results = node.run()
 
     print("✅ Backtest Complete.")
@@ -770,3 +900,7 @@ def catalog_loader(
     intervals = catalog.get_intervals(data_cls=Bar, identifier=str(bar_type))
     if not intervals:
         raise ValueError(f"❌ Failed to verify data in catalog for {instrument.id}")
+
+
+# 注意：自定义数据（OI, Funding Rate）现在通过 OIFundingDataLoader 直接加载
+# 不再需要序列化到 Parquet Catalog
