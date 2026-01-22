@@ -6,8 +6,11 @@ from pathlib import Path
 import pandas as pd
 from tqdm import tqdm
 
+# 使用统一的工具函数
+from utils import get_project_root
+
 # 配置常量
-DATA_DIR = Path(__file__).parent.parent / "data" / "top"
+DATA_DIR = get_project_root() / "data" / "top"
 STABLECOINS = [
     "USDT",
     "USDC",

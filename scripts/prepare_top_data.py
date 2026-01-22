@@ -6,11 +6,11 @@ from pathlib import Path
 import ccxt
 import pandas as pd
 
-# 添加项目根目录到 Python 路径
-PROJECT_ROOT = Path(__file__).parent.parent
-sys.path.insert(0, str(PROJECT_ROOT))
+# 使用统一的工具函数
+from utils import fetch_ohlcv_data, get_ms_timestamp, get_project_root
 
-from utils.data_retrival import fetch_ohlcv_data, get_ms_timestamp
+# 获取项目根目录
+PROJECT_ROOT = get_project_root()
 
 
 def get_all_binance_usdt_spot_symbols():

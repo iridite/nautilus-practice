@@ -29,9 +29,9 @@ from strategy.rs_squeeze import RSSqueezeConfig
 VENUE = "BINANCE"
 INSTRUMENT_TYPE = InstrumentType.SWAP
 # 🔥 OI 数据限制：Binance 仅提供最近 30 天的 OI 历史数据
-# 当前可用数据范围：2025-12-31 至 2026-01-21 (约 21 天)
-START_DATE = "2025-12-31"
-END_DATE = "2026-01-21"
+# 调整回测时间范围，确保完全在Universe定义的2025-12月内
+START_DATE = "2025-12-01"
+END_DATE = "2025-12-30"
 INITIAL_BALANCES = [Money("100", USDT)]
 
 # 默认时间周期
@@ -189,7 +189,7 @@ OI_DIVERGENCE_STRATEGY_V3 = StrategyConfig(
 # ==========================================
 
 # 🔥 切换到 OI Divergence Strategy v3.0 (Risk-Enhanced)
-ACTIVE_STRATEGY = OI_DIVERGENCE_STRATEGY_V3
+ACTIVE_STRATEGY = RS_SQUEEZE_STRATEGY
 # 默认主标的 (当不是 Universe 模式时使用)
 PRIMARY_SYMBOL = "BTCUSDT"
 

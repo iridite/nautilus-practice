@@ -6,7 +6,6 @@ Open Interest 和 Funding Rate 数据获取工具
 """
 
 import time
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Literal
 
@@ -14,28 +13,8 @@ import ccxt
 import pandas as pd
 from tqdm import tqdm
 
-
-def get_ms_timestamp(date_str: str) -> int:
-    """将 YYYY-MM-DD 字符串转换为毫秒级时间戳 (UTC)"""
-    dt = datetime.strptime(date_str, "%Y-%m-%d")
-    dt = dt.replace(tzinfo=timezone.utc)
-    return int(dt.timestamp() * 1000)
-
-
-def retry_fetch(func, *args, retries=3, delay=5, **kwargs):
-    """带重试机制的 API 调用"""
-    for attempt in range(1, retries + 1):
-        try:
-            return func(*args, **kwargs)
-        except (ccxt.NetworkError, ccxt.ExchangeError) as e:
-            err_msg = str(e)
-            current_delay = (
-                delay * 2 if "418" in err_msg or "-1003" in err_msg else delay
-            )
-            if attempt == retries:
-                raise e
-            time.sleep(current_delay)
-    return None
+from utils.network import retry_fetch
+from utils.time_helpers import get_ms_timestamp
 
 
 def fetch_binance_oi_history(

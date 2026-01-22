@@ -20,34 +20,10 @@ from config.settings import (
     VENUE,
     current_config,
 )
-from utils.data_retrival import batch_fetch_ohlcv
 from scripts.fetch_instrument import update_instruments
-
-
-def check_data_exists(symbol_str, start_date, end_date, timeframe, exchange):
-    """
-    Checks if the OHLCV data file already exists and is valid.
-
-    Returns:
-        tuple: (exists: bool, warning: str | None)
-            - exists: True if data file exists and is valid
-            - warning: Warning message if file has issues, None otherwise
-    """
-    safe_symbol = symbol_str.replace("/", "")
-    filename = (
-        f"{exchange.lower()}-{safe_symbol}-{timeframe}-{start_date}_{end_date}.csv"
-    )
-    filepath = BASE_DIR / "data" / "raw" / safe_symbol / filename
-    if filepath.exists() and filepath.stat().st_size > 10 * 1024:
-        return (True, None)
-    elif filepath.exists() and filepath.stat().st_size < 10 * 1024:
-        warning = (
-            f"⚠️ Data file for {symbol_str} ({exchange} {timeframe}) is unusually small"
-        )
-        return (True, warning)
-    elif not filepath.exists():
-        return (False, None)
-    return (False, None)
+from utils.config_helpers import parse_universe_symbols
+from utils.data_retrival import batch_fetch_ohlcv
+from utils.validation import check_data_exists
 
 
 def run_batch_data_retrieval(
@@ -92,37 +68,6 @@ def get_default_venue_and_type():
     else:
         # 多标的模式：从全局设置读取默认值
         return VENUE, "USDT", INSTRUMENT_TYPE
-
-
-def parse_universe_symbols(universe_symbols, venue, base_currency, inst_type):
-    """
-    从 Universe 符号列表中解析出 InstrumentID 列表。
-
-    Args:
-        universe_symbols: Universe 中的符号集合 (如 {"SOLUSDT:USDT", "BTCUSDT:USDT", ...})
-        venue: 交易所名称
-        base_currency: 基准货币
-        inst_type: 标的类型
-
-    Returns:
-        set: Instrument ID 集合
-    """
-    instrument_ids = set()
-    for symbol in universe_symbols:
-        raw_pair = symbol.split(":")[0]  # SOLUSDT:USDT -> SOLUSDT
-        # 提取 quote_currency (如 SOLUSDT -> SOL)
-        clean_quote = raw_pair.replace(base_currency, "")
-
-        # 使用 InstrumentConfig.get_id_for 动态生成符合交易所规范的 ID
-        inst_id = InstrumentConfig.get_id_for(
-            venue_name=venue,
-            base_currency=base_currency,
-            quote_currency=clean_quote,
-            inst_type=inst_type,
-        )
-        instrument_ids.add(inst_id)
-
-    return instrument_ids
 
 
 def main():

@@ -17,12 +17,11 @@ import argparse
 import sys
 from pathlib import Path
 
-# 添加项目根目录到 Python 路径
-PROJECT_ROOT = Path(__file__).parent.parent
-sys.path.insert(0, str(PROJECT_ROOT))
+# 使用统一的工具函数
+from utils import batch_fetch_ohlcv, batch_fetch_oi_and_funding, get_project_root
 
-from utils.data_retrival import batch_fetch_ohlcv
-from utils.oi_funding_fetcher import batch_fetch_oi_and_funding
+# 获取项目根目录
+PROJECT_ROOT = get_project_root()
 
 
 def parse_args():

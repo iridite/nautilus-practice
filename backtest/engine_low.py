@@ -24,7 +24,6 @@ from nautilus_trader.model.enums import (
 )
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.instruments import Instrument
-from nautilus_trader.persistence.loaders import CSVBarDataLoader
 from nautilus_trader.persistence.wranglers import BarDataWrangler
 from pandas import DataFrame
 
@@ -44,6 +43,7 @@ from config.definitions import (
     BackTestConfig,
     DataConfig,
 )
+from utils import load_ohlcv_csv
 from utils.instrument_loader import load_instrument
 
 
@@ -84,41 +84,12 @@ def _load_data_for_feed(
         raise DataLoadError(f"CSV file not found: {csv_path}", str(csv_path))
 
     try:
-        # 智能时间列检测 (兼容 "datetime" 和 "timestamp")
-        sample_df = pd.read_csv(csv_path, nrows=5)
-        time_col = None
-        if "datetime" in sample_df.columns:
-            time_col = "datetime"
-        elif "timestamp" in sample_df.columns:
-            time_col = "timestamp"
-        else:
-            raise DataLoadError(
-                f"No valid time column found in {csv_path}. "
-                f"Expected 'datetime' or 'timestamp', got: {list(sample_df.columns)}",
-                str(csv_path)
-            )
-
-        # 使用 CSVBarDataLoader 高效加载 (类似 engine_high.py 的优化)
-        df: DataFrame = CSVBarDataLoader.load(
+        # 使用统一的数据加载器 (智能时间列检测 + 优化加载)
+        df: DataFrame = load_ohlcv_csv(
             file_path=csv_path,
-            index_col=time_col,
-            usecols=[time_col, "open", "high", "low", "close", "volume"],
-            parse_dates=True,
+            start_date=cfg.start_date,
+            end_date=cfg.end_date,
         )
-        df.sort_index(inplace=True)
-
-        # 按需截取时间段
-        if cfg.start_date:
-            start_ts = pd.Timestamp(cfg.start_date)
-            if start_ts.tz is not None:
-                start_ts = start_ts.tz_localize(None)
-            df = df[df.index >= start_ts]
-
-        if cfg.end_date:
-            end_ts = pd.Timestamp(cfg.end_date)
-            if end_ts.tz is not None:
-                end_ts = end_ts.tz_localize(None)
-            df = df[df.index <= end_ts]
 
         if len(df) == 0:
             raise DataLoadError(f"No data available in range for {data_cfg.csv_file_name}", str(csv_path))

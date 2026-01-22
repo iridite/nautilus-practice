@@ -1,71 +1,15 @@
 import time
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import List
 
 import ccxt
 import pandas as pd
-from nautilus_trader.model.enums import BarAggregation
 from tqdm import tqdm
 
 from config.definitions import DataConfig
-
-
-def get_ms_timestamp(date_str: str) -> int:
-    """将 YYYY-MM-DD 字符串转换为毫秒级时间戳 (UTC)"""
-    dt = datetime.strptime(date_str, "%Y-%m-%d")
-    dt = dt.replace(tzinfo=timezone.utc)
-    return int(dt.timestamp() * 1000)
-
-
-def parse_timeframe(timeframe: str) -> tuple[BarAggregation, int]:
-    """将 ccxt timeframe 转换为 Nautilus BarAggregation 和 period"""
-    unit = timeframe[-1]
-    period = int(timeframe[:-1]) if len(timeframe) > 1 else 1
-
-    if unit == "m":
-        return BarAggregation.MINUTE, period
-    if unit == "h":
-        return BarAggregation.HOUR, period
-    if unit == "d":
-        return BarAggregation.DAY, period
-    if unit == "w":
-        return BarAggregation.WEEK, period
-    return BarAggregation.MINUTE, 1
-
-
-def resolve_symbol_and_type(input_symbol):
-    """
-    解析输入标的，返回 (ccxt_unified_symbol, market_type)
-    """
-    if "/" in input_symbol:
-        return input_symbol, "spot"
-    else:
-        if input_symbol.upper().endswith("USDT"):
-            base = input_symbol.upper().replace("USDT", "")
-            ccxt_symbol = f"{base}/USDT:USDT"
-            return ccxt_symbol, "swap"
-        elif input_symbol.upper().endswith("USD"):
-            base = input_symbol.upper().replace("USD", "")
-            ccxt_symbol = f"{base}/USD:{base}"
-            return ccxt_symbol, "swap"
-        else:
-            return input_symbol, "swap"
-
-
-def retry_fetch(func, *args, retries=3, delay=5, **kwargs):
-    for attempt in range(1, retries + 1):
-        try:
-            return func(*args, **kwargs)
-        except (ccxt.NetworkError, ccxt.ExchangeError) as e:
-            err_msg = str(e)
-            current_delay = (
-                delay * 2 if "418" in err_msg or "-1003" in err_msg else delay
-            )
-            if attempt == retries:
-                raise e
-            time.sleep(current_delay)
-    return None
+from utils.network import retry_fetch
+from utils.symbol_parser import parse_timeframe, resolve_symbol_and_type
+from utils.time_helpers import get_ms_timestamp
 
 
 def fetch_ohlcv_data(exchange, symbol, timeframe, since, limit_ms):
