@@ -21,7 +21,7 @@ from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs.data import TestDataStubs
 
-from strategy.oi_divergence import OIDivergence, OIDivergenceConfig
+from strategy.oi_divergence_strategy import OIDivergenceStrategy, OIDivergenceStrategyConfig
 from utils.custom_data import FundingRateData, OpenInterestData
 
 
@@ -138,7 +138,7 @@ class TestOIDivergenceConfig(unittest.TestCase):
 
     def test_default_config(self):
         """测试默认配置"""
-        config = OIDivergenceConfig(
+        config = OIDivergenceStrategyConfig(
             instrument_id="BTCUSDT.BINANCE",
             bar_type="BTCUSDT.BINANCE-1-HOUR-LAST",
         )
@@ -152,7 +152,7 @@ class TestOIDivergenceConfig(unittest.TestCase):
 
     def test_custom_config(self):
         """测试自定义配置"""
-        config = OIDivergenceConfig(
+        config = OIDivergenceStrategyConfig(
             instrument_id="ETHUSDT.BINANCE",
             bar_type="ETHUSDT.BINANCE-1-HOUR-LAST",
             lookback_bars=24,
@@ -180,7 +180,7 @@ class TestOIDivergenceStrategy(unittest.TestCase):
         """初始化测试环境"""
         from nautilus_trader.test_kit.stubs.component import TestComponentStubs
 
-        self.config = OIDivergenceConfig(
+        self.config = OIDivergenceStrategyConfig(
             instrument_id="BTCUSDT.BINANCE",
             bar_type="BTCUSDT.BINANCE-1-HOUR-LAST",
             lookback_bars=48,
@@ -189,7 +189,7 @@ class TestOIDivergenceStrategy(unittest.TestCase):
         )
 
         # 创建策略实例（使用测试桩）
-        self.strategy = OIDivergence(config=self.config)
+        self.strategy = OIDivergenceStrategy(config=self.config)
 
     def test_strategy_initialization(self):
         """测试策略初始化"""

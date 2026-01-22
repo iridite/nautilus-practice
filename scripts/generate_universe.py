@@ -7,7 +7,7 @@ import pandas as pd
 from tqdm import tqdm
 
 # 配置常量
-DATA_DIR = Path(__file__).parent.parent.parent / "data" / "top"
+DATA_DIR = Path(__file__).parent.parent / "data" / "top"
 STABLECOINS = [
     "USDT",
     "USDC",

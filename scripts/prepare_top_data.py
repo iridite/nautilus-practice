@@ -6,9 +6,11 @@ from pathlib import Path
 import ccxt
 import pandas as pd
 
-# 将当前目录加入路径以便导入 data_retrival
-sys.path.append(str(Path(__file__).parent))
-from data_retrival import fetch_ohlcv_data, get_ms_timestamp
+# 添加项目根目录到 Python 路径
+PROJECT_ROOT = Path(__file__).parent.parent
+sys.path.insert(0, str(PROJECT_ROOT))
+
+from utils.data_retrival import fetch_ohlcv_data, get_ms_timestamp
 
 
 def get_all_binance_usdt_spot_symbols():
@@ -37,7 +39,7 @@ def main():
     end_date = datetime.now().strftime("%Y-%m-%d")
 
     # 根目录数据文件夹
-    data_root = Path(__file__).parent.parent / "data" / "top"
+    data_root = PROJECT_ROOT / "data" / "top"
     data_root.mkdir(parents=True, exist_ok=True)
 
     # 1. 获取所有币种

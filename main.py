@@ -21,7 +21,7 @@ from config.settings import (
     current_config,
 )
 from utils.data_retrival import batch_fetch_ohlcv
-from utils.fetch_instrument import update_instruments
+from scripts.fetch_instrument import update_instruments
 
 
 def check_data_exists(symbol_str, start_date, end_date, timeframe, exchange):
