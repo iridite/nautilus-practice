@@ -4,7 +4,7 @@ import sys
 from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import pandas as pd
 from nautilus_trader.backtest.config import (
@@ -27,6 +27,12 @@ from nautilus_trader.persistence.loaders import CSVBarDataLoader
 from nautilus_trader.persistence.wranglers import BarDataWrangler
 from pandas import DataFrame
 
+from backtest.exceptions import (
+    BacktestEngineError,
+    DataLoadError,
+    InstrumentLoadError,
+    CatalogError,
+)
 from backtest.utils import (
     filter_strategy_params,
     load_strategy_config_class,
@@ -35,107 +41,107 @@ from config.definitions import BackTestConfig
 from utils.instrument_loader import load_instrument
 
 
-def run_high_level(cfg: BackTestConfig, base_dir: Path):
+def _load_instruments(cfg: BackTestConfig) -> Dict[str, Instrument]:
     """
-    运行高级引擎回测 (High-level Engine/BacktestNode)。
-    完全由 BackTestConfig 驱动，移除了硬编码的 Universe 加载逻辑。
+    加载交易标的信息
+    
+    Args:
+        cfg: 回测配置
+        
+    Returns:
+        Dict[str, Instrument]: instrument_id -> Instrument 的映射
+        
+    Raises:
+        InstrumentLoadError: 当标的加载失败时
     """
-    print(f"🚀 Starting High-Level Backtest: {cfg.strategy.name}")
-
-    data_path: Path = base_dir / "data"
-    catalog_path: Path = data_path / "parquet" / f"{cfg.strategy.name}"
-
-    # 1. 准备策略与配置类（用于参数过滤）
-    ConfigClass = load_strategy_config_class(
-        cfg.strategy.module_path, cfg.strategy.resolve_config_class()
-    )
-
-    strategies = []
     loaded_instruments = {}
+    inst_cfg_map = {ic.instrument_id: ic for ic in cfg.instruments}
+    
+    for inst_id in inst_cfg_map:
+        inst_cfg = inst_cfg_map[inst_id]
+        inst_path = inst_cfg.get_json_path()
+        
+        if not inst_path.exists():
+            raise InstrumentLoadError(f"Instrument path not found: {inst_path}", inst_id)
+            
+        try:
+            loaded_instruments[inst_id] = load_instrument(inst_path)
+        except Exception as e:
+            raise InstrumentLoadError(f"Failed to load instrument {inst_id}: {e}", inst_id, e)
+    
+    return loaded_instruments
 
-    # 用于合并同一 instrument_id 的多个 bar_types
-    # 结构: {instrument_id: {"bar_types": [str], "catalog_path": str}}
+
+def _import_data_to_catalog(
+    cfg: BackTestConfig,
+    loaded_instruments: Dict[str, Instrument],
+    catalog_path: Path,
+) -> Tuple[Dict[str, Dict], Dict[str, str], Dict]:
+    """
+    将CSV数据导入Parquet目录，并组织数据流
+    
+    Args:
+        cfg: 回测配置
+        loaded_instruments: 已加载的标的映射
+        catalog_path: Parquet目录路径
+        
+    Returns:
+        Tuple[Dict, Dict, Dict]: (data_config_by_inst, global_feeds, feeds_by_inst)
+            - data_config_by_inst: 按标的分组的数据配置
+            - global_feeds: 全局数据流(如benchmark)
+            - feeds_by_inst: 按标的分组的数据流
+            
+    Raises:
+        DataLoadError: 当数据导入失败时
+        CatalogError: 当目录操作失败时
+    """
+    _catalog = ParquetDataCatalog(catalog_path)
     data_config_by_inst = {}
-
-    # 预分组：将数据流按 InstrumentID 归类，提升大规模 Universe 下的性能
     feeds_by_inst = defaultdict(dict)
     global_feeds = {}
-
-    # 创建 instrument_id -> inst_cfg 的映射用于快速查找
-    inst_cfg_map = {ic.instrument_id: ic for ic in cfg.instruments}
-
-    _catalog = ParquetDataCatalog(catalog_path)
-
-    # 2. 数据处理与标的加载 (合并原有循环，减少冗余遍历)
+    
     total_feeds = len(cfg.data_feeds)
+    
     for feed_idx, data_cfg in enumerate(cfg.data_feeds, 1):
-        # 优先使用 data_cfg 中的 instrument_id，如果为 None 则回退到主标的配置
+        # 确定关联的标的ID
         inst_id = data_cfg.instrument_id
         if inst_id is None and cfg.instrument is not None:
             inst_id = cfg.instrument.instrument_id
-
-        # 2.1 按需加载标的信息 (仅加载有数据流定义的标的)
-        if inst_id is not None and inst_id not in loaded_instruments:
-            inst_cfg = inst_cfg_map.get(inst_id)
-            if inst_cfg:
-                inst_path = inst_cfg.get_json_path()
-                if inst_path.exists():
-                    try:
-                        loaded_instruments[inst_id] = load_instrument(inst_path)
-                    except Exception as e:
-                        print(f"⚠️ Failed to load instrument {inst_id}: {e}")
-                        continue
-                else:
-                    print(f"⚠️ Instrument path not found: {inst_path}")
-                    continue
-            else:
-                print(f"⚠️ No instrument configuration found for {inst_id}")
-                continue
-
+            
+        if inst_id not in loaded_instruments:
+            continue
+            
         inst = loaded_instruments[inst_id]
         csv_path = data_cfg.full_path
-        assert csv_path.exists(), f"CSV file not found: {csv_path}"
-
+        
+        if not csv_path.exists():
+            raise DataLoadError(f"CSV file not found: {csv_path}", str(csv_path))
+            
         feed_bar_type_str = f"{inst.id}-{data_cfg.bar_type_str}"
-
-        # 2.2 归类数据流标签 (benchmark 为全局，其余归属特定标的)
+        
+        # 归类数据流标签
         if data_cfg.label == "benchmark":
             global_feeds[data_cfg.label] = feed_bar_type_str
         else:
             feeds_by_inst[inst_id][data_cfg.label] = feed_bar_type_str
-
-        # 2.3 高级引擎需要将数据导入 Catalog (Parquet)
-        # 优化：先检查 catalog 中是否已存在该 bar_type 的数据，避免重复导入
+            
+        # 检查并导入数据到目录
         bar_type = BarType.from_str(feed_bar_type_str)
-        existing_intervals = _catalog.get_intervals(
-            data_cls=Bar, identifier=str(bar_type)
-        )
-
-        if existing_intervals:
-            # 单行更新进度
-            sys.stdout.write(
-                f"\r⏩ [{feed_idx}/{total_feeds}] Skipping: {bar_type.instrument_id} (exists in catalog){' ' * 20}"
-            )
-            sys.stdout.flush()
-        else:
-            try:
-                sys.stdout.write(
-                    f"\r📖 [{feed_idx}/{total_feeds}] Importing: {bar_type.instrument_id}{' ' * 30}"
-                )
+        try:
+            existing_intervals = _catalog.get_intervals(data_cls=Bar, identifier=str(bar_type))
+            
+            if existing_intervals:
+                sys.stdout.write(f"\r⏩ [{feed_idx}/{total_feeds}] Skipping: {bar_type.instrument_id} (exists){' ' * 20}")
                 sys.stdout.flush()
-                catalog_loader(
-                    catalog=_catalog,
-                    csv_path=csv_path,
-                    instrument=inst,
-                    bar_type=bar_type,
-                )
-            except Exception as e:
-                print(
-                    f"\n[Backtest Engine High] ❌ Error loading {data_cfg.csv_file_name}: {e}"
-                )
-
-        # 2.4 合并同一 instrument_id 的 bar_types
-        # 关键：必须使用 bar_types (list[str]) 而非 bar_type，否则参数被忽略导致无数据加载！
+            else:
+                sys.stdout.write(f"\r📖 [{feed_idx}/{total_feeds}] Importing: {bar_type.instrument_id}{' ' * 30}")
+                sys.stdout.flush()
+                catalog_loader(_catalog, csv_path, inst, bar_type)
+                
+        except Exception as e:
+            raise DataLoadError(f"Error loading {data_cfg.csv_file_name}: {e}", str(csv_path), e)
+            
+        # 合并同一标的的bar_types
         inst_id_str = str(inst.id)
         if inst_id_str not in data_config_by_inst:
             data_config_by_inst[inst_id_str] = {
@@ -143,131 +149,157 @@ def run_high_level(cfg: BackTestConfig, base_dir: Path):
                 "bar_types": [],
                 "catalog_path": str(catalog_path),
             }
-        # 避免添加重复的 bar_type
+            
         bar_type_str = str(bar_type)
         if bar_type_str not in data_config_by_inst[inst_id_str]["bar_types"]:
             data_config_by_inst[inst_id_str]["bar_types"].append(bar_type_str)
+    
+    print(f"\n✅ Data import complete. Created {len(data_config_by_inst)} data configs.")
+    return data_config_by_inst, global_feeds, feeds_by_inst
 
-    # 注意：自定义数据（OI, Funding）稍后通过 engine.add_data() 直接添加
 
-    # 4. 循环生成策略配置
+def _create_strategy_configs(
+    cfg: BackTestConfig,
+    loaded_instruments: Dict[str, Instrument],
+    feeds_by_inst: Dict,
+    global_feeds: Dict[str, str],
+    ConfigClass,
+) -> List[ImportableStrategyConfig]:
+    """
+    创建策略配置
+    
+    Args:
+        cfg: 回测配置
+        loaded_instruments: 已加载的标的映射
+        feeds_by_inst: 按标的分组的数据流
+        global_feeds: 全局数据流
+        ConfigClass: 策略配置类
+        
+    Returns:
+        List[ImportableStrategyConfig]: 策略配置列表
+    """
+    strategies = []
     strategy_path = f"{cfg.strategy.module_path}:{cfg.strategy.name}"
     config_path = f"{cfg.strategy.module_path}:{cfg.strategy.resolve_config_class()}"
-
+    
     for inst_id, inst in loaded_instruments.items():
         local_feeds = feeds_by_inst.get(inst_id, {})
-
-        # 核心逻辑：只有拥有 'main' 数据流的标的才实例化策略
+        
+        # 只有拥有 'main' 数据流的标的才创建策略实例
         if "main" not in local_feeds:
             continue
-
-        # 合并本地和全局数据流标签
+            
+        # 合并本地和全局数据流
         combined_feeds = {**local_feeds, **global_feeds}
-
+        
         # 生成并过滤参数
-        # 注意：resolve_params 内部会自动处理 cfg.strategy.params 中的原始参数
         strat_params = cfg.strategy.resolve_params(
             instrument_id=inst.id,
             leverage=cfg.instrument.leverage if cfg.instrument else 1,
-            # TODO：所以说杠杆不能跟 inst 绑定
             feed_bar_types=combined_feeds,
         )
-
+        
         final_params = filter_strategy_params(strat_params, ConfigClass)
+        
+        strategies.append(ImportableStrategyConfig(
+            strategy_path=strategy_path,
+            config_path=config_path,
+            config=final_params,
+        ))
+        
+    return strategies
 
-        # 封装为 Nautilus 可识别的导入配置
-        strategies.append(
-            ImportableStrategyConfig(
-                strategy_path=strategy_path,
-                config_path=config_path,
-                config=final_params,
-            )
+
+def run_high_level(cfg: BackTestConfig, base_dir: Path):
+    """
+    运行高级引擎回测 (High-level Engine/BacktestNode)
+    
+    Args:
+        cfg: 回测配置
+        base_dir: 项目根目录
+    """
+    print(f"🚀 Starting High-Level Backtest: {cfg.strategy.name}")
+
+    try:
+        # 1. 准备配置类（用于参数过滤）
+        ConfigClass = load_strategy_config_class(
+            cfg.strategy.module_path, cfg.strategy.resolve_config_class()
         )
-
-    # 3. 从合并后的配置生成 BacktestDataConfig 列表
-    backtest_data_configs = []
-    for inst_id_str, cfg_data in data_config_by_inst.items():
-        backtest_data_configs.append(
-            BacktestDataConfig(
+        
+        # 2. 加载交易标的
+        loaded_instruments = _load_instruments(cfg)
+        print(f"✅ Loaded {len(loaded_instruments)} instruments")
+        
+        # 3. 导入数据到Parquet目录
+        data_path = base_dir / "data"
+        catalog_path = data_path / "parquet" / f"{cfg.strategy.name}"
+        
+        data_config_by_inst, global_feeds, feeds_by_inst = _import_data_to_catalog(
+            cfg, loaded_instruments, catalog_path
+        )
+        
+        # 4. 创建策略配置
+        strategies = _create_strategy_configs(
+            cfg, loaded_instruments, feeds_by_inst, global_feeds, ConfigClass
+        )
+        print(f"✅ Created {len(strategies)} strategy configurations")
+        
+        # 5. 准备回测数据配置
+        backtest_data_configs = []
+        for inst_id_str, cfg_data in data_config_by_inst.items():
+            backtest_data_configs.append(BacktestDataConfig(
                 catalog_path=cfg_data["catalog_path"],
                 data_cls="nautilus_trader.model.data:Bar",
                 instrument_id=cfg_data["instrument_id"],
-                bar_types=cfg_data["bar_types"],  # 合并后的 bar_types 列表
+                bar_types=cfg_data["bar_types"],
                 start_time=cfg.start_date,
                 end_time=cfg.end_date,
-            )
+            ))
+            
+        # 6. 运行回测
+        _run_backtest_with_custom_data(
+            cfg, base_dir, strategies, backtest_data_configs, loaded_instruments
         )
+        
+    except (InstrumentLoadError, DataLoadError, CatalogError) as e:
+        print(f"❌ Backtest failed: {e}")
+        raise
+    except Exception as e:
+        raise BacktestEngineError(f"Unexpected error during backtest: {e}", e)
 
-    # 注意：自定义数据（OI, Funding Rate）将通过 engine.add_data() 直接添加
-    # 而不是通过 BacktestDataConfig（因为不需要序列化到 Parquet）
 
-    # 换行结束进度显示
-    print(
-        f"\n✅ Data import complete. Created {len(backtest_data_configs)} data configs (merged by instrument)."
-    )
-
-    # 诊断日志：单行刷新显示数据配置进度
-    total_configs = len(backtest_data_configs)
-    print(f"\n📋 BacktestDataConfig Summary: {total_configs} configs")
-    for i, data_cfg in enumerate(backtest_data_configs, 1):
-        sys.stdout.write(
-            f"\r  Processing [{i}/{total_configs}]: {data_cfg.instrument_id}{'':20}"
-        )
-        sys.stdout.flush()
-    print(f"\r  ✅ Loaded {total_configs} data configs{'':40}")
-
-    # 验证 catalog 中实际存在的数据（单行刷新）
-    print("🔍 Verifying catalog data availability...")
-    verified_count = 0
-    missing_count = 0
-    total_bar_types = sum(
-        len(data_cfg.bar_types or []) for data_cfg in backtest_data_configs
-    )
-    checked = 0
-    for data_cfg in backtest_data_configs:
-        if data_cfg.bar_types:
-            for bt_str in data_cfg.bar_types:
-                checked += 1
-                intervals = _catalog.get_intervals(data_cls=Bar, identifier=bt_str)
-                if intervals:
-                    verified_count += 1
-                else:
-                    missing_count += 1
-                    # 只打印缺失数据的警告
-                    print(f"\n  ❌ {bt_str}: NO DATA FOUND IN CATALOG!")
-                # 单行刷新进度
-                sys.stdout.write(
-                    f"\r  Verifying [{checked}/{total_bar_types}] ✅ {verified_count} | ❌ {missing_count}{'':20}"
-                )
-                sys.stdout.flush()
-    print(
-        f"\r  📊 Catalog verification: {verified_count} OK, {missing_count} missing{'':30}"
-    )
-
-    # 5. 配置交易所 (Venue)
+def _run_backtest_with_custom_data(
+    cfg: BackTestConfig,
+    base_dir: Path,
+    strategies: List[ImportableStrategyConfig],
+    backtest_data_configs: List[BacktestDataConfig],
+    loaded_instruments: Dict[str, Instrument],
+):
+    """运行BacktestNode并处理自定义数据"""
+    if not strategies:
+        raise BacktestEngineError("No strategy instances were created. Check config and data paths.")
+        
+    # 配置交易所
     venue_name = (
-        cfg.instrument.venue_name
-        if cfg.instrument
+        cfg.instrument.venue_name if cfg.instrument
         else cfg.data_feeds[0].csv_file_name.split("/")[-1].split("-")[0]
     )
-
-    venue_configs = [
-        BacktestVenueConfig(
-            name=venue_name,
-            oms_type="NETTING",
-            account_type="MARGIN",
-            base_currency="USDT",  # TODO：到时候使用内置的货币类型
-            starting_balances=cfg.initial_balances,
-            fee_model=ImportableFeeModelConfig(
-                fee_model_path="nautilus_trader.backtest.models:MakerTakerFeeModel",
-                config_path="nautilus_trader.backtest.config:MakerTakerFeeModelConfig",
-                config={},
-            ),
-            trade_execution=True,
+    
+    venue_configs = [BacktestVenueConfig(
+        name=venue_name,
+        oms_type="NETTING",
+        account_type="MARGIN",
+        base_currency="USDT",
+        starting_balances=cfg.initial_balances,
+        fee_model=ImportableFeeModelConfig(
+            fee_model_path="nautilus_trader.backtest.models:MakerTakerFeeModel",
+            config_path="nautilus_trader.backtest.config:MakerTakerFeeModelConfig",
+            config={},
         ),
-    ]
-
-    # 6. 配置日志 (Logging)
+        trade_execution=True,
+    )]
+    
+    # 配置日志
     logging_config = None
     if cfg.logging:
         logging_config = LoggingConfig(
@@ -277,243 +309,219 @@ def run_high_level(cfg: BackTestConfig, base_dir: Path):
             log_components_only=cfg.logging.log_components_only,
             log_directory=str(base_dir / "log" / "backtest" / "high_level"),
         )
-
-    # 7. 执行回测 (Execution)
-    if not strategies:
-        print(
-            "❌ No strategy instances were created. Please check your config and data paths."
-        )
-        return
-
+        
+    # 构建BacktestNode配置
     eng_cfg = BacktestEngineConfig(
         strategies=strategies,
         logging=logging_config,
         risk_engine=RiskEngineConfig(bypass=False),
     )
-
-    assert len(backtest_data_configs) != 0, "No data feeds were configured."
-
+    
     run_config = BacktestRunConfig(
         engine=eng_cfg,
         data=backtest_data_configs,
         venues=venue_configs,
         raise_exception=True,
     )
-
+    
+    # 创建并运行BacktestNode
     gc.collect()
     node = BacktestNode(configs=[run_config])
     print(f"⏳ Running BacktestNode with {len(strategies)} strategy instances...")
-    print(f"   - Data configs: {len(backtest_data_configs)}")
-    print(f"   - Venue configs: {len(venue_configs)}")
-    print(f"   - Strategy configs: {len(strategies)}")
-
-    # === 🔥 加载自定义数据（OI 和 Funding Rate） ===
-    # 在 node.run() 之前，先 build 引擎，然后直接添加自定义数据
-    print(f"\n📊 Loading custom data (OI, Funding Rate)...")
-
-    # 确保有日期范围
-    if cfg.start_date and cfg.end_date:
-        try:
-            # 1. Build the engine
-            node.build()
-
-            # 2. Get the underlying engine
-            engine = node.get_engine(run_config.id)
-
-            if engine is None:
-                print(f"   ⚠️  Could not get engine from node")
-            else:
-                # 3. Load and add custom data直接从文件
-                from utils.oi_funding_adapter import (
-                    OIFundingDataLoader,
-                    merge_custom_data_with_bars,
-                )
-
-                data_dir = base_dir / "data" / "raw"
-
-                for inst_id_str, inst in loaded_instruments.items():
-                    # inst_id_str 是字符串，inst 是 Instrument 对象
-                    # 获取真正的 InstrumentId 对象
-                    instrument_id = inst.id
-                    symbol = str(instrument_id.symbol).split("-")[
-                        0
-                    ]  # BTCUSDT-PERP -> BTCUSDT
-                    symbol_dir = data_dir / symbol
-
-                    if not symbol_dir.exists():
-                        print(f"   ⚠️  Data directory not found for {symbol}")
-                        continue
-
-                    # 使用 glob 查找文件（灵活匹配日期范围）
-                    oi_files = list(symbol_dir.glob("*-oi-1h-*.csv"))
-                    funding_files = list(symbol_dir.glob("*-funding-*.csv"))
-
-                    oi_data_list = []
-                    funding_data_list = []
-
-                    # 加载 OI 数据
-                    if oi_files:
-                        from decimal import Decimal
-                        from nautilus_trader.core.nautilus_pyo3 import millis_to_nanos
-                        from utils.custom_data import OpenInterestData
-                        import pandas as pd
-
-                        for oi_file in oi_files:
-                            try:
-                                df = pd.read_csv(oi_file)
-                                for _, row in df.iterrows():
-                                    ts_ms = int(row["timestamp"])
-                                    ts_event = millis_to_nanos(ts_ms)
-                                    ts_init = ts_event
-
-                                    oi_data = OpenInterestData(
-                                        instrument_id=instrument_id,  # 使用 InstrumentId 对象
-                                        open_interest=Decimal(
-                                            str(row["open_interest"])
-                                        ),
-                                        ts_event=ts_event,
-                                        ts_init=ts_init,
-                                    )
-                                    oi_data_list.append(oi_data)
-                            except Exception as e:
-                                print(
-                                    f"   ❌ Error loading OI file {oi_file.name}: {e}"
-                                )
-
-                    # 加载 Funding Rate 数据
-                    if funding_files:
-                        from decimal import Decimal
-                        from nautilus_trader.core.nautilus_pyo3 import millis_to_nanos
-                        from utils.custom_data import FundingRateData
-                        import pandas as pd
-
-                        for funding_file in funding_files:
-                            try:
-                                df = pd.read_csv(funding_file)
-                                for _, row in df.iterrows():
-                                    ts_ms = int(row["timestamp"])
-                                    ts_event = millis_to_nanos(ts_ms)
-                                    ts_init = ts_event
-
-                                    funding_data = FundingRateData(
-                                        instrument_id=instrument_id,  # 使用 InstrumentId 对象
-                                        funding_rate=Decimal(str(row["funding_rate"])),
-                                        next_funding_time=None,
-                                        ts_event=ts_event,
-                                        ts_init=ts_init,
-                                    )
-                                    funding_data_list.append(funding_data)
-                            except Exception as e:
-                                print(
-                                    f"   ❌ Error loading Funding file {funding_file.name}: {e}"
-                                )
-
-                    # Merge and add to engine
-                    if oi_data_list or funding_data_list:
-                        merged_data = merge_custom_data_with_bars(
-                            oi_data_list, funding_data_list
-                        )
-                        engine.add_data(merged_data)
-                        print(
-                            f"   ✅ Added {len(merged_data)} custom data points for {symbol}"
-                        )
-                        print(f"      - OI: {len(oi_data_list)} points")
-                        print(f"      - Funding: {len(funding_data_list)} points")
-                    else:
-                        print(f"   ⚠️  No custom data found for {symbol}")
-
-        except Exception as e:
-            import traceback
-
-            print(f"   ⚠️  Custom data loading failed: {e}")
-            traceback.print_exc()
-            print(f"   Strategy will run without OI/Funding data")
-    else:
-        print(f"   ⚠️  No date range specified, skipping custom data loading")
-
-    # Run the backtest
+    
+    # 加载自定义数据
+    _load_custom_data_to_engine(cfg, base_dir, node, run_config, loaded_instruments)
+    
+    # 运行回测
     results = node.run()
-
     print("✅ Backtest Complete.")
+    
+    # 处理结果
+    if results:
+        _process_backtest_results(cfg, base_dir, results)
 
-    # ===== 收集策略统计数据（用于保存到 JSON） =====
-    # 注意：这些数据会被保存到 JSON 文件中供 AI 分析，但不会全部输出到终端
-    filter_stats = None  # 信号过滤统计
-    trade_metrics = None  # 交易明细列表
+
+def _load_custom_data_to_engine(
+    cfg: BackTestConfig,
+    base_dir: Path,
+    node: BacktestNode,
+    run_config: BacktestRunConfig,
+    loaded_instruments: Dict[str, Instrument],
+):
+    """加载自定义数据(OI, Funding Rate)到回测引擎"""
+    if not (cfg.start_date and cfg.end_date):
+        print("⚠️ No date range specified, skipping custom data loading")
+        return
+        
+    print("📊 Loading custom data (OI, Funding Rate)...")
+    
+    try:
+        # 构建引擎
+        node.build()
+        engine = node.get_engine(run_config.id)
+        
+        if engine is None:
+            print("⚠️ Could not get engine from node")
+            return
+            
+        # 加载自定义数据
+        from utils.oi_funding_adapter import merge_custom_data_with_bars
+        
+        data_dir = base_dir / "data" / "raw"
+        total_loaded = 0
+        
+        for inst_id_str, inst in loaded_instruments.items():
+            instrument_id = inst.id
+            symbol = str(instrument_id.symbol).split("-")[0]  # BTCUSDT-PERP -> BTCUSDT
+            symbol_dir = data_dir / symbol
+            
+            if not symbol_dir.exists():
+                continue
+                
+            # 查找数据文件
+            oi_files = list(symbol_dir.glob("*-oi-1h-*.csv"))
+            funding_files = list(symbol_dir.glob("*-funding-*.csv"))
+            
+            oi_data_list = []
+            funding_data_list = []
+            
+            # 加载OI数据
+            if oi_files:
+                oi_data_list = _load_oi_data_from_files(oi_files, instrument_id)
+                
+            # 加载Funding Rate数据
+            if funding_files:
+                funding_data_list = _load_funding_data_from_files(funding_files, instrument_id)
+                
+            # 合并并添加到引擎
+            if oi_data_list or funding_data_list:
+                merged_data = merge_custom_data_with_bars(oi_data_list, funding_data_list)
+                engine.add_data(merged_data)
+                total_loaded += len(merged_data)
+                print(f"   ✅ Added {len(merged_data)} custom data points for {symbol}")
+                
+        print(f"✅ Total custom data loaded: {total_loaded} points")
+        
+    except Exception as e:
+        print(f"⚠️ Custom data loading failed: {e}")
+        print("Strategy will run without OI/Funding data")
+
+
+def _load_oi_data_from_files(oi_files: List[Path], instrument_id) -> List:
+    """从文件加载OI数据"""
+    oi_data_list = []
+    
+    try:
+        from decimal import Decimal
+        from nautilus_trader.core.nautilus_pyo3 import millis_to_nanos
+        from utils.custom_data import OpenInterestData
+        import pandas as pd
+        
+        for oi_file in oi_files:
+            df = pd.read_csv(oi_file)
+            for _, row in df.iterrows():
+                ts_ms = int(row["timestamp"])
+                ts_event = millis_to_nanos(ts_ms)
+                ts_init = ts_event
+                
+                oi_data = OpenInterestData(
+                    instrument_id=instrument_id,
+                    open_interest=Decimal(str(row["open_interest"])),
+                    ts_event=ts_event,
+                    ts_init=ts_init,
+                )
+                oi_data_list.append(oi_data)
+                
+    except Exception as e:
+        print(f"❌ Error loading OI files: {e}")
+        
+    return oi_data_list
+
+
+def _load_funding_data_from_files(funding_files: List[Path], instrument_id) -> List:
+    """从文件加载Funding Rate数据"""
+    funding_data_list = []
+    
+    try:
+        from decimal import Decimal
+        from nautilus_trader.core.nautilus_pyo3 import millis_to_nanos
+        from utils.custom_data import FundingRateData
+        import pandas as pd
+        
+        for funding_file in funding_files:
+            df = pd.read_csv(funding_file)
+            for _, row in df.iterrows():
+                ts_ms = int(row["timestamp"])
+                ts_event = millis_to_nanos(ts_ms)
+                ts_init = ts_event
+                
+                funding_data = FundingRateData(
+                    instrument_id=instrument_id,
+                    funding_rate=Decimal(str(row["funding_rate"])),
+                    next_funding_time=None,
+                    ts_event=ts_event,
+                    ts_init=ts_init,
+                )
+                funding_data_list.append(funding_data)
+                
+    except Exception as e:
+        print(f"❌ Error loading Funding files: {e}")
+        
+    return funding_data_list
+
+
+def _process_backtest_results(cfg: BackTestConfig, base_dir: Path, results: List[BacktestResult]):
+    """处理回测结果"""
+    # 收集策略统计数据
+    filter_stats = None
+    trade_metrics = None
+    
     try:
         from strategy.rs_squeeze import RSSqueezeStrategy
-
-        # 获取统计数据（在终端打印之前先保存，避免打印后清空）
         filter_stats = RSSqueezeStrategy.get_filter_stats_summary()
         trade_metrics = RSSqueezeStrategy.get_trade_metrics()
-
-        # 终端输出策略过滤器统计报告（详细格式化输出）
         RSSqueezeStrategy.print_filter_stats_report()
-
-        # 重置类变量，避免多次回测时数据累积
         RSSqueezeStrategy.reset_class_stats()
-    except ImportError:
-        pass  # 非 RS Squeeze 策略时跳过
-    except AttributeError:
-        pass  # 策略没有相关方法时跳过
-
-    # ===== 提取策略配置参数（完整保存到 JSON，不输出到终端） =====
-    # 注意：cfg.strategy.params 可能是 dict 或 Pydantic 对象，需要统一转换
+    except (ImportError, AttributeError):
+        pass  # 非RS Squeeze策略时跳过
+        
+    # 提取策略配置参数
     strategy_params = cfg.strategy.params
     if hasattr(strategy_params, "model_dump"):
-        # Pydantic v2 对象
         strategy_config = strategy_params.model_dump()
     elif hasattr(strategy_params, "dict"):
-        # Pydantic v1 对象
         strategy_config = strategy_params.dict()
     elif isinstance(strategy_params, dict):
         strategy_config = strategy_params
     else:
         strategy_config = {}
-
-    # ===== 构建回测配置信息（元数据） =====
+        
+    # 构建回测配置信息
     backtest_config = {
         "start_date": str(cfg.start_date),
         "end_date": str(cfg.end_date),
         "initial_balances": cfg.initial_balances,
-        "instruments_count": len(loaded_instruments),
-        "data_feeds_count": len(cfg.data_feeds),
-        "strategies_count": len(strategies),
+        "strategies_count": len(results),
     }
-
-    # ===== 终端输出 + JSON 保存 =====
-    # 策略：终端只显示核心摘要（简洁），JSON 保存完整数据（供 AI 分析）
-    if results:
-        for result in results:
-            # 终端输出（简化版，不包含策略配置）
-            _print_results(
-                result,
-                strategy_config=None,  # 不传递配置到终端输出
-            )
-
-            # 构建完整结果字典（包含所有数据）
-            result_dict = _build_result_dict(
-                result=result,
-                strategy_name=cfg.strategy.name,
-                strategy_config=strategy_config,  # 完整配置保存到 JSON
-                filter_stats=filter_stats,
-                trade_metrics=trade_metrics,
-                backtest_config=backtest_config,
-            )
-
-            # 保存为 JSON 文件
-            json_path = _save_results_to_json(
-                result_dict=result_dict,
-                strategy_name=cfg.strategy.name,
-                base_dir=base_dir,
-            )
-            # 提示用户 JSON 文件位置和包含的数据量
-            print(f"📁 Complete results saved to: {json_path}")
-            print(f"    ├─ Strategy parameters: {len(strategy_config)}")
-            print(f"    ├─ Trade records: {len(trade_metrics) if trade_metrics else 0}")
-            print(
-                f"    └─ Filter stats: {len(filter_stats) if filter_stats else 0} instruments"
-            )
+    
+    # 处理每个结果
+    for result in results:
+        # 终端输出
+        _print_results(result)
+        
+        # 构建完整结果字典
+        result_dict = _build_result_dict(
+            result=result,
+            strategy_name=cfg.strategy.name,
+            strategy_config=strategy_config,
+            filter_stats=filter_stats,
+            trade_metrics=trade_metrics,
+            backtest_config=backtest_config,
+        )
+        
+        # 保存JSON文件
+        json_path = _save_results_to_json(result_dict, cfg.strategy.name, base_dir)
+        print(f"📁 Complete results saved to: {json_path}")
 
 
 def _build_result_dict(
