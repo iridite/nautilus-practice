@@ -626,3 +626,488 @@ class DataValidator:
             "error_count": len(self.errors),
             "warning_count": len(self.warnings)
         }
+
+
+# ============================================================================
+# OI (Open Interest) 数据验证功能
+# ============================================================================
+
+def check_oi_data_exists(
+    symbols: List[str],
+    start_date: str,
+    end_date: str,
+    period: str,
+    exchange_id: str,
+    base_dir: Path,
+    min_size_bytes: int = 1024
+) -> Tuple[bool, List[str]]:
+    """
+    检查 OI 数据文件是否存在且有效
+    
+    Parameters
+    ----------
+    symbols : List[str]
+        交易对符号列表（如 ["BTCUSDT", "ETHUSDT"]）
+    start_date : str
+        开始日期（YYYY-MM-DD）
+    end_date : str
+        结束日期（YYYY-MM-DD）
+    period : str
+        时间周期（如 "1h", "4h"）
+    exchange_id : str
+        交易所名称
+    base_dir : Path
+        基础目录路径
+    min_size_bytes : int, optional
+        最小文件大小（字节），默认 1KB
+        
+    Returns
+    -------
+    Tuple[bool, List[str]]
+        (所有文件是否都存在, 缺失文件列表)
+        
+    Examples
+    --------
+    >>> exists, missing = check_oi_data_exists(["BTCUSDT"], "2024-01-01", "2024-12-31", "1h", "binance", Path("."))
+    >>> if not exists:
+    ...     print(f"Missing OI files: {missing}")
+    """
+    missing_files = []
+    
+    for symbol in symbols:
+        safe_symbol = symbol.replace("/", "")
+        filename = f"{exchange_id.lower()}-{safe_symbol}-oi-{period}-{start_date}_{end_date}.csv"
+        filepath = base_dir / "data" / "raw" / safe_symbol / filename
+        
+        if not filepath.exists():
+            missing_files.append(str(filepath))
+            continue
+        
+        # 检查文件大小
+        try:
+            file_size_bytes = filepath.stat().st_size
+            if file_size_bytes < min_size_bytes:
+                missing_files.append(str(filepath))
+        except OSError:
+            missing_files.append(str(filepath))
+    
+    return len(missing_files) == 0, missing_files
+
+
+def check_funding_data_exists(
+    symbols: List[str],
+    start_date: str,
+    end_date: str,
+    exchange_id: str,
+    base_dir: Path,
+    min_size_bytes: int = 1024
+) -> Tuple[bool, List[str]]:
+    """
+    检查 Funding Rate 数据文件是否存在且有效
+    
+    Parameters
+    ----------
+    symbols : List[str]
+        交易对符号列表（如 ["BTCUSDT", "ETHUSDT"]）
+    start_date : str
+        开始日期（YYYY-MM-DD）
+    end_date : str
+        结束日期（YYYY-MM-DD）
+    exchange_id : str
+        交易所名称
+    base_dir : Path
+        基础目录路径
+    min_size_bytes : int, optional
+        最小文件大小（字节），默认 1KB
+        
+    Returns
+    -------
+    Tuple[bool, List[str]]
+        (所有文件是否都存在, 缺失文件列表)
+    """
+    missing_files = []
+    
+    for symbol in symbols:
+        safe_symbol = symbol.replace("/", "")
+        filename = f"{exchange_id.lower()}-{safe_symbol}-funding-{start_date}_{end_date}.csv"
+        filepath = base_dir / "data" / "raw" / safe_symbol / filename
+        
+        if not filepath.exists():
+            missing_files.append(str(filepath))
+            continue
+        
+        # 检查文件大小
+        try:
+            file_size_bytes = filepath.stat().st_size
+            if file_size_bytes < min_size_bytes:
+                missing_files.append(str(filepath))
+        except OSError:
+            missing_files.append(str(filepath))
+    
+    return len(missing_files) == 0, missing_files
+
+
+def validate_oi_data_structure(
+    file_path: Union[str, Path],
+    time_column: str = "timestamp"
+) -> Tuple[bool, str | None]:
+    """
+    验证 OI 数据文件结构和内容
+    
+    Parameters
+    ----------
+    file_path : Union[str, Path]
+        OI 数据文件路径
+    time_column : str, optional
+        时间列名称，默认 "timestamp"
+        
+    Returns
+    -------
+    Tuple[bool, str | None]
+        (是否通过验证, 错误信息)
+    """
+    # 检查基本文件结构
+    required_cols = [time_column, "open_interest"]
+    valid, error = validate_csv_structure(file_path, required_cols, min_rows=1)
+    
+    if not valid:
+        return (False, error)
+    
+    try:
+        # 读取少量数据验证数值字段
+        df = pd.read_csv(file_path, nrows=10)
+        
+        # 检查 open_interest 是否为数值且非负
+        if not pd.api.types.is_numeric_dtype(df["open_interest"]):
+            return (False, "open_interest column is not numeric")
+        
+        if (df["open_interest"] < 0).any():
+            return (False, "open_interest contains negative values")
+        
+        # 检查时间列格式
+        if time_column in df.columns:
+            try:
+                if time_column == "timestamp":
+                    # 检查是否为时间戳格式
+                    pd.to_datetime(df[time_column], unit='ms')
+                else:
+                    # 检查是否为日期时间格式
+                    pd.to_datetime(df[time_column])
+            except Exception:
+                return (False, f"Invalid {time_column} format")
+        
+        return (True, None)
+        
+    except Exception as e:
+        return (False, f"Failed to validate OI data: {e}")
+
+
+def validate_funding_data_structure(
+    file_path: Union[str, Path],
+    time_column: str = "timestamp"
+) -> Tuple[bool, str | None]:
+    """
+    验证 Funding Rate 数据文件结构和内容
+    
+    Parameters
+    ----------
+    file_path : Union[str, Path]
+        Funding Rate 数据文件路径
+    time_column : str, optional
+        时间列名称，默认 "timestamp"
+        
+    Returns
+    -------
+    Tuple[bool, str | None]
+        (是否通过验证, 错误信息)
+    """
+    # 检查基本文件结构
+    required_cols = [time_column, "funding_rate"]
+    valid, error = validate_csv_structure(file_path, required_cols, min_rows=1)
+    
+    if not valid:
+        return (False, error)
+    
+    try:
+        # 读取少量数据验证数值字段
+        df = pd.read_csv(file_path, nrows=10)
+        
+        # 检查 funding_rate 是否为数值
+        if not pd.api.types.is_numeric_dtype(df["funding_rate"]):
+            return (False, "funding_rate column is not numeric")
+        
+        # 检查资金费率是否在合理范围内（通常在 -1% 到 1% 之间）
+        if (df["funding_rate"].abs() > 0.01).any():
+            return (False, "funding_rate contains unrealistic values (>1%)")
+        
+        # 检查时间列格式
+        if time_column in df.columns:
+            try:
+                if time_column == "timestamp":
+                    pd.to_datetime(df[time_column], unit='ms')
+                else:
+                    pd.to_datetime(df[time_column])
+            except Exception:
+                return (False, f"Invalid {time_column} format")
+        
+        return (True, None)
+        
+    except Exception as e:
+        return (False, f"Failed to validate Funding Rate data: {e}")
+
+
+def validate_oi_data_completeness(
+    file_path: Union[str, Path],
+    expected_start: str,
+    expected_end: str,
+    period: str = "1h",
+    time_column: str = "timestamp",
+    tolerance_pct: float = 0.05
+) -> Tuple[bool, str | None, Dict[str, Any]]:
+    """
+    验证 OI 数据的时间完整性
+    
+    Parameters
+    ----------
+    file_path : Union[str, Path]
+        OI 数据文件路径
+    expected_start : str
+        期望的开始日期（YYYY-MM-DD）
+    expected_end : str
+        期望的结束日期（YYYY-MM-DD）
+    period : str, optional
+        时间周期，默认 "1h"
+    time_column : str, optional
+        时间列名称，默认 "timestamp"
+    tolerance_pct : float, optional
+        允许的缺失数据百分比，默认 5%
+        
+    Returns
+    -------
+    Tuple[bool, str | None, Dict[str, Any]]
+        (是否通过验证, 错误信息, 统计信息)
+    """
+    try:
+        df = pd.read_csv(file_path)
+        
+        if df.empty:
+            return (False, "Data file is empty", {})
+        
+        # 转换时间列
+        if time_column == "timestamp":
+            df['datetime'] = pd.to_datetime(df[time_column], unit='ms')
+        else:
+            df['datetime'] = pd.to_datetime(df[time_column])
+        
+        # 生成期望的时间范围
+        from datetime import datetime
+        start_dt = datetime.strptime(expected_start, "%Y-%m-%d")
+        end_dt = datetime.strptime(expected_end, "%Y-%m-%d")
+        
+        # 根据周期生成期望的时间序列
+        freq_map = {
+            "1m": "1min", "5m": "5min", "15m": "15min", "30m": "30min",
+            "1h": "1H", "2h": "2H", "4h": "4H", "6h": "6H", "12h": "12H",
+            "1d": "1D"
+        }
+        freq = freq_map.get(period, "1H")
+        
+        expected_times = pd.date_range(start=start_dt, end=end_dt, freq=freq)
+        actual_times = set(df['datetime'].dt.floor(freq))
+        expected_times_set = set(expected_times)
+        
+        # 计算缺失的时间点
+        missing_times = expected_times_set - actual_times
+        missing_count = len(missing_times)
+        expected_count = len(expected_times)
+        missing_pct = missing_count / expected_count if expected_count > 0 else 0
+        
+        # 检查数据质量
+        stats = {
+            "total_records": len(df),
+            "expected_records": expected_count,
+            "missing_records": missing_count,
+            "missing_percentage": missing_pct * 100,
+            "data_start": df['datetime'].min().strftime("%Y-%m-%d %H:%M:%S"),
+            "data_end": df['datetime'].max().strftime("%Y-%m-%d %H:%M:%S"),
+            "has_duplicates": df.duplicated(subset=[time_column]).any(),
+            "has_null_oi": df["open_interest"].isnull().any()
+        }
+        
+        # 验证是否通过
+        if missing_pct > tolerance_pct:
+            error_msg = f"Too many missing records: {missing_pct:.1%} > {tolerance_pct:.1%}"
+            return (False, error_msg, stats)
+        
+        if stats["has_duplicates"]:
+            return (False, "Data contains duplicate timestamps", stats)
+        
+        if stats["has_null_oi"]:
+            return (False, "Data contains null open_interest values", stats)
+        
+        return (True, None, stats)
+        
+    except Exception as e:
+        return (False, f"Failed to validate data completeness: {e}", {})
+
+
+def validate_oi_ohlcv_alignment(
+    oi_file_path: Union[str, Path],
+    ohlcv_file_path: Union[str, Path],
+    oi_time_column: str = "timestamp",
+    ohlcv_time_column: str = "timestamp",
+    max_time_diff_minutes: int = 60
+) -> Tuple[bool, str | None, Dict[str, Any]]:
+    """
+    验证 OI 数据与 OHLCV 数据的时间对齐
+    
+    Parameters
+    ----------
+    oi_file_path : Union[str, Path]
+        OI 数据文件路径
+    ohlcv_file_path : Union[str, Path]
+        OHLCV 数据文件路径
+    oi_time_column : str, optional
+        OI 数据时间列名称，默认 "timestamp"
+    ohlcv_time_column : str, optional
+        OHLCV 数据时间列名称，默认 "timestamp"
+    max_time_diff_minutes : int, optional
+        允许的最大时间差（分钟），默认 60 分钟
+        
+    Returns
+    -------
+    Tuple[bool, str | None, Dict[str, Any]]
+        (是否通过验证, 错误信息, 对齐统计信息)
+    """
+    try:
+        # 读取数据文件
+        oi_df = pd.read_csv(oi_file_path)
+        ohlcv_df = pd.read_csv(ohlcv_file_path)
+        
+        if oi_df.empty or ohlcv_df.empty:
+            return (False, "One or both data files are empty", {})
+        
+        # 转换时间列
+        if oi_time_column == "timestamp":
+            oi_df['datetime'] = pd.to_datetime(oi_df[oi_time_column], unit='ms')
+        else:
+            oi_df['datetime'] = pd.to_datetime(oi_df[oi_time_column])
+            
+        if ohlcv_time_column == "timestamp":
+            ohlcv_df['datetime'] = pd.to_datetime(ohlcv_df[ohlcv_time_column], unit='ms')
+        else:
+            ohlcv_df['datetime'] = pd.to_datetime(ohlcv_df[ohlcv_time_column])
+        
+        # 计算时间范围重叠
+        oi_start, oi_end = oi_df['datetime'].min(), oi_df['datetime'].max()
+        ohlcv_start, ohlcv_end = ohlcv_df['datetime'].min(), ohlcv_df['datetime'].max()
+        
+        overlap_start = max(oi_start, ohlcv_start)
+        overlap_end = min(oi_end, ohlcv_end)
+        
+        if overlap_start >= overlap_end:
+            return (False, "No time overlap between OI and OHLCV data", {})
+        
+        # 在重叠时间范围内进行对齐检查
+        oi_overlap = oi_df[(oi_df['datetime'] >= overlap_start) & (oi_df['datetime'] <= overlap_end)]
+        ohlcv_overlap = ohlcv_df[(ohlcv_df['datetime'] >= overlap_start) & (ohlcv_df['datetime'] <= overlap_end)]
+        
+        # 计算可匹配的时间点
+        max_diff = pd.Timedelta(minutes=max_time_diff_minutes)
+        matched_count = 0
+        
+        for oi_time in oi_overlap['datetime']:
+            time_diffs = (ohlcv_overlap['datetime'] - oi_time).abs()
+            if time_diffs.min() <= max_diff:
+                matched_count += 1
+        
+        match_rate = matched_count / len(oi_overlap) if len(oi_overlap) > 0 else 0
+        
+        stats = {
+            "oi_records": len(oi_df),
+            "ohlcv_records": len(ohlcv_df),
+            "oi_time_range": f"{oi_start} to {oi_end}",
+            "ohlcv_time_range": f"{ohlcv_start} to {ohlcv_end}",
+            "overlap_range": f"{overlap_start} to {overlap_end}",
+            "overlap_oi_records": len(oi_overlap),
+            "overlap_ohlcv_records": len(ohlcv_overlap),
+            "matched_records": matched_count,
+            "match_rate": match_rate * 100
+        }
+        
+        # 验证对齐质量
+        if match_rate < 0.8:  # 要求至少 80% 的 OI 数据能找到对应的 OHLCV 数据
+            error_msg = f"Poor time alignment: only {match_rate:.1%} of OI data can be matched"
+            return (False, error_msg, stats)
+        
+        return (True, None, stats)
+        
+    except Exception as e:
+        return (False, f"Failed to validate OI-OHLCV alignment: {e}", {})
+
+
+class OIDataValidator(DataValidator):
+    """
+    OI 数据验证器类
+    
+    扩展基础验证器，添加 OI 和 Funding Rate 数据的专门验证功能
+    """
+    
+    def validate_oi_file(
+        self,
+        file_path: Union[str, Path],
+        time_column: str = "timestamp"
+    ) -> 'OIDataValidator':
+        """验证 OI 数据文件"""
+        valid, error = validate_oi_data_structure(file_path, time_column)
+        if not valid:
+            self.add_error(f"OI data validation failed: {error}")
+        return self
+    
+    def validate_funding_file(
+        self,
+        file_path: Union[str, Path],
+        time_column: str = "timestamp"
+    ) -> 'OIDataValidator':
+        """验证 Funding Rate 数据文件"""
+        valid, error = validate_funding_data_structure(file_path, time_column)
+        if not valid:
+            self.add_error(f"Funding Rate data validation failed: {error}")
+        return self
+    
+    def validate_oi_completeness(
+        self,
+        file_path: Union[str, Path],
+        expected_start: str,
+        expected_end: str,
+        period: str = "1h",
+        time_column: str = "timestamp",
+        tolerance_pct: float = 0.05
+    ) -> 'OIDataValidator':
+        """验证 OI 数据完整性"""
+        valid, error, stats = validate_oi_data_completeness(
+            file_path, expected_start, expected_end, period, time_column, tolerance_pct
+        )
+        if not valid:
+            self.add_error(f"OI data completeness check failed: {error}")
+        elif stats.get("missing_percentage", 0) > 0:
+            self.add_warning(f"OI data has {stats['missing_percentage']:.1f}% missing records")
+        return self
+    
+    def validate_oi_ohlcv_alignment(
+        self,
+        oi_file_path: Union[str, Path],
+        ohlcv_file_path: Union[str, Path],
+        oi_time_column: str = "timestamp",
+        ohlcv_time_column: str = "timestamp",
+        max_time_diff_minutes: int = 60
+    ) -> 'OIDataValidator':
+        """验证 OI 与 OHLCV 数据对齐"""
+        valid, error, stats = validate_oi_ohlcv_alignment(
+            oi_file_path, ohlcv_file_path, oi_time_column, ohlcv_time_column, max_time_diff_minutes
+        )
+        if not valid:
+            self.add_error(f"OI-OHLCV alignment check failed: {error}")
+        elif stats.get("match_rate", 100) < 95:
+            self.add_warning(f"OI-OHLCV alignment rate: {stats['match_rate']:.1f}%")
+        return self

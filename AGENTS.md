@@ -38,14 +38,29 @@ uv run python -m unittest tests.test_oi_divergence.TestCustomData.test_open_inte
 
 ### Running Backtests
 ```bash
-# Main backtest entry point
-uv run python main.py
+# Main backtest entry point (with automatic OI data fetching)
+uv run python main.py backtest
+
+# Skip OI data checks (OHLCV only)
+uv run python main.py backtest --skip-oi-data
+
+# Force re-download OI data
+uv run python main.py backtest --force-oi-fetch
+
+# Specify preferred exchange and retry settings
+uv run python main.py backtest --oi-exchange binance --max-retries 5
 
 # Strategy-specific backtest
 uv run python backtest/backtest_oi_divergence.py
 
 # Data preparation scripts
 uv run python scripts/prepare_oi_divergence_data.py
+
+# Test OI data integration
+uv run python test_oi_integration.py
+
+# View OI strategy example
+uv run python examples/oi_strategy_example.py
 ```
 
 ### Backtest Engines
@@ -193,6 +208,62 @@ class MyStrategyConfig(BaseStrategyConfig):
     # - trade_size, qty_percent, leverage
     # - stop_loss_pct, use_auto_sl
 ```
+
+### 🆕 Strategy Data Dependencies
+Declare strategy data requirements using the new dependency system:
+
+```python
+class OIStrategyConfig(BaseStrategyConfig):
+    def __init__(self):
+        super().__init__()
+        
+        # Declare required OI data
+        self.add_data_dependency(
+            data_type="oi",
+            required=True,
+            period="1h",
+            exchange="binance",
+            auto_fetch=True
+        )
+        
+        # Declare required Funding Rate data
+        self.add_data_dependency(
+            data_type="funding",
+            required=True,
+            exchange="binance",
+            auto_fetch=True
+        )
+
+class OIStrategy(BaseStrategy):
+    def on_start(self):
+        super().on_start()
+        
+        # Check data dependency status
+        if self.base_config.has_oi_dependency():
+            self.log.info("Strategy requires OI data")
+        
+        if self.base_config.has_funding_dependency():
+            self.log.info("Strategy requires Funding Rate data")
+    
+    def on_data(self, data):
+        """Handle custom data (OI, funding rates)"""
+        from utils.custom_data import OpenInterestData, FundingRateData
+        
+        if isinstance(data, OpenInterestData):
+            # Process OI data
+            self.log.info(f"Received OI: {data.open_interest}")
+            
+        elif isinstance(data, FundingRateData):
+            # Process funding rate data
+            self.log.info(f"Received Funding Rate: {data.funding_rate}")
+```
+
+**Best Practices for Data Dependencies:**
+- Always declare data dependencies in strategy configuration
+- Use `required=True` for essential data, `required=False` for optional
+- Set `auto_fetch=True` to enable automatic data downloading
+- Specify exchange and period for better data management
+- Check dependency status in `on_start()` method
 
 ### Custom Data Types
 Extend `nautilus_trader.core.data.Data` for market data:

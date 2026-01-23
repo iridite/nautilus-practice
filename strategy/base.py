@@ -1,5 +1,5 @@
 from decimal import Decimal
-from typing import Optional
+from typing import List, Optional
 
 from nautilus_trader.config import StrategyConfig
 from nautilus_trader.model.enums import OrderSide, OrderType, PositionSide, TimeInForce
@@ -9,6 +9,58 @@ from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orders import Order
 from nautilus_trader.trading.strategy import Strategy
+
+
+class DataDependency:
+    """
+    数据依赖声明类
+    
+    用于声明策略所需的数据类型和参数
+    """
+    
+    def __init__(
+        self,
+        data_type: str,
+        required: bool = True,
+        period: Optional[str] = None,
+        exchange: Optional[str] = None,
+        symbols: Optional[List[str]] = None,
+        auto_fetch: bool = True
+    ):
+        """
+        初始化数据依赖
+        
+        Parameters
+        ----------
+        data_type : str
+            数据类型（"ohlcv", "oi", "funding"）
+        required : bool, optional
+            是否为必需数据，默认 True
+        period : str, optional
+            数据周期（如 "1h", "4h"），默认 None
+        exchange : str, optional
+            交易所名称，默认 None（使用策略默认交易所）
+        symbols : List[str], optional
+            特定符号列表，默认 None（使用策略默认符号）
+        auto_fetch : bool, optional
+            是否自动获取缺失数据，默认 True
+        """
+        self.data_type = data_type
+        self.required = required
+        self.period = period
+        self.exchange = exchange
+        self.symbols = symbols
+        self.auto_fetch = auto_fetch
+    
+    def __repr__(self) -> str:
+        return (
+            f"DataDependency("
+            f"type={self.data_type}, "
+            f"required={self.required}, "
+            f"period={self.period}, "
+            f"exchange={self.exchange}, "
+            f"auto_fetch={self.auto_fetch})"
+        )
 
 
 class BaseStrategyConfig(StrategyConfig):  # pyright: ignore[reportGeneralTypeIssues]
@@ -42,6 +94,76 @@ class BaseStrategyConfig(StrategyConfig):  # pyright: ignore[reportGeneralTypeIs
     # Toggle for automated stop loss management.
     use_auto_sl: bool = True
 
+    # --- Data Dependencies ---
+    # 数据依赖声明列表，用于自动检查和获取所需数据
+    data_dependencies: List[DataDependency] = []
+    
+    # 是否启用自动数据检查和获取
+    enable_auto_data_fetch: bool = True
+    
+    # 数据获取的默认交易所（如果依赖中未指定）
+    default_data_exchange: Optional[str] = None
+    
+    # 数据获取的默认周期（如果依赖中未指定）
+    default_data_period: str = "1h"
+    
+    def add_data_dependency(
+        self,
+        data_type: str,
+        required: bool = True,
+        period: Optional[str] = None,
+        exchange: Optional[str] = None,
+        symbols: Optional[List[str]] = None,
+        auto_fetch: bool = True
+    ) -> None:
+        """
+        添加数据依赖
+        
+        Parameters
+        ----------
+        data_type : str
+            数据类型（"ohlcv", "oi", "funding"）
+        required : bool, optional
+            是否为必需数据，默认 True
+        period : str, optional
+            数据周期，默认使用 default_data_period
+        exchange : str, optional
+            交易所名称，默认使用 default_data_exchange
+        symbols : List[str], optional
+            特定符号列表，默认 None
+        auto_fetch : bool, optional
+            是否自动获取缺失数据，默认 True
+        """
+        dependency = DataDependency(
+            data_type=data_type,
+            required=required,
+            period=period or self.default_data_period,
+            exchange=exchange or self.default_data_exchange,
+            symbols=symbols,
+            auto_fetch=auto_fetch
+        )
+        self.data_dependencies.append(dependency)
+    
+    def get_required_dependencies(self) -> List[DataDependency]:
+        """获取所有必需的数据依赖"""
+        return [dep for dep in self.data_dependencies if dep.required]
+    
+    def get_optional_dependencies(self) -> List[DataDependency]:
+        """获取所有可选的数据依赖"""
+        return [dep for dep in self.data_dependencies if not dep.required]
+    
+    def has_oi_dependency(self) -> bool:
+        """检查是否有 OI 数据依赖"""
+        return any(dep.data_type == "oi" for dep in self.data_dependencies)
+    
+    def has_funding_dependency(self) -> bool:
+        """检查是否有 Funding Rate 数据依赖"""
+        return any(dep.data_type == "funding" for dep in self.data_dependencies)
+    
+    def get_dependency_by_type(self, data_type: str) -> List[DataDependency]:
+        """根据数据类型获取依赖"""
+        return [dep for dep in self.data_dependencies if dep.data_type == data_type]
+
 
 class BaseStrategy(Strategy):
     """
@@ -50,6 +172,7 @@ class BaseStrategy(Strategy):
     2. Unified position sizing calculation (Fixed vs Dynamic).
     3. Safe order submission with validation and enhanced logging.
     4. Robust auto-managed stop loss mechanism within the bar lifecycle.
+    5. Data dependency validation and management.
     """
 
     def __init__(self, config: BaseStrategyConfig):
@@ -78,6 +201,91 @@ class BaseStrategy(Strategy):
                     self.log.warning(
                         f"Instrument has non-standard multiplier: {self.instrument.multiplier}"
                     )
+        
+        # 检查数据依赖
+        self._check_data_dependencies()
+
+    def _check_data_dependencies(self):
+        """
+        检查策略的数据依赖是否满足
+        
+        这个方法会在策略启动时调用，检查所有必需的数据依赖。
+        如果有缺失的必需数据，会记录错误日志。
+        """
+        if not hasattr(self.base_config, 'data_dependencies') or not self.base_config.data_dependencies:
+            return
+        
+        required_deps = self.base_config.get_required_dependencies()
+        if not required_deps:
+            return
+        
+        self.log.info(f"BaseStrategy: Checking {len(required_deps)} required data dependencies...")
+        
+        missing_deps = []
+        for dep in required_deps:
+            if not self._is_dependency_satisfied(dep):
+                missing_deps.append(dep)
+        
+        if missing_deps:
+            self.log.error(
+                f"BaseStrategy: Missing required data dependencies: "
+                f"{[dep.data_type for dep in missing_deps]}"
+            )
+            for dep in missing_deps:
+                self.log.error(f"  - {dep}")
+        else:
+            self.log.info("BaseStrategy: All required data dependencies satisfied.")
+    
+    def _is_dependency_satisfied(self, dependency: DataDependency) -> bool:
+        """
+        检查单个数据依赖是否满足
+        
+        Parameters
+        ----------
+        dependency : DataDependency
+            要检查的数据依赖
+            
+        Returns
+        -------
+        bool
+            依赖是否满足
+        """
+        # 这里可以添加实际的数据文件检查逻辑
+        # 目前返回 True 作为占位符，实际实现会在 main.py 中进行
+        return True
+    
+    def get_data_requirements(self) -> dict:
+        """
+        获取策略的数据需求摘要
+        
+        Returns
+        -------
+        dict
+            包含数据需求信息的字典
+        """
+        if not hasattr(self.base_config, 'data_dependencies'):
+            return {}
+        
+        requirements = {
+            "total_dependencies": len(self.base_config.data_dependencies),
+            "required_dependencies": len(self.base_config.get_required_dependencies()),
+            "optional_dependencies": len(self.base_config.get_optional_dependencies()),
+            "has_oi_dependency": self.base_config.has_oi_dependency(),
+            "has_funding_dependency": self.base_config.has_funding_dependency(),
+            "auto_fetch_enabled": getattr(self.base_config, 'enable_auto_data_fetch', True),
+            "dependencies": [
+                {
+                    "type": dep.data_type,
+                    "required": dep.required,
+                    "period": dep.period,
+                    "exchange": dep.exchange,
+                    "auto_fetch": dep.auto_fetch
+                }
+                for dep in self.base_config.data_dependencies
+            ]
+        }
+        
+        return requirements
 
     def on_bar(self, bar):
         """

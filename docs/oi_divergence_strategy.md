@@ -55,7 +55,25 @@
 uv sync
 ```
 
-### 2. 下载数据（一键完成）
+### 2. 🆕 自动数据获取（推荐）
+
+**新功能**: 系统现在支持全自动的OI和Funding Rate数据获取！
+
+```bash
+# 方法1: 使用主回测入口（自动检测和获取所有数据）
+uv run python main.py backtest
+
+# 方法2: 强制重新下载所有OI数据
+uv run python main.py backtest --force-oi-fetch
+
+# 方法3: 指定首选交易所
+uv run python main.py backtest --oi-exchange binance
+
+# 方法4: 查看OI策略示例
+uv run python examples/oi_strategy_example.py
+```
+
+### 3. 传统数据准备方式（可选）
 
 ```bash
 # 下载 OHLCV + Open Interest + Funding Rate 数据
@@ -71,7 +89,7 @@ uv run python scripts/prepare_oi_divergence_data.py --start 2024-06-01 --end 202
 uv run python scripts/prepare_oi_divergence_data.py --exchange okx
 ```
 
-### 3. 运行回测
+### 4. 运行回测
 
 ```bash
 # 运行默认配置回测
@@ -132,6 +150,79 @@ if bar.high > Resistance:
 | **硬止损** | 价格反向突破 1% | 最高 |
 | **止盈** | 价格回归 VWAP 或 Midpoint | 高 |
 | **时间止损** | 持仓超过 24 小时 | 中 |
+
+---
+
+## 🆕 策略数据依赖声明
+
+**新功能**: OI Divergence策略现在支持声明式数据依赖管理！
+
+### 自动数据依赖声明
+
+```python
+from strategy.base import BaseStrategyConfig
+
+class OIDivergenceConfig(BaseStrategyConfig):
+    def __init__(self):
+        super().__init__()
+        
+        # 声明必需的OI数据依赖
+        self.add_data_dependency(
+            data_type="oi",
+            required=True,
+            period="1h",
+            exchange="binance",
+            auto_fetch=True
+        )
+        
+        # 声明必需的Funding Rate数据依赖
+        self.add_data_dependency(
+            data_type="funding",
+            required=True,
+            exchange="binance",
+            auto_fetch=True
+        )
+        
+        # 可选的4H OI数据（用于趋势确认）
+        self.add_data_dependency(
+            data_type="oi",
+            required=False,
+            period="4h",
+            exchange="binance",
+            auto_fetch=True
+        )
+```
+
+### 在策略中检查数据依赖
+
+```python
+from strategy.oi_divergence_strategy import OIDivergence
+
+class OIDivergence(BaseStrategy):
+    def on_start(self):
+        super().on_start()
+        
+        # 检查数据依赖状态
+        if self.base_config.has_oi_dependency():
+            self.log.info("Strategy requires OI data - will be auto-fetched")
+        
+        if self.base_config.has_funding_dependency():
+            self.log.info("Strategy requires Funding Rate data - will be auto-fetched")
+        
+        # 获取数据需求摘要
+        requirements = self.get_data_requirements()
+        self.log.info(f"Data requirements: {requirements}")
+```
+
+### 自动数据获取流程
+
+当运行 `uv run python main.py backtest` 时，系统会：
+
+1. **检测策略数据需求**: 自动识别策略声明的OI和Funding Rate依赖
+2. **验证数据完整性**: 检查本地数据文件是否存在和完整
+3. **智能数据获取**: 仅下载缺失的数据，避免重复下载
+4. **多交易所支持**: 主交易所失败时自动切换到备用交易所
+5. **数据质量验证**: 自动验证下载数据的格式和完整性
 
 ---
 
@@ -473,6 +564,38 @@ print(f"最佳参数: {best_params}")
 
 ---
 
+## 🆕 新增命令行参数
+
+### OI数据自动获取参数
+
+| 参数 | 说明 | 默认值 | 示例 |
+|------|------|--------|------|
+| `--skip-oi-data` | 跳过OI数据检查和获取 | False | `uv run python main.py backtest --skip-oi-data` |
+| `--force-oi-fetch` | 强制重新下载所有OI数据 | False | `uv run python main.py backtest --force-oi-fetch` |
+| `--oi-exchange` | 指定首选交易所 | auto | `uv run python main.py backtest --oi-exchange binance` |
+| `--max-retries` | 设置最大重试次数 | 3 | `uv run python main.py backtest --max-retries 5` |
+
+### 使用示例
+
+```bash
+# 基本回测（自动获取所有数据）
+uv run python main.py backtest
+
+# 跳过OI数据，仅使用OHLCV数据进行回测
+uv run python main.py backtest --skip-oi-data
+
+# 强制重新下载所有OI数据
+uv run python main.py backtest --force-oi-fetch
+
+# 指定使用Binance交易所，最多重试5次
+uv run python main.py backtest --oi-exchange binance --max-retries 5
+
+# 组合使用多个参数
+uv run python main.py backtest --oi-exchange okx --force-oi-fetch --max-retries 3
+```
+
+---
+
 ## 常见问题
 
 ### Q1: 为什么策略没有产生任何交易？
@@ -486,6 +609,9 @@ print(f"最佳参数: {best_params}")
 ```bash
 # 检查数据文件
 ls -lh data/raw/BTCUSDT/
+
+# 强制重新获取数据
+uv run python main.py backtest --force-oi-fetch
 
 # 降低信号阈值
 oi_decline_threshold=0.03  # 从 0.05 降到 0.03
@@ -506,7 +632,29 @@ aligned_df = align_oi_with_ohlcv(
 )
 ```
 
-### Q3: 回测速度太慢怎么办？
+### Q3: 🆕 自动OI数据获取失败怎么办？
+
+**可能原因：**
+1. **网络问题**：API请求超时或连接失败
+2. **交易所限流**：请求频率过高被限制
+3. **数据格式变化**：交易所API返回格式发生变化
+
+**解决方案：**
+```bash
+# 增加重试次数
+uv run python main.py backtest --max-retries 5
+
+# 切换到备用交易所
+uv run python main.py backtest --oi-exchange okx
+
+# 跳过自动获取，使用手动准备的数据
+uv run python main.py backtest --skip-oi-data
+
+# 测试OI数据集成功能
+uv run python test_oi_integration.py
+```
+
+### Q4: 回测速度太慢怎么办？
 
 **优化建议：**
 1. 减少数据量：使用更短的回测周期
@@ -621,6 +769,19 @@ OI Divergence 策略是一个结合了**市场微观结构**（持仓量）和**
 
 ## 相关资源
 
+### 项目文档
+- 📖 [主要README文档](../README.md)
+- 📝 [代码开发规范](../AGENTS.md)
+- 🆕 [OI数据使用指南](oi_data_usage_guide.md)
+- 📋 [OI数据集成报告](AI%20Exec%20Reports/OI_DATA_INTEGRATION_REPORT.md)
+- 🧪 [测试指南](../tests/)
+
+### 示例和测试
+- 💡 [OI策略示例](../examples/oi_strategy_example.py)
+- 🧪 [OI数据集成测试](../test_oi_integration.py)
+- 📊 [策略单元测试](../tests/test_oi_divergence.py)
+
+### 外部资源
 - [NautilusTrader 官方文档](https://nautilustrader.io/)
 - [Binance API 文档](https://binance-docs.github.io/apidocs/)
 - [OKX API 文档](https://www.okx.com/docs-v5/)

@@ -21,9 +21,19 @@ from config.settings import (
     current_config,
 )
 from scripts.fetch_instrument import update_instruments
+from strategy.base import DataDependency
 from utils.config_helpers import parse_universe_symbols
 from utils.data_retrival import batch_fetch_ohlcv
-from utils.validation import check_data_exists
+from utils.oi_funding_fetcher import batch_fetch_oi_and_funding
+from utils.validation import (
+    check_data_exists,
+    check_single_data_file,
+    check_oi_data_exists,
+    check_funding_data_exists,
+    validate_oi_data_structure,
+    validate_funding_data_structure,
+    OIDataValidator
+)
 
 
 def run_batch_data_retrieval(
@@ -52,8 +62,327 @@ def run_batch_data_retrieval(
     except Exception as e:
         print(f"❌ Error during data retrieval: {e}")
         return []
+    
+    
+def check_strategy_data_dependencies(
+    strategy_config,
+    start_date: str,
+    end_date: str,
+    base_dir: Path,
+    universe_symbols: set = None
+) -> dict:
+    """
+    检查策略的数据依赖并返回缺失的数据任务
+    
+    Parameters
+    ----------
+    strategy_config
+        策略配置对象
+    start_date : str
+        开始日期
+    end_date : str
+        结束日期
+    base_dir : Path
+        基础目录
+    universe_symbols : set, optional
+        Universe 符号集合
+        
+    Returns
+    -------
+    dict
+        包含缺失数据任务的字典
+    """
+    tasks = {
+        "oi_tasks": {},      # (exchange, period, start, end) -> set(symbols)
+        "funding_tasks": {}, # (exchange, start, end) -> set(symbols)
+        "missing_count": 0,
+        "warnings": []
+    }
+    
+    # 检查策略是否有数据依赖声明
+    if not hasattr(strategy_config, 'data_dependencies') or not strategy_config.data_dependencies:
+        return tasks
+    
+    print(f"🔍 Checking strategy data dependencies: {len(strategy_config.data_dependencies)} dependencies found")
+    
+    # 获取策略相关的符号列表
+    strategy_symbols = set()
+    
+    # 从 data_feeds 获取符号
+    if hasattr(strategy_config, 'data_feeds') and strategy_config.data_feeds:
+        for feed in strategy_config.data_feeds:
+            try:
+                symbol_quote = feed.csv_file_name.split("/")[0]
+                strategy_symbols.add(symbol_quote)
+            except Exception:
+                continue
+    
+    # 从 universe 获取符号
+    if universe_symbols:
+        for symbol in universe_symbols:
+            symbol_str = symbol.split(":")[0]  # SOLUSDT:USDT -> SOLUSDT
+            strategy_symbols.add(symbol_str)
+    
+    # 从单标的配置获取符号
+    if hasattr(strategy_config, 'instrument_id') and strategy_config.instrument_id:
+        try:
+            # 从 instrument_id 提取符号 (如 BINANCE.BTCUSDT-PERP -> BTCUSDT)
+            symbol_part = strategy_config.instrument_id.split('.')[1].split('-')[0]
+            strategy_symbols.add(symbol_part)
+        except Exception:
+            pass
+    
+    if not strategy_symbols:
+        print("⚠️ No symbols found for strategy data dependency check")
+        return tasks
+    
+    print(f"📊 Checking data dependencies for {len(strategy_symbols)} symbols: {sorted(list(strategy_symbols))}")
+    
+    # 检查每个数据依赖
+    for dep in strategy_config.data_dependencies:
+        if not dep.auto_fetch:
+            continue
+            
+        # 确定要检查的符号列表
+        check_symbols = dep.symbols if dep.symbols else strategy_symbols
+        
+        # 确定交易所和周期
+        exchange = dep.exchange or getattr(strategy_config, 'default_data_exchange', 'binance')
+        period = dep.period or getattr(strategy_config, 'default_data_period', '1h')
+        
+        if dep.data_type == "oi":
+            # 检查 OI 数据
+            exists, missing_files = check_oi_data_exists(
+                list(check_symbols), start_date, end_date, period, exchange, base_dir
+            )
+            
+            if not exists:
+                key = (exchange, period, start_date, end_date)
+                if key not in tasks["oi_tasks"]:
+                    tasks["oi_tasks"][key] = set()
+                
+                # 从缺失文件路径中提取符号
+                for file_path in missing_files:
+                    try:
+                        # 从路径中提取符号: .../BTCUSDT/binance-BTCUSDT-oi-1h-2024-01-01_2024-12-31.csv
+                        symbol = file_path.split('/')[-2]
+                        tasks["oi_tasks"][key].add(symbol)
+                        tasks["missing_count"] += 1
+                    except Exception:
+                        continue
+                        
+        elif dep.data_type == "funding":
+            # 检查 Funding Rate 数据
+            exists, missing_files = check_funding_data_exists(
+                list(check_symbols), start_date, end_date, exchange, base_dir
+            )
+            
+            if not exists:
+                key = (exchange, start_date, end_date)
+                if key not in tasks["funding_tasks"]:
+                    tasks["funding_tasks"][key] = set()
+                
+                # 从缺失文件路径中提取符号
+                for file_path in missing_files:
+                    try:
+                        symbol = file_path.split('/')[-2]
+                        tasks["funding_tasks"][key].add(symbol)
+                        tasks["missing_count"] += 1
+                    except Exception:
+                        continue
+    
+    return tasks
 
 
+def execute_oi_funding_data_fetch(
+    tasks: dict,
+    base_dir: Path,
+    preferred_exchange: str = "auto",
+    max_retries: int = 3,
+    force_fetch: bool = False
+) -> dict:
+    """
+    执行 OI 和 Funding Rate 数据获取（带智能重试和错误恢复）
+    
+    Parameters
+    ----------
+    tasks : dict
+        数据获取任务字典
+    base_dir : Path
+        基础目录
+    preferred_exchange : str, optional
+        首选交易所，默认 "auto"
+    max_retries : int, optional
+        最大重试次数，默认 3
+    force_fetch : bool, optional
+        是否强制重新获取，默认 False
+        
+    Returns
+    -------
+    dict
+        获取结果统计
+    """
+    results = {"oi_files": 0, "funding_files": 0, "errors": [], "retries": 0, "fallbacks": 0}
+    
+    # 支持的交易所列表（按优先级排序）
+    if preferred_exchange == "auto":
+        supported_exchanges = ["binance", "okx"]
+    elif preferred_exchange in ["binance", "okx"]:
+        supported_exchanges = [preferred_exchange, "binance" if preferred_exchange == "okx" else "okx"]
+    else:
+        supported_exchanges = ["binance", "okx"]
+        
+    # 执行 OI 数据获取
+    for (exchange, period, start_date, end_date), symbols in tasks["oi_tasks"].items():
+        if not symbols:
+            continue
+            
+        symbols_list = sorted(list(symbols))
+        success = False
+        current_exchange = exchange
+        
+        # 尝试从指定交易所获取数据
+        for attempt in range(max_retries):
+            print(f"📊 Fetching OI data: {current_exchange} {period} for {len(symbols_list)} symbols (attempt {attempt + 1}/{max_retries})")
+            
+            try:
+                fetch_results = batch_fetch_oi_and_funding(
+                    symbols=symbols_list,
+                    start_date=start_date,
+                    end_date=end_date,
+                    exchange_id=current_exchange,
+                    base_dir=base_dir,
+                    oi_period=period
+                )
+                
+                oi_files_count = len(fetch_results.get("oi_files", []))
+                if oi_files_count > 0:
+                    results["oi_files"] += oi_files_count
+                    print(f"✅ Successfully fetched {oi_files_count} OI files from {current_exchange}")
+                    success = True
+                    break
+                else:
+                    print(f"⚠️ No OI files downloaded from {current_exchange} (attempt {attempt + 1})")
+                    
+            except Exception as e:
+                error_msg = f"Attempt {attempt + 1} failed for OI data from {current_exchange}: {e}"
+                print(f"❌ {error_msg}")
+                results["retries"] += 1
+                
+                if attempt < max_retries - 1:
+                    print(f"🔄 Retrying in 5 seconds...")
+                    import time
+                    time.sleep(5)
+        
+        # 如果主交易所失败，尝试备用交易所
+        if not success and current_exchange in supported_exchanges:
+            fallback_exchanges = [ex for ex in supported_exchanges if ex != current_exchange]
+            
+            for fallback_exchange in fallback_exchanges:
+                print(f"🔄 Trying fallback exchange: {fallback_exchange}")
+                results["fallbacks"] += 1
+                
+                try:
+                    fetch_results = batch_fetch_oi_and_funding(
+                        symbols=symbols_list,
+                        start_date=start_date,
+                        end_date=end_date,
+                        exchange_id=fallback_exchange,
+                        base_dir=base_dir,
+                        oi_period=period
+                    )
+                    
+                    oi_files_count = len(fetch_results.get("oi_files", []))
+                    if oi_files_count > 0:
+                        results["oi_files"] += oi_files_count
+                        print(f"✅ Successfully fetched {oi_files_count} OI files from fallback {fallback_exchange}")
+                        success = True
+                        break
+                        
+                except Exception as e:
+                    print(f"❌ Fallback {fallback_exchange} also failed: {e}")
+        
+        if not success:
+            error_msg = f"All attempts failed for OI data: {exchange} {period} ({len(symbols_list)} symbols)"
+            results["errors"].append(error_msg)
+    
+    # 执行 Funding Rate 数据获取（类似的重试逻辑）
+    for (exchange, start_date, end_date), symbols in tasks["funding_tasks"].items():
+        if not symbols:
+            continue
+            
+        symbols_list = sorted(list(symbols))
+        success = False
+        current_exchange = exchange
+        
+        # 尝试从指定交易所获取数据
+        for attempt in range(max_retries):
+            print(f"💰 Fetching Funding Rate data: {current_exchange} for {len(symbols_list)} symbols (attempt {attempt + 1}/{max_retries})")
+            
+            try:
+                fetch_results = batch_fetch_oi_and_funding(
+                    symbols=symbols_list,
+                    start_date=start_date,
+                    end_date=end_date,
+                    exchange_id=current_exchange,
+                    base_dir=base_dir,
+                    oi_period="1h"  # Funding rate 不依赖周期
+                )
+                
+                funding_files_count = len(fetch_results.get("funding_files", []))
+                if funding_files_count > 0:
+                    results["funding_files"] += funding_files_count
+                    print(f"✅ Successfully fetched {funding_files_count} Funding Rate files from {current_exchange}")
+                    success = True
+                    break
+                else:
+                    print(f"⚠️ No Funding Rate files downloaded from {current_exchange} (attempt {attempt + 1})")
+                    
+            except Exception as e:
+                error_msg = f"Attempt {attempt + 1} failed for Funding Rate data from {current_exchange}: {e}"
+                print(f"❌ {error_msg}")
+                results["retries"] += 1
+                
+                if attempt < max_retries - 1:
+                    print(f"🔄 Retrying in 5 seconds...")
+                    import time
+                    time.sleep(5)
+        
+        # 如果主交易所失败，尝试备用交易所
+        if not success and current_exchange in supported_exchanges:
+            fallback_exchanges = [ex for ex in supported_exchanges if ex != current_exchange]
+            
+            for fallback_exchange in fallback_exchanges:
+                print(f"🔄 Trying fallback exchange: {fallback_exchange}")
+                results["fallbacks"] += 1
+                
+                try:
+                    fetch_results = batch_fetch_oi_and_funding(
+                        symbols=symbols_list,
+                        start_date=start_date,
+                        end_date=end_date,
+                        exchange_id=fallback_exchange,
+                        base_dir=base_dir,
+                        oi_period="1h"
+                    )
+                    
+                    funding_files_count = len(fetch_results.get("funding_files", []))
+                    if funding_files_count > 0:
+                        results["funding_files"] += funding_files_count
+                        print(f"✅ Successfully fetched {funding_files_count} Funding Rate files from fallback {fallback_exchange}")
+                        success = True
+                        break
+                        
+                except Exception as e:
+                    print(f"❌ Fallback {fallback_exchange} also failed: {e}")
+        
+        if not success:
+            error_msg = f"All attempts failed for Funding Rate data: {exchange} ({len(symbols_list)} symbols)"
+            results["errors"].append(error_msg)
+    
+    return results
+    
+    
 def get_default_venue_and_type():
     """
     获取默认的交易所和标的类型。
@@ -92,6 +421,28 @@ def main():
         "--erase",
         action="store_true",
         help="Erase existing parquet catalog data before running backtest (forces re-import of all CSV data)",
+    )
+    bt_parser.add_argument(
+        "--skip-oi-data",
+        action="store_true",
+        help="Skip automatic OI and Funding Rate data retrieval",
+    )
+    bt_parser.add_argument(
+        "--force-oi-fetch",
+        action="store_true",
+        help="Force re-download of all OI and Funding Rate data (ignore existing files)",
+    )
+    bt_parser.add_argument(
+        "--oi-exchange",
+        choices=["binance", "okx", "auto"],
+        default="auto",
+        help="Preferred exchange for OI data (auto = try all available)",
+    )
+    bt_parser.add_argument(
+        "--max-retries",
+        type=int,
+        default=3,
+        help="Maximum number of retries for failed data downloads",
     )
 
     # Sandbox Command
@@ -185,8 +536,8 @@ def main():
 
                         pbar.set_postfix_str(symbol_quote, refresh=True)
 
-                        exists, warning = check_data_exists(
-                            symbol_quote, START_DATE, END_DATE, timeframe, exchange
+                        exists, warning = check_single_data_file(
+                            symbol_quote, START_DATE, END_DATE, timeframe, exchange, BASE_DIR
                         )
                         if not exists:
                             key = (exchange, timeframe, START_DATE, END_DATE)
@@ -244,8 +595,8 @@ def main():
                     symbol_str = symbol.split(":")[0]  # SOLUSDT:USDT -> SOLUSDT
                     pbar.set_postfix_str(symbol_str, refresh=True)
 
-                    exists, warning = check_data_exists(
-                        symbol_str, START_DATE, END_DATE, timeframe, exchange
+                    exists, warning = check_single_data_file(
+                        symbol_str, START_DATE, END_DATE, timeframe, exchange, BASE_DIR
                     )
                     if not exists:
                         key = (exchange, timeframe, START_DATE, END_DATE)
@@ -280,6 +631,82 @@ def main():
                     current_config.data_feeds.append(nc)
                     existing_csvs.add(nc.csv_file_name)
 
+        print("==========================================\n")
+
+    # 1.4 检查策略数据依赖（OI、Funding Rate 等）
+    if args.command == "backtest" and not args.skip_data and not getattr(args, 'skip_oi_data', False):
+        print("==========================================")
+        print("📊 Checking Strategy Data Dependencies...")
+        
+        # 显示配置信息
+        if hasattr(args, 'oi_exchange') and args.oi_exchange != "auto":
+            print(f"🔧 Preferred OI exchange: {args.oi_exchange.upper()}")
+        if hasattr(args, 'max_retries'):
+            print(f"🔧 Max retries: {args.max_retries}")
+        if hasattr(args, 'force_oi_fetch') and args.force_oi_fetch:
+            print("🔧 Force re-download mode enabled")
+        
+        try:
+            # 检查策略数据依赖
+            strategy_tasks = check_strategy_data_dependencies(
+                current_config.strategy.params if hasattr(current_config.strategy, 'params') else current_config.strategy,
+                START_DATE,
+                END_DATE,
+                BASE_DIR,
+                universe_symbols
+            )
+            
+            if strategy_tasks["missing_count"] > 0:
+                print(f"📊 Strategy data dependencies: {strategy_tasks['missing_count']} missing data files found")
+                
+                # 显示缺失的数据类型统计
+                oi_task_count = sum(len(symbols) for symbols in strategy_tasks["oi_tasks"].values())
+                funding_task_count = sum(len(symbols) for symbols in strategy_tasks["funding_tasks"].values())
+                
+                if oi_task_count > 0:
+                    print(f"  📈 Missing OI data for {oi_task_count} symbol-period combinations")
+                if funding_task_count > 0:
+                    print(f"  💰 Missing Funding Rate data for {funding_task_count} symbols")
+                
+                # 执行数据获取
+                if oi_task_count > 0 or funding_task_count > 0:
+                    print("🚀 Fetching missing strategy data...")
+                    fetch_results = execute_oi_funding_data_fetch(
+                        strategy_tasks,
+                        BASE_DIR,
+                        preferred_exchange=getattr(args, 'oi_exchange', 'auto'),
+                        max_retries=getattr(args, 'max_retries', 3),
+                        force_fetch=getattr(args, 'force_oi_fetch', False)
+                    )
+                    
+                    # 显示获取结果
+                    total_files = fetch_results["oi_files"] + fetch_results["funding_files"]
+                    if total_files > 0:
+                        print(f"✅ Successfully downloaded {total_files} data files:")
+                        if fetch_results["oi_files"] > 0:
+                            print(f"   📈 {fetch_results['oi_files']} OI data files")
+                        if fetch_results["funding_files"] > 0:
+                            print(f"   💰 {fetch_results['funding_files']} Funding Rate data files")
+                    
+                    # 显示重试和回退统计
+                    if fetch_results.get("retries", 0) > 0:
+                        print(f"🔄 Total retries performed: {fetch_results['retries']}")
+                    if fetch_results.get("fallbacks", 0) > 0:
+                        print(f"🔄 Fallback exchanges used: {fetch_results['fallbacks']}")
+                    
+                    # 显示错误信息
+                    if fetch_results["errors"]:
+                        print(f"❌ {len(fetch_results['errors'])} errors encountered:")
+                        for error in fetch_results["errors"]:
+                            print(f"   • {error}")
+                        
+            else:
+                print("✅ All strategy data dependencies satisfied")
+                
+        except Exception as e:
+            print(f"⚠️ Error checking strategy data dependencies: {e}")
+            print("   Continuing with existing data...")
+        
         print("==========================================\n")
 
     # 2. Fetch & Update Instruments
