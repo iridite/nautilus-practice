@@ -1,14 +1,16 @@
-# OI Divergence (持仓量背离) 策略文档
+# OI Divergence Strategy - 持仓量背离策略
+
+> **基于 NautilusTrader 框架的加密货币中频量化交易策略**
 
 ## 📋 目录
 
 - [策略概述](#策略概述)
+- [快速开始](#快速开始)
 - [核心逻辑](#核心逻辑)
 - [数据要求](#数据要求)
 - [配置参数](#配置参数)
-- [快速开始](#快速开始)
-- [完整使用流程](#完整使用流程)
 - [策略配置示例](#策略配置示例)
+- [核心组件说明](#核心组件说明)
 - [性能优化建议](#性能优化建议)
 - [常见问题](#常见问题)
 - [风险提示](#风险提示)
@@ -17,27 +19,70 @@
 
 ## 策略概述
 
-**OI Divergence 策略**是一个专门针对加密货币永续合约市场设计的中频交易策略，核心思想是捕捉"杠杆驱动的假突破"机会。
+**OI Divergence 策略**专门针对加密货币永续合约市场设计，核心思想是捕捉"杠杆驱动的假突破"机会。
 
 ### 策略特点
 
-- **时间周期**: 1H (主执行周期) / 4H (趋势判断，可选)
-- **适用市场**: Binance / OKX 永续合约
-- **交易品种**: 市值前 50 的流动性品种 (BTC, ETH, SOL 等)
-- **策略类型**: 均值回归 + 情绪过滤
-- **持仓时间**: 通常 4-24 小时
+| 特性 | 说明 |
+|-----|------|
+| **时间周期** | 1H (主执行) / 4H (趋势判断) |
+| **适用市场** | Binance / OKX 永续合约 |
+| **交易品种** | BTC, ETH, SOL 等高流动性币种 |
+| **策略类型** | 均值回归 + 情绪过滤 |
+| **持仓时间** | 4-24 小时 |
+| **风险收益** | 中等风险，中等收益 |
 
 ### Alpha 来源
 
-当价格突破关键阻力/支撑位，但持仓量（Open Interest）反向下降时，意味着：
+当价格突破关键位置（阻力/支撑）但持仓量（Open Interest）反向下降时，意味着：
 
-1. **突破动力不足**: 新增资金没有进场，而是老仓位平仓
-2. **杠杆清洗**: 高杠杆投机者被迫止损/获利了结
-3. **假突破概率高**: 价格可能回归均值
+1. **突破缺乏新增资金支持** - 新增资金没有进场，而是老仓位平仓
+2. **杠杆清洗** - 高杠杆投机者被迫止损/获利了结  
+3. **假突破概率高** - 价格可能回归均值
 
-结合**资金费率**（Funding Rate）作为情绪过滤器，可以进一步提高信号质量：
+结合**资金费率**（Funding Rate）作为情绪过滤器，进一步提高信号质量：
 - 资金费率极高 (>30% 年化) → 多头极度拥挤 → 适合做空
 - 资金费率极低 (<-30% 年化) → 空头极度拥挤 → 适合做多
+
+---
+
+## 🚀 快速开始
+
+### 1. 安装依赖
+
+```bash
+# 使用 uv 安装项目依赖
+uv sync
+```
+
+### 2. 下载数据（一键完成）
+
+```bash
+# 下载 OHLCV + Open Interest + Funding Rate 数据
+uv run python scripts/prepare_oi_divergence_data.py
+
+# 或指定多个币种
+uv run python scripts/prepare_oi_divergence_data.py --symbols BTCUSDT ETHUSDT SOLUSDT
+
+# 或指定日期范围
+uv run python scripts/prepare_oi_divergence_data.py --start 2024-06-01 --end 2024-12-31
+
+# 使用 OKX 交易所
+uv run python scripts/prepare_oi_divergence_data.py --exchange okx
+```
+
+### 3. 运行回测
+
+```bash
+# 运行默认配置回测
+uv run python backtest/backtest_oi_divergence.py
+```
+
+### 4. 查看结果
+
+回测报告保存在 `output/oi_divergence/` 目录：
+- `order_fills.csv` - 订单成交记录
+- `positions.csv` - 持仓记录
 
 ---
 
@@ -82,8 +127,6 @@ if bar.high > Resistance:
 
 ### 3. 出场条件
 
-策略使用多重出场机制：
-
 | 出场类型 | 触发条件 | 优先级 |
 |---------|---------|-------|
 | **硬止损** | 价格反向突破 1% | 最高 |
@@ -107,6 +150,16 @@ if bar.high > Resistance:
 3. **Funding Rate 数据** (情绪过滤)
    - 文件格式: `binance-BTCUSDT-funding-2024-01-01_2024-12-31.csv`
    - 必需列: `timestamp, funding_rate, funding_rate_annual, datetime`
+
+### 数据文件结构
+
+```
+data/raw/BTCUSDT/
+├── binance-BTCUSDT-1h-2024-01-01_2024-12-31.csv      # OHLCV 数据
+├── binance-BTCUSDT-4h-2024-01-01_2024-12-31.csv      # 趋势数据
+├── binance-BTCUSDT-oi-1h-2024-01-01_2024-12-31.csv   # OI 数据
+└── binance-BTCUSDT-funding-2024-01-01_2024-12-31.csv # Funding Rate 数据
+```
 
 ### 数据同步要求
 
@@ -136,33 +189,28 @@ if bar.high > Resistance:
 
 ### 策略核心参数
 
-| 参数 | 类型 | 默认值 | 说明 |
-|-----|------|-------|------|
-| `lookback_bars` | int | 48 | 计算 Resistance/Support 的回溯周期（小时） |
-| `oi_lookback` | int | 12 | OI 移动平均周期（小时） |
-| `oi_decline_threshold` | float | 0.05 | OI 下降阈值（5% = 0.05） |
+| 参数 | 类型 | 默认值 | 说明 | 调优建议 |
+|-----|------|-------|------|---------|
+| `lookback_bars` | int | 48 | 计算支撑/阻力的回溯期 | 保守：72，激进：24 |
+| `oi_lookback` | int | 12 | OI 移动平均周期（小时） | - |
+| `oi_decline_threshold` | float | 0.05 | OI 下降阈值 (5%) | 保守：0.08，激进：0.03 |
 
 ### 过滤器参数
 
-| 参数 | 类型 | 默认值 | 说明 |
-|-----|------|-------|------|
-| `use_funding_filter` | bool | True | 是否启用资金费率过滤 |
-| `funding_rate_threshold_annual` | float | 30.0 | 年化资金费率阈值（百分比） |
-
-### 入场参数
-
-| 参数 | 类型 | 默认值 | 说明 |
-|-----|------|-------|------|
-| `breakout_reentry_pct` | float | 0.002 | 回撤进入阈值（0.2% = 0.002） |
+| 参数 | 类型 | 默认值 | 说明 | 调优建议 |
+|-----|------|-------|------|---------|
+| `use_funding_filter` | bool | True | 是否启用资金费率过滤 | - |
+| `funding_rate_threshold_annual` | float | 30.0 | 年化资金费率阈值 | 保守：50.0，激进：20.0 |
+| `breakout_reentry_pct` | float | 0.002 | 回撤进入阈值 (0.2%) | - |
 
 ### 出场参数
 
-| 参数 | 类型 | 默认值 | 说明 |
-|-----|------|-------|------|
-| `tp_use_vwap` | bool | True | 止盈目标：True=VWAP, False=Midpoint |
-| `vwap_period` | int | 48 | VWAP 计算周期（小时） |
-| `stop_loss_pct` | float | 0.01 | 硬止损百分比（1% = 0.01） |
-| `time_stop_bars` | int | 24 | 时间止损：持仓超过 N 个 Bar 强制平仓 |
+| 参数 | 类型 | 默认值 | 说明 | 调优建议 |
+|-----|------|-------|------|---------|
+| `tp_use_vwap` | bool | True | 止盈目标：True=VWAP, False=Midpoint | - |
+| `vwap_period` | int | 48 | VWAP 计算周期（小时） | - |
+| `stop_loss_pct` | float | 0.01 | 硬止损百分比 (1%) | 保守：0.02，激进：0.005 |
+| `time_stop_bars` | int | 24 | 时间止损（小时） | 保守：48，激进：12 |
 
 ### 风控参数
 
@@ -173,214 +221,63 @@ if bar.high > Resistance:
 
 ---
 
-## 快速开始
-
-### 1. 安装依赖
-
-```bash
-# 确保已安装 uv 包管理器
-uv sync
-```
-
-### 2. 下载数据
-
-```bash
-# 一键下载所有必需数据（OHLCV + OI + Funding Rate）
-uv run python scripts/prepare_oi_divergence_data.py
-
-# 或指定多个币种
-uv run python scripts/prepare_oi_divergence_data.py --symbols BTCUSDT ETHUSDT SOLUSDT
-
-# 或指定日期范围
-uv run python scripts/prepare_oi_divergence_data.py --start 2024-06-01 --end 2024-12-31
-```
-
-### 3. 运行回测
-
-```bash
-# 运行默认配置回测
-uv run python backtest/backtest_oi_divergence.py
-```
-
-### 4. 查看结果
-
-回测报告保存在 `output/oi_divergence/` 目录：
-- `order_fills.csv` - 订单成交记录
-- `positions.csv` - 持仓记录
-
----
-
-## 完整使用流程
-
-### 步骤 1: 准备数据
-
-#### 方法 A: 使用自动化脚本（推荐）
-
-```bash
-uv run python scripts/prepare_oi_divergence_data.py \
-  --symbols BTCUSDT ETHUSDT \
-  --start 2024-01-01 \
-  --end 2024-12-31 \
-  --exchange binance \
-  --oi-period 1h
-```
-
-#### 方法 B: 手动分步下载
-
-```python
-from utils.data_retrival import batch_fetch_ohlcv
-from utils.oi_funding_fetcher import batch_fetch_oi_and_funding
-from pathlib import Path
-
-# 1. 下载 OHLCV 数据
-batch_fetch_ohlcv(
-    symbols=["BTCUSDT"],
-    start_date="2024-01-01",
-    end_date="2024-12-31",
-    timeframe="1h",
-    exchange_id="binance",
-    base_dir=Path("."),
-)
-
-# 2. 下载 OI 和 Funding Rate 数据
-batch_fetch_oi_and_funding(
-    symbols=["BTCUSDT"],
-    start_date="2024-01-01",
-    end_date="2024-12-31",
-    exchange_id="binance",
-    base_dir=Path("."),
-    oi_period="1h",
-)
-```
-
-### 步骤 2: 配置策略
-
-编辑 `config/settings.py`：
-
-```python
-from strategy.oi_divergence import OIDivergenceConfig
-
-OI_DIVERGENCE_STRATEGY = StrategyConfig(
-    name="OIDivergenceStrategy",
-    module_path="strategy.oi_divergence",
-    params=OIDivergenceConfig(
-        # 基础配置
-        instrument_id="BTCUSDT.BINANCE",
-        bar_type="BTCUSDT.BINANCE-1-HOUR-LAST",
-        
-        # 仓位管理
-        trade_size=0.01,  # 固定 0.01 BTC
-        # 或使用动态仓位：
-        # qty_percent=Decimal("0.1"),
-        # leverage=3,
-        
-        # 策略参数
-        lookback_bars=48,
-        oi_decline_threshold=0.05,
-        funding_rate_threshold_annual=30.0,
-        
-        # 出场参数
-        stop_loss_pct=0.01,
-        time_stop_bars=24,
-    ),
-)
-```
-
-### 步骤 3: 运行回测
-
-```python
-# backtest/backtest_oi_divergence.py
-from pathlib import Path
-from nautilus_trader.backtest.engine import BacktestEngine
-from strategy.oi_divergence import OIDivergence
-
-# ... 省略引擎配置 ...
-
-# 创建策略实例
-strategy = OIDivergence(config=strategy_config)
-engine.add_strategy(strategy)
-
-# 运行回测
-engine.run()
-
-# 查看结果
-print(engine.trader.generate_account_report(venue))
-```
-
-### 步骤 4: 分析结果
-
-```python
-# 获取性能指标
-order_fills = engine.trader.generate_order_fills_report()
-positions = engine.trader.generate_positions_report()
-
-# 计算关键指标
-total_trades = len(positions)
-winning_trades = len(positions[positions['realized_pnl'] > 0])
-win_rate = winning_trades / total_trades if total_trades > 0 else 0
-
-print(f"Total Trades: {total_trades}")
-print(f"Win Rate: {win_rate:.1%}")
-print(f"Avg PnL: {positions['realized_pnl'].mean():.2f}")
-```
-
----
-
 ## 策略配置示例
 
-### 示例 1: 保守型配置（低频交易）
+### 示例 1: 保守型配置
 
 ```python
-OIDivergenceConfig(
+from strategy.oi_divergence_strategy import OIDivergenceConfig
+
+config = OIDivergenceConfig(
     instrument_id="BTCUSDT.BINANCE",
     bar_type="BTCUSDT.BINANCE-1-HOUR-LAST",
     
-    # 仓位：固定小仓位
-    trade_size=0.005,  # 0.005 BTC
+    # 小仓位
+    trade_size=0.005,
     
-    # 信号筛选：更严格
-    lookback_bars=72,  # 3天回溯期
-    oi_decline_threshold=0.08,  # OI 需下降 8%
-    funding_rate_threshold_annual=50.0,  # 极端情绪
+    # 严格信号筛选
+    lookback_bars=72,
+    oi_decline_threshold=0.08,
+    funding_rate_threshold_annual=50.0,
     
-    # 出场：更宽松的止损
-    stop_loss_pct=0.02,  # 2% 止损
-    time_stop_bars=48,  # 48 小时时间止损
+    # 宽松止损
+    stop_loss_pct=0.02,
+    time_stop_bars=48,
 )
 ```
 
-### 示例 2: 激进型配置（高频交易）
+### 示例 2: 激进型配置
 
 ```python
-OIDivergenceConfig(
+config = OIDivergenceConfig(
     instrument_id="ETHUSDT.BINANCE",
     bar_type="ETHUSDT.BINANCE-1-HOUR-LAST",
     
-    # 仓位：动态 + 杠杆
-    qty_percent=Decimal("0.15"),  # 15% 账户净值
-    leverage=5,  # 5倍杠杆
+    # 大仓位 + 杠杆
+    qty_percent=Decimal("0.15"),
+    leverage=5,
     
-    # 信号筛选：更宽松
-    lookback_bars=24,  # 1天回溯期
-    oi_decline_threshold=0.03,  # OI 下降 3% 即可
-    use_funding_filter=False,  # 不使用资金费率过滤
+    # 宽松信号筛选
+    lookback_bars=24,
+    oi_decline_threshold=0.03,
+    use_funding_filter=False,
     
-    # 出场：更紧的止损
-    stop_loss_pct=0.005,  # 0.5% 止损
-    time_stop_bars=12,  # 12 小时时间止损
+    # 紧止损
+    stop_loss_pct=0.005,
+    time_stop_bars=12,
 )
 ```
 
 ### 示例 3: 均衡型配置（推荐）
 
 ```python
-OIDivergenceConfig(
+config = OIDivergenceConfig(
     instrument_id="SOLUSDT.BINANCE",
     bar_type="SOLUSDT.BINANCE-1-HOUR-LAST",
     
     # 仓位：中等杠杆
-    qty_percent=Decimal("0.1"),  # 10% 账户净值
-    leverage=3,  # 3倍杠杆
+    qty_percent=Decimal("0.1"),
+    leverage=3,
     
     # 信号筛选：标准配置
     lookback_bars=48,
@@ -389,10 +286,96 @@ OIDivergenceConfig(
     use_funding_filter=True,
     
     # 出场：平衡的风控
-    stop_loss_pct=0.01,  # 1% 止损
-    time_stop_bars=24,  # 24 小时时间止损
+    stop_loss_pct=0.01,
+    time_stop_bars=24,
     tp_use_vwap=True,
 )
+```
+
+---
+
+## 🔧 核心组件说明
+
+### 项目文件结构
+
+```
+nautilus-practice/
+├── strategy/
+│   └── oi_divergence_strategy.py    # 策略核心实现
+├── utils/
+│   ├── custom_data.py               # 自定义数据类型（OI, Funding Rate）
+│   ├── oi_funding_fetcher.py        # 数据获取工具
+│   └── oi_funding_adapter.py        # 数据适配器（回测用）
+├── backtest/
+│   └── backtest_oi_divergence.py    # 回测脚本
+├── scripts/
+│   └── prepare_oi_divergence_data.py # 数据准备脚本
+├── tests/
+│   └── test_oi_divergence.py        # 单元测试
+└── config/
+    └── settings.py                  # 策略配置
+```
+
+### 1. 自定义数据类型 (`utils/custom_data.py`)
+
+```python
+from utils.custom_data import OpenInterestData, FundingRateData
+
+# Open Interest 数据
+oi_data = OpenInterestData(
+    instrument_id=instrument_id,
+    open_interest=Decimal("1000000"),
+    ts_event=ts_event,
+    ts_init=ts_init,
+)
+
+# Funding Rate 数据
+funding_data = FundingRateData(
+    instrument_id=instrument_id,
+    funding_rate=Decimal("0.0001"),  # 0.01%
+    next_funding_time=next_funding_time,
+    ts_event=ts_event,
+    ts_init=ts_init,
+)
+
+# 自动计算年化资金费率
+print(funding_data.funding_rate_annual)  # 10.95%
+```
+
+### 2. 数据获取工具 (`utils/oi_funding_fetcher.py`)
+
+支持从 Binance 和 OKX 交易所批量获取 OI 和 Funding Rate 历史数据：
+
+```python
+from utils.oi_funding_fetcher import batch_fetch_oi_and_funding
+
+# 批量下载数据
+results = batch_fetch_oi_and_funding(
+    symbols=["BTCUSDT", "ETHUSDT"],
+    start_date="2024-01-01",
+    end_date="2024-12-31",
+    exchange_id="binance",
+    oi_period="1h",
+)
+```
+
+### 3. 策略实现 (`strategy/oi_divergence_strategy.py`)
+
+```python
+from strategy.oi_divergence_strategy import OIDivergence, OIDivergenceConfig
+
+# 创建策略配置
+config = OIDivergenceConfig(
+    instrument_id="BTCUSDT.BINANCE",
+    bar_type="BTCUSDT.BINANCE-1-HOUR-LAST",
+    trade_size=0.01,  # 0.01 BTC
+    lookback_bars=48,
+    oi_decline_threshold=0.05,
+    funding_rate_threshold_annual=30.0,
+)
+
+# 创建策略实例
+strategy = OIDivergence(config=config)
 ```
 
 ---
@@ -467,8 +450,9 @@ param_grid = {
     'stop_loss_pct': [0.005, 0.01, 0.02],
 }
 
-# 遍历参数组合
-results = []
+best_params = None
+best_sharpe = -999
+
 for params in product(*param_grid.values()):
     config = OIDivergenceConfig(
         oi_decline_threshold=params[0],
@@ -476,12 +460,15 @@ for params in product(*param_grid.values()):
         stop_loss_pct=params[2],
         # ... 其他参数 ...
     )
-    # 运行回测并记录结果
+    
     engine = run_backtest(config)
-    results.append({
-        'params': params,
-        'sharpe': calculate_sharpe(engine),
-    })
+    sharpe = calculate_sharpe(engine)
+    
+    if sharpe > best_sharpe:
+        best_sharpe = sharpe
+        best_params = params
+
+print(f"最佳参数: {best_params}")
 ```
 
 ---
@@ -535,21 +522,6 @@ aligned_df = align_oi_with_ohlcv(
 3. 使用 NautilusTrader 的 Live Engine
 4. 配置交易所 API 密钥
 
-```python
-# 示例：实时数据适配
-from nautilus_trader.live.node import TradingNode
-
-# 配置实时节点
-config = TradingNodeConfig(
-    data_clients={
-        "BINANCE": BinanceDataClientConfig(
-            # ... API 配置 ...
-        )
-    },
-    # ... 其他配置 ...
-)
-```
-
 ### Q5: 策略表现不佳怎么调优？
 
 **调优思路：**
@@ -560,9 +532,35 @@ config = TradingNodeConfig(
 
 ---
 
-## 风险提示
+## 🧪 测试
 
-### ⚠️ 重要警告
+### 运行单元测试
+
+```bash
+# 运行所有测试
+uv run python -m unittest tests/test_oi_divergence.py -v
+
+# 运行特定测试
+uv run python -m unittest tests.test_oi_divergence.TestCustomData -v
+
+# 查看测试覆盖率（如果安装了coverage）
+uv run python -m coverage run -m unittest tests/test_oi_divergence.py
+uv run python -m coverage report --include="strategy/*,utils/*"
+```
+
+### 测试覆盖
+
+- ✅ 自定义数据类型创建和验证
+- ✅ 策略配置参数验证
+- ✅ OI 背离检测逻辑
+- ✅ 资金费率过滤逻辑
+- ✅ 数据加载和对齐功能
+
+---
+
+## ⚠️ 风险提示
+
+### 重要警告
 
 1. **历史回测不代表未来收益**
    - 回测结果仅供参考，实盘可能存在滑点、延迟等问题
@@ -585,7 +583,7 @@ config = TradingNodeConfig(
    - 网络中断、系统故障可能导致无法及时止损
    - 建议设置硬件止损（交易所级别）
 
-### 📋 风控建议
+### 风控建议
 
 1. **仓位管理**：单品种仓位不超过账户净值的 20%
 2. **总仓位控制**：所有持仓合计不超过账户净值的 50%
@@ -593,9 +591,9 @@ config = TradingNodeConfig(
 4. **资金分配**：使用不超过总资金 30% 的资金进行量化交易
 5. **定期复盘**：每周/每月回顾策略表现，及时调整参数
 
-### 🔧 实盘建议
+### 实盘建议
 
-1. **小资金测试**：先用小资金（如 100 USDT）测试 1-2 周
+1. **小资金测试**：先用 100-500 USDT 测试 1-2 周
 2. **逐步增加**：确认策略稳定后再逐步增加资金
 3. **监控告警**：设置异常交易、大额亏损的告警机制
 4. **备用方案**：准备手动平仓的应急预案
@@ -621,16 +619,12 @@ OI Divergence 策略是一个结合了**市场微观结构**（持仓量）和**
 
 ---
 
-## 附录
+## 相关资源
 
-### 相关文档
 - [NautilusTrader 官方文档](https://nautilustrader.io/)
 - [Binance API 文档](https://binance-docs.github.io/apidocs/)
 - [OKX API 文档](https://www.okx.com/docs-v5/)
 
-### 联系支持
-- GitHub Issues: [提交问题](https://github.com/your-repo/issues)
-- 策略讨论群：（待添加）
+---
 
-### 版本历史
-- v1.0.0 (2025-01-XX): 初始版本发布
+**免责声明**: 本策略仅供学习研究使用，不构成任何投资建议。量化交易存在风险，请谨慎使用。
