@@ -1,0 +1,24 @@
+# 开发环境配置
+# 继承基础配置，并覆盖开发环境特定的设置
+
+extends: "base.yaml"
+
+# 开发环境使用更短的回测周期进行快速测试
+backtest:
+  start_date: "2025-12-01"
+  end_date: "2025-12-07"  # 仅7天，快速测试
+
+# 开发环境使用更详细的日志
+logging:
+  level: "DEBUG"
+  file_level: "DEBUG"
+  components:
+    BacktestEngine: "DEBUG"
+    DataFeed: "DEBUG"
+    RSSqueezeStrategy: "DEBUG"
+    OIDivergenceStrategy: "DEBUG"
+  components_only: true
+
+# 开发环境可以使用更小的初始资金进行测试
+trading:
+  initial_balance: 50

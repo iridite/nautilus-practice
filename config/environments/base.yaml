@@ -1,0 +1,29 @@
+# 基础环境配置
+# 所有其他环境配置都可以继承这个基础配置
+
+# 交易环境设置
+trading:
+  venue: "BINANCE"
+  instrument_type: "SWAP"
+  initial_balance: 100
+  currency: "USDT"
+
+# 时间框架设置
+timeframes:
+  main: "1h"      # 主要时间框架
+  trend: "4h"     # 趋势分析时间框架
+
+# 回测默认设置
+backtest:
+  start_date: "2025-12-01"
+  end_date: "2025-12-30"
+
+# 日志配置
+logging:
+  level: "INFO"
+  file_level: "DEBUG"
+  components:
+    BacktestEngine: "INFO"
+    DataFeed: "INFO"
+    RSSqueezeStrategy: "INFO"
+  components_only: true

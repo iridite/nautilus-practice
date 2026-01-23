@@ -14,11 +14,11 @@ from backtest.engine_high import run_high_level
 from backtest.engine_low import run_low_level
 from config.definitions import InstrumentConfig, InstrumentType
 from config.settings import (
-    END_DATE,
-    INSTRUMENT_TYPE,
-    START_DATE,
-    VENUE,
-    current_config,
+    get_end_date,
+    get_instrument_type,
+    get_start_date,
+    get_venue,
+    build_backtest_config,
 )
 from scripts.fetch_instrument import update_instruments
 from strategy.base import DataDependency
@@ -388,6 +388,7 @@ def get_default_venue_and_type():
     获取默认的交易所和标的类型。
     优先从 current_config.instrument 读取，如果为 None 则从全局设置读取。
     """
+    current_config = build_backtest_config()
     if current_config.instrument:
         return (
             current_config.instrument.venue_name,
@@ -396,7 +397,7 @@ def get_default_venue_and_type():
         )
     else:
         # 多标的模式：从全局设置读取默认值
-        return VENUE, "USDT", INSTRUMENT_TYPE
+        return get_venue(), "USDT", get_instrument_type()
 
 
 def main():
@@ -460,6 +461,9 @@ def main():
     if not args.command:
         parser.print_help()
         return
+
+    # 获取当前配置
+    current_config = build_backtest_config()
 
     # 处理 --erase 参数：清除 catalog 数据
     if args.command == "backtest" and args.erase:
@@ -537,10 +541,10 @@ def main():
                         pbar.set_postfix_str(symbol_quote, refresh=True)
 
                         exists, warning = check_single_data_file(
-                            symbol_quote, START_DATE, END_DATE, timeframe, exchange, BASE_DIR
+                            symbol_quote, get_start_date(), get_end_date(), timeframe, exchange, BASE_DIR
                         )
                         if not exists:
-                            key = (exchange, timeframe, START_DATE, END_DATE)
+                            key = (exchange, timeframe, get_start_date(), get_end_date())
                             tasks.setdefault(key, set()).add(symbol_quote)
                             data_missing_count += 1
                         else:
@@ -596,10 +600,10 @@ def main():
                     pbar.set_postfix_str(symbol_str, refresh=True)
 
                     exists, warning = check_single_data_file(
-                        symbol_str, START_DATE, END_DATE, timeframe, exchange, BASE_DIR
+                        symbol_str, get_start_date(), get_end_date(), timeframe, exchange, BASE_DIR
                     )
                     if not exists:
-                        key = (exchange, timeframe, START_DATE, END_DATE)
+                        key = (exchange, timeframe, get_start_date(), get_end_date())
                         tasks.setdefault(key, set()).add(symbol_str)
                         data_missing_count += 1
                     else:
@@ -650,8 +654,8 @@ def main():
             # 检查策略数据依赖
             strategy_tasks = check_strategy_data_dependencies(
                 current_config.strategy.params if hasattr(current_config.strategy, 'params') else current_config.strategy,
-                START_DATE,
-                END_DATE,
+                get_start_date(),
+                get_end_date(),
                 BASE_DIR,
                 universe_symbols
             )

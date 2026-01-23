@@ -1,0 +1,28 @@
+# 当前活跃配置选择
+# 这个文件控制当前使用的环境和策略
+
+# 当前环境 (可选: dev, prod)
+environment: "dev"
+
+# 当前策略 (可选: oi_divergence, rs_squeeze, dual_thrust)
+strategy: "rs_squeeze"
+
+# 主要交易对 (单标的模式时使用)
+primary_symbol: "BTCUSDT"
+
+# 运行时覆盖配置 (可选)
+# 这里的设置会覆盖环境和策略配置中的对应项
+overrides:
+  # 可以覆盖回测时间范围
+  backtest:
+    start_date: "2025-12-15"
+    end_date: "2025-12-20"
+  
+  # 可以覆盖交易设置
+  # trading:
+  #   initial_balance: 50
+  
+  # 可以覆盖策略参数
+  # strategy:
+  #   max_positions: 3
+  #   qty_percent: 0.05

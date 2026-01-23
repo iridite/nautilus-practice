@@ -1,0 +1,24 @@
+# 生产环境配置
+# 继承基础配置，并设置生产环境特定的优化设置
+
+extends: "base.yaml"
+
+# 生产环境使用完整的回测周期
+backtest:
+  start_date: "2025-12-01"
+  end_date: "2025-12-30"
+
+# 生产环境使用优化的日志级别，减少I/O开销
+logging:
+  level: "WARNING"      # 减少控制台日志输出
+  file_level: "INFO"    # 文件日志保持INFO级别用于调试
+  components:
+    BacktestEngine: "WARNING"
+    DataFeed: "WARNING"
+    RSSqueezeStrategy: "INFO"
+    OIDivergenceStrategy: "INFO"
+  components_only: true
+
+# 生产环境使用标准资金配置
+trading:
+  initial_balance: 100
