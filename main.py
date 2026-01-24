@@ -37,6 +37,7 @@ from utils.validation import (
     validate_funding_data_structure,
     OIDataValidator
 )
+from utils.smart_data_manager import SmartDataManager
 
 
 def run_batch_data_retrieval(
@@ -448,6 +449,21 @@ def main():
         default=3,
         help="Maximum number of retries for failed data downloads",
     )
+    bt_parser.add_argument(
+        "--smart-mode",
+        action="store_true",
+        help="Enable smart data management with automatic optimization",
+    )
+    bt_parser.add_argument(
+        "--auto-fix",
+        action="store_true",
+        help="Automatically fix data issues (requires --smart-mode)",
+    )
+    bt_parser.add_argument(
+        "--data-quality-report",
+        type=str,
+        help="Generate data quality report to specified file path",
+    )
 
     # Sandbox Command
     sb_parser = subparsers.add_parser(
@@ -694,20 +710,29 @@ def main():
             
             print("==========================================")
 
-        # 1.3 执行批量抓取并实时更新 current_config
+        # 1.3 自动数据补全功能（先检查，后补全）
         # 记录已经存在的 csv，防止重复添加
         existing_csvs = {f.csv_file_name for f in current_config.data_feeds}
 
-        for (exchange, timeframe, start, end), symbols in tasks.items():
-            new_configs = run_batch_data_retrieval(
-                sorted(list(symbols)), start, end, timeframe, exchange
-            )
-            # 将抓取成功后生成的 DataConfig 注入到全局配置中
-            for nc in new_configs:
-                if nc.csv_file_name not in existing_csvs:
-                    print(f"➕ Auto-injecting feed: {nc.csv_file_name}")
-                    current_config.data_feeds.append(nc)
-                    existing_csvs.add(nc.csv_file_name)
+        if data_missing_count > 0:
+            print(f"🔧 Auto-completing {data_missing_count} missing data files...")
+            
+            for (exchange, timeframe, start, end), symbols in tasks.items():
+                if symbols:  # 如果这个任务组有缺失的标的
+                    print(f"📊 Fetching {len(symbols)} symbols for {exchange} {timeframe}...")
+                    new_configs = run_batch_data_retrieval(
+                        sorted(list(symbols)), start, end, timeframe, exchange
+                    )
+                    # 将抓取成功后生成的 DataConfig 注入到全局配置中
+                    for nc in new_configs:
+                        if nc.csv_file_name not in existing_csvs:
+                            print(f"✅ Auto-added: {nc.csv_file_name}")
+                            current_config.data_feeds.append(nc)
+                            existing_csvs.add(nc.csv_file_name)
+            
+            print("✅ Auto data completion finished!")
+        else:
+            print("✅ All required data files already exist!")
 
         print("==========================================\n")
 

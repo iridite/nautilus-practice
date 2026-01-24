@@ -1298,6 +1298,11 @@ def check_single_data_file_enhanced(
     """
     增强版单个数据文件检查，同时检查 CSV 和 Parquet 数据
     
+    优先级逻辑：
+    1. CSV存在且有效 -> 使用CSV，正常进行
+    2. CSV缺失但Parquet有效 -> 使用Parquet，给出CSV缺失警告
+    3. 都不满足 -> 标记为缺失，需要补全
+    
     Parameters
     ----------
     symbol_str : str
@@ -1322,7 +1327,7 @@ def check_single_data_file_enhanced(
     Returns
     -------
     Tuple[bool, str | None]
-        (数据是否充分, 警告信息)
+        (数据是否充分可以进行回测, 警告信息)
     """
     # 首先检查原始 CSV 数据
     csv_exists, csv_warning = check_single_data_file(
@@ -1337,39 +1342,34 @@ def check_single_data_file_enhanced(
         symbol_str, start_date, end_date, timeframe, exchange, base_dir, strategy_name
     )
     
-    # 综合判断
-    if csv_exists and parquet_covered:
-        # CSV 和 Parquet 都OK
-        if csv_warning and parquet_warning:
-            combined_warning = f"CSV: {csv_warning}; Parquet: {parquet_warning}"
-        elif csv_warning:
-            combined_warning = f"CSV: {csv_warning}"
-        elif parquet_warning:
-            combined_warning = f"Parquet: {parquet_warning}"
+    # 智能判断逻辑
+    if csv_exists:
+        # CSV 存在，优先使用CSV
+        if parquet_covered and parquet_warning:
+            # CSV和Parquet都有，但Parquet有警告
+            combined_warning = csv_warning if csv_warning else None
+            if parquet_warning and "coverage" in parquet_warning.lower():
+                if combined_warning:
+                    combined_warning += f"; Parquet: {parquet_warning}"
+                else:
+                    combined_warning = f"Parquet: {parquet_warning}"
+            return (True, combined_warning)
         else:
-            combined_warning = None
-        return (True, combined_warning)
+            return (True, csv_warning)
     
-    elif csv_exists and not parquet_covered:
-        # CSV 存在但 Parquet 覆盖不足
-        warning_parts = []
-        if csv_warning:
-            warning_parts.append(f"CSV: {csv_warning}")
-        if parquet_warning:
-            warning_parts.append(f"Parquet: {parquet_warning}")
-        combined_warning = "; ".join(warning_parts) if warning_parts else None
-        return (True, combined_warning)  # 仍然返回 True，因为有 CSV 数据
-    
-    elif not csv_exists and parquet_covered:
-        # CSV 不存在但 Parquet 覆盖充分
-        warning = f"CSV data missing, but Parquet data available"
-        if parquet_warning:
-            warning += f"; Parquet: {parquet_warning}"
-        return (True, warning)
+    elif parquet_covered:
+        # CSV 不存在但 Parquet 数据充分，可以继续回测
+        coverage_pct = parquet_stats.get("coverage_percentage", 0)
+        if coverage_pct >= 80:  # 覆盖率足够
+            warning = f"⚠️ CSV data missing, using Parquet data (coverage: {coverage_pct:.1f}%)"
+            return (True, warning)  # 返回True允许回测继续
+        else:
+            warning = f"⚠️ CSV missing, Parquet coverage insufficient ({coverage_pct:.1f}%)"
+            return (True, warning)  # 仍然允许继续，但给出警告
     
     else:
-        # 都不满足
-        warning_parts = ["No sufficient data available"]
+        # CSV和Parquet都不满足要求
+        warning_parts = [f"No sufficient data for {symbol_str}"]
         if parquet_warning:
             warning_parts.append(f"Parquet: {parquet_warning}")
         return (False, "; ".join(warning_parts))
