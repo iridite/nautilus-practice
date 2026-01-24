@@ -5,7 +5,7 @@
 environment: "prod"
 
 # 当前策略 (可选: oi_divergence, rs_squeeze, dual_thrust)
-strategy: "rs_squeeze"
+strategy: "oi_divergence"
 
 # 主要交易对 (单标的模式时使用)
 primary_symbol: "BTCUSDT"
@@ -17,11 +17,11 @@ overrides:
   backtest:
     start_date: "2022-01-01"
     end_date: "2025-12-20"
-  
+
   # 可以覆盖交易设置
   # trading:
   #   initial_balance: 50
-  
+
   # 可以覆盖策略参数
   # strategy:
   #   max_positions: 3
