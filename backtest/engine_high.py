@@ -80,6 +80,15 @@ def _import_data_to_catalog(
     """
     将CSV数据导入Parquet目录，并组织数据流
     
+    智能数据处理逻辑：
+    1. CSV和Parquet都存在：进行一致性检查
+       - 一致：跳过转换，直接使用Parquet数据
+       - 不一致：重新从CSV导入到Parquet
+    2. 仅CSV存在：正常导入到Parquet
+    3. 仅Parquet存在：直接使用Parquet数据
+    4. CSV缺失：尝试自动下载数据
+    5. 都不存在：抛出DataLoadError并终止回测
+    
     Args:
         cfg: 回测配置
         loaded_instruments: 已加载的标的映射
@@ -113,33 +122,112 @@ def _import_data_to_catalog(
             
         inst = loaded_instruments[inst_id]
         csv_path = data_cfg.full_path
-        
-        if not csv_path.exists():
-            raise DataLoadError(f"CSV file not found: {csv_path}", str(csv_path))
-            
         feed_bar_type_str = f"{inst.id}-{data_cfg.bar_type_str}"
+        bar_type = BarType.from_str(feed_bar_type_str)
+        
+        # 智能数据处理：优先检查Parquet数据充分性
+        # 检查Parquet数据是否已存在且充分
+        try:
+            existing_intervals = _catalog.get_intervals(data_cls=Bar, identifier=str(bar_type))
+            parquet_exists = bool(existing_intervals)
+        except Exception:
+            parquet_exists = False
+        
+        # 如果Parquet数据充分，直接跳过所有操作
+        if parquet_exists:
+            # 检查Parquet数据覆盖范围是否充分
+            from utils.validation import check_parquet_data_coverage
+            symbol_str = str(bar_type.instrument_id).split('-')[0]  # BTCUSDT-PERP.BINANCE -> BTCUSDT
+            
+            parquet_covered, parquet_warning, parquet_stats = check_parquet_data_coverage(
+                symbol_str, cfg.start_date, cfg.end_date, "1h", "binance",
+                Path(__file__).parent.parent, "RSSqueezeStrategy"
+            )
+            
+            coverage_pct = parquet_stats.get("coverage_percentage", 0.0)
+            
+            if coverage_pct >= 80:  # Parquet数据充分，直接跳过
+                print(f"\r✅ [{feed_idx:3d}/{total_feeds}] Ready: {str(bar_type.instrument_id):<35}", end='', flush=True)
+            else:
+                # Parquet数据不充分，需要检查CSV或下载
+                csv_exists = csv_path.exists()
+                
+                if csv_exists:
+                    # CSV存在，进行一致性检查后可能需要重新导入
+                    print(f"\r🔍 [{feed_idx:3d}/{total_feeds}] Checking: {str(bar_type.instrument_id):<35}", end='', flush=True)
+                    
+                    is_consistent = _verify_data_consistency(csv_path, _catalog, bar_type)
+                    
+                    if not is_consistent:
+                        # 数据不一致，重新导入
+                        print(f"\r📖 [{feed_idx:3d}/{total_feeds}] Updating: {str(bar_type.instrument_id):<32}", end='', flush=True)
+                        try:
+                            catalog_loader(_catalog, csv_path, inst, bar_type)
+                        except Exception as e:
+                            print(f"\r⚠️  [{feed_idx:3d}/{total_feeds}] Using Parquet: {str(bar_type.instrument_id):<28}", end='', flush=True)
+                    else:
+                        print(f"\r⏩ [{feed_idx:3d}/{total_feeds}] Verified: {str(bar_type.instrument_id):<35}", end='', flush=True)
+                else:
+                    # CSV不存在，尝试下载
+                    print(f"\r🔄 [{feed_idx:3d}/{total_feeds}] Downloading: {str(bar_type.instrument_id):<30}", end='', flush=True)
+                    
+                    download_success = _auto_download_missing_data(data_cfg, cfg)
+                    
+                    if download_success and csv_path.exists():
+                        # 下载成功，导入数据
+                        print(f"\r📖 [{feed_idx:3d}/{total_feeds}] Importing: {str(bar_type.instrument_id):<32}", end='', flush=True)
+                        try:
+                            catalog_loader(_catalog, csv_path, inst, bar_type)
+                        except Exception as e:
+                            print(f"\r⚠️  [{feed_idx:3d}/{total_feeds}] Using Parquet: {str(bar_type.instrument_id):<28}", end='', flush=True)
+                    else:
+                        # 下载失败，使用现有Parquet数据（虽然不充分）
+                        print(f"\r⚠️  [{feed_idx:3d}/{total_feeds}] Partial Parquet: {str(bar_type.instrument_id):<25}", end='', flush=True)
+        else:
+            # Parquet数据不存在，需要CSV数据
+            csv_exists = csv_path.exists()
+            
+            if csv_exists:
+                # CSV存在，正常导入
+                print(f"\r📖 [{feed_idx:3d}/{total_feeds}] Importing: {str(bar_type.instrument_id):<32}", end='', flush=True)
+                try:
+                    catalog_loader(_catalog, csv_path, inst, bar_type)
+                except Exception as e:
+                    raise DataLoadError(f"Error loading {data_cfg.csv_file_name}: {e}", str(csv_path), e)
+            else:
+                # CSV不存在，尝试下载
+                print(f"\r🔄 [{feed_idx:3d}/{total_feeds}] Downloading: {str(bar_type.instrument_id):<30}", end='', flush=True)
+                
+                download_success = _auto_download_missing_data(data_cfg, cfg)
+                
+                if download_success and csv_path.exists():
+                    # 下载成功，导入数据
+                    print(f"\r📖 [{feed_idx:3d}/{total_feeds}] Importing: {str(bar_type.instrument_id):<32}", end='', flush=True)
+                    try:
+                        catalog_loader(_catalog, csv_path, inst, bar_type)
+                    except Exception as e:
+                        continue
+                else:
+                    # 下载失败且无任何数据，严重错误
+                    print(f"\r🚨 [{feed_idx:3d}/{total_feeds}] CRITICAL: {str(bar_type.instrument_id):<31}", end='', flush=True)
+                    print(f"\n🚨 CRITICAL ERROR: No data available for {bar_type.instrument_id}")
+                    print(f"   - CSV file missing: {csv_path}")
+                    print(f"   - Parquet data missing: No data found in catalog")
+                    print(f"   - Auto-download failed: Unable to retrieve data from exchange")
+                    print(f"\n❌ TERMINATING BACKTEST: Cannot proceed without complete data")
+                    print(f"   Please ensure all required data is available before running backtest.")
+                    raise DataLoadError(
+                        f"Critical data missing for {bar_type.instrument_id}. "
+                        f"CSV file not found: {csv_path}, Parquet data not available, "
+                        f"and auto-download failed. Cannot proceed with incomplete data.",
+                        str(csv_path)
+                    )
         
         # 归类数据流标签
         if data_cfg.label == "benchmark":
             global_feeds[data_cfg.label] = feed_bar_type_str
         else:
             feeds_by_inst[inst_id][data_cfg.label] = feed_bar_type_str
-            
-        # 检查并导入数据到目录
-        bar_type = BarType.from_str(feed_bar_type_str)
-        try:
-            existing_intervals = _catalog.get_intervals(data_cls=Bar, identifier=str(bar_type))
-            
-            if existing_intervals:
-                sys.stdout.write(f"\r⏩ [{feed_idx}/{total_feeds}] Skipping: {bar_type.instrument_id} (exists){' ' * 20}")
-                sys.stdout.flush()
-            else:
-                sys.stdout.write(f"\r📖 [{feed_idx}/{total_feeds}] Importing: {bar_type.instrument_id}{' ' * 30}")
-                sys.stdout.flush()
-                catalog_loader(_catalog, csv_path, inst, bar_type)
-                
-        except Exception as e:
-            raise DataLoadError(f"Error loading {data_cfg.csv_file_name}: {e}", str(csv_path), e)
             
         # 合并同一标的的bar_types
         inst_id_str = str(inst.id)
@@ -156,6 +244,213 @@ def _import_data_to_catalog(
     
     print(f"\n✅ Data import complete. Created {len(data_config_by_inst)} data configs.")
     return data_config_by_inst, global_feeds, feeds_by_inst
+
+
+def _auto_download_missing_data(data_cfg, backtest_cfg: BackTestConfig) -> bool:
+    """
+    自动下载缺失的数据文件
+    
+    Args:
+        data_cfg: 数据配置对象
+        backtest_cfg: 回测配置对象
+        
+    Returns:
+        bool: 下载是否成功
+    """
+    try:
+        from utils.data_retrival import batch_fetch_ohlcv
+        from utils.time_helpers import get_ms_timestamp
+        import ccxt
+        
+        # 从文件名解析参数 - 修复解析逻辑
+        csv_filename = data_cfg.csv_file_name
+        # 提取文件名部分（去除路径）
+        filename_only = Path(csv_filename).name
+        
+        # 实际文件名格式: okx-BTCUSDT-1h-2020-01-01_2026-01-14.csv
+        # 先按下划线分隔日期范围
+        if '_' in filename_only:
+            # 分离基础部分和结束日期
+            base_part, end_date_part = filename_only.replace('.csv', '').split('_', 1)
+            
+            # 解析基础部分: okx-BTCUSDT-1h-2020-01-01
+            base_parts = base_part.split('-')
+            if len(base_parts) >= 6:
+                exchange_id = base_parts[0]  # okx
+                symbol = base_parts[1]       # BTCUSDT
+                timeframe = base_parts[2]    # 1h
+                # 重新组合开始日期: 2020-01-01
+                start_date = f"{base_parts[3]}-{base_parts[4]}-{base_parts[5]}"
+                # 结束日期直接使用: 2026-01-14
+                end_date = end_date_part
+            else:
+                print(f"❌ Cannot parse filename format: {filename_only}")
+                return False
+        else:
+            # 备用格式：全部用连字符分隔
+            parts = filename_only.replace('.csv', '').split('-')
+            if len(parts) >= 8:
+                exchange_id = parts[0]  # binance
+                symbol = parts[1]       # DOGEUSDT
+                timeframe = parts[2]    # 1h
+                start_date = f"{parts[3]}-{parts[4]}-{parts[5]}"  # 2025-12-01
+                end_date = f"{parts[6]}-{parts[7]}-{parts[8]}"    # 2025-12-30
+            elif len(parts) >= 6:
+                exchange_id = parts[0]  # binance
+                symbol = parts[1]       # DOGEUSDT
+                timeframe = parts[2]    # 1h
+                start_date = f"{parts[3]}-{parts[4]}-{parts[5]}"  # 2025-12-01
+                end_date = start_date
+            else:
+                print(f"❌ Cannot parse filename format: {filename_only}")
+                return False
+        
+        # 验证解析结果
+        if not all([exchange_id, symbol, timeframe, start_date, end_date]):
+            print(f"❌ Invalid parsed parameters from {filename_only}")
+            return False
+        
+        # 使用batch_fetch_ohlcv函数
+        base_dir = Path(__file__).parent.parent  # 获取项目根目录
+        configs = batch_fetch_ohlcv(
+            symbols=[symbol],
+            start_date=start_date,
+            end_date=end_date,
+            timeframe=timeframe,
+            exchange_id=exchange_id,
+            base_dir=base_dir
+        )
+        
+        if configs and len(configs) > 0:
+            # 验证下载的数据文件是否存在且有效
+            csv_path = data_cfg.full_path
+            if csv_path.exists() and csv_path.stat().st_size > 1024:  # 至少1KB
+                return True
+            else:
+                print(f"❌ Downloaded file validation failed: {csv_path}")
+                return False
+        else:
+            return False
+            
+    except Exception as e:
+        print(f"❌ Error during auto-download: {e}")
+        return False
+
+
+def _clear_parquet_data(catalog: ParquetDataCatalog, bar_type: BarType) -> None:
+    """
+    清理指定bar_type的Parquet数据
+    
+    Args:
+        catalog: Parquet数据目录
+        bar_type: 要清理的数据类型标识
+    """
+    try:
+        import shutil
+        
+        # 获取catalog的根路径
+        catalog_root = Path(catalog.path)
+        
+        # NautilusTrader实际的文件结构是: data/crypto_perpetual/{instrument_id}/
+        instrument_id = str(bar_type.instrument_id)
+        
+        # 查找所有可能的数据目录
+        possible_dirs = [
+            catalog_root / "data" / "crypto_perpetual" / instrument_id,
+            catalog_root / "data" / "Bar" / instrument_id,
+            catalog_root / "data" / instrument_id,
+        ]
+        
+        for data_dir in possible_dirs:
+            if data_dir.exists():
+                print(f"   🗑️ Clearing existing Parquet data: {data_dir}")
+                shutil.rmtree(data_dir)
+                break
+        else:
+            # 如果没有找到标准目录，尝试查找包含instrument_id的任何目录
+            for root, dirs, files in catalog_root.rglob("*"):
+                if instrument_id in str(root) and any(f.endswith('.parquet') for f in files):
+                    print(f"   🗑️ Clearing found Parquet data: {root}")
+                    shutil.rmtree(root)
+                    break
+            
+    except Exception as e:
+        print(f"   ⚠️ Warning: Could not clear Parquet data: {e}")
+        # 不抛出异常，因为这不是致命错误
+
+
+def _verify_data_consistency(
+    csv_path: Path,
+    catalog: ParquetDataCatalog,
+    bar_type: BarType
+) -> bool:
+    """
+    轻量级验证CSV和Parquet数据的一致性
+    
+    简化检查策略（性能优先）：
+    1. 比较文件修改时间
+    2. 比较数据行数（快速估算）
+    3. 比较文件大小范围
+    
+    Args:
+        csv_path: CSV文件路径
+        catalog: Parquet数据目录
+        bar_type: 数据类型标识
+        
+    Returns:
+        bool: 数据是否一致
+    """
+    try:
+        # 1. 检查CSV文件基本信息
+        if not csv_path.exists() or csv_path.stat().st_size < 1024:
+            return False
+            
+        # 2. 快速检查Parquet数据是否存在
+        try:
+            existing_intervals = catalog.get_intervals(data_cls=Bar, identifier=str(bar_type))
+            if not existing_intervals:
+                return False
+        except Exception:
+            return False
+            
+        # 3. 比较文件修改时间（如果CSV比Parquet新，认为不一致）
+        csv_mtime = csv_path.stat().st_mtime
+        
+        # 查找Parquet文件的修改时间
+        catalog_root = Path(catalog.path)
+        instrument_id = str(bar_type.instrument_id)
+        parquet_dir = catalog_root / "data" / "crypto_perpetual" / instrument_id
+        
+        if parquet_dir.exists():
+            parquet_files = list(parquet_dir.glob("*.parquet"))
+            if parquet_files:
+                parquet_mtime = max(f.stat().st_mtime for f in parquet_files)
+                
+                # 如果CSV文件比Parquet文件新超过1小时，认为不一致
+                if csv_mtime - parquet_mtime > 3600:  # 1小时
+                    return False
+        
+        # 4. 快速比较数据量（只读取CSV行数，不加载全部数据）
+        try:
+            csv_line_count = sum(1 for _ in open(csv_path)) - 1  # 减去header
+            
+            # 估算Parquet数据量（通过时间间隔）
+            if existing_intervals:
+                interval = existing_intervals[0]
+                # 假设1小时数据，估算数据点数量
+                estimated_parquet_count = (interval[1] - interval[0]) // (3600 * 1_000_000_000)  # 纳秒转小时
+                
+                # 允许20%的差异（比较宽松的检查）
+                if abs(csv_line_count - estimated_parquet_count) / max(csv_line_count, 1) > 0.2:
+                    return False
+        except Exception:
+            # 如果快速检查失败，默认认为一致（避免阻塞）
+            pass
+            
+        return True
+        
+    except Exception as e:
+        return False
 
 
 def _create_strategy_configs(

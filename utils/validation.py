@@ -1361,7 +1361,7 @@ def check_single_data_file_enhanced(
         # CSV 不存在但 Parquet 数据充分，可以继续回测
         coverage_pct = parquet_stats.get("coverage_percentage", 0)
         if coverage_pct >= 80:  # 覆盖率足够
-            warning = f"⚠️ CSV data missing, using Parquet data (coverage: {coverage_pct:.1f}%)"
+            warning = f"⚠️ {symbol_str}: CSV missing, using Parquet ({coverage_pct:.1f}% coverage)"
             return (True, warning)  # 返回True允许回测继续
         else:
             warning = f"⚠️ CSV missing, Parquet coverage insufficient ({coverage_pct:.1f}%)"
@@ -1457,13 +1457,20 @@ def analyze_universe_data_coverage(
         
         analysis["coverage_stats"][symbol_str] = symbol_info
         
-        if coverage_pct >= min_coverage_pct:
+        if coverage_pct >= 100.0:
+            # 完整覆盖
             analysis["symbols_with_sufficient_data"].append(symbol_str)
             analysis["summary"]["sufficient_count"] += 1
+        elif coverage_pct >= min_coverage_pct:
+            # 部分覆盖但足够回测
+            analysis["symbols_with_partial_data"].append(symbol_str)
+            analysis["summary"]["partial_count"] += 1
         elif coverage_pct > 0:
+            # 覆盖不足
             analysis["symbols_with_partial_data"].append(symbol_str)
             analysis["summary"]["partial_count"] += 1
         else:
+            # 无数据
             analysis["symbols_with_no_data"].append(symbol_str)
             analysis["summary"]["no_data_count"] += 1
     

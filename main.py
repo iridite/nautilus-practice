@@ -576,6 +576,16 @@ def main():
                             f"⚠️ Failed to parse data feed config: {feed.label}, error: {e}"
                         )
 
+        # 收集已检查的符号，避免重复检查
+        checked_symbols = set()
+        for feed in current_config.data_feeds:
+            try:
+                parts = feed.csv_file_name.split("/")
+                symbol_quote = parts[0]
+                checked_symbols.add(symbol_quote)
+            except Exception:
+                continue
+
         # 打印收集到的警告
         for warning in warnings_list:
             print(warning)
@@ -608,29 +618,40 @@ def main():
                 print(f"📌 No main feed found, using defaults: {exchange} {timeframe}")
 
             sorted_universe = sorted(list(universe_symbols))
-            with tqdm(
-                sorted_universe,
-                desc="🌌 Checking universe",
-                unit="symbol",
-                ncols=80,
-                bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]",
-            ) as pbar:
-                for symbol in pbar:
-                    symbol_str = symbol.split(":")[0]  # SOLUSDT:USDT -> SOLUSDT
-                    pbar.set_postfix_str(symbol_str, refresh=True)
+            # 过滤掉已经检查过的符号
+            universe_to_check = []
+            for symbol in sorted_universe:
+                symbol_str = symbol.split(":")[0]  # SOLUSDT:USDT -> SOLUSDT
+                if symbol_str not in checked_symbols:
+                    universe_to_check.append(symbol)
+                    checked_symbols.add(symbol_str)
 
-                    exists, warning = check_single_data_file_enhanced(
-                        symbol_str, get_start_date(), get_end_date(), timeframe, exchange, BASE_DIR,
-                        check_parquet=True, strategy_name=current_config.strategy.name
-                    )
-                    if not exists:
-                        key = (exchange, timeframe, get_start_date(), get_end_date())
-                        tasks.setdefault(key, set()).add(symbol_str)
-                        data_missing_count += 1
-                    else:
-                        data_exists_count += 1
-                        if warning:
-                            warnings_list.append(warning)
+            if universe_to_check:
+                with tqdm(
+                    universe_to_check,
+                    desc="🌌 Checking universe",
+                    unit="symbol",
+                    ncols=80,
+                    bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]",
+                ) as pbar:
+                    for symbol in pbar:
+                        symbol_str = symbol.split(":")[0]  # SOLUSDT:USDT -> SOLUSDT
+                        pbar.set_postfix_str(symbol_str, refresh=True)
+
+                        exists, warning = check_single_data_file_enhanced(
+                            symbol_str, get_start_date(), get_end_date(), timeframe, exchange, BASE_DIR,
+                            check_parquet=True, strategy_name=current_config.strategy.name
+                        )
+                        if not exists:
+                            key = (exchange, timeframe, get_start_date(), get_end_date())
+                            tasks.setdefault(key, set()).add(symbol_str)
+                            data_missing_count += 1
+                        else:
+                            data_exists_count += 1
+                            if warning:
+                                warnings_list.append(warning)
+            else:
+                print("🌌 Universe symbols already checked in data_feeds")
 
             # 打印收集到的警告
             for warning in warnings_list:
@@ -663,7 +684,11 @@ def main():
                     exchange = venue.lower()
                     timeframe = "1h"
                 
-                # 分析数据覆盖情况
+                # 分析CSV数据覆盖情况（基于已有的检查结果，避免重复检查）
+                csv_complete = data_exists_count
+                csv_missing = data_missing_count
+                
+                # 分析Parquet数据覆盖情况
                 coverage_analysis = analyze_universe_data_coverage(
                     universe_symbols,
                     get_start_date(),
@@ -674,19 +699,18 @@ def main():
                     current_config.strategy.name
                 )
                 
-                # 显示分析结果
-                print(f"📊 Universe Coverage Analysis:")
+                # 显示分析结果 - 双列格式
+                print(f"📊 Universe Data Coverage Analysis:")
                 print(f"   Total symbols: {coverage_analysis['total_symbols']}")
-                print(f"   Sufficient data (≥80%): {coverage_analysis['summary']['sufficient_count']}")
-                print(f"   Partial data: {coverage_analysis['summary']['partial_count']}")
-                print(f"   No data: {coverage_analysis['summary']['no_data_count']}")
-                print(f"   Average coverage: {coverage_analysis['summary']['avg_coverage_pct']:.1f}%")
+                print(f"   ┌─────────────────────────────────┬─────────────────────────────────┐")
+                print(f"   │           CSV Data              │         Parquet Data            │")
+                print(f"   ├─────────────────────────────────┼─────────────────────────────────┤")
+                print(f"   │ Available: {csv_complete:<18} │ Complete (100%): {coverage_analysis['summary']['sufficient_count']:<14} │")
+                print(f"   │ Missing: {csv_missing:<20} │ Partial (80-99%): {coverage_analysis['summary']['partial_count']:<13} │")
+                print(f"   │ Coverage: {(csv_complete/coverage_analysis['total_symbols']*100):.1f}%{'':<16} │ No data (0%): {coverage_analysis['summary']['no_data_count']:<16} │")
+                print(f"   │                                 │ Avg coverage: {coverage_analysis['summary']['avg_coverage_pct']:.1f}%{'':<13} │")
+                print(f"   └─────────────────────────────────┴─────────────────────────────────┘")
                 
-                # 显示推荐的时间范围
-                recommended = coverage_analysis['recommended_timerange']
-                if recommended['symbols_count'] > 0:
-                    print(f"💡 Recommended timerange for {recommended['symbols_count']} symbols:")
-                    print(f"   {recommended['start']} to {recommended['end']}")
                 
                 # 显示数据覆盖不足的标的
                 if coverage_analysis['symbols_with_no_data']:

@@ -8,7 +8,7 @@ config_class: "RSSqueezeConfig"
 # 策略参数
 parameters:
   # Universe配置 - 多标的模式
-  universe_filename: "universe_2025_12.json"
+  universe_filename: "universe_50.json"
   
   # 相对强度计算参数
   rs_lookback: 20                # RS计算回溯期
