@@ -219,6 +219,9 @@ class RSSqueezeStrategy(BaseStrategy):
         self._current_month: str = ""
         self._is_in_universe: bool = False
 
+        # Strategy Control Flag
+        self._strategy_disabled: bool = False
+
         self._load_universe_config()
 
     def _get_higher_timeframe_bar_type(
@@ -285,7 +288,7 @@ class RSSqueezeStrategy(BaseStrategy):
         self.instrument = self.cache.instrument(self.instrument_id)
         if not self.instrument:
             self.log.error(f"Instrument not found in cache: {self.instrument_id}")
-            self.stop()
+            self._strategy_disabled = True
             return
 
         # Reject BTC self-trading (RS against self is always 0)
@@ -294,7 +297,7 @@ class RSSqueezeStrategy(BaseStrategy):
                 f"⚠️ STRATEGY DISABLED: {self.instrument_id} is the benchmark itself. "
                 f"RS (Relative Strength) against self is always 0."
             )
-            self.stop()
+            self._strategy_disabled = True
             return
 
         self.subscribe_bars(self.bar_type)
@@ -304,6 +307,10 @@ class RSSqueezeStrategy(BaseStrategy):
     def on_bar(self, bar: Bar):
         """Main event handler."""
         super().on_bar(bar)
+
+        # Early exit if strategy is disabled
+        if self._strategy_disabled:
+            return
 
         # A. Handle Benchmark 4H (Trend Filter)
         if bar.bar_type == self.btc_4h_bar_type:
