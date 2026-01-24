@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from nautilus_trader.model import Money
 from nautilus_trader.model.currencies import USDT
@@ -84,7 +84,7 @@ class DataConfig:
     bar_aggregation: BarAggregation = BarAggregation.HOUR
     bar_period: int = 1
     price_type: PriceType = PriceType.LAST
-    instrument_id: Optional[str] = None  # 可选：指定该数据对应的 InstrumentID
+    instrument_id: str | None = None  # 可选：指定该数据对应的 InstrumentID
     label: str = "main"  # 数据标签 (如 "main", "trend", "benchmark")
 
     @property
@@ -101,21 +101,23 @@ class DataConfig:
 
 
 @dataclass
-class StrategyConfig:
+class LegacyStrategyConfig:
     """
-    策略配置容器。
+    策略配置容器（遗留版本，用于向后兼容）。
     优化设计：支持自动推断配置类，并集中管理参数解析逻辑，减少引擎层的重复代码。
+
+    注意：新代码应使用 schemas.StrategyConfig (Pydantic模型)
     """
 
     name: str  # 策略类名 (例如 "RSSqueezeStrategy" 或 "RS_Squeeze")
     module_path: str  # 模块路径 (例如 "strategy.rs_squeeze")
-    config_class: Optional[str] = None  # 可选：配置类名 (不填则自动推断为 {name}Config)
+    config_class: str | None = None  # 可选：配置类名 (不填则自动推断为 {name}Config)
 
     # 策略特定的私有参数。支持 dict 或 dataclass 对象以获得更好的 IDE 支持
     params: Any = field(default_factory=dict)
 
     # 兼容性/扩展字段
-    trade_pair_list: Optional[List[str]] = field(default_factory=list)
+    trade_pair_list: list[str] | None = field(default_factory=list)
 
     def resolve_config_class(self) -> str:
         """获取配置类名，支持从策略名自动推断"""
@@ -204,7 +206,7 @@ class MLConfig:
 class BackTestConfig:
     # 以下三个是回测必备的子集配置选项
     instrument: InstrumentConfig
-    strategy: StrategyConfig
+    strategy: LegacyStrategyConfig
     # 新增：多标的支持
     instruments: List[InstrumentConfig] = field(default_factory=list)
 
@@ -213,8 +215,8 @@ class BackTestConfig:
     data_feeds: List[DataConfig] = field(default_factory=list)
 
     # 基础回测配置
-    start_date: Optional[str] = None
-    end_date: Optional[str] = None
+    start_date: str | None = None
+    end_date: str | None = None
     initial_balances: List[Money] = field(
         default_factory=lambda: [Money("10_000", USDT)]
     )
@@ -227,8 +229,8 @@ class BackTestConfig:
 
     # Deprecated
     ## Support for auxiliary data (e.g. for MTF strategy trend layer)
-    data: Optional[DataConfig] = None
-    aux_data: Optional[DataConfig] = None
+    data: DataConfig | None = None
+    aux_data: DataConfig | None = None
 
     def __post_init__(self):
         """
