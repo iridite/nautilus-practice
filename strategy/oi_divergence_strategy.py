@@ -34,7 +34,6 @@ from nautilus_trader.model.orders import Order
 from strategy.base import BaseStrategy, BaseStrategyConfig
 from utils.custom_data import FundingRateData, OpenInterestData
 
-
 # ============================================================================
 # Risk-Enhanced Configuration
 # ============================================================================
@@ -236,8 +235,8 @@ class OIDivergenceStrategy(BaseStrategy):
         oi_data_type = DataType(OpenInterestData)
         funding_data_type = DataType(FundingRateData)
 
-        self.subscribe_data(oi_data_type, client_id=None)
-        self.subscribe_data(funding_data_type, client_id=None)
+        self.subscribe_data(oi_data_type, instrument_id=self.instrument_id)
+        self.subscribe_data(funding_data_type, instrument_id=self.instrument_id)
         self.log.info("📡 Subscribed to custom data: OpenInterestData, FundingRateData")
 
         # 🔥 风控增强日志
