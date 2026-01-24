@@ -1111,3 +1111,386 @@ class OIDataValidator(DataValidator):
         elif stats.get("match_rate", 100) < 95:
             self.add_warning(f"OI-OHLCV alignment rate: {stats['match_rate']:.1f}%")
         return self
+
+
+# ============================================================================
+# Parquet 数据时间范围验证功能
+# ============================================================================
+
+def check_parquet_data_coverage(
+    symbol: str,
+    start_date: str,
+    end_date: str,
+    timeframe: str,
+    exchange: str,
+    base_dir: Path,
+    strategy_name: str = "RSSqueezeStrategy"
+) -> Tuple[bool, str | None, Dict[str, Any]]:
+    """
+    检查 Parquet 数据的时间覆盖范围
+    
+    Parameters
+    ----------
+    symbol : str
+        交易对符号（如 "BTCUSDT"）
+    start_date : str
+        期望的开始日期（YYYY-MM-DD）
+    end_date : str
+        期望的结束日期（YYYY-MM-DD）
+    timeframe : str
+        时间周期（如 "1h", "4h"）
+    exchange : str
+        交易所名称
+    base_dir : Path
+        基础目录路径
+    strategy_name : str, optional
+        策略名称，默认 "RSSqueezeStrategy"
+        
+    Returns
+    -------
+    Tuple[bool, str | None, Dict[str, Any]]
+        (数据覆盖是否充分, 警告信息, 覆盖统计信息)
+        
+    Examples
+    --------
+    >>> covered, warning, stats = check_parquet_data_coverage("DOGEUSDT", "2022-01-01", "2025-12-20", "1h", "binance", Path("."))
+    >>> if not covered:
+    ...     print(f"数据覆盖不足: {warning}")
+    >>> print(f"实际覆盖范围: {stats['actual_start']} 到 {stats['actual_end']}")
+    """
+    from datetime import datetime
+    import glob
+    
+    # 构建 parquet 文件路径
+    safe_symbol = symbol.replace("/", "")
+    instrument_id = f"{safe_symbol}-PERP.{exchange.upper()}"
+    
+    # 转换时间周期格式：1h -> 1-HOUR, 4h -> 4-HOUR
+    if timeframe.endswith('h'):
+        period_num = timeframe[:-1]
+        timeframe_formatted = f"{period_num}-HOUR"
+    elif timeframe.endswith('m'):
+        period_num = timeframe[:-1]
+        timeframe_formatted = f"{period_num}-MINUTE"
+    elif timeframe.endswith('d'):
+        period_num = timeframe[:-1]
+        timeframe_formatted = f"{period_num}-DAY"
+    else:
+        timeframe_formatted = timeframe.upper()
+    
+    bar_type = f"{instrument_id}-{timeframe_formatted}-LAST-EXTERNAL"
+    
+    parquet_dir = base_dir / "data" / "parquet" / strategy_name / "data" / "bar" / bar_type
+    
+    stats = {
+        "symbol": symbol,
+        "expected_start": start_date,
+        "expected_end": end_date,
+        "actual_start": None,
+        "actual_end": None,
+        "coverage_percentage": 0.0,
+        "parquet_files": [],
+        "total_days_expected": 0,
+        "total_days_actual": 0,
+        "gap_days": 0
+    }
+    
+    if not parquet_dir.exists():
+        return (False, f"Parquet directory not found: {parquet_dir}", stats)
+    
+    # 查找所有 parquet 文件
+    parquet_files = list(parquet_dir.glob("*.parquet"))
+    if not parquet_files:
+        return (False, f"No parquet files found in {parquet_dir}", stats)
+    
+    stats["parquet_files"] = [f.name for f in parquet_files]
+    
+    # 解析文件名获取时间范围
+    actual_start = None
+    actual_end = None
+    
+    for file_path in parquet_files:
+        filename = file_path.stem  # 去掉 .parquet 扩展名
+        try:
+            # 解析文件名格式: 2022-01-01T00-00-00-000000000Z_2022-10-19T15-00-00-000000000Z
+            if "_" in filename:
+                start_str, end_str = filename.split("_")
+                
+                # 解析开始时间: 2022-01-01T00-00-00-000000000Z
+                # 提取日期部分: 2022-01-01
+                start_date_part = start_str.split("T")[0]
+                file_start = datetime.strptime(start_date_part, "%Y-%m-%d")
+                
+                # 解析结束时间: 2022-10-19T15-00-00-000000000Z
+                # 提取日期部分: 2022-10-19
+                end_date_part = end_str.split("T")[0]
+                file_end = datetime.strptime(end_date_part, "%Y-%m-%d")
+                
+                # 更新总体时间范围
+                if actual_start is None or file_start < actual_start:
+                    actual_start = file_start
+                if actual_end is None or file_end > actual_end:
+                    actual_end = file_end
+                    
+        except Exception as e:
+            # 如果解析失败，跳过这个文件，但记录错误用于调试
+            continue
+    
+    if actual_start is None or actual_end is None:
+        return (False, f"Failed to parse time range from parquet files", stats)
+    
+    # 更新统计信息
+    stats["actual_start"] = actual_start.strftime("%Y-%m-%d")
+    stats["actual_end"] = actual_end.strftime("%Y-%m-%d")
+    
+    # 计算期望的时间范围
+    expected_start_dt = datetime.strptime(start_date, "%Y-%m-%d")
+    expected_end_dt = datetime.strptime(end_date, "%Y-%m-%d")
+    
+    # 计算覆盖范围
+    overlap_start = max(actual_start, expected_start_dt)
+    overlap_end = min(actual_end, expected_end_dt)
+    
+    if overlap_start >= overlap_end:
+        # 没有重叠
+        stats["coverage_percentage"] = 0.0
+        warning = f"No data overlap: expected {start_date} to {end_date}, actual {stats['actual_start']} to {stats['actual_end']}"
+        return (False, warning, stats)
+    
+    # 计算覆盖百分比
+    expected_days = (expected_end_dt - expected_start_dt).days + 1
+    overlap_days = (overlap_end - overlap_start).days + 1
+    coverage_pct = (overlap_days / expected_days) * 100 if expected_days > 0 else 0
+    
+    stats["total_days_expected"] = expected_days
+    stats["total_days_actual"] = (actual_end - actual_start).days + 1
+    stats["coverage_percentage"] = coverage_pct
+    stats["gap_days"] = expected_days - overlap_days
+    
+    # 判断覆盖是否充分（阈值可调整）
+    coverage_threshold = 80.0  # 80% 覆盖率阈值
+    
+    if coverage_pct < coverage_threshold:
+        warning = f"Insufficient data coverage: {coverage_pct:.1f}% (expected ≥{coverage_threshold}%). " \
+                 f"Missing {stats['gap_days']} days of data. " \
+                 f"Actual range: {stats['actual_start']} to {stats['actual_end']}"
+        return (False, warning, stats)
+    elif coverage_pct < 100.0:
+        warning = f"Partial data coverage: {coverage_pct:.1f}%. " \
+                 f"Missing {stats['gap_days']} days of data. " \
+                 f"Actual range: {stats['actual_start']} to {stats['actual_end']}"
+        return (True, warning, stats)
+    else:
+        return (True, None, stats)
+
+
+def check_single_data_file_enhanced(
+    symbol_str: str,
+    start_date: str,
+    end_date: str,
+    timeframe: str,
+    exchange: str,
+    base_dir: Path,
+    min_size_kb: int = 10,
+    check_parquet: bool = True,
+    strategy_name: str = "RSSqueezeStrategy"
+) -> Tuple[bool, str | None]:
+    """
+    增强版单个数据文件检查，同时检查 CSV 和 Parquet 数据
+    
+    Parameters
+    ----------
+    symbol_str : str
+        交易对符号（如 "BTCUSDT"）
+    start_date : str
+        开始日期（YYYY-MM-DD）
+    end_date : str
+        结束日期（YYYY-MM-DD）
+    timeframe : str
+        时间周期（如 "1h", "1d"）
+    exchange : str
+        交易所名称
+    base_dir : Path
+        基础目录路径
+    min_size_kb : int, optional
+        最小文件大小（KB），默认 10KB
+    check_parquet : bool, optional
+        是否检查 parquet 数据，默认 True
+    strategy_name : str, optional
+        策略名称，默认 "RSSqueezeStrategy"
+        
+    Returns
+    -------
+    Tuple[bool, str | None]
+        (数据是否充分, 警告信息)
+    """
+    # 首先检查原始 CSV 数据
+    csv_exists, csv_warning = check_single_data_file(
+        symbol_str, start_date, end_date, timeframe, exchange, base_dir, min_size_kb
+    )
+    
+    if not check_parquet:
+        return (csv_exists, csv_warning)
+    
+    # 检查 Parquet 数据覆盖范围
+    parquet_covered, parquet_warning, parquet_stats = check_parquet_data_coverage(
+        symbol_str, start_date, end_date, timeframe, exchange, base_dir, strategy_name
+    )
+    
+    # 综合判断
+    if csv_exists and parquet_covered:
+        # CSV 和 Parquet 都OK
+        if csv_warning and parquet_warning:
+            combined_warning = f"CSV: {csv_warning}; Parquet: {parquet_warning}"
+        elif csv_warning:
+            combined_warning = f"CSV: {csv_warning}"
+        elif parquet_warning:
+            combined_warning = f"Parquet: {parquet_warning}"
+        else:
+            combined_warning = None
+        return (True, combined_warning)
+    
+    elif csv_exists and not parquet_covered:
+        # CSV 存在但 Parquet 覆盖不足
+        warning_parts = []
+        if csv_warning:
+            warning_parts.append(f"CSV: {csv_warning}")
+        if parquet_warning:
+            warning_parts.append(f"Parquet: {parquet_warning}")
+        combined_warning = "; ".join(warning_parts) if warning_parts else None
+        return (True, combined_warning)  # 仍然返回 True，因为有 CSV 数据
+    
+    elif not csv_exists and parquet_covered:
+        # CSV 不存在但 Parquet 覆盖充分
+        warning = f"CSV data missing, but Parquet data available"
+        if parquet_warning:
+            warning += f"; Parquet: {parquet_warning}"
+        return (True, warning)
+    
+    else:
+        # 都不满足
+        warning_parts = ["No sufficient data available"]
+        if parquet_warning:
+            warning_parts.append(f"Parquet: {parquet_warning}")
+        return (False, "; ".join(warning_parts))
+
+
+def analyze_universe_data_coverage(
+    universe_symbols: set,
+    start_date: str,
+    end_date: str,
+    timeframe: str,
+    exchange: str,
+    base_dir: Path,
+    strategy_name: str = "RSSqueezeStrategy",
+    min_coverage_pct: float = 80.0
+) -> Dict[str, Any]:
+    """
+    分析 Universe 中所有标的的数据覆盖情况
+    
+    Parameters
+    ----------
+    universe_symbols : set
+        Universe 符号集合
+    start_date : str
+        开始日期（YYYY-MM-DD）
+    end_date : str
+        结束日期（YYYY-MM-DD）
+    timeframe : str
+        时间周期（如 "1h", "4h"）
+    exchange : str
+        交易所名称
+    base_dir : Path
+        基础目录路径
+    strategy_name : str, optional
+        策略名称，默认 "RSSqueezeStrategy"
+    min_coverage_pct : float, optional
+        最小覆盖百分比阈值，默认 80.0%
+        
+    Returns
+    -------
+    Dict[str, Any]
+        数据覆盖分析结果
+    """
+    from datetime import datetime
+    
+    analysis = {
+        "total_symbols": len(universe_symbols),
+        "symbols_with_sufficient_data": [],
+        "symbols_with_partial_data": [],
+        "symbols_with_no_data": [],
+        "coverage_stats": {},
+        "recommended_timerange": {
+            "start": start_date,
+            "end": end_date,
+            "symbols_count": 0
+        },
+        "summary": {
+            "sufficient_count": 0,
+            "partial_count": 0,
+            "no_data_count": 0,
+            "avg_coverage_pct": 0.0
+        }
+    }
+    
+    total_coverage = 0.0
+    
+    for symbol in sorted(universe_symbols):
+        symbol_str = symbol.split(":")[0]  # SOLUSDT:USDT -> SOLUSDT
+        
+        # 检查数据覆盖
+        covered, warning, stats = check_parquet_data_coverage(
+            symbol_str, start_date, end_date, timeframe, exchange, base_dir, strategy_name
+        )
+        
+        coverage_pct = stats.get("coverage_percentage", 0.0)
+        total_coverage += coverage_pct
+        
+        symbol_info = {
+            "symbol": symbol_str,
+            "coverage_percentage": coverage_pct,
+            "actual_start": stats.get("actual_start"),
+            "actual_end": stats.get("actual_end"),
+            "warning": warning,
+            "parquet_files": stats.get("parquet_files", [])
+        }
+        
+        analysis["coverage_stats"][symbol_str] = symbol_info
+        
+        if coverage_pct >= min_coverage_pct:
+            analysis["symbols_with_sufficient_data"].append(symbol_str)
+            analysis["summary"]["sufficient_count"] += 1
+        elif coverage_pct > 0:
+            analysis["symbols_with_partial_data"].append(symbol_str)
+            analysis["summary"]["partial_count"] += 1
+        else:
+            analysis["symbols_with_no_data"].append(symbol_str)
+            analysis["summary"]["no_data_count"] += 1
+    
+    # 计算平均覆盖率
+    if analysis["total_symbols"] > 0:
+        analysis["summary"]["avg_coverage_pct"] = total_coverage / analysis["total_symbols"]
+    
+    # 推荐最优时间范围（基于数据覆盖最好的时间段）
+    if analysis["symbols_with_sufficient_data"]:
+        # 找到所有有充分数据的标的的共同时间范围
+        common_start = None
+        common_end = None
+        
+        for symbol in analysis["symbols_with_sufficient_data"]:
+            stats = analysis["coverage_stats"][symbol]
+            if stats["actual_start"] and stats["actual_end"]:
+                symbol_start = datetime.strptime(stats["actual_start"], "%Y-%m-%d")
+                symbol_end = datetime.strptime(stats["actual_end"], "%Y-%m-%d")
+                
+                if common_start is None or symbol_start > common_start:
+                    common_start = symbol_start
+                if common_end is None or symbol_end < common_end:
+                    common_end = symbol_end
+        
+        if common_start and common_end and common_start <= common_end:
+            analysis["recommended_timerange"]["start"] = common_start.strftime("%Y-%m-%d")
+            analysis["recommended_timerange"]["end"] = common_end.strftime("%Y-%m-%d")
+            analysis["recommended_timerange"]["symbols_count"] = len(analysis["symbols_with_sufficient_data"])
+    
+    return analysis

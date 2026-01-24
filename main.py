@@ -28,6 +28,9 @@ from utils.oi_funding_fetcher import batch_fetch_oi_and_funding
 from utils.validation import (
     check_data_exists,
     check_single_data_file,
+    check_single_data_file_enhanced,
+    check_parquet_data_coverage,
+    analyze_universe_data_coverage,
     check_oi_data_exists,
     check_funding_data_exists,
     validate_oi_data_structure,
@@ -540,8 +543,9 @@ def main():
 
                         pbar.set_postfix_str(symbol_quote, refresh=True)
 
-                        exists, warning = check_single_data_file(
-                            symbol_quote, get_start_date(), get_end_date(), timeframe, exchange, BASE_DIR
+                        exists, warning = check_single_data_file_enhanced(
+                            symbol_quote, get_start_date(), get_end_date(), timeframe, exchange, BASE_DIR,
+                            check_parquet=True, strategy_name=current_config.strategy.name
                         )
                         if not exists:
                             key = (exchange, timeframe, get_start_date(), get_end_date())
@@ -599,8 +603,9 @@ def main():
                     symbol_str = symbol.split(":")[0]  # SOLUSDT:USDT -> SOLUSDT
                     pbar.set_postfix_str(symbol_str, refresh=True)
 
-                    exists, warning = check_single_data_file(
-                        symbol_str, get_start_date(), get_end_date(), timeframe, exchange, BASE_DIR
+                    exists, warning = check_single_data_file_enhanced(
+                        symbol_str, get_start_date(), get_end_date(), timeframe, exchange, BASE_DIR,
+                        check_parquet=True, strategy_name=current_config.strategy.name
                     )
                     if not exists:
                         key = (exchange, timeframe, get_start_date(), get_end_date())
@@ -619,6 +624,75 @@ def main():
         print(
             f"📊 Data check summary: {data_exists_count} exists, {data_missing_count} missing"
         )
+
+        # 如果有 Universe，进行数据覆盖范围分析
+        if universe_symbols:
+            print("==========================================")
+            print("📈 Analyzing Universe Data Coverage...")
+            
+            try:
+                # 获取默认参数
+                venue, base_currency, inst_type = get_default_venue_and_type()
+                
+                if main_feed:
+                    try:
+                        parts = main_feed.csv_file_name.split("/")
+                        file_parts = parts[1].split("-")
+                        exchange = file_parts[0]
+                        timeframe = file_parts[2]
+                    except Exception:
+                        exchange = venue.lower()
+                        timeframe = "1h"
+                else:
+                    exchange = venue.lower()
+                    timeframe = "1h"
+                
+                # 分析数据覆盖情况
+                coverage_analysis = analyze_universe_data_coverage(
+                    universe_symbols,
+                    get_start_date(),
+                    get_end_date(),
+                    timeframe,
+                    exchange,
+                    BASE_DIR,
+                    current_config.strategy.name
+                )
+                
+                # 显示分析结果
+                print(f"📊 Universe Coverage Analysis:")
+                print(f"   Total symbols: {coverage_analysis['total_symbols']}")
+                print(f"   Sufficient data (≥80%): {coverage_analysis['summary']['sufficient_count']}")
+                print(f"   Partial data: {coverage_analysis['summary']['partial_count']}")
+                print(f"   No data: {coverage_analysis['summary']['no_data_count']}")
+                print(f"   Average coverage: {coverage_analysis['summary']['avg_coverage_pct']:.1f}%")
+                
+                # 显示推荐的时间范围
+                recommended = coverage_analysis['recommended_timerange']
+                if recommended['symbols_count'] > 0:
+                    print(f"💡 Recommended timerange for {recommended['symbols_count']} symbols:")
+                    print(f"   {recommended['start']} to {recommended['end']}")
+                
+                # 显示数据覆盖不足的标的
+                if coverage_analysis['symbols_with_no_data']:
+                    print(f"⚠️  Symbols with no data: {len(coverage_analysis['symbols_with_no_data'])}")
+                    for symbol in coverage_analysis['symbols_with_no_data'][:5]:  # 只显示前5个
+                        print(f"   • {symbol}")
+                    if len(coverage_analysis['symbols_with_no_data']) > 5:
+                        print(f"   ... and {len(coverage_analysis['symbols_with_no_data']) - 5} more")
+                
+                # 显示部分数据的标的
+                if coverage_analysis['symbols_with_partial_data']:
+                    print(f"📊 Symbols with partial data: {len(coverage_analysis['symbols_with_partial_data'])}")
+                    for symbol in coverage_analysis['symbols_with_partial_data'][:3]:  # 只显示前3个
+                        stats = coverage_analysis['coverage_stats'][symbol]
+                        print(f"   • {symbol}: {stats['coverage_percentage']:.1f}% ({stats['actual_start']} to {stats['actual_end']})")
+                    if len(coverage_analysis['symbols_with_partial_data']) > 3:
+                        print(f"   ... and {len(coverage_analysis['symbols_with_partial_data']) - 3} more")
+                
+            except Exception as e:
+                print(f"⚠️ Failed to analyze universe data coverage: {e}")
+            
+            print("==========================================")
 
         # 1.3 执行批量抓取并实时更新 current_config
         # 记录已经存在的 csv，防止重复添加
