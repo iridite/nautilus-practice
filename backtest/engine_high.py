@@ -29,9 +29,9 @@ from pandas import DataFrame
 
 from backtest.exceptions import (
     BacktestEngineError,
+    CatalogError,
     DataLoadError,
     InstrumentLoadError,
-    CatalogError,
 )
 from backtest.utils import (
     filter_strategy_params,
@@ -44,31 +44,35 @@ from utils.instrument_loader import load_instrument
 def _load_instruments(cfg: BackTestConfig) -> Dict[str, Instrument]:
     """
     加载交易标的信息
-    
+
     Args:
         cfg: 回测配置
-        
+
     Returns:
         Dict[str, Instrument]: instrument_id -> Instrument 的映射
-        
+
     Raises:
         InstrumentLoadError: 当标的加载失败时
     """
     loaded_instruments = {}
     inst_cfg_map = {ic.instrument_id: ic for ic in cfg.instruments}
-    
+
     for inst_id in inst_cfg_map:
         inst_cfg = inst_cfg_map[inst_id]
         inst_path = inst_cfg.get_json_path()
-        
+
         if not inst_path.exists():
-            raise InstrumentLoadError(f"Instrument path not found: {inst_path}", inst_id)
-            
+            raise InstrumentLoadError(
+                f"Instrument path not found: {inst_path}", inst_id
+            )
+
         try:
             loaded_instruments[inst_id] = load_instrument(inst_path)
         except Exception as e:
-            raise InstrumentLoadError(f"Failed to load instrument {inst_id}: {e}", inst_id, e)
-    
+            raise InstrumentLoadError(
+                f"Failed to load instrument {inst_id}: {e}", inst_id, e
+            )
+
     return loaded_instruments
 
 
@@ -79,7 +83,7 @@ def _import_data_to_catalog(
 ) -> Tuple[Dict[str, Dict], Dict[str, str], Dict]:
     """
     将CSV数据导入Parquet目录，并组织数据流
-    
+
     智能数据处理逻辑：
     1. CSV和Parquet都存在：进行一致性检查
        - 一致：跳过转换，直接使用Parquet数据
@@ -88,18 +92,18 @@ def _import_data_to_catalog(
     3. 仅Parquet存在：直接使用Parquet数据
     4. CSV缺失：尝试自动下载数据
     5. 都不存在：抛出DataLoadError并终止回测
-    
+
     Args:
         cfg: 回测配置
         loaded_instruments: 已加载的标的映射
         catalog_path: Parquet目录路径
-        
+
     Returns:
         Tuple[Dict, Dict, Dict]: (data_config_by_inst, global_feeds, feeds_by_inst)
             - data_config_by_inst: 按标的分组的数据配置
             - global_feeds: 全局数据流(如benchmark)
             - feeds_by_inst: 按标的分组的数据流
-            
+
     Raises:
         DataLoadError: 当数据导入失败时
         CatalogError: 当目录操作失败时
@@ -108,127 +112,203 @@ def _import_data_to_catalog(
     data_config_by_inst = {}
     feeds_by_inst = defaultdict(dict)
     global_feeds = {}
-    
+
     total_feeds = len(cfg.data_feeds)
-    
+
     for feed_idx, data_cfg in enumerate(cfg.data_feeds, 1):
         # 确定关联的标的ID
         inst_id = data_cfg.instrument_id
         if inst_id is None and cfg.instrument is not None:
             inst_id = cfg.instrument.instrument_id
-            
+
         if inst_id not in loaded_instruments:
             continue
-            
+
         inst = loaded_instruments[inst_id]
         csv_path = data_cfg.full_path
         feed_bar_type_str = f"{inst.id}-{data_cfg.bar_type_str}"
         bar_type = BarType.from_str(feed_bar_type_str)
-        
+
         # 智能数据处理：优先检查Parquet数据充分性
         # 检查Parquet数据是否已存在且充分
         try:
-            existing_intervals = _catalog.get_intervals(data_cls=Bar, identifier=str(bar_type))
+            existing_intervals = _catalog.get_intervals(
+                data_cls=Bar, identifier=str(bar_type)
+            )
             parquet_exists = bool(existing_intervals)
         except Exception:
             parquet_exists = False
-        
+
         # 如果Parquet数据充分，直接跳过所有操作
         if parquet_exists:
             # 检查Parquet数据覆盖范围是否充分
             from utils.validation import check_parquet_data_coverage
-            symbol_str = str(bar_type.instrument_id).split('-')[0]  # BTCUSDT-PERP.BINANCE -> BTCUSDT
-            
-            parquet_covered, parquet_warning, parquet_stats = check_parquet_data_coverage(
-                symbol_str, cfg.start_date, cfg.end_date, "1h", "binance",
-                Path(__file__).parent.parent, "RSSqueezeStrategy"
+
+            symbol_str = str(bar_type.instrument_id).split("-")[
+                0
+            ]  # BTCUSDT-PERP.BINANCE -> BTCUSDT
+
+            parquet_covered, parquet_warning, parquet_stats = (
+                check_parquet_data_coverage(
+                    symbol_str,
+                    cfg.start_date,
+                    cfg.end_date,
+                    "1h",
+                    "binance",
+                    Path(__file__).parent.parent,
+                    "RSSqueezeStrategy",
+                )
             )
-            
+
             coverage_pct = parquet_stats.get("coverage_percentage", 0.0)
-            
+
             if coverage_pct >= 80:  # Parquet数据充分，直接跳过
-                print(f"\r✅ [{feed_idx:3d}/{total_feeds}] Ready: {str(bar_type.instrument_id):<35}", end='', flush=True)
+                print(
+                    f"\r✅ [{feed_idx:3d}/{total_feeds}] Ready: {str(bar_type.instrument_id):<35}",
+                    end="",
+                    flush=True,
+                )
             else:
                 # Parquet数据不充分，需要检查CSV或下载
                 csv_exists = csv_path.exists()
-                
+
                 if csv_exists:
                     # CSV存在，进行一致性检查后可能需要重新导入
-                    print(f"\r🔍 [{feed_idx:3d}/{total_feeds}] Checking: {str(bar_type.instrument_id):<35}", end='', flush=True)
-                    
-                    is_consistent = _verify_data_consistency(csv_path, _catalog, bar_type)
-                    
+                    print(
+                        f"\r🔍 [{feed_idx:3d}/{total_feeds}] Checking: {str(bar_type.instrument_id):<35}",
+                        end="",
+                        flush=True,
+                    )
+
+                    is_consistent = _verify_data_consistency(
+                        csv_path, _catalog, bar_type
+                    )
+
                     if not is_consistent:
                         # 数据不一致，重新导入
-                        print(f"\r📖 [{feed_idx:3d}/{total_feeds}] Updating: {str(bar_type.instrument_id):<32}", end='', flush=True)
+                        print(
+                            f"\r📖 [{feed_idx:3d}/{total_feeds}] Updating: {str(bar_type.instrument_id):<32}",
+                            end="",
+                            flush=True,
+                        )
                         try:
                             catalog_loader(_catalog, csv_path, inst, bar_type)
                         except Exception as e:
-                            print(f"\r⚠️  [{feed_idx:3d}/{total_feeds}] Using Parquet: {str(bar_type.instrument_id):<28}", end='', flush=True)
+                            print(
+                                f"\r⚠️  [{feed_idx:3d}/{total_feeds}] Using Parquet: {str(bar_type.instrument_id):<28}",
+                                end="",
+                                flush=True,
+                            )
                     else:
-                        print(f"\r⏩ [{feed_idx:3d}/{total_feeds}] Verified: {str(bar_type.instrument_id):<35}", end='', flush=True)
+                        print(
+                            f"\r⏩ [{feed_idx:3d}/{total_feeds}] Verified: {str(bar_type.instrument_id):<35}",
+                            end="",
+                            flush=True,
+                        )
                 else:
                     # CSV不存在，尝试下载
-                    print(f"\r🔄 [{feed_idx:3d}/{total_feeds}] Downloading: {str(bar_type.instrument_id):<30}", end='', flush=True)
-                    
+                    print(
+                        f"\r🔄 [{feed_idx:3d}/{total_feeds}] Downloading: {str(bar_type.instrument_id):<30}",
+                        end="",
+                        flush=True,
+                    )
+
                     download_success = _auto_download_missing_data(data_cfg, cfg)
-                    
+
                     if download_success and csv_path.exists():
                         # 下载成功，导入数据
-                        print(f"\r📖 [{feed_idx:3d}/{total_feeds}] Importing: {str(bar_type.instrument_id):<32}", end='', flush=True)
+                        print(
+                            f"\r📖 [{feed_idx:3d}/{total_feeds}] Importing: {str(bar_type.instrument_id):<32}",
+                            end="",
+                            flush=True,
+                        )
                         try:
                             catalog_loader(_catalog, csv_path, inst, bar_type)
                         except Exception as e:
-                            print(f"\r⚠️  [{feed_idx:3d}/{total_feeds}] Using Parquet: {str(bar_type.instrument_id):<28}", end='', flush=True)
+                            print(
+                                f"\r⚠️  [{feed_idx:3d}/{total_feeds}] Using Parquet: {str(bar_type.instrument_id):<28}",
+                                end="",
+                                flush=True,
+                            )
                     else:
                         # 下载失败，使用现有Parquet数据（虽然不充分）
-                        print(f"\r⚠️  [{feed_idx:3d}/{total_feeds}] Partial Parquet: {str(bar_type.instrument_id):<25}", end='', flush=True)
+                        print(
+                            f"\r⚠️  [{feed_idx:3d}/{total_feeds}] Partial Parquet: {str(bar_type.instrument_id):<25}",
+                            end="",
+                            flush=True,
+                        )
         else:
             # Parquet数据不存在，需要CSV数据
             csv_exists = csv_path.exists()
-            
+
             if csv_exists:
                 # CSV存在，正常导入
-                print(f"\r📖 [{feed_idx:3d}/{total_feeds}] Importing: {str(bar_type.instrument_id):<32}", end='', flush=True)
+                print(
+                    f"\r📖 [{feed_idx:3d}/{total_feeds}] Importing: {str(bar_type.instrument_id):<32}",
+                    end="",
+                    flush=True,
+                )
                 try:
                     catalog_loader(_catalog, csv_path, inst, bar_type)
                 except Exception as e:
-                    raise DataLoadError(f"Error loading {data_cfg.csv_file_name}: {e}", str(csv_path), e)
+                    raise DataLoadError(
+                        f"Error loading {data_cfg.csv_file_name}: {e}", str(csv_path), e
+                    )
             else:
                 # CSV不存在，尝试下载
-                print(f"\r🔄 [{feed_idx:3d}/{total_feeds}] Downloading: {str(bar_type.instrument_id):<30}", end='', flush=True)
-                
+                print(
+                    f"\r🔄 [{feed_idx:3d}/{total_feeds}] Downloading: {str(bar_type.instrument_id):<30}",
+                    end="",
+                    flush=True,
+                )
+
                 download_success = _auto_download_missing_data(data_cfg, cfg)
-                
+
                 if download_success and csv_path.exists():
                     # 下载成功，导入数据
-                    print(f"\r📖 [{feed_idx:3d}/{total_feeds}] Importing: {str(bar_type.instrument_id):<32}", end='', flush=True)
+                    print(
+                        f"\r📖 [{feed_idx:3d}/{total_feeds}] Importing: {str(bar_type.instrument_id):<32}",
+                        end="",
+                        flush=True,
+                    )
                     try:
                         catalog_loader(_catalog, csv_path, inst, bar_type)
                     except Exception as e:
                         continue
                 else:
                     # 下载失败且无任何数据，严重错误
-                    print(f"\r🚨 [{feed_idx:3d}/{total_feeds}] CRITICAL: {str(bar_type.instrument_id):<31}", end='', flush=True)
-                    print(f"\n🚨 CRITICAL ERROR: No data available for {bar_type.instrument_id}")
+                    print(
+                        f"\r🚨 [{feed_idx:3d}/{total_feeds}] CRITICAL: {str(bar_type.instrument_id):<31}",
+                        end="",
+                        flush=True,
+                    )
+                    print(
+                        f"\n🚨 CRITICAL ERROR: No data available for {bar_type.instrument_id}"
+                    )
                     print(f"   - CSV file missing: {csv_path}")
                     print(f"   - Parquet data missing: No data found in catalog")
-                    print(f"   - Auto-download failed: Unable to retrieve data from exchange")
-                    print(f"\n❌ TERMINATING BACKTEST: Cannot proceed without complete data")
-                    print(f"   Please ensure all required data is available before running backtest.")
+                    print(
+                        f"   - Auto-download failed: Unable to retrieve data from exchange"
+                    )
+                    print(
+                        f"\n❌ TERMINATING BACKTEST: Cannot proceed without complete data"
+                    )
+                    print(
+                        f"   Please ensure all required data is available before running backtest."
+                    )
                     raise DataLoadError(
                         f"Critical data missing for {bar_type.instrument_id}. "
                         f"CSV file not found: {csv_path}, Parquet data not available, "
                         f"and auto-download failed. Cannot proceed with incomplete data.",
-                        str(csv_path)
+                        str(csv_path),
                     )
-        
+
         # 归类数据流标签
         if data_cfg.label == "benchmark":
             global_feeds[data_cfg.label] = feed_bar_type_str
         else:
             feeds_by_inst[inst_id][data_cfg.label] = feed_bar_type_str
-            
+
         # 合并同一标的的bar_types
         inst_id_str = str(inst.id)
         if inst_id_str not in data_config_by_inst:
@@ -237,48 +317,51 @@ def _import_data_to_catalog(
                 "bar_types": [],
                 "catalog_path": str(catalog_path),
             }
-            
+
         bar_type_str = str(bar_type)
         if bar_type_str not in data_config_by_inst[inst_id_str]["bar_types"]:
             data_config_by_inst[inst_id_str]["bar_types"].append(bar_type_str)
-    
-    print(f"\n✅ Data import complete. Created {len(data_config_by_inst)} data configs.")
+
+    print(
+        f"\n✅ Data import complete. Created {len(data_config_by_inst)} data configs."
+    )
     return data_config_by_inst, global_feeds, feeds_by_inst
 
 
 def _auto_download_missing_data(data_cfg, backtest_cfg: BackTestConfig) -> bool:
     """
     自动下载缺失的数据文件
-    
+
     Args:
         data_cfg: 数据配置对象
         backtest_cfg: 回测配置对象
-        
+
     Returns:
         bool: 下载是否成功
     """
     try:
+        import ccxt
+
         from utils.data_retrival import batch_fetch_ohlcv
         from utils.time_helpers import get_ms_timestamp
-        import ccxt
-        
+
         # 从文件名解析参数 - 修复解析逻辑
         csv_filename = data_cfg.csv_file_name
         # 提取文件名部分（去除路径）
         filename_only = Path(csv_filename).name
-        
+
         # 实际文件名格式: okx-BTCUSDT-1h-2020-01-01_2026-01-14.csv
         # 先按下划线分隔日期范围
-        if '_' in filename_only:
+        if "_" in filename_only:
             # 分离基础部分和结束日期
-            base_part, end_date_part = filename_only.replace('.csv', '').split('_', 1)
-            
+            base_part, end_date_part = filename_only.replace(".csv", "").split("_", 1)
+
             # 解析基础部分: okx-BTCUSDT-1h-2020-01-01
-            base_parts = base_part.split('-')
+            base_parts = base_part.split("-")
             if len(base_parts) >= 6:
                 exchange_id = base_parts[0]  # okx
-                symbol = base_parts[1]       # BTCUSDT
-                timeframe = base_parts[2]    # 1h
+                symbol = base_parts[1]  # BTCUSDT
+                timeframe = base_parts[2]  # 1h
                 # 重新组合开始日期: 2020-01-01
                 start_date = f"{base_parts[3]}-{base_parts[4]}-{base_parts[5]}"
                 # 结束日期直接使用: 2026-01-14
@@ -288,28 +371,28 @@ def _auto_download_missing_data(data_cfg, backtest_cfg: BackTestConfig) -> bool:
                 return False
         else:
             # 备用格式：全部用连字符分隔
-            parts = filename_only.replace('.csv', '').split('-')
+            parts = filename_only.replace(".csv", "").split("-")
             if len(parts) >= 8:
                 exchange_id = parts[0]  # binance
-                symbol = parts[1]       # DOGEUSDT
-                timeframe = parts[2]    # 1h
+                symbol = parts[1]  # DOGEUSDT
+                timeframe = parts[2]  # 1h
                 start_date = f"{parts[3]}-{parts[4]}-{parts[5]}"  # 2025-12-01
-                end_date = f"{parts[6]}-{parts[7]}-{parts[8]}"    # 2025-12-30
+                end_date = f"{parts[6]}-{parts[7]}-{parts[8]}"  # 2025-12-30
             elif len(parts) >= 6:
                 exchange_id = parts[0]  # binance
-                symbol = parts[1]       # DOGEUSDT
-                timeframe = parts[2]    # 1h
+                symbol = parts[1]  # DOGEUSDT
+                timeframe = parts[2]  # 1h
                 start_date = f"{parts[3]}-{parts[4]}-{parts[5]}"  # 2025-12-01
                 end_date = start_date
             else:
                 print(f"❌ Cannot parse filename format: {filename_only}")
                 return False
-        
+
         # 验证解析结果
         if not all([exchange_id, symbol, timeframe, start_date, end_date]):
             print(f"❌ Invalid parsed parameters from {filename_only}")
             return False
-        
+
         # 使用batch_fetch_ohlcv函数
         base_dir = Path(__file__).parent.parent  # 获取项目根目录
         configs = batch_fetch_ohlcv(
@@ -318,9 +401,9 @@ def _auto_download_missing_data(data_cfg, backtest_cfg: BackTestConfig) -> bool:
             end_date=end_date,
             timeframe=timeframe,
             exchange_id=exchange_id,
-            base_dir=base_dir
+            base_dir=base_dir,
         )
-        
+
         if configs and len(configs) > 0:
             # 验证下载的数据文件是否存在且有效
             csv_path = data_cfg.full_path
@@ -331,7 +414,7 @@ def _auto_download_missing_data(data_cfg, backtest_cfg: BackTestConfig) -> bool:
                 return False
         else:
             return False
-            
+
     except Exception as e:
         print(f"❌ Error during auto-download: {e}")
         return False
@@ -340,27 +423,27 @@ def _auto_download_missing_data(data_cfg, backtest_cfg: BackTestConfig) -> bool:
 def _clear_parquet_data(catalog: ParquetDataCatalog, bar_type: BarType) -> None:
     """
     清理指定bar_type的Parquet数据
-    
+
     Args:
         catalog: Parquet数据目录
         bar_type: 要清理的数据类型标识
     """
     try:
         import shutil
-        
+
         # 获取catalog的根路径
         catalog_root = Path(catalog.path)
-        
+
         # NautilusTrader实际的文件结构是: data/crypto_perpetual/{instrument_id}/
         instrument_id = str(bar_type.instrument_id)
-        
+
         # 查找所有可能的数据目录
         possible_dirs = [
             catalog_root / "data" / "crypto_perpetual" / instrument_id,
             catalog_root / "data" / "Bar" / instrument_id,
             catalog_root / "data" / instrument_id,
         ]
-        
+
         for data_dir in possible_dirs:
             if data_dir.exists():
                 print(f"   🗑️ Clearing existing Parquet data: {data_dir}")
@@ -369,34 +452,34 @@ def _clear_parquet_data(catalog: ParquetDataCatalog, bar_type: BarType) -> None:
         else:
             # 如果没有找到标准目录，尝试查找包含instrument_id的任何目录
             for root, dirs, files in catalog_root.rglob("*"):
-                if instrument_id in str(root) and any(f.endswith('.parquet') for f in files):
+                if instrument_id in str(root) and any(
+                    f.endswith(".parquet") for f in files
+                ):
                     print(f"   🗑️ Clearing found Parquet data: {root}")
                     shutil.rmtree(root)
                     break
-            
+
     except Exception as e:
         print(f"   ⚠️ Warning: Could not clear Parquet data: {e}")
         # 不抛出异常，因为这不是致命错误
 
 
 def _verify_data_consistency(
-    csv_path: Path,
-    catalog: ParquetDataCatalog,
-    bar_type: BarType
+    csv_path: Path, catalog: ParquetDataCatalog, bar_type: BarType
 ) -> bool:
     """
     轻量级验证CSV和Parquet数据的一致性
-    
+
     简化检查策略（性能优先）：
     1. 比较文件修改时间
     2. 比较数据行数（快速估算）
     3. 比较文件大小范围
-    
+
     Args:
         csv_path: CSV文件路径
         catalog: Parquet数据目录
         bar_type: 数据类型标识
-        
+
     Returns:
         bool: 数据是否一致
     """
@@ -404,51 +487,59 @@ def _verify_data_consistency(
         # 1. 检查CSV文件基本信息
         if not csv_path.exists() or csv_path.stat().st_size < 1024:
             return False
-            
+
         # 2. 快速检查Parquet数据是否存在
         try:
-            existing_intervals = catalog.get_intervals(data_cls=Bar, identifier=str(bar_type))
+            existing_intervals = catalog.get_intervals(
+                data_cls=Bar, identifier=str(bar_type)
+            )
             if not existing_intervals:
                 return False
         except Exception:
             return False
-            
+
         # 3. 比较文件修改时间（如果CSV比Parquet新，认为不一致）
         csv_mtime = csv_path.stat().st_mtime
-        
+
         # 查找Parquet文件的修改时间
         catalog_root = Path(catalog.path)
         instrument_id = str(bar_type.instrument_id)
         parquet_dir = catalog_root / "data" / "crypto_perpetual" / instrument_id
-        
+
         if parquet_dir.exists():
             parquet_files = list(parquet_dir.glob("*.parquet"))
             if parquet_files:
                 parquet_mtime = max(f.stat().st_mtime for f in parquet_files)
-                
+
                 # 如果CSV文件比Parquet文件新超过1小时，认为不一致
                 if csv_mtime - parquet_mtime > 3600:  # 1小时
                     return False
-        
+
         # 4. 快速比较数据量（只读取CSV行数，不加载全部数据）
         try:
             csv_line_count = sum(1 for _ in open(csv_path)) - 1  # 减去header
-            
+
             # 估算Parquet数据量（通过时间间隔）
             if existing_intervals:
                 interval = existing_intervals[0]
                 # 假设1小时数据，估算数据点数量
-                estimated_parquet_count = (interval[1] - interval[0]) // (3600 * 1_000_000_000)  # 纳秒转小时
-                
+                estimated_parquet_count = (interval[1] - interval[0]) // (
+                    3600 * 1_000_000_000
+                )  # 纳秒转小时
+
                 # 允许20%的差异（比较宽松的检查）
-                if abs(csv_line_count - estimated_parquet_count) / max(csv_line_count, 1) > 0.2:
+                if (
+                    abs(csv_line_count - estimated_parquet_count)
+                    / max(csv_line_count, 1)
+                    > 0.2
+                ):
                     return False
         except Exception:
             # 如果快速检查失败，默认认为一致（避免阻塞）
             pass
-            
+
         return True
-        
+
     except Exception as e:
         return False
 
@@ -462,53 +553,55 @@ def _create_strategy_configs(
 ) -> List[ImportableStrategyConfig]:
     """
     创建策略配置
-    
+
     Args:
         cfg: 回测配置
         loaded_instruments: 已加载的标的映射
         feeds_by_inst: 按标的分组的数据流
         global_feeds: 全局数据流
         ConfigClass: 策略配置类
-        
+
     Returns:
         List[ImportableStrategyConfig]: 策略配置列表
     """
     strategies = []
     strategy_path = f"{cfg.strategy.module_path}:{cfg.strategy.name}"
     config_path = f"{cfg.strategy.module_path}:{cfg.strategy.resolve_config_class()}"
-    
+
     for inst_id, inst in loaded_instruments.items():
         local_feeds = feeds_by_inst.get(inst_id, {})
-        
+
         # 只有拥有 'main' 数据流的标的才创建策略实例
         if "main" not in local_feeds:
             continue
-            
+
         # 合并本地和全局数据流
         combined_feeds = {**local_feeds, **global_feeds}
-        
+
         # 生成并过滤参数
         strat_params = cfg.strategy.resolve_params(
             instrument_id=inst.id,
             leverage=cfg.instrument.leverage if cfg.instrument else 1,
             feed_bar_types=combined_feeds,
         )
-        
+
         final_params = filter_strategy_params(strat_params, ConfigClass)
-        
-        strategies.append(ImportableStrategyConfig(
-            strategy_path=strategy_path,
-            config_path=config_path,
-            config=final_params,
-        ))
-        
+
+        strategies.append(
+            ImportableStrategyConfig(
+                strategy_path=strategy_path,
+                config_path=config_path,
+                config=final_params,
+            )
+        )
+
     return strategies
 
 
 def run_high_level(cfg: BackTestConfig, base_dir: Path):
     """
     运行高级引擎回测 (High-level Engine/BacktestNode)
-    
+
     Args:
         cfg: 回测配置
         base_dir: 项目根目录
@@ -520,42 +613,44 @@ def run_high_level(cfg: BackTestConfig, base_dir: Path):
         ConfigClass = load_strategy_config_class(
             cfg.strategy.module_path, cfg.strategy.resolve_config_class()
         )
-        
+
         # 2. 加载交易标的
         loaded_instruments = _load_instruments(cfg)
         print(f"✅ Loaded {len(loaded_instruments)} instruments")
-        
+
         # 3. 导入数据到Parquet目录
         data_path = base_dir / "data"
         catalog_path = data_path / "parquet" / f"{cfg.strategy.name}"
-        
+
         data_config_by_inst, global_feeds, feeds_by_inst = _import_data_to_catalog(
             cfg, loaded_instruments, catalog_path
         )
-        
+
         # 4. 创建策略配置
         strategies = _create_strategy_configs(
             cfg, loaded_instruments, feeds_by_inst, global_feeds, ConfigClass
         )
         print(f"✅ Created {len(strategies)} strategy configurations")
-        
+
         # 5. 准备回测数据配置
         backtest_data_configs = []
         for inst_id_str, cfg_data in data_config_by_inst.items():
-            backtest_data_configs.append(BacktestDataConfig(
-                catalog_path=cfg_data["catalog_path"],
-                data_cls="nautilus_trader.model.data:Bar",
-                instrument_id=cfg_data["instrument_id"],
-                bar_types=cfg_data["bar_types"],
-                start_time=cfg.start_date,
-                end_time=cfg.end_date,
-            ))
-            
+            backtest_data_configs.append(
+                BacktestDataConfig(
+                    catalog_path=cfg_data["catalog_path"],
+                    data_cls="nautilus_trader.model.data:Bar",
+                    instrument_id=cfg_data["instrument_id"],
+                    bar_types=cfg_data["bar_types"],
+                    start_time=cfg.start_date,
+                    end_time=cfg.end_date,
+                )
+            )
+
         # 6. 运行回测
         _run_backtest_with_custom_data(
             cfg, base_dir, strategies, backtest_data_configs, loaded_instruments
         )
-        
+
     except (InstrumentLoadError, DataLoadError, CatalogError) as e:
         print(f"❌ Backtest failed: {e}")
         raise
@@ -572,28 +667,33 @@ def _run_backtest_with_custom_data(
 ):
     """运行BacktestNode并处理自定义数据"""
     if not strategies:
-        raise BacktestEngineError("No strategy instances were created. Check config and data paths.")
-        
+        raise BacktestEngineError(
+            "No strategy instances were created. Check config and data paths."
+        )
+
     # 配置交易所
     venue_name = (
-        cfg.instrument.venue_name if cfg.instrument
+        cfg.instrument.venue_name
+        if cfg.instrument
         else cfg.data_feeds[0].csv_file_name.split("/")[-1].split("-")[0]
     )
-    
-    venue_configs = [BacktestVenueConfig(
-        name=venue_name,
-        oms_type="NETTING",
-        account_type="MARGIN",
-        base_currency="USDT",
-        starting_balances=cfg.initial_balances,
-        fee_model=ImportableFeeModelConfig(
-            fee_model_path="nautilus_trader.backtest.models:MakerTakerFeeModel",
-            config_path="nautilus_trader.backtest.config:MakerTakerFeeModelConfig",
-            config={},
-        ),
-        trade_execution=True,
-    )]
-    
+
+    venue_configs = [
+        BacktestVenueConfig(
+            name=venue_name,
+            oms_type="NETTING",
+            account_type="MARGIN",
+            base_currency="USDT",
+            starting_balances=cfg.initial_balances,
+            fee_model=ImportableFeeModelConfig(
+                fee_model_path="nautilus_trader.backtest.models:MakerTakerFeeModel",
+                config_path="nautilus_trader.backtest.config:MakerTakerFeeModelConfig",
+                config={},
+            ),
+            trade_execution=True,
+        )
+    ]
+
     # 配置日志
     logging_config = None
     if cfg.logging:
@@ -604,33 +704,33 @@ def _run_backtest_with_custom_data(
             log_components_only=cfg.logging.log_components_only,
             log_directory=str(base_dir / "log" / "backtest" / "high_level"),
         )
-        
+
     # 构建BacktestNode配置
     eng_cfg = BacktestEngineConfig(
         strategies=strategies,
         logging=logging_config,
         risk_engine=RiskEngineConfig(bypass=False),
     )
-    
+
     run_config = BacktestRunConfig(
         engine=eng_cfg,
         data=backtest_data_configs,
         venues=venue_configs,
         raise_exception=True,
     )
-    
+
     # 创建并运行BacktestNode
     gc.collect()
     node = BacktestNode(configs=[run_config])
     print(f"⏳ Running BacktestNode with {len(strategies)} strategy instances...")
-    
+
     # 加载自定义数据
     _load_custom_data_to_engine(cfg, base_dir, node, run_config, loaded_instruments)
-    
+
     # 运行回测
     results = node.run()
     print("✅ Backtest Complete.")
-    
+
     # 处理结果
     if results:
         _process_backtest_results(cfg, base_dir, results)
@@ -647,56 +747,60 @@ def _load_custom_data_to_engine(
     if not (cfg.start_date and cfg.end_date):
         print("⚠️ No date range specified, skipping custom data loading")
         return
-        
+
     print("📊 Loading custom data (OI, Funding Rate)...")
-    
+
     try:
         # 构建引擎
         node.build()
         engine = node.get_engine(run_config.id)
-        
+
         if engine is None:
             print("⚠️ Could not get engine from node")
             return
-            
+
         # 加载自定义数据
         from utils.oi_funding_adapter import merge_custom_data_with_bars
-        
+
         data_dir = base_dir / "data" / "raw"
         total_loaded = 0
-        
+
         for inst_id_str, inst in loaded_instruments.items():
             instrument_id = inst.id
             symbol = str(instrument_id.symbol).split("-")[0]  # BTCUSDT-PERP -> BTCUSDT
             symbol_dir = data_dir / symbol
-            
+
             if not symbol_dir.exists():
                 continue
-                
+
             # 查找数据文件
             oi_files = list(symbol_dir.glob("*-oi-1h-*.csv"))
             funding_files = list(symbol_dir.glob("*-funding-*.csv"))
-            
+
             oi_data_list = []
             funding_data_list = []
-            
+
             # 加载OI数据
             if oi_files:
                 oi_data_list = _load_oi_data_from_files(oi_files, instrument_id)
-                
+
             # 加载Funding Rate数据
             if funding_files:
-                funding_data_list = _load_funding_data_from_files(funding_files, instrument_id)
-                
+                funding_data_list = _load_funding_data_from_files(
+                    funding_files, instrument_id
+                )
+
             # 合并并添加到引擎
             if oi_data_list or funding_data_list:
-                merged_data = merge_custom_data_with_bars(oi_data_list, funding_data_list)
+                merged_data = merge_custom_data_with_bars(
+                    oi_data_list, funding_data_list
+                )
                 engine.add_data(merged_data)
                 total_loaded += len(merged_data)
                 print(f"   ✅ Added {len(merged_data)} custom data points for {symbol}")
-                
+
         print(f"✅ Total custom data loaded: {total_loaded} points")
-        
+
     except Exception as e:
         print(f"⚠️ Custom data loading failed: {e}")
         print("Strategy will run without OI/Funding data")
@@ -705,20 +809,22 @@ def _load_custom_data_to_engine(
 def _load_oi_data_from_files(oi_files: List[Path], instrument_id) -> List:
     """从文件加载OI数据"""
     oi_data_list = []
-    
+
     try:
         from decimal import Decimal
-        from nautilus_trader.core.nautilus_pyo3 import millis_to_nanos
-        from utils.custom_data import OpenInterestData
+
         import pandas as pd
-        
+        from nautilus_trader.core.nautilus_pyo3 import millis_to_nanos
+
+        from utils.custom_data import OpenInterestData
+
         for oi_file in oi_files:
             df = pd.read_csv(oi_file)
             for _, row in df.iterrows():
                 ts_ms = int(row["timestamp"])
                 ts_event = millis_to_nanos(ts_ms)
                 ts_init = ts_event
-                
+
                 oi_data = OpenInterestData(
                     instrument_id=instrument_id,
                     open_interest=Decimal(str(row["open_interest"])),
@@ -726,30 +832,32 @@ def _load_oi_data_from_files(oi_files: List[Path], instrument_id) -> List:
                     ts_init=ts_init,
                 )
                 oi_data_list.append(oi_data)
-                
+
     except Exception as e:
         print(f"❌ Error loading OI files: {e}")
-        
+
     return oi_data_list
 
 
 def _load_funding_data_from_files(funding_files: List[Path], instrument_id) -> List:
     """从文件加载Funding Rate数据"""
     funding_data_list = []
-    
+
     try:
         from decimal import Decimal
-        from nautilus_trader.core.nautilus_pyo3 import millis_to_nanos
-        from utils.custom_data import FundingRateData
+
         import pandas as pd
-        
+        from nautilus_trader.core.nautilus_pyo3 import millis_to_nanos
+
+        from utils.custom_data import FundingRateData
+
         for funding_file in funding_files:
             df = pd.read_csv(funding_file)
             for _, row in df.iterrows():
                 ts_ms = int(row["timestamp"])
                 ts_event = millis_to_nanos(ts_ms)
                 ts_init = ts_event
-                
+
                 funding_data = FundingRateData(
                     instrument_id=instrument_id,
                     funding_rate=Decimal(str(row["funding_rate"])),
@@ -758,28 +866,31 @@ def _load_funding_data_from_files(funding_files: List[Path], instrument_id) -> L
                     ts_init=ts_init,
                 )
                 funding_data_list.append(funding_data)
-                
+
     except Exception as e:
         print(f"❌ Error loading Funding files: {e}")
-        
+
     return funding_data_list
 
 
-def _process_backtest_results(cfg: BackTestConfig, base_dir: Path, results: List[BacktestResult]):
+def _process_backtest_results(
+    cfg: BackTestConfig, base_dir: Path, results: List[BacktestResult]
+):
     """处理回测结果"""
     # 收集策略统计数据
     filter_stats = None
     trade_metrics = None
-    
+
     try:
         from strategy.rs_squeeze import RSSqueezeStrategy
+
         filter_stats = RSSqueezeStrategy.get_filter_stats_summary()
         trade_metrics = RSSqueezeStrategy.get_trade_metrics()
         RSSqueezeStrategy.print_filter_stats_report()
         RSSqueezeStrategy.reset_class_stats()
     except (ImportError, AttributeError):
         pass  # 非RS Squeeze策略时跳过
-        
+
     # 提取策略配置参数
     strategy_params = cfg.strategy.params
     if hasattr(strategy_params, "model_dump"):
@@ -790,7 +901,7 @@ def _process_backtest_results(cfg: BackTestConfig, base_dir: Path, results: List
         strategy_config = strategy_params
     else:
         strategy_config = {}
-        
+
     # 构建回测配置信息
     backtest_config = {
         "start_date": str(cfg.start_date),
@@ -798,12 +909,12 @@ def _process_backtest_results(cfg: BackTestConfig, base_dir: Path, results: List
         "initial_balances": cfg.initial_balances,
         "strategies_count": len(results),
     }
-    
+
     # 处理每个结果
     for result in results:
         # 终端输出
         _print_results(result)
-        
+
         # 构建完整结果字典
         result_dict = _build_result_dict(
             result=result,
@@ -813,7 +924,7 @@ def _process_backtest_results(cfg: BackTestConfig, base_dir: Path, results: List
             trade_metrics=trade_metrics,
             backtest_config=backtest_config,
         )
-        
+
         # 保存JSON文件
         json_path = _save_results_to_json(result_dict, cfg.strategy.name, base_dir)
         print(f"📁 Complete results saved to: {json_path}")
@@ -1081,7 +1192,7 @@ def _save_results_to_json(
     将回测结果保存为 JSON 文件。
 
     文件命名格式: {策略名称}_{YYYY-MM-DD_HH-MM-SS}.json
-    存放路径: log/backtest/result/
+    存放路径: output/backtest/result/
 
     Args:
         result_dict: 完整的结果字典
@@ -1092,7 +1203,7 @@ def _save_results_to_json(
         保存的文件路径
     """
     # 创建目录
-    result_dir = base_dir / "log" / "backtest" / "result"
+    result_dir = base_dir / "output" / "backtest" / "result"
     result_dir.mkdir(parents=True, exist_ok=True)
 
     # 生成文件名
