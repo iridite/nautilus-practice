@@ -99,6 +99,9 @@ class OIDivergenceStrategyConfig(BaseStrategyConfig):
     signal_weight_oi: float = 0.4
     signal_weight_funding: float = 0.3
 
+    # === 🔥 Risk-Enhanced: ATR 动态止盈 ===
+    atr_tp_multiplier: float = 3.0  # ATR 止盈倍数（3.0 = 3× ATR）
+
     # === 调试与日志 ===
     enable_signal_logging: bool = True
     enable_quality_check: bool = True
@@ -200,6 +203,14 @@ class OIDivergenceStrategy(BaseStrategy):
         # === 🔥 Risk-Enhanced: 滑点监控 ===
         self.expected_entry_price: Optional[Decimal] = None  # 预期成交价
         self.actual_slippage_pct: Optional[float] = None  # 实际滑点百分比
+
+        # === 🔥 Risk-Enhanced: 止损订单追踪 ===
+        # 记录已提交止损单的入场订单ID，防止重复提交
+        self._stop_loss_submitted_order_ids: set = set()
+
+        # === 🔥 Risk-Enhanced: 滑点计算追踪 ===
+        # 追踪已计算滑点的订单ID，避免部分成交时重复计算
+        self._slippage_calculated_orders: set = set()
 
         # === 日志控制 ===
         self._last_warmup_log_bars: int = 0
@@ -321,6 +332,11 @@ class OIDivergenceStrategy(BaseStrategy):
         🔥 Risk Enhancement: 滑点监控
         - 检测实际成交价与预期价格的偏离
         - 如果滑点超过阈值，记录警告并可能触发防御措施
+
+        🔥 Risk Enhancement: 真实止损订单提交
+        - 使用实际成交价提交止损单，而非信号触发价
+        - 确保止损订单在入场成交后立即挂出
+        - 防止部分成交时重复提交止损单
         """
         super().on_order_filled(event)
 
@@ -328,13 +344,20 @@ class OIDivergenceStrategy(BaseStrategy):
         if event.order_side in (OrderSide.BUY, OrderSide.SELL):
             self._monitor_slippage(event)
 
-        # 更新入场价格
-        if event.order_side == OrderSide.BUY:
-            self.entry_price = Decimal(str(event.last_px))
-            self.log.info(f"✅ LONG Entry Filled @ {event.last_px}")
-        elif event.order_side == OrderSide.SELL:
-            self.entry_price = Decimal(str(event.last_px))
-            self.log.info(f"✅ SHORT Entry Filled @ {event.last_px}")
+            # 更新入场价格（使用真实成交价）
+            if event.order_side == OrderSide.BUY:
+                self.entry_price = Decimal(str(event.last_px))
+                self.log.info(f"✅ LONG Entry Filled @ {event.last_px}")
+            elif event.order_side == OrderSide.SELL:
+                self.entry_price = Decimal(str(event.last_px))
+                self.log.info(f"✅ SHORT Entry Filled @ {event.last_px}")
+
+            # 🔥 Risk: 使用真实成交价提交止损订单
+            # 检查是否已经为该订单提交过止损单（防止部分成交时重复提交）
+            if event.client_order_id not in self._stop_loss_submitted_order_ids:
+                self._submit_stop_loss_order(event.order_side, event.last_qty)
+                self._stop_loss_submitted_order_ids.add(event.client_order_id)
+                self.log.info(f"🔥 Stop Loss order submitted for {event.client_order_id}")
 
     def _monitor_slippage(self, event: OrderFilled):
         """
@@ -342,6 +365,11 @@ class OIDivergenceStrategy(BaseStrategy):
 
         计算公式：
         Slippage = (Actual_Price - Expected_Price) / Expected_Price
+
+        🔥 Risk Enhancement:
+        - 仅在第一次成交时计算滑点（使用预期价格）
+        - 避免部分成交时重复计算
+        - 订单完全成交时清理状态
 
         Parameters
         ----------
@@ -352,6 +380,11 @@ class OIDivergenceStrategy(BaseStrategy):
             # 没有设置预期价格，无法计算滑点
             return
 
+        # 检查是否已经计算过滑点
+        if event.client_order_id in self._slippage_calculated_orders:
+            return
+
+        # 第一次成交，计算滑点
         actual_price = Decimal(str(event.last_px))
         expected_price = self.expected_entry_price
 
@@ -369,6 +402,9 @@ class OIDivergenceStrategy(BaseStrategy):
 
         # 存储实际滑点
         self.actual_slippage_pct = abs(slippage_pct)
+
+        # 标记该订单已计算过滑点
+        self._slippage_calculated_orders.add(event.client_order_id)
 
         # 🚨 滑点告警
         if (
@@ -396,8 +432,9 @@ class OIDivergenceStrategy(BaseStrategy):
                 f"(Expected: {expected_price:.2f}, Actual: {actual_price:.2f})"
             )
 
-        # 重置预期价格
-        self.expected_entry_price = None
+        # 在订单完成时清理状态（通过检查订单状态）
+        # 注意：这里我们简单地在第一次计算后保留预期价格，
+        # 直到下一个入场订单设置新的预期价格时才覆盖
 
     # ========================================================================
     # 🔥 Risk-Enhanced: ATR Dynamic Stop Loss
@@ -624,11 +661,28 @@ class OIDivergenceStrategy(BaseStrategy):
                 qty = self.calculate_order_qty(current_price)
                 return float(qty)
 
-            account = accounts[0]
-            balance = account.balance(self.instrument.quote_currency)
-            if not balance:
+            # 🔥 Risk Enhancement: 根据结算货币筛选正确的账户
+            # 在多账户环境下，accounts[0] 可能不是当前交易品种所属的结算账户
+            quote_currency = self.instrument.quote_currency
+            target_account = None
+
+            for account in accounts:
+                balance = account.balance(quote_currency)
+                if balance and balance.total.as_decimal() > 0:
+                    target_account = account
+                    break
+
+            if target_account is None:
+                # 找不到匹配的账户，回退到基础计算
+                self.log.warning(
+                    f"⚠️  No account found with quote_currency={quote_currency}, "
+                    f"using default position sizing"
+                )
                 qty = self.calculate_order_qty(current_price)
                 return float(qty)
+
+            account = target_account
+            balance = account.balance(quote_currency)
 
             equity = balance.total.as_decimal()
             if equity <= 0:
@@ -1001,12 +1055,8 @@ class OIDivergenceStrategy(BaseStrategy):
 
         self.submit_order_safe(order, reason=reason)
 
-        # 🔥 Risk: 提交止损订单（真实订单保证执行）
-        self._submit_stop_loss_order(OrderSide.SELL, qty)
-
         # 更新状态
         self.entry_bar_count = 0
-        self.entry_price = current_price
         self._strategy_state = StrategyState.POSITION_OPEN
         self._signal_counter += 1
 
@@ -1068,12 +1118,8 @@ class OIDivergenceStrategy(BaseStrategy):
 
         self.submit_order_safe(order, reason=reason)
 
-        # 🔥 Risk: 提交止损订单（真实订单保证执行）
-        self._submit_stop_loss_order(OrderSide.BUY, qty)
-
         # 更新状态
         self.entry_bar_count = 0
-        self.entry_price = current_price
         self._strategy_state = StrategyState.POSITION_OPEN
         self._signal_counter += 1
 
@@ -1189,7 +1235,7 @@ class OIDivergenceStrategy(BaseStrategy):
 
     def _check_take_profit(self, pos, current_price: Decimal) -> bool:
         """检查止盈"""
-        tp_target = self._get_tp_target()
+        tp_target = self._get_tp_target(pos)  # 传入持仓以正确计算止盈目标
         if tp_target is None:
             return False
 
@@ -1201,14 +1247,50 @@ class OIDivergenceStrategy(BaseStrategy):
 
         return False
 
-    def _get_tp_target(self) -> Optional[Decimal]:
-        """获取止盈目标"""
+    def _get_tp_target(self, pos=None) -> Optional[Decimal]:
+        """
+        获取止盈目标
+
+        修复 P1-001: 之前 VWAP 作为止盈目标可能不合理
+        - 做空时如果 VWAP 低于当前价，止盈条件可能永远无法触发
+        - 做多时如果 VWAP 高于当前价，需要价格涨更多才能止盈
+
+        新方案：使用 ATR 动态止盈，根据持仓方向计算止盈距离
+        - LONG: tp_price = entry_price + (ATR × tp_multiplier)
+        - SHORT: tp_price = entry_price - (ATR × tp_multiplier)
+
+        Parameters
+        ----------
+        pos : Position, optional
+            持仓对象，用于判断方向和获取入场价
+
+        Returns
+        -------
+        Optional[Decimal]
+            止盈目标价格
+        """
+        # 如果有持仓，使用 ATR 动态止盈
+        if pos is not None and self.entry_price is not None:
+            if self.atr and self.atr.initialized:
+                atr_value = Decimal(str(self.atr.value))
+                # 止盈距离：默认 3× ATR（可配置）
+                tp_multiplier = getattr(self.config, "atr_tp_multiplier", 3.0)
+                tp_distance = atr_value * Decimal(str(tp_multiplier))
+
+                if pos.is_long:
+                    # 做多：止盈在上方
+                    return self.entry_price + tp_distance
+                else:
+                    # 做空：止盈在下方
+                    return self.entry_price - tp_distance
+
+        # 后备方案：如果没有持仓或 ATR 未初始化，使用 VWAP 或 midpoint
         if self.config.tp_use_vwap:
             if self.vwap_sma.initialized:
                 return Decimal(str(self.vwap_sma.value))
-        else:
-            if self.midpoint is not None:
-                return self.midpoint
+
+        if self.midpoint is not None:
+            return self.midpoint
 
         return None
 
