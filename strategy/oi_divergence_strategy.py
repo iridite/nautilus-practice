@@ -403,16 +403,123 @@ class OIDivergenceStrategy(BaseStrategy):
     # 🔥 Risk-Enhanced: ATR Dynamic Stop Loss
     # ========================================================================
 
+    def _get_atr_stop_price(
+        self, entry_price: Decimal, order_side: OrderSide
+    ) -> Optional[Decimal]:
+        """
+        计算 ATR 止损价格
+
+        Parameters
+        ----------
+        entry_price : Decimal
+            入场价格
+        order_side : OrderSide
+            订单方向
+
+        Returns
+        -------
+        Optional[Decimal]
+            止损触发价格，如果 ATR 未初始化则返回 None
+        """
+        if not self.atr or not self.atr.initialized:
+            return None
+
+        atr_value = Decimal(str(self.atr.value))
+        stop_distance = atr_value * Decimal(str(self.config.atr_stop_multiplier))
+
+        if order_side == OrderSide.SELL:
+            # 做空：止损在入场价上方（买入平仓）
+            return entry_price + stop_distance
+        else:
+            # 做多：止损在入场价下方（卖出平仓）
+            return entry_price - stop_distance
+
+    def _submit_stop_loss_order(self, order_side: OrderSide, quantity):
+        """
+        提交止损订单（真实订单保证执行）
+
+        根据配置选择：
+        1. ATR 动态止损（优先）
+        2. 固定百分比止损（后备）
+
+        Parameters
+        ----------
+        order_side : OrderSide
+            入场订单方向（用于判断持仓方向）
+        quantity : Quantity
+            订单数量
+        """
+        if self.entry_price is None:
+            return
+
+        # 获取止损价格
+        atr_stop_price = self._get_atr_stop_price(self.entry_price, order_side)
+
+        if self.config.use_atr_stop and atr_stop_price is not None:
+            # ATR 动态止损
+            trigger_price = self.instrument.make_price(atr_stop_price)
+            opposite_side = (
+                OrderSide.BUY if order_side == OrderSide.SELL else OrderSide.SELL
+            )
+
+            sl_order = self.order_factory.stop_market(
+                instrument_id=self.instrument_id,
+                order_side=opposite_side,
+                quantity=quantity,
+                trigger_price=trigger_price,
+                time_in_force=TimeInForce.FOK,  # ✅ 立即成交或取消
+                reduce_only=True,  # ✅ 防止加仓，只减少持仓
+            )
+
+            self.submit_order_safe(
+                sl_order,
+                reason=f"ATR Dynamic Stop Loss ({self.config.atr_stop_multiplier}× ATR) @ {atr_stop_price:.2f}",
+            )
+
+            if self.config.enable_signal_logging:
+                self.log.info(
+                    f"🔥 ATR Stop Loss Order Submitted: {opposite_side.name} @ {atr_stop_price:.2f} "
+                    f"(ATR: {self.atr.value:.2f}, Multiplier: {self.config.atr_stop_multiplier}x)"
+                )
+
+        elif self.config.stop_loss_pct is not None:
+            # 固定百分比止损（后备方案）
+            if order_side == OrderSide.SELL:
+                sl_price = self.entry_price * (
+                    Decimal("1") + Decimal(str(self.config.stop_loss_pct))
+                )
+            else:
+                sl_price = self.entry_price * (
+                    Decimal("1") - Decimal(str(self.config.stop_loss_pct))
+                )
+
+            trigger_price = self.instrument.make_price(sl_price)
+            opposite_side = (
+                OrderSide.BUY if order_side == OrderSide.SELL else OrderSide.SELL
+            )
+
+            sl_order = self.order_factory.stop_market(
+                instrument_id=self.instrument_id,
+                order_side=opposite_side,
+                quantity=quantity,
+                trigger_price=trigger_price,
+                time_in_force=TimeInForce.GTC,
+                reduce_only=True,  # ✅ 防止加仓，只减少持仓
+            )
+
+            self.submit_order_safe(
+                sl_order,
+                reason=f"Fixed Stop Loss ({self.config.stop_loss_pct:.2%}) @ {trigger_price}",
+            )
+
     def _check_atr_stop_loss(self, bar: Bar, positions):
         """
-        检查 ATR 动态止损
+        检查 ATR 动态止损（最后防线）
 
-        止损距离 = Entry_Price ± (ATR × Multiplier)
-
-        优点：
-        - 适应市场波动率
-        - 波动大时止损距离更宽，减少被扫出
-        - 波动小时止损距离更紧，保护利润
+        注意：正常情况下止损订单应该在开仓时已提交。
+        此方法作为最后防线，用于处理：
+        1. 止损订单未被正确提交的情况
+        2. 价格跳空穿过止损订单的情况
 
         Parameters
         ----------
@@ -447,9 +554,9 @@ class OIDivergenceStrategy(BaseStrategy):
                 if pos.is_short:
                     pnl_pct = -pnl_pct
 
-                self.log.info(
+                self.log.warning(
                     f"\n{'=' * 60}\n"
-                    f"🛑 ATR STOP LOSS TRIGGERED\n"
+                    f"🛑 ATR STOP LOSS TRIGGERED (Last Resort)\n"
                     f"{'=' * 60}\n"
                     f"Position: {pos.side.name}\n"
                     f"Entry Price: {self.entry_price:.2f}\n"
@@ -458,6 +565,7 @@ class OIDivergenceStrategy(BaseStrategy):
                     f"Stop Distance: {stop_distance:.2f} ({self.config.atr_stop_multiplier}× ATR)\n"
                     f"ATR Stop Price: {atr_stop_price:.2f}\n"
                     f"P&L: {pnl_pct:.2%}\n"
+                    f"⚠️  WARNING: Price gap detected or stop order failed!\n"
                     f"{'=' * 60}"
                 )
 
@@ -855,7 +963,7 @@ class OIDivergenceStrategy(BaseStrategy):
     def _execute_short_entry(
         self, bar: Bar, current_price: Decimal, signal_details: dict
     ):
-        """执行做空入场（带 ATR 仓位调整）"""
+        """执行做空入场（带 ATR 仓位调整和真实止损订单）"""
         positions = self.cache.positions_open(instrument_id=self.instrument_id)
         if len(positions) >= self.config.max_positions:
             self.log.warning(
@@ -893,27 +1001,8 @@ class OIDivergenceStrategy(BaseStrategy):
 
         self.submit_order_safe(order, reason=reason)
 
-        # 🔥 Risk: 根据配置创建固定止损或等待 ATR 动态止损
-        if not self.config.use_atr_stop and self.config.stop_loss_pct:
-            # 固定百分比止损（ATR 未启用时的后备方案）
-            sl_price = current_price * (
-                Decimal("1") + Decimal(str(self.config.stop_loss_pct))
-            )
-            trigger_price = self.instrument.make_price(sl_price)
-
-            sl_order = self.order_factory.stop_market(
-                instrument_id=self.instrument_id,
-                order_side=OrderSide.BUY,
-                quantity=qty,
-                trigger_price=trigger_price,
-                time_in_force=TimeInForce.GTC,
-                reduce_only=False,
-            )
-
-            self.submit_order_safe(
-                sl_order,
-                reason=f"Fixed Stop Loss (BUY) @ {trigger_price}",
-            )
+        # 🔥 Risk: 提交止损订单（真实订单保证执行）
+        self._submit_stop_loss_order(OrderSide.SELL, qty)
 
         # 更新状态
         self.entry_bar_count = 0
@@ -941,7 +1030,7 @@ class OIDivergenceStrategy(BaseStrategy):
     def _execute_long_entry(
         self, bar: Bar, current_price: Decimal, signal_details: dict
     ):
-        """执行做多入场（带 ATR 仓位调整）"""
+        """执行做多入场（带 ATR 仓位调整和真实止损订单）"""
         positions = self.cache.positions_open(instrument_id=self.instrument_id)
         if len(positions) >= self.config.max_positions:
             self.log.warning(
@@ -979,26 +1068,8 @@ class OIDivergenceStrategy(BaseStrategy):
 
         self.submit_order_safe(order, reason=reason)
 
-        # 🔥 Risk: 固定止损（如果 ATR 未启用）
-        if not self.config.use_atr_stop and self.config.stop_loss_pct:
-            sl_price = current_price * (
-                Decimal("1") - Decimal(str(self.config.stop_loss_pct))
-            )
-            trigger_price = self.instrument.make_price(sl_price)
-
-            sl_order = self.order_factory.stop_market(
-                instrument_id=self.instrument_id,
-                order_side=OrderSide.SELL,
-                quantity=qty,
-                trigger_price=trigger_price,
-                time_in_force=TimeInForce.GTC,
-                reduce_only=False,
-            )
-
-            self.submit_order_safe(
-                sl_order,
-                reason=f"Fixed Stop Loss (SELL) @ {trigger_price}",
-            )
+        # 🔥 Risk: 提交止损订单（真实订单保证执行）
+        self._submit_stop_loss_order(OrderSide.BUY, qty)
 
         # 更新状态
         self.entry_bar_count = 0
