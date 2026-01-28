@@ -104,6 +104,25 @@ def check_strategy_data_dependencies(
         "warnings": []
     }
 
+    # 特殊处理：为 OIDivergenceStrategy 硬编码数据依赖
+    strategy_name = getattr(strategy_config, '__class__', None)
+    if strategy_name and 'OIDivergence' in str(strategy_name):
+        from strategy.base import DataDependency
+        if not hasattr(strategy_config, 'data_dependencies') or not strategy_config.data_dependencies:
+            strategy_config.data_dependencies = [
+                DataDependency(
+                    data_type="oi",
+                    required=True,
+                    period="1h",
+                    auto_fetch=True
+                ),
+                DataDependency(
+                    data_type="funding",
+                    required=True,
+                    auto_fetch=True
+                )
+            ]
+
     # 检查策略是否有数据依赖声明
     if not hasattr(strategy_config, 'data_dependencies') or not strategy_config.data_dependencies:
         return tasks

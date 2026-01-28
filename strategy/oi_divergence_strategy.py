@@ -128,20 +128,7 @@ class OIDivergenceStrategyConfig(BaseStrategyConfig):
     enable_signal_logging: bool = True
     enable_quality_check: bool = True
 
-    # === 数据依赖声明 ===
-    data_dependencies: list = [
-        DataDependency(
-            data_type="oi",
-            required=True,
-            period="1h",
-            auto_fetch=True
-        ),
-        DataDependency(
-            data_type="funding",
-            required=True,
-            auto_fetch=True
-        )
-    ]
+
 
 
 # ============================================================================
