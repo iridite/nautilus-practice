@@ -838,7 +838,7 @@ def main():
                             symbols=[primary_symbol],
                             start_date=get_start_date(),
                             end_date=get_end_date(),
-                            exchange="binance",
+                            exchange_id="binance",
                             base_dir=BASE_DIR,
                             oi_period="1h"
                         )
