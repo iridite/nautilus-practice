@@ -30,7 +30,7 @@ from nautilus_trader.model.enums import OrderSide, TimeInForce
 from nautilus_trader.model.events import OrderFilled
 from nautilus_trader.model.identifiers import InstrumentId
 
-from strategy.base import BaseStrategy, BaseStrategyConfig
+from strategy.base import BaseStrategy, BaseStrategyConfig, DataDependency
 from utils.custom_data import FundingRateData, OpenInterestData
 from utils.data_validator import FundingRateValidator, OIValidator
 from utils.signal_stale_guard import SignalStaleGuard
@@ -127,6 +127,21 @@ class OIDivergenceStrategyConfig(BaseStrategyConfig):
     # === 调试与日志 ===
     enable_signal_logging: bool = True
     enable_quality_check: bool = True
+
+    # === 数据依赖声明 ===
+    data_dependencies: list[DataDependency] = [
+        DataDependency(
+            data_type="oi",
+            required=True,
+            period="1h",
+            auto_fetch=True
+        ),
+        DataDependency(
+            data_type="funding",
+            required=True,
+            auto_fetch=True
+        )
+    ]
 
 
 # ============================================================================
