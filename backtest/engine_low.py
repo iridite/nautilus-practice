@@ -27,6 +27,7 @@ from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.persistence.wranglers import BarDataWrangler
 from pandas import DataFrame
 
+from backtest.data_validator import DataValidator
 from backtest.exceptions import (
     BacktestEngineError,
     CustomDataError,
@@ -93,6 +94,21 @@ def _load_data_for_feed(
 
         if len(df) == 0:
             raise DataLoadError(f"No data available in range for {data_cfg.csv_file_name}", str(csv_path))
+
+        # 数据质量验证
+        expected_interval = DataValidator.parse_interval_from_bar_type(data_cfg.bar_type_str)
+        issues = DataValidator.validate_dataframe(df, csv_path, expected_interval)
+        for issue in issues:
+            if issue.severity == "error":
+                raise DataLoadError(f"Data quality error: {issue.message}", str(csv_path))
+            elif issue.severity == "warning":
+                print(f"   {issue}")
+</text>
+
+<old_text line=193>
+        for oi_file in oi_files:
+            df = pd.read_csv(oi_file)
+            df = df.sort_values("timestamp")  # 确保时间戳顺序
 
         # 使用 Wrangler 转换并注入引擎
         wrangler = BarDataWrangler(feed_bar_type, inst)
@@ -194,6 +210,13 @@ def _load_oi_data_from_files(oi_files: List[Path], instrument_id) -> List:
             df = pd.read_csv(oi_file)
             df = df.sort_values("timestamp")  # 确保时间戳顺序
 
+            # 数据质量验证
+            issues = DataValidator.validate_dataframe(df, oi_file, expected_interval_ms=3_600_000)
+            for issue in issues:
+                if issue.severity == "error":
+                    print(f"   ❌ OI data quality error in {oi_file.name}: {issue.message}")
+                    continue
+
             prev_ts = 0
             for _, row in df.iterrows():
                 ts_ms = int(row["timestamp"])
@@ -235,6 +258,13 @@ def _load_funding_data_from_files(funding_files: List[Path], instrument_id) -> L
         for funding_file in funding_files:
             df = pd.read_csv(funding_file)
             df = df.sort_values("timestamp")  # 确保时间戳顺序
+
+            # 数据质量验证
+            issues = DataValidator.validate_dataframe(df, funding_file, expected_interval_ms=28_800_000)
+            for issue in issues:
+                if issue.severity == "error":
+                    print(f"   ❌ Funding data quality error in {funding_file.name}: {issue.message}")
+                    continue
 
             prev_ts = 0
             for _, row in df.iterrows():
