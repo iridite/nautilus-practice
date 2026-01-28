@@ -29,7 +29,6 @@ from nautilus_trader.model.data import Bar, BarType
 from nautilus_trader.model.enums import OrderSide, TimeInForce
 from nautilus_trader.model.events import OrderFilled
 from nautilus_trader.model.identifiers import InstrumentId
-from pydantic import Field
 
 from strategy.base import BaseStrategy, BaseStrategyConfig, DataDependency
 from utils.custom_data import FundingRateData, OpenInterestData
@@ -130,19 +129,22 @@ class OIDivergenceStrategyConfig(BaseStrategyConfig):
     enable_quality_check: bool = True
 
     # === 数据依赖声明 ===
-    data_dependencies: list[DataDependency] = Field(default_factory=lambda: [
-        DataDependency(
-            data_type="oi",
-            required=True,
-            period="1h",
-            auto_fetch=True
-        ),
-        DataDependency(
-            data_type="funding",
-            required=True,
-            auto_fetch=True
-        )
-    ])
+    def __init__(self, **data):
+        super().__init__(**data)
+        if not self.data_dependencies:
+            self.data_dependencies = [
+                DataDependency(
+                    data_type="oi",
+                    required=True,
+                    period="1h",
+                    auto_fetch=True
+                ),
+                DataDependency(
+                    data_type="funding",
+                    required=True,
+                    auto_fetch=True
+                )
+            ]
 
 
 # ============================================================================
