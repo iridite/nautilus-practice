@@ -26,10 +26,9 @@ from typing import Deque, Optional
 
 from nautilus_trader.indicators import AverageTrueRange, SimpleMovingAverage
 from nautilus_trader.model.data import Bar, BarType
-from nautilus_trader.model.enums import OrderSide, OrderStatus, TimeInForce
+from nautilus_trader.model.enums import OrderSide, TimeInForce
 from nautilus_trader.model.events import OrderFilled
 from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.orders import Order
 
 from strategy.base import BaseStrategy, BaseStrategyConfig
 from utils.custom_data import FundingRateData, OpenInterestData
@@ -101,6 +100,12 @@ class OIDivergenceStrategyConfig(BaseStrategyConfig):
 
     # === 🔥 Risk-Enhanced: ATR 动态止盈 ===
     atr_tp_multiplier: float = 3.0  # ATR 止盈倍数（3.0 = 3× ATR）
+
+    # === 🔥 Risk-Enhanced: 信号钝化保护 ===
+    enable_divergence_stale_check: bool = True  # 启用背离钝化检测
+    divergence_stale_bars: int = 12  # 背离持续超过 N 根 K 线视为钝化
+    stale_action: str = "tighten_stop"  # 钝化处理：tighten_stop/close/reduce
+    stale_stop_multiplier: float = 1.0  # 钝化后止损收紧倍数（1.0× ATR）
 
     # === 调试与日志 ===
     enable_signal_logging: bool = True
@@ -177,9 +182,22 @@ class OIDivergenceStrategy(BaseStrategy):
 
         # === 数据缓存 ===
         self.bars_main: Deque[Bar] = deque(maxlen=config.lookback_bars + 10)
-        self.bars_trend: Deque[Bar] = deque(maxlen=50) if self.trend_bar_type else None
+        self.bars_trend: Optional[Deque[Bar]] = deque(maxlen=50) if self.trend_bar_type else None
         self.oi_history: Deque[dict] = deque(maxlen=config.oi_lookback + 10)
         self.funding_history: Deque[dict] = deque(maxlen=10)
+
+        # === 🔥 Performance: OI baseline 缓存 ===
+        self._oi_baseline_cache: Optional[Decimal] = None
+        self._oi_sum: Decimal = Decimal("0")
+        self._oi_count: int = 0
+
+        # === 🔥 Risk: OI 异常检测（防止换月虚假信号）===
+        self._last_valid_oi: Optional[Decimal] = None
+        self._oi_spike_threshold: float = 0.5  # 50% 变化视为异常
+
+        # === 🔥 Risk: Funding Rate 异常检测 ===
+        self._last_valid_funding: Optional[Decimal] = None
+        self._funding_spike_threshold: float = 2.0  # 年化费率变化超过 200% 视为异常
 
         # === 关键价位 ===
         self.resistance: Optional[Decimal] = None
@@ -211,6 +229,11 @@ class OIDivergenceStrategy(BaseStrategy):
         # === 🔥 Risk-Enhanced: 滑点计算追踪 ===
         # 追踪已计算滑点的订单ID，避免部分成交时重复计算
         self._slippage_calculated_orders: set = set()
+
+        # === 🔥 Risk-Enhanced: 信号钝化追踪 ===
+        self._divergence_first_detected_bar: Optional[int] = None  # 背离首次检测到的 K 线计数
+        self._divergence_bars_count: int = 0  # 背离持续的 K 线数量
+        self._stale_protection_triggered: bool = False  # 是否已触发钝化保护
 
         # === 日志控制 ===
         self._last_warmup_log_bars: int = 0
@@ -458,7 +481,7 @@ class OIDivergenceStrategy(BaseStrategy):
         Optional[Decimal]
             止损触发价格，如果 ATR 未初始化则返回 None
         """
-        if not self.atr or not self.atr.initialized:
+        if not self.atr or not self.atr.initialized or self.atr.value is None:
             return None
 
         atr_value = Decimal(str(self.atr.value))
@@ -513,7 +536,7 @@ class OIDivergenceStrategy(BaseStrategy):
                 reason=f"ATR Dynamic Stop Loss ({self.config.atr_stop_multiplier}× ATR) @ {atr_stop_price:.2f}",
             )
 
-            if self.config.enable_signal_logging:
+            if self.config.enable_signal_logging and self.atr:
                 self.log.info(
                     f"🔥 ATR Stop Loss Order Submitted: {opposite_side.name} @ {atr_stop_price:.2f} "
                     f"(ATR: {self.atr.value:.2f}, Multiplier: {self.config.atr_stop_multiplier}x)"
@@ -687,8 +710,10 @@ class OIDivergenceStrategy(BaseStrategy):
             equity = balance.total.as_decimal()
             if equity <= 0:
                 return 0.0
-        except Exception as e:
-            self.log.error(f"❌ Failed to get equity for ATR position sizing: {e}")
+        except (AttributeError, KeyError, IndexError) as e:
+            self.log.error(
+                f"❌ Failed to get equity for ATR position sizing: {type(e).__name__}: {e}"
+            )
             qty = self.calculate_order_qty(current_price)
             return float(qty)
 
@@ -742,14 +767,56 @@ class OIDivergenceStrategy(BaseStrategy):
         if data.instrument_id != self.instrument_id:
             return
 
-        self.current_oi = data.open_interest
+        # 🔥 Risk: OI 数据异常检测（防止换月虚假信号）
+        oi_value = data.open_interest
+
+        # 检查 1: 数据有效性（NaN、None、0、负数）
+        if oi_value is None or oi_value <= 0:
+            self.log.warning(
+                f"⚠️  Invalid OI data detected: {oi_value}, skipping update"
+            )
+            return
+
+        # 检查 2: 剧烈变化检测（换月、数据错误）
+        if self._last_valid_oi is not None and self._last_valid_oi > 0:
+            oi_change_pct = abs(
+                float((oi_value - self._last_valid_oi) / self._last_valid_oi)
+            )
+            if oi_change_pct > self._oi_spike_threshold:
+                self.log.warning(
+                    f"⚠️  OI spike detected: {oi_change_pct:.1%} change "
+                    f"(from {self._last_valid_oi:.0f} to {oi_value:.0f}). "
+                    f"Possible contract roll or data error. Skipping update."
+                )
+                return
+
+        # 数据通过验证，更新状态
+        self.current_oi = oi_value
+        self._last_valid_oi = oi_value
         self.oi_history.append(
             {
                 "ts": data.ts_event,
-                "oi": data.open_interest,
+                "oi": oi_value,
                 "data": data,
             }
         )
+
+        # 🔥 Performance: 增量更新 OI baseline 缓存
+        if len(self.oi_history) >= self.config.oi_lookback:
+            # 添加新值
+            self._oi_sum += data.open_interest
+            self._oi_count += 1
+
+            # 如果超过窗口大小，移除最旧的值
+            if self._oi_count > self.config.oi_lookback:
+                oldest_idx = len(self.oi_history) - self.config.oi_lookback - 1
+                if oldest_idx >= 0:
+                    oldest_oi = list(self.oi_history)[oldest_idx]["oi"]
+                    self._oi_sum -= oldest_oi
+                    self._oi_count -= 1
+
+            # 更新缓存
+            self._oi_baseline_cache = self._oi_sum / Decimal(str(self._oi_count))
 
         if self.config.enable_signal_logging and len(self.oi_history) % 24 == 0:
             oi_baseline = self._calculate_oi_baseline()
@@ -767,21 +834,52 @@ class OIDivergenceStrategy(BaseStrategy):
         if data.instrument_id != self.instrument_id:
             return
 
-        self.current_funding_rate_annual = data.funding_rate_annual
+        # 🔥 Risk: Funding Rate 数据异常检测
+        funding_annual = data.funding_rate_annual
+
+        # 检查 1: 数据有效性（NaN、None）
+        if funding_annual is None:
+            self.log.warning(
+                f"⚠️  Invalid Funding Rate data detected: None, skipping update"
+            )
+            return
+
+        # 检查 2: 异常值检测（年化费率超过 ±500% 视为异常）
+        if abs(float(funding_annual)) > 500.0:
+            self.log.warning(
+                f"⚠️  Abnormal Funding Rate detected: {funding_annual:.2f}% (annual), "
+                f"exceeds ±500% threshold. Possible data error, skipping update."
+            )
+            return
+
+        # 检查 3: 剧烈变化检测（数据错误）
+        if self._last_valid_funding is not None:
+            funding_change = abs(float(funding_annual - self._last_valid_funding))
+            if funding_change > self._funding_spike_threshold * 100:  # 转换为百分点
+                self.log.warning(
+                    f"⚠️  Funding Rate spike detected: {funding_change:.1f}% change "
+                    f"(from {self._last_valid_funding:.2f}% to {funding_annual:.2f}%). "
+                    f"Possible data error, skipping update."
+                )
+                return
+
+        # 数据通过验证，更新状态
+        self.current_funding_rate_annual = funding_annual
+        self._last_valid_funding = funding_annual
         self.funding_history.append(
             {
                 "ts": data.ts_event,
                 "rate": data.funding_rate,
-                "annual": data.funding_rate_annual,
+                "annual": funding_annual,
                 "data": data,
             }
         )
 
         if self.config.enable_signal_logging:
-            sentiment = self._classify_funding_sentiment(data.funding_rate_annual)
+            sentiment = self._classify_funding_sentiment(funding_annual)
             self.log.debug(
                 f"💰 Funding Update | Rate: {data.funding_rate:.4f}, "
-                f"Annual: {data.funding_rate_annual:.2f}%, "
+                f"Annual: {funding_annual:.2f}%, "
                 f"Sentiment: {sentiment}"
             )
 
@@ -830,7 +928,7 @@ class OIDivergenceStrategy(BaseStrategy):
         }
 
         # Condition 1: 突破阻力位
-        if current_high <= self.resistance:
+        if self.resistance is None or current_high <= self.resistance:
             return False, details
 
         details["cond1_breakout"] = True
@@ -903,7 +1001,7 @@ class OIDivergenceStrategy(BaseStrategy):
         }
 
         # Condition 1: 突破支撑位
-        if current_low >= self.support:
+        if self.support is None or current_low >= self.support:
             return False, details
 
         details["cond1_breakout"] = True
@@ -963,7 +1061,7 @@ class OIDivergenceStrategy(BaseStrategy):
         return True, details
 
     # ========================================================================
-    # Research Alpha Implementation - Exit Signals (Unchanged)
+    # Research Alpha Implementation - Exit Signals (Enhanced)
     # ========================================================================
 
     def _check_exit_signals(self, bar: Bar, positions):
@@ -972,9 +1070,14 @@ class OIDivergenceStrategy(BaseStrategy):
         current_price = Decimal(str(bar.close))
 
         for pos in positions:
+            # 🔥 Risk: 检查信号钝化保护
+            if self.config.enable_divergence_stale_check:
+                if self._check_divergence_stale(bar, pos, current_price):
+                    return
+
             # 止盈
             if self._check_take_profit(pos, current_price):
-                tp_target = self._get_tp_target()
+                tp_target = self._get_tp_target(pos)
                 self.log.info(
                     f"\n{'=' * 60}\n"
                     f"✅ TAKE PROFIT TRIGGERED\n"
@@ -1010,135 +1113,230 @@ class OIDivergenceStrategy(BaseStrategy):
                 self._strategy_state = StrategyState.IDLE
                 return
 
+    def _check_divergence_stale(
+        self, bar: Bar, pos, current_price: Decimal
+    ) -> bool:
+        """
+        检查 OI 背离信号钝化
+
+        🔥 Risk Enhancement: 防止在强趋势中背离长时间持续不反转
+        - 追踪背离持续时间
+        - 超过阈值时触发保护措施（收紧止损或平仓）
+
+        Parameters
+        ----------
+        bar : Bar
+            当前 K 线
+        pos : Position
+            持仓对象
+        current_price : Decimal
+            当前价格
+
+        Returns
+        -------
+        bool
+            是否触发了钝化保护并平仓
+        """
+        # 计算当前 OI 背离
+        oi_divergence = self._calculate_oi_divergence()
+
+        if oi_divergence is None:
+            return False
+
+        # 检查背离是否仍然存在
+        is_divergence_active = abs(float(oi_divergence)) >= self.config.oi_decline_threshold
+
+        if is_divergence_active:
+            # 背离仍在持续
+            if self._divergence_first_detected_bar is None:
+                self._divergence_first_detected_bar = self.entry_bar_count
+
+            self._divergence_bars_count = (
+                self.entry_bar_count - self._divergence_first_detected_bar
+            )
+
+            # 检查是否超过钝化阈值
+            if (
+                self._divergence_bars_count >= self.config.divergence_stale_bars
+                and not self._stale_protection_triggered
+            ):
+                self._stale_protection_triggered = True
+
+                if self.config.stale_action == "close":
+                    # 直接平仓
+                    self.log.warning(
+                        f"\n{'⚠️ ' * 30}\n"
+                        f"🚨 DIVERGENCE STALE DETECTED - CLOSING POSITION\n"
+                        f"{'⚠️ ' * 30}\n"
+                        f"Position: {pos.side.name}\n"
+                        f"Divergence Duration: {self._divergence_bars_count} bars\n"
+                        f"OI Divergence: {oi_divergence:.2%}\n"
+                        f"Current Price: {current_price:.2f}\n"
+                        f"Entry Price: {self.entry_price:.2f}\n"
+                        f"\n⚠️  Divergence persisted without reversal - exiting to protect capital\n"
+                        f"{'⚠️ ' * 30}"
+                    )
+                    self.close_position(pos)
+                    self.cancel_all_orders(self.instrument_id)
+                    self.entry_bar_count = 0
+                    self.entry_price = None
+                    self._strategy_state = StrategyState.IDLE
+                    self._reset_divergence_tracking()
+                    return True
+
+                elif self.config.stale_action == "tighten_stop":
+                    # 收紧止损
+                    if self.atr and self.atr.initialized and self.entry_price:
+                        atr_value = Decimal(str(self.atr.value))
+                        tightened_distance = atr_value * Decimal(
+                            str(self.config.stale_stop_multiplier)
+                        )
+
+                        if pos.is_long:
+                            new_stop = self.entry_price - tightened_distance
+                        else:
+                            new_stop = self.entry_price + tightened_distance
+
+                        self.log.warning(
+                            f"\n{'⚠️ ' * 30}\n"
+                            f"🚨 DIVERGENCE STALE DETECTED - TIGHTENING STOP LOSS\n"
+                            f"{'⚠️ ' * 30}\n"
+                            f"Position: {pos.side.name}\n"
+                            f"Divergence Duration: {self._divergence_bars_count} bars\n"
+                            f"OI Divergence: {oi_divergence:.2%}\n"
+                            f"Original Stop Distance: {self.config.atr_stop_multiplier}× ATR\n"
+                            f"New Stop Distance: {self.config.stale_stop_multiplier}× ATR\n"
+                            f"New Stop Price: {new_stop:.2f}\n"
+                            f"\n⚠️  Divergence persisted - tightening stop to protect profits\n"
+                            f"{'⚠️ ' * 30}"
+                        )
+
+                        # 取消现有止损单，提交新的收紧止损单
+                        self.cancel_all_orders(self.instrument_id)
+
+                        opposite_side = (
+                            OrderSide.BUY if pos.is_short else OrderSide.SELL
+                        )
+                        trigger_price = self.instrument.make_price(new_stop)
+
+                        sl_order = self.order_factory.stop_market(
+                            instrument_id=self.instrument_id,
+                            order_side=opposite_side,
+                            quantity=pos.quantity,
+                            trigger_price=trigger_price,
+                            time_in_force=TimeInForce.GTC,
+                            reduce_only=True,
+                        )
+
+                        self.submit_order_safe(
+                            sl_order,
+                            reason=f"Tightened Stop Loss (Divergence Stale) @ {new_stop:.2f}",
+                        )
+        else:
+            # 背离已消失，重置追踪
+            self._reset_divergence_tracking()
+
+        return False
+
+    def _reset_divergence_tracking(self):
+        """重置背离追踪状态"""
+        self._divergence_first_detected_bar = None
+        self._divergence_bars_count = 0
+        self._stale_protection_triggered = False
+
     # ========================================================================
     # 🔥 Risk-Enhanced: Order Execution with ATR Position Sizing
     # ========================================================================
+
+    def _execute_entry(
+        self, order_side: OrderSide, current_price: Decimal, signal_details: dict
+    ):
+        """执行入场（带 ATR 仓位调整和真实止损订单）"""
+        positions = self.cache.positions_open(instrument_id=self.instrument_id)
+        if len(positions) >= self.config.max_positions:
+            side_name = "SHORT" if order_side == OrderSide.SELL else "LONG"
+            self.log.warning(
+                f"⚠️  Max positions reached ({self.config.max_positions}), skipping {side_name} entry"
+            )
+            return
+
+        # 🔥 Risk: 使用 ATR 动态仓位计算
+        if self.config.use_atr_position_sizing and self.atr and self.atr.initialized:
+            raw_qty = self._calculate_atr_adjusted_qty(current_price, order_side)
+            qty = self.instrument.make_qty(raw_qty)
+        else:
+            qty = self.calculate_order_qty(current_price)
+
+        if qty <= 0:
+            self.log.error(f"❌ Invalid order quantity: {qty}, skipping entry")
+            return
+
+        # 🔥 Risk: 记录预期成交价（用于滑点监控）
+        self.expected_entry_price = current_price
+
+        # 创建市价单
+        order = self.order_factory.market(
+            instrument_id=self.instrument_id,
+            order_side=order_side,
+            quantity=qty,
+        )
+
+        # 构建 reason
+        if order_side == OrderSide.SELL:
+            level_key = "resistance"
+            level_value = signal_details.get("resistance", 0)
+            comparison = "<"
+            side_name = "SHORT"
+            emoji = "🔻"
+        else:
+            level_key = "support"
+            level_value = signal_details.get("support", 0)
+            comparison = ">"
+            side_name = "LONG"
+            emoji = "🔺"
+
+        reason = (
+            f"OI Divergence {side_name} | "
+            f"Signal Strength: {signal_details['signal_strength']:.2f} | "
+            f"Price: {current_price:.2f} {comparison} {level_key.capitalize()}: {level_value:.2f} | "
+            f"OI Divergence: {signal_details['oi_divergence']:.2%}"
+        )
+
+        self.submit_order_safe(order, reason=reason)
+
+        # 更新状态
+        self.entry_bar_count = 0
+        self._strategy_state = StrategyState.POSITION_OPEN
+        self._signal_counter += 1
+
+        # 日志
+        if self.config.enable_signal_logging:
+            self.log.info(
+                f"\n{'=' * 70}\n"
+                f"{emoji} {side_name} ENTRY EXECUTED (Signal #{self._signal_counter})\n"
+                f"{'=' * 70}\n"
+                f"Entry Price: {current_price:.2f}\n"
+                f"Quantity: {qty}\n"
+                f"Stop Loss: {'ATR-based (dynamic)' if self.config.use_atr_stop else 'Fixed ' + str(self.config.stop_loss_pct)}\n"
+                f"\n--- Signal Details ---\n"
+                f"Breakout Price: {signal_details['breakout_price']:.2f}\n"
+                f"{level_key.capitalize()}: {level_value:.2f}\n"
+                f"OI Divergence: {signal_details['oi_divergence']:.2%}\n"
+                f"Signal Strength: {signal_details['signal_strength']:.2f}\n"
+                f"{'=' * 70}"
+            )
 
     def _execute_short_entry(
         self, bar: Bar, current_price: Decimal, signal_details: dict
     ):
         """执行做空入场（带 ATR 仓位调整和真实止损订单）"""
-        positions = self.cache.positions_open(instrument_id=self.instrument_id)
-        if len(positions) >= self.config.max_positions:
-            self.log.warning(
-                f"⚠️  Max positions reached ({self.config.max_positions}), skipping SHORT entry"
-            )
-            return
-
-        # 🔥 Risk: 使用 ATR 动态仓位计算
-        if self.config.use_atr_position_sizing and self.atr and self.atr.initialized:
-            raw_qty = self._calculate_atr_adjusted_qty(current_price, OrderSide.SELL)
-            qty = self.instrument.make_qty(raw_qty)
-        else:
-            qty = self.calculate_order_qty(current_price)
-
-        if qty <= 0:
-            self.log.error(f"❌ Invalid order quantity: {qty}, skipping entry")
-            return
-
-        # 🔥 Risk: 记录预期成交价（用于滑点监控）
-        self.expected_entry_price = current_price
-
-        # 创建市价做空单
-        order = self.order_factory.market(
-            instrument_id=self.instrument_id,
-            order_side=OrderSide.SELL,
-            quantity=qty,
-        )
-
-        reason = (
-            f"OI Divergence SHORT | "
-            f"Signal Strength: {signal_details['signal_strength']:.2f} | "
-            f"Price: {current_price:.2f} < Resistance: {signal_details['resistance']:.2f} | "
-            f"OI Divergence: {signal_details['oi_divergence']:.2%}"
-        )
-
-        self.submit_order_safe(order, reason=reason)
-
-        # 更新状态
-        self.entry_bar_count = 0
-        self._strategy_state = StrategyState.POSITION_OPEN
-        self._signal_counter += 1
-
-        # 日志
-        if self.config.enable_signal_logging:
-            self.log.info(
-                f"\n{'=' * 70}\n"
-                f"🔻 SHORT ENTRY EXECUTED (Signal #{self._signal_counter})\n"
-                f"{'=' * 70}\n"
-                f"Entry Price: {current_price:.2f}\n"
-                f"Quantity: {qty}\n"
-                f"Stop Loss: {'ATR-based (dynamic)' if self.config.use_atr_stop else 'Fixed ' + str(self.config.stop_loss_pct)}\n"
-                f"\n--- Signal Details ---\n"
-                f"Breakout Price: {signal_details['breakout_price']:.2f}\n"
-                f"Resistance: {signal_details['resistance']:.2f}\n"
-                f"OI Divergence: {signal_details['oi_divergence']:.2%}\n"
-                f"Signal Strength: {signal_details['signal_strength']:.2f}\n"
-                f"{'=' * 70}"
-            )
+        self._execute_entry(OrderSide.SELL, current_price, signal_details)
 
     def _execute_long_entry(
         self, bar: Bar, current_price: Decimal, signal_details: dict
     ):
         """执行做多入场（带 ATR 仓位调整和真实止损订单）"""
-        positions = self.cache.positions_open(instrument_id=self.instrument_id)
-        if len(positions) >= self.config.max_positions:
-            self.log.warning(
-                f"⚠️  Max positions reached ({self.config.max_positions}), skipping LONG entry"
-            )
-            return
-
-        # 🔥 Risk: 使用 ATR 动态仓位计算
-        if self.config.use_atr_position_sizing and self.atr and self.atr.initialized:
-            raw_qty = self._calculate_atr_adjusted_qty(current_price, OrderSide.BUY)
-            qty = self.instrument.make_qty(raw_qty)
-        else:
-            qty = self.calculate_order_qty(current_price)
-
-        if qty <= 0:
-            self.log.error(f"❌ Invalid order quantity: {qty}, skipping entry")
-            return
-
-        # 🔥 Risk: 记录预期成交价（用于滑点监控）
-        self.expected_entry_price = current_price
-
-        # 创建市价做多单
-        order = self.order_factory.market(
-            instrument_id=self.instrument_id,
-            order_side=OrderSide.BUY,
-            quantity=qty,
-        )
-
-        reason = (
-            f"OI Divergence LONG | "
-            f"Signal Strength: {signal_details['signal_strength']:.2f} | "
-            f"Price: {current_price:.2f} > Support: {signal_details['support']:.2f} | "
-            f"OI Divergence: {signal_details['oi_divergence']:.2%}"
-        )
-
-        self.submit_order_safe(order, reason=reason)
-
-        # 更新状态
-        self.entry_bar_count = 0
-        self._strategy_state = StrategyState.POSITION_OPEN
-        self._signal_counter += 1
-
-        # 日志
-        if self.config.enable_signal_logging:
-            self.log.info(
-                f"\n{'=' * 70}\n"
-                f"🔺 LONG ENTRY EXECUTED (Signal #{self._signal_counter})\n"
-                f"{'=' * 70}\n"
-                f"Entry Price: {current_price:.2f}\n"
-                f"Quantity: {qty}\n"
-                f"Stop Loss: {'ATR-based (dynamic)' if self.config.use_atr_stop else 'Fixed ' + str(self.config.stop_loss_pct)}\n"
-                f"\n--- Signal Details ---\n"
-                f"Breakout Price: {signal_details['breakout_price']:.2f}\n"
-                f"Support: {signal_details['support']:.2f}\n"
-                f"OI Divergence: {signal_details['oi_divergence']:.2%}\n"
-                f"Signal Strength: {signal_details['signal_strength']:.2f}\n"
-                f"{'=' * 70}"
-            )
+        self._execute_entry(OrderSide.BUY, current_price, signal_details)
 
     # ========================================================================
     # Research Alpha Calculations (Unchanged)
@@ -1162,10 +1360,15 @@ class OIDivergenceStrategy(BaseStrategy):
         return oi_divergence
 
     def _calculate_oi_baseline(self) -> Decimal:
-        """计算 OI 基准值"""
+        """计算 OI 基准值（使用缓存优化）"""
         if len(self.oi_history) < self.config.oi_lookback:
             return Decimal("0")
 
+        # 🔥 Performance: 使用缓存值
+        if self._oi_baseline_cache is not None:
+            return self._oi_baseline_cache
+
+        # 后备方案：重新计算（仅在缓存未初始化时）
         recent_oi = [
             item["oi"] for item in list(self.oi_history)[-self.config.oi_lookback :]
         ]
@@ -1179,7 +1382,10 @@ class OIDivergenceStrategy(BaseStrategy):
         self, current_high: Decimal, oi_divergence: Decimal
     ) -> float:
         """计算做空信号强度"""
-        breakout_score = float((current_high - self.resistance) / self.resistance)
+        if self.resistance is None or self.resistance == 0:
+            breakout_score = 0.0
+        else:
+            breakout_score = float((current_high - self.resistance) / self.resistance)
         oi_score = -float(oi_divergence) / self.config.oi_decline_threshold
 
         if self.current_funding_rate_annual:
@@ -1201,7 +1407,10 @@ class OIDivergenceStrategy(BaseStrategy):
         self, current_low: Decimal, oi_divergence: Decimal
     ) -> float:
         """计算做多信号强度"""
-        breakout_score = float((self.support - current_low) / self.support)
+        if self.support is None or self.support == 0:
+            breakout_score = 0.0
+        else:
+            breakout_score = float((self.support - current_low) / self.support)
         oi_score = -float(oi_divergence) / self.config.oi_decline_threshold
 
         if self.current_funding_rate_annual:
@@ -1247,47 +1456,38 @@ class OIDivergenceStrategy(BaseStrategy):
 
         return False
 
-    def _get_tp_target(self, pos=None) -> Optional[Decimal]:
+    def _get_tp_target(self, pos) -> Optional[Decimal]:
         """
         获取止盈目标
 
-        修复 P1-001: 之前 VWAP 作为止盈目标可能不合理
-        - 做空时如果 VWAP 低于当前价，止盈条件可能永远无法触发
-        - 做多时如果 VWAP 高于当前价，需要价格涨更多才能止盈
-
-        新方案：使用 ATR 动态止盈，根据持仓方向计算止盈距离
+        使用 ATR 动态止盈，根据持仓方向计算止盈距离
         - LONG: tp_price = entry_price + (ATR × tp_multiplier)
         - SHORT: tp_price = entry_price - (ATR × tp_multiplier)
 
         Parameters
         ----------
-        pos : Position, optional
-            持仓对象，用于判断方向和获取入场价
+        pos : Position
+            持仓对象，用于判断方向
 
         Returns
         -------
         Optional[Decimal]
             止盈目标价格
         """
-        # 如果有持仓，使用 ATR 动态止盈
-        if pos is not None and self.entry_price is not None:
-            if self.atr and self.atr.initialized:
-                atr_value = Decimal(str(self.atr.value))
-                # 止盈距离：默认 3× ATR（可配置）
-                tp_multiplier = getattr(self.config, "atr_tp_multiplier", 3.0)
-                tp_distance = atr_value * Decimal(str(tp_multiplier))
+        # 优先使用 ATR 动态止盈
+        if self.entry_price is not None and self.atr and self.atr.initialized:
+            atr_value = Decimal(str(self.atr.value))
+            tp_multiplier = getattr(self.config, "atr_tp_multiplier", 3.0)
+            tp_distance = atr_value * Decimal(str(tp_multiplier))
 
-                if pos.is_long:
-                    # 做多：止盈在上方
-                    return self.entry_price + tp_distance
-                else:
-                    # 做空：止盈在下方
-                    return self.entry_price - tp_distance
+            if pos.is_long:
+                return self.entry_price + tp_distance
+            else:
+                return self.entry_price - tp_distance
 
-        # 后备方案：如果没有持仓或 ATR 未初始化，使用 VWAP 或 midpoint
-        if self.config.tp_use_vwap:
-            if self.vwap_sma.initialized:
-                return Decimal(str(self.vwap_sma.value))
+        # 后备方案：使用 VWAP 或 midpoint
+        if self.config.tp_use_vwap and self.vwap_sma.initialized:
+            return Decimal(str(self.vwap_sma.value))
 
         if self.midpoint is not None:
             return self.midpoint
@@ -1369,6 +1569,16 @@ class OIDivergenceStrategy(BaseStrategy):
         self.oi_history.clear()
         self.funding_history.clear()
 
+        # 🔥 Performance: 重置 OI baseline 缓存
+        self._oi_baseline_cache = None
+        self._oi_sum = Decimal("0")
+        self._oi_count = 0
+        self._last_valid_oi = None
+        self._last_valid_funding = None
+
+        # 🔥 Risk: 重置信号钝化追踪
+        self._reset_divergence_tracking()
+
         # 重置价位
         self.resistance = None
         self.support = None
@@ -1389,6 +1599,8 @@ class OIDivergenceStrategy(BaseStrategy):
         # 🔥 Risk: 重置滑点监控
         self.expected_entry_price = None
         self.actual_slippage_pct = None
+        self._stop_loss_submitted_order_ids.clear()
+        self._slippage_calculated_orders.clear()
 
         # 重置指标
         self.vwap_sma.reset()
