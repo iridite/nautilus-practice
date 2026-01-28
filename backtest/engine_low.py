@@ -56,17 +56,17 @@ def _load_data_for_feed(
 ) -> Optional[BarType]:
     """
     加载 CSV 数据并注入回测引擎 (Low-Level Engine 风格)
-    
+
     Args:
         engine: BacktestEngine 实例
         base_dir: 项目基础目录
         cfg: 回测配置
         data_cfg: 数据配置
         loaded_instruments: 已加载的标的映射
-        
+
     Returns:
         Optional[BarType]: 成功加载则返回 BarType，否则返回 None
-        
+
     Raises:
         DataLoadError: 当数据加载失败时
     """
@@ -98,10 +98,10 @@ def _load_data_for_feed(
         wrangler = BarDataWrangler(feed_bar_type, inst)
         bars = wrangler.process(df)
         engine.add_data(bars)
-        
+
         print(f"✅ Loaded {len(bars)} bars for {inst.id} ({data_cfg.label})")
         return feed_bar_type
-        
+
     except Exception as e:
         if isinstance(e, DataLoadError):
             raise
@@ -116,64 +116,64 @@ def _load_custom_data_to_engine(
 ) -> int:
     """
     加载自定义数据(OI, Funding Rate)到回测引擎 (Low-Level Engine 风格)
-    
+
     Args:
         cfg: 回测配置
         base_dir: 项目基础目录
         engine: BacktestEngine 实例
         loaded_instruments: 已加载的标的映射
-        
+
     Returns:
         int: 加载的数据点总数
-        
+
     Raises:
         CustomDataError: 当自定义数据加载失败时
     """
     if not (cfg.start_date and cfg.end_date):
         print("⚠️ No date range specified, skipping custom data loading")
         return 0
-        
+
     print("📊 Loading custom data (OI, Funding Rate)...")
-    
+
     try:
         from utils.oi_funding_adapter import merge_custom_data_with_bars
-        
+
         data_dir = base_dir / "data" / "raw"
         total_loaded = 0
-        
+
         for inst_id_str, inst in loaded_instruments.items():
             instrument_id = inst.id
             symbol = str(instrument_id.symbol).split("-")[0]  # BTCUSDT-PERP -> BTCUSDT
             symbol_dir = data_dir / symbol
-            
+
             if not symbol_dir.exists():
                 continue
-                
+
             # 查找数据文件
             oi_files = list(symbol_dir.glob("*-oi-1h-*.csv"))
             funding_files = list(symbol_dir.glob("*-funding-*.csv"))
-            
+
             oi_data_list = []
             funding_data_list = []
-            
+
             # 加载OI数据
             if oi_files:
                 oi_data_list = _load_oi_data_from_files(oi_files, instrument_id)
-                
+
             # 加载Funding Rate数据
             if funding_files:
                 funding_data_list = _load_funding_data_from_files(funding_files, instrument_id)
-                
+
             # 合并并添加到引擎
             if oi_data_list or funding_data_list:
                 merged_data = merge_custom_data_with_bars(oi_data_list, funding_data_list)
                 engine.add_data(merged_data)
                 total_loaded += len(merged_data)
                 print(f"   ✅ Added {len(merged_data)} custom data points for {symbol}")
-                
+
         print(f"✅ Total custom data loaded: {total_loaded} points")
         return total_loaded
-        
+
     except Exception as e:
         raise CustomDataError(f"Custom data loading failed: {e}", cause=e)
 
@@ -181,20 +181,31 @@ def _load_custom_data_to_engine(
 def _load_oi_data_from_files(oi_files: List[Path], instrument_id) -> List:
     """从文件加载OI数据 (简化版，适合Low-Level Engine)"""
     oi_data_list = []
-    
+
     try:
         from decimal import Decimal
-        from nautilus_trader.core.nautilus_pyo3 import millis_to_nanos
-        from utils.custom_data import OpenInterestData
+
         import pandas as pd
-        
+        from nautilus_trader.core.nautilus_pyo3 import millis_to_nanos
+
+        from utils.custom_data import OpenInterestData
+
         for oi_file in oi_files:
             df = pd.read_csv(oi_file)
+            df = df.sort_values("timestamp")  # 确保时间戳顺序
+
+            prev_ts = 0
             for _, row in df.iterrows():
                 ts_ms = int(row["timestamp"])
+
+                # 验证时间戳单调递增
+                if ts_ms < prev_ts:
+                    print(f"⚠️ Warning: Non-monotonic timestamp in {oi_file.name}")
+                prev_ts = ts_ms
+
                 ts_event = millis_to_nanos(ts_ms)
                 ts_init = ts_event
-                
+
                 oi_data = OpenInterestData(
                     instrument_id=instrument_id,
                     open_interest=Decimal(str(row["open_interest"])),
@@ -202,30 +213,41 @@ def _load_oi_data_from_files(oi_files: List[Path], instrument_id) -> List:
                     ts_init=ts_init,
                 )
                 oi_data_list.append(oi_data)
-                
+
     except Exception as e:
         print(f"❌ Error loading OI files: {e}")
-        
+
     return oi_data_list
 
 
 def _load_funding_data_from_files(funding_files: List[Path], instrument_id) -> List:
     """从文件加载Funding Rate数据 (简化版，适合Low-Level Engine)"""
     funding_data_list = []
-    
+
     try:
         from decimal import Decimal
-        from nautilus_trader.core.nautilus_pyo3 import millis_to_nanos
-        from utils.custom_data import FundingRateData
+
         import pandas as pd
-        
+        from nautilus_trader.core.nautilus_pyo3 import millis_to_nanos
+
+        from utils.custom_data import FundingRateData
+
         for funding_file in funding_files:
             df = pd.read_csv(funding_file)
+            df = df.sort_values("timestamp")  # 确保时间戳顺序
+
+            prev_ts = 0
             for _, row in df.iterrows():
                 ts_ms = int(row["timestamp"])
+
+                # 验证时间戳单调递增
+                if ts_ms < prev_ts:
+                    print(f"⚠️ Warning: Non-monotonic timestamp in {funding_file.name}")
+                prev_ts = ts_ms
+
                 ts_event = millis_to_nanos(ts_ms)
                 ts_init = ts_event
-                
+
                 funding_data = FundingRateData(
                     instrument_id=instrument_id,
                     funding_rate=Decimal(str(row["funding_rate"])),
@@ -234,10 +256,10 @@ def _load_funding_data_from_files(funding_files: List[Path], instrument_id) -> L
                     ts_init=ts_init,
                 )
                 funding_data_list.append(funding_data)
-                
+
     except Exception as e:
         print(f"❌ Error loading Funding files: {e}")
-        
+
     return funding_data_list
 
 
@@ -248,7 +270,7 @@ def _process_backtest_results(
 ) -> None:
     """
     处理回测结果 (Low-Level Engine 风格)
-    
+
     Args:
         cfg: 回测配置
         base_dir: 项目基础目录
@@ -270,20 +292,20 @@ def _process_backtest_results(
             "strategy_config": cfg.strategy.params if hasattr(cfg.strategy.params, "dict")
                                else cfg.strategy.params,
         }
-        
+
         # 保存 JSON 结果
         result_dir = base_dir / "log" / "backtest" / "result"
         result_dir.mkdir(parents=True, exist_ok=True)
-        
+
         timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         filename = f"low_{cfg.strategy.name}_{timestamp}.json"
         filepath = result_dir / filename
-        
+
         with open(filepath, "w", encoding="utf-8") as f:
             json.dump(result_dict, f, indent=2, ensure_ascii=False, default=str)
-            
+
         print(f"📁 Results saved to: {filepath}")
-        
+
     except Exception as e:
         print(f"⚠️ Error saving results: {e}")
 
@@ -291,13 +313,13 @@ def _process_backtest_results(
 def run_low_level(cfg: BackTestConfig, base_dir: Path):
     """
     运行低级引擎回测 (Low-level Engine)
-    
+
     保持 BacktestEngine 直接 API 的简洁特性，但增强错误处理和功能完整性。
-    
+
     Args:
         cfg: 回测配置
         base_dir: 项目基础目录
-        
+
     Raises:
         BacktestEngineError: 当回测执行失败时
         InstrumentLoadError: 当标的加载失败时
@@ -340,12 +362,12 @@ def run_low_level(cfg: BackTestConfig, base_dir: Path):
         # 4. 加载标的定义
         loaded_instruments = {}
         total_feeds = len(cfg.data_feeds)
-        
+
         for inst_cfg in cfg.instruments:
             inst_path = inst_cfg.get_json_path()
             if not inst_path.exists():
                 raise InstrumentLoadError(f"Instrument path not found: {inst_path}", inst_cfg.instrument_id)
-                
+
             try:
                 inst = load_instrument(inst_path)
                 engine.add_instrument(inst)
@@ -360,7 +382,7 @@ def run_low_level(cfg: BackTestConfig, base_dir: Path):
         for feed_idx, data_cfg in enumerate(cfg.data_feeds, 1):
             sys.stdout.write(f"\r📖 [{feed_idx}/{total_feeds}] Loading: {data_cfg.csv_file_name}")
             sys.stdout.flush()
-            
+
             try:
                 bt = _load_data_for_feed(engine, base_dir, cfg, data_cfg, loaded_instruments)
                 if bt:
@@ -369,7 +391,7 @@ def run_low_level(cfg: BackTestConfig, base_dir: Path):
             except DataLoadError as e:
                 print(f"\n❌ Failed to load {data_cfg.csv_file_name}: {e}")
                 continue
-                
+
         print(f"\n✅ Loaded {len(all_feeds)} data feeds")
 
         # 6. 加载自定义数据 (OI, Funding Rate)
@@ -418,14 +440,14 @@ def run_low_level(cfg: BackTestConfig, base_dir: Path):
         # 8. 执行回测
         if strategies_count == 0:
             raise BacktestEngineError("No strategy instances were created. Check config and data paths.")
-            
+
         print(f"⏳ Running engine with {strategies_count} strategy instances...")
         engine.run()
         print("✅ Backtest Complete.")
 
         # 9. 处理结果
         _process_backtest_results(cfg, base_dir, engine)
-        
+
         if cfg.output_html_report:
             output_dir = base_dir / "output"
             output_dir.mkdir(parents=True, exist_ok=True)
@@ -441,7 +463,7 @@ def run_low_level(cfg: BackTestConfig, base_dir: Path):
         engine.reset()
         engine.dispose()
         print("🧹 Engine resources cleaned up")
-        
+
     except (InstrumentLoadError, DataLoadError, CustomDataError) as e:
         print(f"❌ Backtest failed: {e}")
         raise
