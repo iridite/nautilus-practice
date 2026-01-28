@@ -32,6 +32,9 @@ from nautilus_trader.model.identifiers import InstrumentId
 
 from strategy.base import BaseStrategy, BaseStrategyConfig
 from utils.custom_data import FundingRateData, OpenInterestData
+from utils.data_validator import FundingRateValidator, OIValidator
+from utils.signal_stale_guard import SignalStaleGuard
+from utils.slippage_monitor import SlippageMonitor
 
 # ============================================================================
 # Risk-Enhanced Configuration
@@ -191,13 +194,21 @@ class OIDivergenceStrategy(BaseStrategy):
         self._oi_sum: Decimal = Decimal("0")
         self._oi_count: int = 0
 
-        # === 🔥 Risk: OI 异常检测（防止换月虚假信号）===
-        self._last_valid_oi: Optional[Decimal] = None
-        self._oi_spike_threshold: float = 0.5  # 50% 变化视为异常
-
-        # === 🔥 Risk: Funding Rate 异常检测 ===
-        self._last_valid_funding: Optional[Decimal] = None
-        self._funding_spike_threshold: float = 2.0  # 年化费率变化超过 200% 视为异常
+        # === 🔥 Risk: 通用工具模块 ===
+        self.oi_validator = OIValidator(spike_threshold=0.5, enable_logging=True)
+        self.funding_validator = FundingRateValidator(
+            max_abs_value=500.0, spike_threshold=200.0, enable_logging=True
+        )
+        self.slippage_monitor = SlippageMonitor(
+            max_slippage_pct=config.max_slippage_pct,
+            enable_alert=config.enable_slippage_alert,
+            enable_logging=config.enable_signal_logging,
+        )
+        self.signal_stale_guard = SignalStaleGuard(
+            stale_bars=config.divergence_stale_bars,
+            stale_action=config.stale_action,
+            stale_stop_multiplier=config.stale_stop_multiplier,
+        )
 
         # === 关键价位 ===
         self.resistance: Optional[Decimal] = None
@@ -218,22 +229,8 @@ class OIDivergenceStrategy(BaseStrategy):
         self.entry_bar_count: int = 0
         self.entry_price: Optional[Decimal] = None
 
-        # === 🔥 Risk-Enhanced: 滑点监控 ===
-        self.expected_entry_price: Optional[Decimal] = None  # 预期成交价
-        self.actual_slippage_pct: Optional[float] = None  # 实际滑点百分比
-
         # === 🔥 Risk-Enhanced: 止损订单追踪 ===
-        # 记录已提交止损单的入场订单ID，防止重复提交
         self._stop_loss_submitted_order_ids: set = set()
-
-        # === 🔥 Risk-Enhanced: 滑点计算追踪 ===
-        # 追踪已计算滑点的订单ID，避免部分成交时重复计算
-        self._slippage_calculated_orders: set = set()
-
-        # === 🔥 Risk-Enhanced: 信号钝化追踪 ===
-        self._divergence_first_detected_bar: Optional[int] = None  # 背离首次检测到的 K 线计数
-        self._divergence_bars_count: int = 0  # 背离持续的 K 线数量
-        self._stale_protection_triggered: bool = False  # 是否已触发钝化保护
 
         # === 日志控制 ===
         self._last_warmup_log_bars: int = 0
@@ -365,7 +362,8 @@ class OIDivergenceStrategy(BaseStrategy):
 
         # 只监控入场订单（市价单）
         if event.order_side in (OrderSide.BUY, OrderSide.SELL):
-            self._monitor_slippage(event)
+            # 🔥 Risk: 使用工具模块监控滑点
+            self.slippage_monitor.check_slippage(event, self.log)
 
             # 更新入场价格（使用真实成交价）
             if event.order_side == OrderSide.BUY:
@@ -376,88 +374,12 @@ class OIDivergenceStrategy(BaseStrategy):
                 self.log.info(f"✅ SHORT Entry Filled @ {event.last_px}")
 
             # 🔥 Risk: 使用真实成交价提交止损订单
-            # 检查是否已经为该订单提交过止损单（防止部分成交时重复提交）
             if event.client_order_id not in self._stop_loss_submitted_order_ids:
                 self._submit_stop_loss_order(event.order_side, event.last_qty)
                 self._stop_loss_submitted_order_ids.add(event.client_order_id)
                 self.log.info(f"🔥 Stop Loss order submitted for {event.client_order_id}")
 
-    def _monitor_slippage(self, event: OrderFilled):
-        """
-        监控滑点
 
-        计算公式：
-        Slippage = (Actual_Price - Expected_Price) / Expected_Price
-
-        🔥 Risk Enhancement:
-        - 仅在第一次成交时计算滑点（使用预期价格）
-        - 避免部分成交时重复计算
-        - 订单完全成交时清理状态
-
-        Parameters
-        ----------
-        event : OrderFilled
-            订单成交事件
-        """
-        if self.expected_entry_price is None:
-            # 没有设置预期价格，无法计算滑点
-            return
-
-        # 检查是否已经计算过滑点
-        if event.client_order_id in self._slippage_calculated_orders:
-            return
-
-        # 第一次成交，计算滑点
-        actual_price = Decimal(str(event.last_px))
-        expected_price = self.expected_entry_price
-
-        # 计算滑点百分比
-        slippage_decimal = (actual_price - expected_price) / expected_price
-        slippage_pct = float(slippage_decimal)
-
-        # 判断滑点方向（对做多和做空的影响不同）
-        if event.order_side == OrderSide.BUY:
-            # 做多：实际价格 > 预期价格 = 不利滑点（买贵了）
-            is_adverse = slippage_pct > 0
-        else:
-            # 做空：实际价格 < 预期价格 = 不利滑点（卖便宜了）
-            is_adverse = slippage_pct < 0
-
-        # 存储实际滑点
-        self.actual_slippage_pct = abs(slippage_pct)
-
-        # 标记该订单已计算过滑点
-        self._slippage_calculated_orders.add(event.client_order_id)
-
-        # 🚨 滑点告警
-        if (
-            self.config.enable_slippage_alert
-            and self.actual_slippage_pct > self.config.max_slippage_pct
-        ):
-            self.log.warning(
-                f"\n{'⚠️ ' * 30}\n"
-                f"🚨 EXCESSIVE SLIPPAGE DETECTED!\n"
-                f"{'⚠️ ' * 30}\n"
-                f"Order Side: {event.order_side.name}\n"
-                f"Expected Price: {expected_price:.2f}\n"
-                f"Actual Price: {actual_price:.2f}\n"
-                f"Slippage: {self.actual_slippage_pct:.3%} ({'ADVERSE' if is_adverse else 'FAVORABLE'})\n"
-                f"Threshold: {self.config.max_slippage_pct:.3%}\n"
-                f"\n⚠️  Consider:\n"
-                f"  - Reducing position size\n"
-                f"  - Using limit orders\n"
-                f"  - Checking market liquidity\n"
-                f"{'⚠️ ' * 30}"
-            )
-        elif self.config.enable_signal_logging:
-            self.log.info(
-                f"✅ Slippage Check: {self.actual_slippage_pct:.3%} "
-                f"(Expected: {expected_price:.2f}, Actual: {actual_price:.2f})"
-            )
-
-        # 在订单完成时清理状态（通过检查订单状态）
-        # 注意：这里我们简单地在第一次计算后保留预期价格，
-        # 直到下一个入场订单设置新的预期价格时才覆盖
 
     # ========================================================================
     # 🔥 Risk-Enhanced: ATR Dynamic Stop Loss
@@ -767,36 +689,17 @@ class OIDivergenceStrategy(BaseStrategy):
         if data.instrument_id != self.instrument_id:
             return
 
-        # 🔥 Risk: OI 数据异常检测（防止换月虚假信号）
-        oi_value = data.open_interest
-
-        # 检查 1: 数据有效性（NaN、None、0、负数）
-        if oi_value is None or oi_value <= 0:
-            self.log.warning(
-                f"⚠️  Invalid OI data detected: {oi_value}, skipping update"
-            )
+        # 🔥 Risk: 使用工具模块验证 OI 数据
+        is_valid, error_msg = self.oi_validator.validate(data.open_interest, self.log)
+        if not is_valid:
             return
 
-        # 检查 2: 剧烈变化检测（换月、数据错误）
-        if self._last_valid_oi is not None and self._last_valid_oi > 0:
-            oi_change_pct = abs(
-                float((oi_value - self._last_valid_oi) / self._last_valid_oi)
-            )
-            if oi_change_pct > self._oi_spike_threshold:
-                self.log.warning(
-                    f"⚠️  OI spike detected: {oi_change_pct:.1%} change "
-                    f"(from {self._last_valid_oi:.0f} to {oi_value:.0f}). "
-                    f"Possible contract roll or data error. Skipping update."
-                )
-                return
-
         # 数据通过验证，更新状态
-        self.current_oi = oi_value
-        self._last_valid_oi = oi_value
+        self.current_oi = data.open_interest
         self.oi_history.append(
             {
                 "ts": data.ts_event,
-                "oi": oi_value,
+                "oi": data.open_interest,
                 "data": data,
             }
         )
@@ -834,52 +737,29 @@ class OIDivergenceStrategy(BaseStrategy):
         if data.instrument_id != self.instrument_id:
             return
 
-        # 🔥 Risk: Funding Rate 数据异常检测
-        funding_annual = data.funding_rate_annual
-
-        # 检查 1: 数据有效性（NaN、None）
-        if funding_annual is None:
-            self.log.warning(
-                f"⚠️  Invalid Funding Rate data detected: None, skipping update"
-            )
+        # 🔥 Risk: 使用工具模块验证 Funding Rate 数据
+        is_valid, error_msg = self.funding_validator.validate(
+            data.funding_rate_annual, self.log
+        )
+        if not is_valid:
             return
-
-        # 检查 2: 异常值检测（年化费率超过 ±500% 视为异常）
-        if abs(float(funding_annual)) > 500.0:
-            self.log.warning(
-                f"⚠️  Abnormal Funding Rate detected: {funding_annual:.2f}% (annual), "
-                f"exceeds ±500% threshold. Possible data error, skipping update."
-            )
-            return
-
-        # 检查 3: 剧烈变化检测（数据错误）
-        if self._last_valid_funding is not None:
-            funding_change = abs(float(funding_annual - self._last_valid_funding))
-            if funding_change > self._funding_spike_threshold * 100:  # 转换为百分点
-                self.log.warning(
-                    f"⚠️  Funding Rate spike detected: {funding_change:.1f}% change "
-                    f"(from {self._last_valid_funding:.2f}% to {funding_annual:.2f}%). "
-                    f"Possible data error, skipping update."
-                )
-                return
 
         # 数据通过验证，更新状态
-        self.current_funding_rate_annual = funding_annual
-        self._last_valid_funding = funding_annual
+        self.current_funding_rate_annual = data.funding_rate_annual
         self.funding_history.append(
             {
                 "ts": data.ts_event,
                 "rate": data.funding_rate,
-                "annual": funding_annual,
+                "annual": data.funding_rate_annual,
                 "data": data,
             }
         )
 
         if self.config.enable_signal_logging:
-            sentiment = self._classify_funding_sentiment(funding_annual)
+            sentiment = self._classify_funding_sentiment(data.funding_rate_annual)
             self.log.debug(
                 f"💰 Funding Update | Rate: {data.funding_rate:.4f}, "
-                f"Annual: {funding_annual:.2f}%, "
+                f"Annual: {data.funding_rate_annual:.2f}%, "
                 f"Sentiment: {sentiment}"
             )
 
@@ -1070,10 +950,24 @@ class OIDivergenceStrategy(BaseStrategy):
         current_price = Decimal(str(bar.close))
 
         for pos in positions:
-            # 🔥 Risk: 检查信号钝化保护
+            # 🔥 Risk: 使用工具模块检查信号钝化保护
             if self.config.enable_divergence_stale_check:
-                if self._check_divergence_stale(bar, pos, current_price):
-                    return
+                oi_divergence = self._calculate_oi_divergence()
+                if oi_divergence is not None:
+                    is_divergence_active = abs(float(oi_divergence)) >= self.config.oi_decline_threshold
+                    is_stale, bars_count = self.signal_stale_guard.update(
+                        self.entry_bar_count, is_divergence_active
+                    )
+                    if is_stale and self.entry_price is not None:
+                        atr_value = Decimal(str(self.atr.value)) if self.atr and self.atr.initialized else None
+                        closed = self.signal_stale_guard.handle_stale_protection(
+                            self, pos, self.entry_price, atr_value, self.log
+                        )
+                        if closed:
+                            self.entry_bar_count = 0
+                            self.entry_price = None
+                            self._strategy_state = StrategyState.IDLE
+                            return
 
             # 止盈
             if self._check_take_profit(pos, current_price):
@@ -1113,136 +1007,7 @@ class OIDivergenceStrategy(BaseStrategy):
                 self._strategy_state = StrategyState.IDLE
                 return
 
-    def _check_divergence_stale(
-        self, bar: Bar, pos, current_price: Decimal
-    ) -> bool:
-        """
-        检查 OI 背离信号钝化
 
-        🔥 Risk Enhancement: 防止在强趋势中背离长时间持续不反转
-        - 追踪背离持续时间
-        - 超过阈值时触发保护措施（收紧止损或平仓）
-
-        Parameters
-        ----------
-        bar : Bar
-            当前 K 线
-        pos : Position
-            持仓对象
-        current_price : Decimal
-            当前价格
-
-        Returns
-        -------
-        bool
-            是否触发了钝化保护并平仓
-        """
-        # 计算当前 OI 背离
-        oi_divergence = self._calculate_oi_divergence()
-
-        if oi_divergence is None:
-            return False
-
-        # 检查背离是否仍然存在
-        is_divergence_active = abs(float(oi_divergence)) >= self.config.oi_decline_threshold
-
-        if is_divergence_active:
-            # 背离仍在持续
-            if self._divergence_first_detected_bar is None:
-                self._divergence_first_detected_bar = self.entry_bar_count
-
-            self._divergence_bars_count = (
-                self.entry_bar_count - self._divergence_first_detected_bar
-            )
-
-            # 检查是否超过钝化阈值
-            if (
-                self._divergence_bars_count >= self.config.divergence_stale_bars
-                and not self._stale_protection_triggered
-            ):
-                self._stale_protection_triggered = True
-
-                if self.config.stale_action == "close":
-                    # 直接平仓
-                    self.log.warning(
-                        f"\n{'⚠️ ' * 30}\n"
-                        f"🚨 DIVERGENCE STALE DETECTED - CLOSING POSITION\n"
-                        f"{'⚠️ ' * 30}\n"
-                        f"Position: {pos.side.name}\n"
-                        f"Divergence Duration: {self._divergence_bars_count} bars\n"
-                        f"OI Divergence: {oi_divergence:.2%}\n"
-                        f"Current Price: {current_price:.2f}\n"
-                        f"Entry Price: {self.entry_price:.2f}\n"
-                        f"\n⚠️  Divergence persisted without reversal - exiting to protect capital\n"
-                        f"{'⚠️ ' * 30}"
-                    )
-                    self.close_position(pos)
-                    self.cancel_all_orders(self.instrument_id)
-                    self.entry_bar_count = 0
-                    self.entry_price = None
-                    self._strategy_state = StrategyState.IDLE
-                    self._reset_divergence_tracking()
-                    return True
-
-                elif self.config.stale_action == "tighten_stop":
-                    # 收紧止损
-                    if self.atr and self.atr.initialized and self.entry_price:
-                        atr_value = Decimal(str(self.atr.value))
-                        tightened_distance = atr_value * Decimal(
-                            str(self.config.stale_stop_multiplier)
-                        )
-
-                        if pos.is_long:
-                            new_stop = self.entry_price - tightened_distance
-                        else:
-                            new_stop = self.entry_price + tightened_distance
-
-                        self.log.warning(
-                            f"\n{'⚠️ ' * 30}\n"
-                            f"🚨 DIVERGENCE STALE DETECTED - TIGHTENING STOP LOSS\n"
-                            f"{'⚠️ ' * 30}\n"
-                            f"Position: {pos.side.name}\n"
-                            f"Divergence Duration: {self._divergence_bars_count} bars\n"
-                            f"OI Divergence: {oi_divergence:.2%}\n"
-                            f"Original Stop Distance: {self.config.atr_stop_multiplier}× ATR\n"
-                            f"New Stop Distance: {self.config.stale_stop_multiplier}× ATR\n"
-                            f"New Stop Price: {new_stop:.2f}\n"
-                            f"\n⚠️  Divergence persisted - tightening stop to protect profits\n"
-                            f"{'⚠️ ' * 30}"
-                        )
-
-                        # 取消现有止损单，提交新的收紧止损单
-                        self.cancel_all_orders(self.instrument_id)
-
-                        opposite_side = (
-                            OrderSide.BUY if pos.is_short else OrderSide.SELL
-                        )
-                        trigger_price = self.instrument.make_price(new_stop)
-
-                        sl_order = self.order_factory.stop_market(
-                            instrument_id=self.instrument_id,
-                            order_side=opposite_side,
-                            quantity=pos.quantity,
-                            trigger_price=trigger_price,
-                            time_in_force=TimeInForce.GTC,
-                            reduce_only=True,
-                        )
-
-                        self.submit_order_safe(
-                            sl_order,
-                            reason=f"Tightened Stop Loss (Divergence Stale) @ {new_stop:.2f}",
-                        )
-        else:
-            # 背离已消失，重置追踪
-            self._reset_divergence_tracking()
-
-        return False
-
-    def _reset_divergence_tracking(self):
-        """重置背离追踪状态"""
-        self._divergence_first_detected_bar = None
-        self._divergence_bars_count = 0
-        self._stale_protection_triggered = False
 
     # ========================================================================
     # 🔥 Risk-Enhanced: Order Execution with ATR Position Sizing
@@ -1271,15 +1036,15 @@ class OIDivergenceStrategy(BaseStrategy):
             self.log.error(f"❌ Invalid order quantity: {qty}, skipping entry")
             return
 
-        # 🔥 Risk: 记录预期成交价（用于滑点监控）
-        self.expected_entry_price = current_price
-
         # 创建市价单
         order = self.order_factory.market(
             instrument_id=self.instrument_id,
             order_side=order_side,
             quantity=qty,
         )
+
+        # 🔥 Risk: 使用工具模块记录预期成交价
+        self.slippage_monitor.set_expected_price(str(order.client_order_id), current_price)
 
         # 构建 reason
         if order_side == OrderSide.SELL:
@@ -1573,11 +1338,12 @@ class OIDivergenceStrategy(BaseStrategy):
         self._oi_baseline_cache = None
         self._oi_sum = Decimal("0")
         self._oi_count = 0
-        self._last_valid_oi = None
-        self._last_valid_funding = None
 
-        # 🔥 Risk: 重置信号钝化追踪
-        self._reset_divergence_tracking()
+        # 🔥 Risk: 重置工具模块状态
+        self.oi_validator.reset()
+        self.funding_validator.reset()
+        self.slippage_monitor.reset()
+        self.signal_stale_guard.reset()
 
         # 重置价位
         self.resistance = None
