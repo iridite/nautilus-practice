@@ -37,6 +37,20 @@ from utils.signal_stale_guard import SignalStaleGuard
 from utils.slippage_monitor import SlippageMonitor
 
 # ============================================================================
+# Constants
+# ============================================================================
+
+# 日志格式常量
+LOG_SEPARATOR_SHORT = "=" * 60
+LOG_SEPARATOR_LONG = "=" * 70
+LOG_WARNING_MARKER = "⚠️ " * 30
+
+# 数据验证阈值
+DEFAULT_OI_SPIKE_THRESHOLD = 0.5  # 50% OI 变化视为异常
+DEFAULT_FUNDING_SPIKE_THRESHOLD = 2.0  # 200% 年化费率变化视为异常
+MAX_FUNDING_RATE_ABS = 500.0  # ±500% 年化费率视为异常
+
+# ============================================================================
 # Risk-Enhanced Configuration
 # ============================================================================
 
@@ -195,9 +209,13 @@ class OIDivergenceStrategy(BaseStrategy):
         self._oi_count: int = 0
 
         # === 🔥 Risk: 通用工具模块 ===
-        self.oi_validator = OIValidator(spike_threshold=0.5, enable_logging=True)
+        self.oi_validator = OIValidator(
+            spike_threshold=DEFAULT_OI_SPIKE_THRESHOLD, enable_logging=True
+        )
         self.funding_validator = FundingRateValidator(
-            max_abs_value=500.0, spike_threshold=200.0, enable_logging=True
+            max_abs_value=MAX_FUNDING_RATE_ABS,
+            spike_threshold=DEFAULT_FUNDING_SPIKE_THRESHOLD * 100,
+            enable_logging=True,
         )
         self.slippage_monitor = SlippageMonitor(
             max_slippage_pct=config.max_slippage_pct,
@@ -272,9 +290,9 @@ class OIDivergenceStrategy(BaseStrategy):
 
         # 🔥 风控增强日志
         self.log.info(
-            f"\n{'=' * 70}\n"
+            f"\n{LOG_SEPARATOR_LONG}\n"
             f"🚀 OI Divergence Strategy Started (RISK-ENHANCED v3.0)\n"
-            f"{'=' * 70}\n"
+            f"{LOG_SEPARATOR_LONG}\n"
             f"Instrument: {self.instrument_id}\n"
             f"Bar Type: {self.bar_type}\n"
             f"\n--- 🔥 Risk Enhancements ---\n"
@@ -290,7 +308,7 @@ class OIDivergenceStrategy(BaseStrategy):
             f"Lookback Bars: {self.config.lookback_bars}\n"
             f"OI Decline Threshold: {self.config.oi_decline_threshold:.1%}\n"
             f"Funding Threshold: {self.config.funding_rate_threshold_annual:.1f}%\n"
-            f"{'=' * 70}"
+            f"{LOG_SEPARATOR_LONG}"
         )
 
     def on_data(self, data):
@@ -537,9 +555,9 @@ class OIDivergenceStrategy(BaseStrategy):
                     pnl_pct = -pnl_pct
 
                 self.log.warning(
-                    f"\n{'=' * 60}\n"
+                    f"\n{LOG_SEPARATOR_SHORT}\n"
                     f"🛑 ATR STOP LOSS TRIGGERED (Last Resort)\n"
-                    f"{'=' * 60}\n"
+                    f"{LOG_SEPARATOR_SHORT}\n"
                     f"Position: {pos.side.name}\n"
                     f"Entry Price: {self.entry_price:.2f}\n"
                     f"Current Price: {current_price:.2f}\n"
@@ -548,7 +566,7 @@ class OIDivergenceStrategy(BaseStrategy):
                     f"ATR Stop Price: {atr_stop_price:.2f}\n"
                     f"P&L: {pnl_pct:.2%}\n"
                     f"⚠️  WARNING: Price gap detected or stop order failed!\n"
-                    f"{'=' * 60}"
+                    f"{LOG_SEPARATOR_SHORT}"
                 )
 
                 self.close_position(pos)
@@ -562,21 +580,75 @@ class OIDivergenceStrategy(BaseStrategy):
     # 🔥 Risk-Enhanced: ATR Dynamic Position Sizing
     # ========================================================================
 
+    def _get_account_equity(self) -> Optional[Decimal]:
+        """
+        获取账户权益
+
+        Returns
+        -------
+        Optional[Decimal]
+            账户权益，如果获取失败则返回 None
+        """
+        try:
+            accounts = self.cache.accounts()
+            if not accounts:
+                return None
+
+            quote_currency = self.instrument.quote_currency
+            for account in accounts:
+                balance = account.balance(quote_currency)
+                if balance and balance.total.as_decimal() > 0:
+                    equity = balance.total.as_decimal()
+                    return equity if equity > 0 else None
+
+            self.log.warning(
+                f"⚠️  No account found with quote_currency={quote_currency}"
+            )
+            return None
+
+        except (AttributeError, KeyError, IndexError) as e:
+            self.log.error(
+                f"❌ Failed to get equity: {type(e).__name__}: {e}"
+            )
+            return None
+
+    def _calculate_position_size_from_risk(
+        self, equity: Decimal, atr_value: Decimal
+    ) -> Decimal:
+        """
+        基于风险计算目标仓位
+
+        Parameters
+        ----------
+        equity : Decimal
+            账户权益
+        atr_value : Decimal
+            ATR 值
+
+        Returns
+        -------
+        Decimal
+            目标仓位数量
+        """
+        stop_distance = atr_value * Decimal(str(self.config.atr_stop_multiplier))
+        max_risk_amount = equity * Decimal(str(self.config.max_position_risk_pct))
+        target_qty = max_risk_amount / stop_distance
+
+        leverage = max(1, self.config.leverage)
+        target_qty = target_qty * Decimal(str(leverage))
+
+        if self.instrument.multiplier:
+            multiplier = Decimal(str(self.instrument.multiplier))
+            if multiplier > 0:
+                target_qty = target_qty / multiplier
+
+        return target_qty
+
     def _calculate_atr_adjusted_qty(
         self, current_price: Decimal, order_side: OrderSide
     ) -> float:
         """
         基于 ATR 的动态仓位计算
-
-        核心思想：
-        1. 固定每笔交易的最大风险金额（如账户权益的 10%）
-        2. 根据 ATR 计算止损距离
-        3. 反推仓位大小：Qty = Max_Risk / Stop_Distance
-
-        公式：
-        Stop_Distance = ATR × Multiplier
-        Max_Risk_Amount = Equity × Max_Risk_Pct
-        Qty = Max_Risk_Amount / Stop_Distance / Price
 
         Parameters
         ----------
@@ -590,88 +662,32 @@ class OIDivergenceStrategy(BaseStrategy):
         float
             调整后的下单数量
         """
-        # 如果 ATR 未初始化，回退到基础计算
         if (
             not self.config.use_atr_position_sizing
             or not self.atr
             or not self.atr.initialized
         ):
-            qty = self.calculate_order_qty(current_price)
-            return float(qty)
+            return float(self.calculate_order_qty(current_price))
 
-        # 获取账户权益
-        try:
-            accounts = self.cache.accounts()
-            if not accounts:
-                qty = self.calculate_order_qty(current_price)
-                return float(qty)
+        equity = self._get_account_equity()
+        if equity is None:
+            return float(self.calculate_order_qty(current_price))
 
-            # 🔥 Risk Enhancement: 根据结算货币筛选正确的账户
-            # 在多账户环境下，accounts[0] 可能不是当前交易品种所属的结算账户
-            quote_currency = self.instrument.quote_currency
-            target_account = None
-
-            for account in accounts:
-                balance = account.balance(quote_currency)
-                if balance and balance.total.as_decimal() > 0:
-                    target_account = account
-                    break
-
-            if target_account is None:
-                # 找不到匹配的账户，回退到基础计算
-                self.log.warning(
-                    f"⚠️  No account found with quote_currency={quote_currency}, "
-                    f"using default position sizing"
-                )
-                qty = self.calculate_order_qty(current_price)
-                return float(qty)
-
-            account = target_account
-            balance = account.balance(quote_currency)
-
-            equity = balance.total.as_decimal()
-            if equity <= 0:
-                return 0.0
-        except (AttributeError, KeyError, IndexError) as e:
-            self.log.error(
-                f"❌ Failed to get equity for ATR position sizing: {type(e).__name__}: {e}"
-            )
-            qty = self.calculate_order_qty(current_price)
-            return float(qty)
-
-        # 计算止损距离
         atr_value = Decimal(str(self.atr.value))
         stop_distance = atr_value * Decimal(str(self.config.atr_stop_multiplier))
 
         if stop_distance == 0:
             self.log.warning("⚠️  ATR stop distance is zero, using default qty")
-            qty = self.calculate_order_qty(current_price)
-            return float(qty)
+            return float(self.calculate_order_qty(current_price))
 
-        # 计算最大风险金额
-        max_risk_amount = equity * Decimal(str(self.config.max_position_risk_pct))
+        target_qty = self._calculate_position_size_from_risk(equity, atr_value)
 
-        # 计算目标仓位
-        # Notional = max_risk_amount / (stop_distance / price)
-        # Qty = Notional / price
-        target_qty = max_risk_amount / stop_distance
-
-        # 应用杠杆
-        leverage = max(1, self.config.leverage)
-        target_qty = target_qty * Decimal(str(leverage))
-
-        # 处理合约乘数
-        if self.instrument.multiplier:
-            multiplier = Decimal(str(self.instrument.multiplier))
-            if multiplier > 0:
-                target_qty = target_qty / multiplier
-
-        # 日志记录
         if self.config.enable_signal_logging:
+            max_risk = equity * Decimal(str(self.config.max_position_risk_pct))
             self.log.info(
                 f"\n--- 🔥 ATR Position Sizing ---\n"
                 f"Equity: {equity:.2f}\n"
-                f"Max Risk: {max_risk_amount:.2f} ({self.config.max_position_risk_pct:.1%})\n"
+                f"Max Risk: {max_risk:.2f} ({self.config.max_position_risk_pct:.1%})\n"
                 f"ATR Value: {atr_value:.4f}\n"
                 f"Stop Distance: {stop_distance:.4f} ({self.config.atr_stop_multiplier}× ATR)\n"
                 f"Target Qty: {target_qty:.8f}\n"
@@ -973,14 +989,14 @@ class OIDivergenceStrategy(BaseStrategy):
             if self._check_take_profit(pos, current_price):
                 tp_target = self._get_tp_target(pos)
                 self.log.info(
-                    f"\n{'=' * 60}\n"
+                    f"\n{LOG_SEPARATOR_SHORT}\n"
                     f"✅ TAKE PROFIT TRIGGERED\n"
-                    f"{'=' * 60}\n"
+                    f"{LOG_SEPARATOR_SHORT}\n"
                     f"Position: {pos.side.name}\n"
                     f"Current Price: {current_price:.2f}\n"
                     f"TP Target: {tp_target:.2f}\n"
                     f"Holding Time: {self.entry_bar_count} bars\n"
-                    f"{'=' * 60}"
+                    f"{LOG_SEPARATOR_SHORT}"
                 )
                 self.close_position(pos)
                 self.cancel_all_orders(self.instrument_id)
@@ -992,13 +1008,13 @@ class OIDivergenceStrategy(BaseStrategy):
             # 时间止损
             if self.entry_bar_count >= self.config.time_stop_bars:
                 self.log.info(
-                    f"\n{'=' * 60}\n"
+                    f"\n{LOG_SEPARATOR_SHORT}\n"
                     f"⏰ TIME STOP TRIGGERED\n"
-                    f"{'=' * 60}\n"
+                    f"{LOG_SEPARATOR_SHORT}\n"
                     f"Position: {pos.side.name}\n"
                     f"Holding Time: {self.entry_bar_count} bars\n"
                     f"Current Price: {current_price:.2f}\n"
-                    f"{'=' * 60}"
+                    f"{LOG_SEPARATOR_SHORT}"
                 )
                 self.close_position(pos)
                 self.cancel_all_orders(self.instrument_id)
@@ -1077,9 +1093,9 @@ class OIDivergenceStrategy(BaseStrategy):
         # 日志
         if self.config.enable_signal_logging:
             self.log.info(
-                f"\n{'=' * 70}\n"
+                f"\n{LOG_SEPARATOR_LONG}\n"
                 f"{emoji} {side_name} ENTRY EXECUTED (Signal #{self._signal_counter})\n"
-                f"{'=' * 70}\n"
+                f"{LOG_SEPARATOR_LONG}\n"
                 f"Entry Price: {current_price:.2f}\n"
                 f"Quantity: {qty}\n"
                 f"Stop Loss: {'ATR-based (dynamic)' if self.config.use_atr_stop else 'Fixed ' + str(self.config.stop_loss_pct)}\n"
@@ -1088,7 +1104,7 @@ class OIDivergenceStrategy(BaseStrategy):
                 f"{level_key.capitalize()}: {level_value:.2f}\n"
                 f"OI Divergence: {signal_details['oi_divergence']:.2%}\n"
                 f"Signal Strength: {signal_details['signal_strength']:.2f}\n"
-                f"{'=' * 70}"
+                f"{LOG_SEPARATOR_LONG}"
             )
 
     def _execute_short_entry(
@@ -1317,10 +1333,10 @@ class OIDivergenceStrategy(BaseStrategy):
         self.cancel_all_orders(self.instrument_id)
         self.close_all_positions(self.instrument_id)
         self.log.info(
-            f"\n{'=' * 60}\n"
+            f"\n{LOG_SEPARATOR_SHORT}\n"
             f"🛑 OI Divergence Strategy Stopped (v3.0 Risk-Enhanced)\n"
             f"Total Signals Generated: {self._signal_counter}\n"
-            f"{'=' * 60}"
+            f"{LOG_SEPARATOR_SHORT}"
         )
 
     def on_reset(self):
