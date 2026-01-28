@@ -129,22 +129,19 @@ class OIDivergenceStrategyConfig(BaseStrategyConfig):
     enable_quality_check: bool = True
 
     # === 数据依赖声明 ===
-    def __init__(self, **data):
-        super().__init__(**data)
-        if not self.data_dependencies:
-            self.data_dependencies = [
-                DataDependency(
-                    data_type="oi",
-                    required=True,
-                    period="1h",
-                    auto_fetch=True
-                ),
-                DataDependency(
-                    data_type="funding",
-                    required=True,
-                    auto_fetch=True
-                )
-            ]
+    data_dependencies: list = [
+        DataDependency(
+            data_type="oi",
+            required=True,
+            period="1h",
+            auto_fetch=True
+        ),
+        DataDependency(
+            data_type="funding",
+            required=True,
+            auto_fetch=True
+        )
+    ]
 
 
 # ============================================================================
