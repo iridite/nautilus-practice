@@ -101,18 +101,12 @@ def _load_data_for_feed(
 
         # 数据质量验证
         expected_interval = DataValidator.parse_interval_from_bar_type(data_cfg.bar_type_str)
-        issues = DataValidator.validate_dataframe(df, csv_path, expected_interval)
+        issues = DataValidator.validate_dataframe(df, file_path=csv_path, expected_interval_ms=expected_interval)
         for issue in issues:
             if issue.severity == "error":
                 raise DataLoadError(f"Data quality error: {issue.message}", str(csv_path))
             elif issue.severity == "warning":
                 logger.warning(f"   {issue}")
-</text>
-
-<old_text line=193>
-        for oi_file in oi_files:
-            df = pd.read_csv(oi_file)
-            df = df.sort_values("timestamp")  # 确保时间戳顺序
 
         # 使用 Wrangler 转换并注入引擎
         wrangler = BarDataWrangler(feed_bar_type, inst)
