@@ -12,6 +12,7 @@ import pandas as pd
 from nautilus_trader.core.nautilus_pyo3 import millis_to_nanos
 
 from backtest.data_validator import DataValidator
+from backtest.exceptions import CustomDataError
 from utils.custom_data import FundingRateData, OpenInterestData
 
 
@@ -43,8 +44,10 @@ class CustomDataLoader:
                 )
                 for issue in issues:
                     if issue.severity == "error":
-                        print(f"   ❌ OI data error in {oi_file.name}: {issue.message}")
-                        continue
+                        raise CustomDataError(
+                            f"OI data quality error: {issue.message}",
+                            data_type="open_interest"
+                        )
 
                 # 向量化处理
                 timestamps = df["timestamp"].astype(int).values
@@ -65,8 +68,14 @@ class CustomDataLoader:
                     )
                     oi_data_list.append(oi_data)
 
+            except CustomDataError:
+                raise
             except Exception as e:
-                print(f"❌ Error loading OI file {oi_file.name}: {e}")
+                raise CustomDataError(
+                    f"Failed to load OI file {oi_file.name}: {e}",
+                    data_type="open_interest",
+                    cause=e
+                )
 
         return oi_data_list
 
@@ -97,8 +106,10 @@ class CustomDataLoader:
                 )
                 for issue in issues:
                     if issue.severity == "error":
-                        print(f"   ❌ Funding data error in {funding_file.name}: {issue.message}")
-                        continue
+                        raise CustomDataError(
+                            f"Funding data quality error: {issue.message}",
+                            data_type="funding_rate"
+                        )
 
                 # 向量化处理
                 timestamps = df["timestamp"].astype(int).values
@@ -120,7 +131,13 @@ class CustomDataLoader:
                     )
                     funding_data_list.append(funding_data)
 
+            except CustomDataError:
+                raise
             except Exception as e:
-                print(f"❌ Error loading Funding file {funding_file.name}: {e}")
+                raise CustomDataError(
+                    f"Failed to load Funding file {funding_file.name}: {e}",
+                    data_type="funding_rate",
+                    cause=e
+                )
 
         return funding_data_list

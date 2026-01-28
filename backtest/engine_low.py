@@ -1,5 +1,6 @@
 import gc
 import json
+import logging
 import sys
 from collections import defaultdict
 from datetime import datetime
@@ -7,6 +8,8 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import pandas as pd
+
+logger = logging.getLogger(__name__)
 from nautilus_trader.analysis.tearsheet import create_tearsheet
 from nautilus_trader.backtest.config import BacktestEngineConfig
 from nautilus_trader.backtest.engine import BacktestEngine
@@ -103,7 +106,7 @@ def _load_data_for_feed(
             if issue.severity == "error":
                 raise DataLoadError(f"Data quality error: {issue.message}", str(csv_path))
             elif issue.severity == "warning":
-                print(f"   {issue}")
+                logger.warning(f"   {issue}")
 </text>
 
 <old_text line=193>
@@ -116,7 +119,7 @@ def _load_data_for_feed(
         bars = wrangler.process(df)
         engine.add_data(bars)
 
-        print(f"✅ Loaded {len(bars)} bars for {inst.id} ({data_cfg.label})")
+        logger.info(f"✅ Loaded {len(bars)} bars for {inst.id} ({data_cfg.label})")
         return feed_bar_type
 
     except Exception as e:
@@ -147,10 +150,10 @@ def _load_custom_data_to_engine(
         CustomDataError: 当自定义数据加载失败时
     """
     if not (cfg.start_date and cfg.end_date):
-        print("⚠️ No date range specified, skipping custom data loading")
+        logger.warning("⚠️ No date range specified, skipping custom data loading")
         return 0
 
-    print("📊 Loading custom data (OI, Funding Rate)...")
+    logger.info("📊 Loading custom data (OI, Funding Rate)...")
 
     try:
         from utils.oi_funding_adapter import merge_custom_data_with_bars
@@ -186,9 +189,9 @@ def _load_custom_data_to_engine(
                 merged_data = merge_custom_data_with_bars(oi_data_list, funding_data_list)
                 engine.add_data(merged_data)
                 total_loaded += len(merged_data)
-                print(f"   ✅ Added {len(merged_data)} custom data points for {symbol}")
+                logger.info(f"   ✅ Added {len(merged_data)} custom data points for {symbol}")
 
-        print(f"✅ Total custom data loaded: {total_loaded} points")
+        logger.info(f"✅ Total custom data loaded: {total_loaded} points")
         return total_loaded
 
     except Exception as e:
@@ -238,10 +241,10 @@ def _process_backtest_results(
         with open(filepath, "w", encoding="utf-8") as f:
             json.dump(result_dict, f, indent=2, ensure_ascii=False, default=str)
 
-        print(f"📁 Results saved to: {filepath}")
+        logger.info(f"📁 Results saved to: {filepath}")
 
     except Exception as e:
-        print(f"⚠️ Error saving results: {e}")
+        logger.warning(f"⚠️ Error saving results: {e}")
 
 
 def run_low_level(cfg: BackTestConfig, base_dir: Path):
@@ -259,7 +262,7 @@ def run_low_level(cfg: BackTestConfig, base_dir: Path):
         InstrumentLoadError: 当标的加载失败时
         DataLoadError: 当数据加载失败时
     """
-    print(f"🚀 Starting Low-Level Backtest: {cfg.strategy.name}")
+    logger.info(f"🚀 Starting Low-Level Backtest: {cfg.strategy.name}")
 
     try:
         # 1. 配置日志系统
@@ -306,7 +309,7 @@ def run_low_level(cfg: BackTestConfig, base_dir: Path):
                 inst = load_instrument(inst_path)
                 engine.add_instrument(inst)
                 loaded_instruments[str(inst.id)] = inst
-                print(f"✅ Loaded instrument: {inst.id}")
+                logger.info(f"✅ Loaded instrument: {inst.id}")
             except Exception as e:
                 raise InstrumentLoadError(f"Failed to load instrument {inst_cfg.instrument_id}: {e}",
                                         inst_cfg.instrument_id, e)
@@ -323,16 +326,16 @@ def run_low_level(cfg: BackTestConfig, base_dir: Path):
                     inst_id = data_cfg.instrument_id or str(cfg.instrument.instrument_id)
                     all_feeds[(inst_id, data_cfg.label)] = str(bt)
             except DataLoadError as e:
-                print(f"\n❌ Failed to load {data_cfg.csv_file_name}: {e}")
+                logger.error(f"\n❌ Failed to load {data_cfg.csv_file_name}: {e}")
                 continue
 
-        print(f"\n✅ Loaded {len(all_feeds)} data feeds")
+        logger.info(f"\n✅ Loaded {len(all_feeds)} data feeds")
 
         # 6. 加载自定义数据 (OI, Funding Rate)
         try:
             custom_data_count = _load_custom_data_to_engine(cfg, base_dir, engine, loaded_instruments)
         except CustomDataError as e:
-            print(f"⚠️ Custom data loading failed: {e}")
+            logger.warning(f"⚠️ Custom data loading failed: {e}")
             custom_data_count = 0
 
         # 7. 配置与添加策略
@@ -375,9 +378,9 @@ def run_low_level(cfg: BackTestConfig, base_dir: Path):
         if strategies_count == 0:
             raise BacktestEngineError("No strategy instances were created. Check config and data paths.")
 
-        print(f"⏳ Running engine with {strategies_count} strategy instances...")
+        logger.info(f"⏳ Running engine with {strategies_count} strategy instances...")
         engine.run()
-        print("✅ Backtest Complete.")
+        logger.info("✅ Backtest Complete.")
 
         # 9. 处理结果
         _process_backtest_results(cfg, base_dir, engine)
@@ -390,16 +393,16 @@ def run_low_level(cfg: BackTestConfig, base_dir: Path):
                 / f"low_{cfg.strategy.name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.html"
             )
             create_tearsheet(engine=engine, output_path=str(report_path))
-            print(f"📊 HTML Report generated: {report_path}")
+            logger.info(f"📊 HTML Report generated: {report_path}")
 
         # 10. 清理资源
         gc.collect()
         engine.reset()
         engine.dispose()
-        print("🧹 Engine resources cleaned up")
+        logger.info("🧹 Engine resources cleaned up")
 
     except (InstrumentLoadError, DataLoadError, CustomDataError) as e:
-        print(f"❌ Backtest failed: {e}")
+        logger.error(f"❌ Backtest failed: {e}")
         raise
     except Exception as e:
         raise BacktestEngineError(f"Unexpected error during backtest: {e}", e)
