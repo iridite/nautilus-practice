@@ -794,6 +794,73 @@ def main():
             print("🔧 Force re-download mode enabled")
 
         try:
+            # 特殊处理：为 OI Divergence 策略检查 OI 数据
+            strategy_name = current_config.strategy.name if hasattr(current_config.strategy, 'name') else ""
+            if "OIDivergence" in strategy_name or "oi_divergence" in strategy_name.lower():
+                from config.settings import get_primary_symbol
+
+                # 获取当前配置的交易对
+                primary_symbol = get_primary_symbol()
+                print(f"🔍 Checking OI/Funding data for {primary_symbol}...")
+
+                # 检查 OI 数据
+                oi_exists, oi_missing = check_oi_data_exists(
+                    [primary_symbol],
+                    get_start_date(),
+                    get_end_date(),
+                    "1h",
+                    "binance",
+                    BASE_DIR
+                )
+
+                # 检查 Funding Rate 数据
+                funding_exists, funding_missing = check_funding_data_exists(
+                    [primary_symbol],
+                    get_start_date(),
+                    get_end_date(),
+                    "binance",
+                    BASE_DIR
+                )
+
+                # 如果数据缺失，自动下载
+                if not oi_exists or not funding_exists:
+                    missing_types = []
+                    if not oi_exists:
+                        missing_types.append("OI")
+                    if not funding_exists:
+                        missing_types.append("Funding Rate")
+
+                    print(f"⚠️  Missing {', '.join(missing_types)} data for {primary_symbol}")
+                    print(f"🚀 Auto-downloading missing data...")
+
+                    try:
+                        fetch_results = batch_fetch_oi_and_funding(
+                            symbols=[primary_symbol],
+                            start_date=get_start_date(),
+                            end_date=get_end_date(),
+                            exchange="binance",
+                            base_dir=BASE_DIR,
+                            oi_period="1h"
+                        )
+
+                        oi_count = len(fetch_results.get("oi_files", []))
+                        funding_count = len(fetch_results.get("funding_files", []))
+
+                        if oi_count > 0 or funding_count > 0:
+                            print(f"✅ Successfully downloaded:")
+                            if oi_count > 0:
+                                print(f"   📈 {oi_count} OI data file(s)")
+                            if funding_count > 0:
+                                print(f"   💰 {funding_count} Funding Rate data file(s)")
+                        else:
+                            print(f"⚠️  No data downloaded - check exchange availability")
+
+                    except Exception as e:
+                        print(f"❌ Failed to download data: {e}")
+                        print(f"   Continuing with existing data...")
+                else:
+                    print(f"✅ OI and Funding Rate data available for {primary_symbol}")
+
             # 检查策略数据依赖
             strategy_tasks = check_strategy_data_dependencies(
                 current_config.strategy.params if hasattr(current_config.strategy, 'params') else current_config.strategy,
