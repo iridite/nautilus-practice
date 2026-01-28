@@ -35,6 +35,17 @@ class OIFundingDataLoader:
         self.base_dir = base_dir
         self.data_dir = base_dir / "data" / "raw"
 
+    def _find_available_oi_files(self, symbol: str, exchange: str = "binance") -> list:
+        """查找可用的 OI 数据文件"""
+        safe_symbol = symbol.replace("/", "")
+        symbol_dir = self.data_dir / safe_symbol
+
+        if not symbol_dir.exists():
+            return []
+
+        oi_files = list(symbol_dir.glob(f"{exchange}-{safe_symbol}-oi-*.csv"))
+        return sorted(oi_files)
+
     def load_oi_data(
         self,
         symbol: str,
@@ -72,7 +83,19 @@ class OIFundingDataLoader:
         file_path = self.data_dir / safe_symbol / filename
 
         if not file_path.exists():
-            print(f"Warning: OI data file not found: {file_path}")
+            print(f"⚠️  OI data file not found: {file_path}")
+
+            # 查找可用的替代文件
+            available_files = self._find_available_oi_files(symbol, exchange)
+            if available_files:
+                print(f"💡 Found {len(available_files)} available OI file(s):")
+                for f in available_files[:5]:  # 只显示前5个
+                    print(f"   - {f.name}")
+                if len(available_files) > 5:
+                    print(f"   ... and {len(available_files) - 5} more")
+            else:
+                print(f"❌ No OI data files found for {symbol} in {self.data_dir / safe_symbol}")
+
             return []
 
         try:
@@ -106,6 +129,17 @@ class OIFundingDataLoader:
         except Exception as e:
             print(f"Error loading OI data from {file_path}: {e}")
             return []
+
+    def _find_available_funding_files(self, symbol: str, exchange: str = "binance") -> list:
+        """查找可用的 Funding Rate 数据文件"""
+        safe_symbol = symbol.replace("/", "")
+        symbol_dir = self.data_dir / safe_symbol
+
+        if not symbol_dir.exists():
+            return []
+
+        funding_files = list(symbol_dir.glob(f"{exchange}-{safe_symbol}-funding-*.csv"))
+        return sorted(funding_files)
 
     def load_funding_data(
         self,
@@ -141,7 +175,19 @@ class OIFundingDataLoader:
         file_path = self.data_dir / safe_symbol / filename
 
         if not file_path.exists():
-            print(f"Warning: Funding data file not found: {file_path}")
+            print(f"⚠️  Funding data file not found: {file_path}")
+
+            # 查找可用的替代文件
+            available_files = self._find_available_funding_files(symbol, exchange)
+            if available_files:
+                print(f"💡 Found {len(available_files)} available Funding file(s):")
+                for f in available_files[:5]:  # 只显示前5个
+                    print(f"   - {f.name}")
+                if len(available_files) > 5:
+                    print(f"   ... and {len(available_files) - 5} more")
+            else:
+                print(f"❌ No Funding data files found for {symbol} in {self.data_dir / safe_symbol}")
+
             return []
 
         try:
