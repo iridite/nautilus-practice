@@ -266,9 +266,10 @@ class ConfigPaths:
 
     def __init__(self, config_root: Optional[Path] = None):
         self.config_root = config_root or (project_root / "config")
-        self.environments_dir = self.config_root / "environments"
-        self.strategies_dir = self.config_root / "strategies"
-        self.active_file = self.config_root / "active.yaml"
+        self.yaml_dir = self.config_root / "yaml"
+        self.environments_dir = self.yaml_dir / "environments"
+        self.strategies_dir = self.yaml_dir / "strategies"
+        self.active_file = self.yaml_dir / "active.yaml"
 
     def get_environment_file(self, env_name: str) -> Path:
         """获取环境配置文件路径"""
@@ -280,6 +281,7 @@ class ConfigPaths:
 
     def ensure_directories(self):
         """确保配置目录存在"""
+        self.yaml_dir.mkdir(parents=True, exist_ok=True)
         self.environments_dir.mkdir(parents=True, exist_ok=True)
         self.strategies_dir.mkdir(parents=True, exist_ok=True)
 
