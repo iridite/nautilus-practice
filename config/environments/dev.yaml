@@ -6,7 +6,7 @@ extends: "base.yaml"
 # 开发环境使用更短的回测周期进行快速测试
 backtest:
   start_date: "2025-12-01"
-  end_date: "2025-12-07"  # 仅7天，快速测试
+  end_date: "2025-12-07" # 仅7天，快速测试
 
 # 开发环境使用更详细的日志
 logging:
@@ -22,3 +22,11 @@ logging:
 # 开发环境可以使用更小的初始资金进行测试
 trading:
   initial_balance: 50
+
+# 文件清理配置 - 自动清理旧的日志和输出文件
+file_cleanup:
+  enabled: true
+  max_files_per_dir: 50 # 开发环境保留较少文件
+  target_dirs:
+    - "log"
+    - "output"

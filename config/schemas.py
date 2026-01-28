@@ -124,6 +124,26 @@ class LoggingConfig(BaseModel):
         return v.upper()
 
 
+class FileCleanupConfig(BaseModel):
+    """文件清理配置"""
+
+    max_files_per_dir: int = 100
+    enabled: bool = True
+    target_dirs: List[str] = Field(default_factory=lambda: ["log", "output"])
+
+    @validator("max_files_per_dir")
+    def validate_max_files(cls, v):
+        if v < 1:
+            raise ValueError("max_files_per_dir must be at least 1")
+        return v
+
+    @validator("target_dirs")
+    def validate_target_dirs(cls, v):
+        if not v:
+            raise ValueError("target_dirs cannot be empty")
+        return v
+
+
 class StrategyParametersConfig(BaseModel):
     """策略参数基础配置"""
 
@@ -194,6 +214,7 @@ class EnvironmentConfig(BaseModel):
     timeframes: TimeframesConfig = Field(default_factory=TimeframesConfig)
     backtest: BacktestConfig
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
+    file_cleanup: FileCleanupConfig = Field(default_factory=FileCleanupConfig)
 
     class Config:
         # 允许额外字段，用于扩展配置
@@ -285,6 +306,7 @@ __all__ = [
     "TimeframesConfig",
     "BacktestConfig",
     "LoggingConfig",
+    "FileCleanupConfig",
     "StrategyParametersConfig",
     "StrategyConfig",
     "EnvironmentConfig",

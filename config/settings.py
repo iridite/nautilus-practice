@@ -241,6 +241,27 @@ def get_config_manager() -> ConfigManager:
     return config_manager
 
 
+def get_file_cleanup_config():
+    """获取文件清理配置"""
+    return config_manager.FILE_CLEANUP_CONFIG
+
+
+def run_file_cleanup() -> int:
+    """
+    执行文件清理
+
+    Returns:
+        int: 删除的文件总数
+    """
+    from pathlib import Path
+
+    from utils.file_cleanup import auto_cleanup
+
+    base_dir = Path(__file__).parent.parent
+    config = config_manager.FILE_CLEANUP_CONFIG
+    return auto_cleanup(base_dir, config)
+
+
 # ==========================================
 # 初始化和启动信息
 # ==========================================
@@ -295,4 +316,7 @@ __all__ = [
     "get_strategy_config",
     "get_active_config",
     "get_config_manager",
+    # 文件清理
+    "get_file_cleanup_config",
+    "run_file_cleanup",
 ]

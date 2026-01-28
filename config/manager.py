@@ -13,6 +13,9 @@ from nautilus_trader.model import Money
 from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.enums import BarAggregation
 
+from utils.file_cleanup import FileCleanupConfig as FileCleanupUtil
+from utils.file_cleanup import auto_cleanup
+
 from .definitions import (
     BackTestConfig,
     DataConfig,
@@ -169,6 +172,16 @@ class ConfigManager:
     def ACTIVE_STRATEGY(self) -> LegacyStrategyConfig:
         """当前活跃策略（兼容格式）"""
         return self._build_legacy_strategy_config()
+
+    @property
+    def FILE_CLEANUP_CONFIG(self) -> FileCleanupUtil:
+        """文件清理配置"""
+        fc = self.env_config.file_cleanup
+        return FileCleanupUtil(
+            max_files_per_dir=fc.max_files_per_dir,
+            enabled=fc.enabled,
+            target_dirs=fc.target_dirs,
+        )
 
     # ==========================================
     # 兼容性接口 - 替换settings.py中的函数
