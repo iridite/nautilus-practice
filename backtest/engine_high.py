@@ -34,6 +34,7 @@ from backtest.exceptions import (
     DataLoadError,
     InstrumentLoadError,
 )
+from backtest.filename_parser import FilenameParser
 from backtest.utils import (
     filter_strategy_params,
     load_strategy_config_class,
@@ -346,53 +347,19 @@ def _auto_download_missing_data(data_cfg, backtest_cfg: BackTestConfig) -> bool:
         from utils.data_retrival import batch_fetch_ohlcv
         from utils.time_helpers import get_ms_timestamp
 
-        # 从文件名解析参数 - 修复解析逻辑
+        # 使用 FilenameParser 解析文件名
         csv_filename = data_cfg.csv_file_name
-        # 提取文件名部分（去除路径）
-        filename_only = Path(csv_filename).name
+        parsed = FilenameParser.parse(csv_filename)
 
-        # 实际文件名格式: okx-BTCUSDT-1h-2020-01-01_2026-01-14.csv
-        # 先按下划线分隔日期范围
-        if "_" in filename_only:
-            # 分离基础部分和结束日期
-            base_part, end_date_part = filename_only.replace(".csv", "").split("_", 1)
-
-            # 解析基础部分: okx-BTCUSDT-1h-2020-01-01
-            base_parts = base_part.split("-")
-            if len(base_parts) >= 6:
-                exchange_id = base_parts[0]  # okx
-                symbol = base_parts[1]  # BTCUSDT
-                timeframe = base_parts[2]  # 1h
-                # 重新组合开始日期: 2020-01-01
-                start_date = f"{base_parts[3]}-{base_parts[4]}-{base_parts[5]}"
-                # 结束日期直接使用: 2026-01-14
-                end_date = end_date_part
-            else:
-                print(f"❌ Cannot parse filename format: {filename_only}")
-                return False
-        else:
-            # 备用格式：全部用连字符分隔
-            parts = filename_only.replace(".csv", "").split("-")
-            if len(parts) >= 8:
-                exchange_id = parts[0]  # binance
-                symbol = parts[1]  # DOGEUSDT
-                timeframe = parts[2]  # 1h
-                start_date = f"{parts[3]}-{parts[4]}-{parts[5]}"  # 2025-12-01
-                end_date = f"{parts[6]}-{parts[7]}-{parts[8]}"  # 2025-12-30
-            elif len(parts) >= 6:
-                exchange_id = parts[0]  # binance
-                symbol = parts[1]  # DOGEUSDT
-                timeframe = parts[2]  # 1h
-                start_date = f"{parts[3]}-{parts[4]}-{parts[5]}"  # 2025-12-01
-                end_date = start_date
-            else:
-                print(f"❌ Cannot parse filename format: {filename_only}")
-                return False
-
-        # 验证解析结果
-        if not all([exchange_id, symbol, timeframe, start_date, end_date]):
-            print(f"❌ Invalid parsed parameters from {filename_only}")
+        if not parsed:
+            print(f"❌ Cannot parse filename format: {csv_filename}")
             return False
+
+        exchange_id = parsed.exchange
+        symbol = parsed.symbol
+        timeframe = parsed.timeframe
+        start_date = parsed.start_date
+        end_date = parsed.end_date
 
         # 使用batch_fetch_ohlcv函数
         base_dir = Path(__file__).parent.parent  # 获取项目根目录
