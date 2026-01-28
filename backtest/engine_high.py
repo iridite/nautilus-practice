@@ -27,6 +27,7 @@ from nautilus_trader.persistence.loaders import CSVBarDataLoader
 from nautilus_trader.persistence.wranglers import BarDataWrangler
 from pandas import DataFrame
 
+from backtest.data_loader import CustomDataLoader
 from backtest.exceptions import (
     BacktestEngineError,
     CatalogError,
@@ -782,11 +783,11 @@ def _load_custom_data_to_engine(
 
             # 加载OI数据
             if oi_files:
-                oi_data_list = _load_oi_data_from_files(oi_files, instrument_id)
+                oi_data_list = CustomDataLoader.load_oi_data(oi_files, instrument_id)
 
             # 加载Funding Rate数据
             if funding_files:
-                funding_data_list = _load_funding_data_from_files(
+                funding_data_list = CustomDataLoader.load_funding_data(
                     funding_files, instrument_id
                 )
 
@@ -806,71 +807,6 @@ def _load_custom_data_to_engine(
         print("Strategy will run without OI/Funding data")
 
 
-def _load_oi_data_from_files(oi_files: List[Path], instrument_id) -> List:
-    """从文件加载OI数据"""
-    oi_data_list = []
-
-    try:
-        from decimal import Decimal
-
-        import pandas as pd
-        from nautilus_trader.core.nautilus_pyo3 import millis_to_nanos
-
-        from utils.custom_data import OpenInterestData
-
-        for oi_file in oi_files:
-            df = pd.read_csv(oi_file)
-            for _, row in df.iterrows():
-                ts_ms = int(row["timestamp"])
-                ts_event = millis_to_nanos(ts_ms)
-                ts_init = ts_event
-
-                oi_data = OpenInterestData(
-                    instrument_id=instrument_id,
-                    open_interest=Decimal(str(row["open_interest"])),
-                    ts_event=ts_event,
-                    ts_init=ts_init,
-                )
-                oi_data_list.append(oi_data)
-
-    except Exception as e:
-        print(f"❌ Error loading OI files: {e}")
-
-    return oi_data_list
-
-
-def _load_funding_data_from_files(funding_files: List[Path], instrument_id) -> List:
-    """从文件加载Funding Rate数据"""
-    funding_data_list = []
-
-    try:
-        from decimal import Decimal
-
-        import pandas as pd
-        from nautilus_trader.core.nautilus_pyo3 import millis_to_nanos
-
-        from utils.custom_data import FundingRateData
-
-        for funding_file in funding_files:
-            df = pd.read_csv(funding_file)
-            for _, row in df.iterrows():
-                ts_ms = int(row["timestamp"])
-                ts_event = millis_to_nanos(ts_ms)
-                ts_init = ts_event
-
-                funding_data = FundingRateData(
-                    instrument_id=instrument_id,
-                    funding_rate=Decimal(str(row["funding_rate"])),
-                    next_funding_time=None,
-                    ts_event=ts_event,
-                    ts_init=ts_init,
-                )
-                funding_data_list.append(funding_data)
-
-    except Exception as e:
-        print(f"❌ Error loading Funding files: {e}")
-
-    return funding_data_list
 
 
 def _process_backtest_results(

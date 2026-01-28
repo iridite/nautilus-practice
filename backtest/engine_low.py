@@ -27,6 +27,7 @@ from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.persistence.wranglers import BarDataWrangler
 from pandas import DataFrame
 
+from backtest.data_loader import CustomDataLoader
 from backtest.data_validator import DataValidator
 from backtest.exceptions import (
     BacktestEngineError,
@@ -174,11 +175,11 @@ def _load_custom_data_to_engine(
 
             # 加载OI数据
             if oi_files:
-                oi_data_list = _load_oi_data_from_files(oi_files, instrument_id)
+                oi_data_list = CustomDataLoader.load_oi_data(oi_files, instrument_id)
 
             # 加载Funding Rate数据
             if funding_files:
-                funding_data_list = _load_funding_data_from_files(funding_files, instrument_id)
+                funding_data_list = CustomDataLoader.load_funding_data(funding_files, instrument_id)
 
             # 合并并添加到引擎
             if oi_data_list or funding_data_list:
@@ -194,101 +195,6 @@ def _load_custom_data_to_engine(
         raise CustomDataError(f"Custom data loading failed: {e}", cause=e)
 
 
-def _load_oi_data_from_files(oi_files: List[Path], instrument_id) -> List:
-    """从文件加载OI数据 (简化版，适合Low-Level Engine)"""
-    oi_data_list = []
-
-    try:
-        from decimal import Decimal
-
-        import pandas as pd
-        from nautilus_trader.core.nautilus_pyo3 import millis_to_nanos
-
-        from utils.custom_data import OpenInterestData
-
-        for oi_file in oi_files:
-            df = pd.read_csv(oi_file)
-            df = df.sort_values("timestamp")  # 确保时间戳顺序
-
-            # 数据质量验证
-            issues = DataValidator.validate_dataframe(df, oi_file, expected_interval_ms=3_600_000)
-            for issue in issues:
-                if issue.severity == "error":
-                    print(f"   ❌ OI data quality error in {oi_file.name}: {issue.message}")
-                    continue
-
-            # 向量化处理
-            timestamps = df["timestamp"].astype(int).values
-            oi_values = df["open_interest"].astype(str).values
-
-            # 验证时间戳单调递增
-            if len(timestamps) > 1 and (timestamps[1:] < timestamps[:-1]).any():
-                print(f"⚠️ Warning: Non-monotonic timestamp in {oi_file.name}")
-
-            # 批量创建数据对象
-            for i in range(len(df)):
-                ts_event = millis_to_nanos(timestamps[i])
-                oi_data = OpenInterestData(
-                    instrument_id=instrument_id,
-                    open_interest=Decimal(oi_values[i]),
-                    ts_event=ts_event,
-                    ts_init=ts_event,
-                )
-                oi_data_list.append(oi_data)
-
-    except Exception as e:
-        print(f"❌ Error loading OI files: {e}")
-
-    return oi_data_list
-
-
-def _load_funding_data_from_files(funding_files: List[Path], instrument_id) -> List:
-    """从文件加载Funding Rate数据 (简化版，适合Low-Level Engine)"""
-    funding_data_list = []
-
-    try:
-        from decimal import Decimal
-
-        import pandas as pd
-        from nautilus_trader.core.nautilus_pyo3 import millis_to_nanos
-
-        from utils.custom_data import FundingRateData
-
-        for funding_file in funding_files:
-            df = pd.read_csv(funding_file)
-            df = df.sort_values("timestamp")  # 确保时间戳顺序
-
-            # 数据质量验证
-            issues = DataValidator.validate_dataframe(df, funding_file, expected_interval_ms=28_800_000)
-            for issue in issues:
-                if issue.severity == "error":
-                    print(f"   ❌ Funding data quality error in {funding_file.name}: {issue.message}")
-                    continue
-
-            # 向量化处理
-            timestamps = df["timestamp"].astype(int).values
-            funding_values = df["funding_rate"].astype(str).values
-
-            # 验证时间戳单调递增
-            if len(timestamps) > 1 and (timestamps[1:] < timestamps[:-1]).any():
-                print(f"⚠️ Warning: Non-monotonic timestamp in {funding_file.name}")
-
-            # 批量创建数据对象
-            for i in range(len(df)):
-                ts_event = millis_to_nanos(timestamps[i])
-                funding_data = FundingRateData(
-                    instrument_id=instrument_id,
-                    funding_rate=Decimal(funding_values[i]),
-                    next_funding_time=None,
-                    ts_event=ts_event,
-                    ts_init=ts_event,
-                )
-                funding_data_list.append(funding_data)
-
-    except Exception as e:
-        print(f"❌ Error loading Funding files: {e}")
-
-    return funding_data_list
 
 
 def _process_backtest_results(
