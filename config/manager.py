@@ -79,6 +79,9 @@ class ConfigManager:
                 self._active_config.strategy
             )
 
+            # 应用 active.yaml 中的 overrides
+            self._apply_overrides()
+
             # 清除兼容性缓存
             self._backtest_config = None
 
@@ -91,6 +94,32 @@ class ConfigManager:
         self._strategy_config = None
         self._active_config = None
         self._backtest_config = None
+
+    def _apply_overrides(self):
+        """应用 active.yaml 中的 overrides 到环境配置"""
+        if not self._active_config.overrides:
+            return
+
+        overrides = self._active_config.overrides
+
+        # 应用 backtest overrides
+        if "backtest" in overrides and self._env_config:
+            backtest_overrides = overrides["backtest"]
+            if "start_date" in backtest_overrides:
+                self._env_config.backtest.start_date = backtest_overrides["start_date"]
+            if "end_date" in backtest_overrides:
+                self._env_config.backtest.end_date = backtest_overrides["end_date"]
+
+        # 应用 trading overrides
+        if "trading" in overrides and self._env_config:
+            trading_overrides = overrides["trading"]
+            if "initial_balance" in trading_overrides:
+                from decimal import Decimal
+                self._env_config.trading.initial_balance = Decimal(str(trading_overrides["initial_balance"]))
+            if "venue" in trading_overrides:
+                self._env_config.trading.venue = trading_overrides["venue"]
+            if "instrument_type" in trading_overrides:
+                self._env_config.trading.instrument_type = trading_overrides["instrument_type"]
 
     # ==========================================
     # 基础配置访问接口
