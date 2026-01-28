@@ -217,23 +217,22 @@ def _load_oi_data_from_files(oi_files: List[Path], instrument_id) -> List:
                     print(f"   ❌ OI data quality error in {oi_file.name}: {issue.message}")
                     continue
 
-            prev_ts = 0
-            for _, row in df.iterrows():
-                ts_ms = int(row["timestamp"])
+            # 向量化处理
+            timestamps = df["timestamp"].astype(int).values
+            oi_values = df["open_interest"].astype(str).values
 
-                # 验证时间戳单调递增
-                if ts_ms < prev_ts:
-                    print(f"⚠️ Warning: Non-monotonic timestamp in {oi_file.name}")
-                prev_ts = ts_ms
+            # 验证时间戳单调递增
+            if len(timestamps) > 1 and (timestamps[1:] < timestamps[:-1]).any():
+                print(f"⚠️ Warning: Non-monotonic timestamp in {oi_file.name}")
 
-                ts_event = millis_to_nanos(ts_ms)
-                ts_init = ts_event
-
+            # 批量创建数据对象
+            for i in range(len(df)):
+                ts_event = millis_to_nanos(timestamps[i])
                 oi_data = OpenInterestData(
                     instrument_id=instrument_id,
-                    open_interest=Decimal(str(row["open_interest"])),
+                    open_interest=Decimal(oi_values[i]),
                     ts_event=ts_event,
-                    ts_init=ts_init,
+                    ts_init=ts_event,
                 )
                 oi_data_list.append(oi_data)
 
@@ -266,24 +265,23 @@ def _load_funding_data_from_files(funding_files: List[Path], instrument_id) -> L
                     print(f"   ❌ Funding data quality error in {funding_file.name}: {issue.message}")
                     continue
 
-            prev_ts = 0
-            for _, row in df.iterrows():
-                ts_ms = int(row["timestamp"])
+            # 向量化处理
+            timestamps = df["timestamp"].astype(int).values
+            funding_values = df["funding_rate"].astype(str).values
 
-                # 验证时间戳单调递增
-                if ts_ms < prev_ts:
-                    print(f"⚠️ Warning: Non-monotonic timestamp in {funding_file.name}")
-                prev_ts = ts_ms
+            # 验证时间戳单调递增
+            if len(timestamps) > 1 and (timestamps[1:] < timestamps[:-1]).any():
+                print(f"⚠️ Warning: Non-monotonic timestamp in {funding_file.name}")
 
-                ts_event = millis_to_nanos(ts_ms)
-                ts_init = ts_event
-
+            # 批量创建数据对象
+            for i in range(len(df)):
+                ts_event = millis_to_nanos(timestamps[i])
                 funding_data = FundingRateData(
                     instrument_id=instrument_id,
-                    funding_rate=Decimal(str(row["funding_rate"])),
+                    funding_rate=Decimal(funding_values[i]),
                     next_funding_time=None,
                     ts_event=ts_event,
-                    ts_init=ts_init,
+                    ts_init=ts_event,
                 )
                 funding_data_list.append(funding_data)
 
