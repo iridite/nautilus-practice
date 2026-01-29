@@ -195,7 +195,6 @@ __all__ = [
     "config_helpers",
     "custom_data",
     "oi_funding_adapter",
-    "oi_funding_fetcher",
 ]
 
 

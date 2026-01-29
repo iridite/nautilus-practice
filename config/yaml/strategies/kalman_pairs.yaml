@@ -1,5 +1,5 @@
 strategy:
-  class_path: strategy.kalman_pairs_trader.KalmanPairsTradingStrategy
+  class_path: strategy.kalman_pairs.KalmanPairsTradingStrategy
   config:
     instrument_a_id: "SOLUSDT-PERP.BINANCE"
     instrument_b_id: "ETHUSDT-PERP.BINANCE"
