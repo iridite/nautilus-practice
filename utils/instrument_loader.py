@@ -44,9 +44,8 @@ def load_instrument(
             f"Instrument class {instrument_type} does not support from_dict deserialization"
         )
 
-    # 挂单手续费这一块，binance 会在 inst json 写明，但 OKX 不会
-    # 其他的信息还是比较有用的
-    # TODO: 这部分应该写到文档里面去，方便后面修改做指引
+    # Fee handling: Binance provides fees in JSON, OKX does not
+    # Default: maker 0.02%, taker 0.05% (typical perpetual contract fees)
     maker_fee = data.get("maker_fee")
     taker_fee = data.get("taker_fee")
 

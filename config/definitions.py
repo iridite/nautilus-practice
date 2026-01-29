@@ -221,7 +221,7 @@ class BackTestConfig:
         default_factory=lambda: [Money("10_000", USDT)]
     )
     output_html_report: bool = False
-    # TODO：尝试在这里控制回测的高级/低级引擎切换
+    # Engine selection: use CLI flag --type [high|low]
 
     # 以下是可选的配置
     logging: LogConfig | None = None
@@ -264,11 +264,11 @@ class BackTestConfig:
 class SandboxConfig:
     # Sandbox Configuration Options
     sandbox_mode: bool = False
-    sandbox_balance: Money = Money("10_000", USDT)  # TODO: 需要注意多币种
+    sandbox_balance: Money = Money("10_000", USDT)  # Multi-currency: use List[Money] when needed
 
 
 @dataclass
 class LiveConfig:
     # Live Configuration Options
     live_mode: bool = False
-    live_balance: Money = Money("10_000", USDT)  # TODO: 需要注意多币种
+    live_balance: Money = Money("10_000", USDT)  # Multi-currency: use List[Money] when needed

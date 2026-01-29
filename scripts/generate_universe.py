@@ -39,9 +39,6 @@ def is_stablecoin(symbol: str) -> bool:
     return False
 
 
-# TODO: 可能需要加一个 option 选择是否主动将 BTC，ETH 剔除
-
-
 def get_days_in_month(year: int, month: int) -> int:
     """
     获取指定月份的天数

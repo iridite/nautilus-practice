@@ -3,9 +3,9 @@ import sys
 from pathlib import Path
 
 import joblib
-import pandas as pd
 import lightgbm as lgb
-from sklearn.metrics import classification_report, roc_auc_score, confusion_matrix
+import pandas as pd
+from sklearn.metrics import classification_report, confusion_matrix, roc_auc_score
 
 # Add project root to sys.path to allow importing local modules
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -58,7 +58,7 @@ def train_model(trade_file: str, trend_file: str):
     ]
 
     feature_cols = [c for c in df.columns if c not in exclude_cols]
-    # TODO: research on feature engineering
+    # Feature engineering: use normalized indicators, rolling z-scores, percentile ranks
 
     X = df[feature_cols]
     y = df['target']

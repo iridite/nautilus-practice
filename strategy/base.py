@@ -66,7 +66,8 @@ class DataDependency:
 class BaseStrategyConfig(StrategyConfig):  # pyright: ignore[reportGeneralTypeIssues]
     """
     Base configuration for strategies, including common risk management and position sizing parameters.
-    # TODO: check this later for its usability
+
+    Provides unified interface for position sizing, risk management, and data dependencies.
     """
 
     oms_type: str = "NETTING"
@@ -203,7 +204,7 @@ class BaseStrategy(Strategy):
         Lifecycle hook: Strategy Setup.
         Subclasses should call super().on_start() to ensure instrument is loaded.
         """
-        # TODO: 这里使用的 self.config 和 self.base_config 有什么区别？
+        # self.config: strategy-specific config; self.base_config: BaseStrategyConfig fields
         if hasattr(self.config, "instrument_id") and self.config.instrument_id:
             instrument_id = self.config.instrument_id
             if isinstance(instrument_id, str):

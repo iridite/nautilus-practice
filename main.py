@@ -853,7 +853,11 @@ def main():
                             if funding_count > 0:
                                 print(f"   💰 {funding_count} Funding Rate data file(s)")
                         else:
-                            print(f"⚠️  No data downloaded - check exchange availability")
+                            print(f"❌ No data downloaded - check exchange availability")
+                            raise RuntimeError(
+                                "Failed to download required OI/Funding data. "
+                                "Please check exchange availability and network connection."
+                            )
 
                     except Exception as e:
                         print(f"❌ Failed to download data: {e}")

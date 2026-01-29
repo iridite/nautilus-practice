@@ -86,43 +86,22 @@ def _import_data_to_catalog(
     """
     将CSV数据导入Parquet目录，并组织数据流
 
-    智能数据处理逻辑：
-    1. CSV和Parquet都存在：进行一致性检查
-       - 一致：跳过转换，直接使用Parquet数据
-       - 不一致：重新从CSV导入到Parquet
-    2. 仅CSV存在：正常导入到Parquet
-    3. 仅Parquet存在：直接使用Parquet数据
-    4. CSV缺失：尝试自动下载数据
-    5. 都不存在：抛出DataLoadError并终止回测
-
-    Args:
-        cfg: 回测配置
-        loaded_instruments: 已加载的标的映射
-        catalog_path: Parquet目录路径
-
-    Returns:
-        Tuple[Dict, Dict, Dict]: (data_config_by_inst, global_feeds, feeds_by_inst)
-            - data_config_by_inst: 按标的分组的数据配置
-            - global_feeds: 全局数据流(如benchmark)
-            - feeds_by_inst: 按标的分组的数据流
-
-    Raises:
-        DataLoadError: 当数据导入失败时
-        CatalogError: 当目录操作失败时
+    智能数据处理：检查Parquet覆盖率，按需导入CSV或下载数据
     """
+    from backtest.data_import_helpers import (
+        check_parquet_coverage,
+        handle_parquet_exists,
+        handle_parquet_missing,
+    )
+
     _catalog = ParquetDataCatalog(catalog_path)
     data_config_by_inst = {}
     feeds_by_inst = defaultdict(dict)
     global_feeds = {}
-
     total_feeds = len(cfg.data_feeds)
 
     for feed_idx, data_cfg in enumerate(cfg.data_feeds, 1):
-        # 确定关联的标的ID
-        inst_id = data_cfg.instrument_id
-        if inst_id is None and cfg.instrument is not None:
-            inst_id = cfg.instrument.instrument_id
-
+        inst_id = data_cfg.instrument_id or (cfg.instrument.instrument_id if cfg.instrument else None)
         if inst_id not in loaded_instruments:
             continue
 
@@ -131,187 +110,30 @@ def _import_data_to_catalog(
         feed_bar_type_str = f"{inst.id}-{data_cfg.bar_type_str}"
         bar_type = BarType.from_str(feed_bar_type_str)
 
-        # 智能数据处理：优先检查Parquet数据充分性
-        # 检查Parquet数据是否已存在且充分
-        try:
-            existing_intervals = _catalog.get_intervals(
-                data_cls=Bar, identifier=str(bar_type)
+        # 检查Parquet数据覆盖率
+        parquet_exists, coverage_pct = check_parquet_coverage(_catalog, bar_type, cfg)
+
+        # 处理数据导入
+        if parquet_exists and coverage_pct >= 80:
+            status_msg = f"\r✅ [{feed_idx:3d}/{total_feeds}] Ready: {str(bar_type.instrument_id):<35}"
+        elif parquet_exists:
+            status_msg = handle_parquet_exists(
+                _catalog, csv_path, inst, bar_type, data_cfg, cfg, feed_idx, total_feeds
             )
-            parquet_exists = bool(existing_intervals)
-        except Exception:
-            parquet_exists = False
-
-        # 如果Parquet数据充分，直接跳过所有操作
-        if parquet_exists:
-            # 检查Parquet数据覆盖范围是否充分
-            from utils.validation import check_parquet_data_coverage
-
-            symbol_str = str(bar_type.instrument_id).split("-")[
-                0
-            ]  # BTCUSDT-PERP.BINANCE -> BTCUSDT
-
-            parquet_covered, parquet_warning, parquet_stats = (
-                check_parquet_data_coverage(
-                    symbol_str,
-                    cfg.start_date,
-                    cfg.end_date,
-                    "1h",
-                    "binance",
-                    Path(__file__).parent.parent,
-                    "RSSqueezeStrategy",
-                )
-            )
-
-            coverage_pct = parquet_stats.get("coverage_percentage", 0.0)
-
-            if coverage_pct >= 80:  # Parquet数据充分，直接跳过
-                print(
-                    f"\r✅ [{feed_idx:3d}/{total_feeds}] Ready: {str(bar_type.instrument_id):<35}",
-                    end="",
-                    flush=True,
-                )
-            else:
-                # Parquet数据不充分，需要检查CSV或下载
-                csv_exists = csv_path.exists()
-
-                if csv_exists:
-                    # CSV存在，进行一致性检查后可能需要重新导入
-                    print(
-                        f"\r🔍 [{feed_idx:3d}/{total_feeds}] Checking: {str(bar_type.instrument_id):<35}",
-                        end="",
-                        flush=True,
-                    )
-
-                    is_consistent = _verify_data_consistency(
-                        csv_path, _catalog, bar_type
-                    )
-
-                    if not is_consistent:
-                        # 数据不一致，重新导入
-                        print(
-                            f"\r📖 [{feed_idx:3d}/{total_feeds}] Updating: {str(bar_type.instrument_id):<32}",
-                            end="",
-                            flush=True,
-                        )
-                        try:
-                            catalog_loader(_catalog, csv_path, inst, bar_type)
-                        except Exception as e:
-                            print(
-                                f"\r⚠️  [{feed_idx:3d}/{total_feeds}] Using Parquet: {str(bar_type.instrument_id):<28}",
-                                end="",
-                                flush=True,
-                            )
-                    else:
-                        print(
-                            f"\r⏩ [{feed_idx:3d}/{total_feeds}] Verified: {str(bar_type.instrument_id):<35}",
-                            end="",
-                            flush=True,
-                        )
-                else:
-                    # CSV不存在，尝试下载
-                    print(
-                        f"\r🔄 [{feed_idx:3d}/{total_feeds}] Downloading: {str(bar_type.instrument_id):<30}",
-                        end="",
-                        flush=True,
-                    )
-
-                    download_success = _auto_download_missing_data(data_cfg, cfg)
-
-                    if download_success and csv_path.exists():
-                        # 下载成功，导入数据
-                        print(
-                            f"\r📖 [{feed_idx:3d}/{total_feeds}] Importing: {str(bar_type.instrument_id):<32}",
-                            end="",
-                            flush=True,
-                        )
-                        try:
-                            catalog_loader(_catalog, csv_path, inst, bar_type)
-                        except Exception as e:
-                            print(
-                                f"\r⚠️  [{feed_idx:3d}/{total_feeds}] Using Parquet: {str(bar_type.instrument_id):<28}",
-                                end="",
-                                flush=True,
-                            )
-                    else:
-                        # 下载失败，使用现有Parquet数据（虽然不充分）
-                        print(
-                            f"\r⚠️  [{feed_idx:3d}/{total_feeds}] Partial Parquet: {str(bar_type.instrument_id):<25}",
-                            end="",
-                            flush=True,
-                        )
         else:
-            # Parquet数据不存在，需要CSV数据
-            csv_exists = csv_path.exists()
+            status_msg = handle_parquet_missing(
+                _catalog, csv_path, inst, bar_type, data_cfg, cfg, feed_idx, total_feeds
+            )
 
-            if csv_exists:
-                # CSV存在，正常导入
-                print(
-                    f"\r📖 [{feed_idx:3d}/{total_feeds}] Importing: {str(bar_type.instrument_id):<32}",
-                    end="",
-                    flush=True,
-                )
-                try:
-                    catalog_loader(_catalog, csv_path, inst, bar_type)
-                except Exception as e:
-                    raise DataLoadError(
-                        f"Error loading {data_cfg.csv_file_name}: {e}", str(csv_path), e
-                    )
-            else:
-                # CSV不存在，尝试下载
-                print(
-                    f"\r🔄 [{feed_idx:3d}/{total_feeds}] Downloading: {str(bar_type.instrument_id):<30}",
-                    end="",
-                    flush=True,
-                )
+        print(status_msg, end="", flush=True)
 
-                download_success = _auto_download_missing_data(data_cfg, cfg)
-
-                if download_success and csv_path.exists():
-                    # 下载成功，导入数据
-                    print(
-                        f"\r📖 [{feed_idx:3d}/{total_feeds}] Importing: {str(bar_type.instrument_id):<32}",
-                        end="",
-                        flush=True,
-                    )
-                    try:
-                        catalog_loader(_catalog, csv_path, inst, bar_type)
-                    except Exception as e:
-                        continue
-                else:
-                    # 下载失败且无任何数据，严重错误
-                    print(
-                        f"\r🚨 [{feed_idx:3d}/{total_feeds}] CRITICAL: {str(bar_type.instrument_id):<31}",
-                        end="",
-                        flush=True,
-                    )
-                    print(
-                        f"\n🚨 CRITICAL ERROR: No data available for {bar_type.instrument_id}"
-                    )
-                    print(f"   - CSV file missing: {csv_path}")
-                    print(f"   - Parquet data missing: No data found in catalog")
-                    print(
-                        f"   - Auto-download failed: Unable to retrieve data from exchange"
-                    )
-                    print(
-                        f"\n❌ TERMINATING BACKTEST: Cannot proceed without complete data"
-                    )
-                    print(
-                        f"   Please ensure all required data is available before running backtest."
-                    )
-                    raise DataLoadError(
-                        f"Critical data missing for {bar_type.instrument_id}. "
-                        f"CSV file not found: {csv_path}, Parquet data not available, "
-                        f"and auto-download failed. Cannot proceed with incomplete data.",
-                        str(csv_path),
-                    )
-
-        # 归类数据流标签
+        # 归类数据流
         if data_cfg.label == "benchmark":
             global_feeds[data_cfg.label] = feed_bar_type_str
         else:
             feeds_by_inst[inst_id][data_cfg.label] = feed_bar_type_str
 
-        # 合并同一标的的bar_types
+        # 合并bar_types
         inst_id_str = str(inst.id)
         if inst_id_str not in data_config_by_inst:
             data_config_by_inst[inst_id_str] = {
@@ -324,68 +146,14 @@ def _import_data_to_catalog(
         if bar_type_str not in data_config_by_inst[inst_id_str]["bar_types"]:
             data_config_by_inst[inst_id_str]["bar_types"].append(bar_type_str)
 
-    print(
-        f"\n✅ Data import complete. Created {len(data_config_by_inst)} data configs."
-    )
+    print(f"\n✅ Data import complete. Created {len(data_config_by_inst)} data configs.")
     return data_config_by_inst, global_feeds, feeds_by_inst
 
 
 def _auto_download_missing_data(data_cfg, backtest_cfg: BackTestConfig) -> bool:
-    """
-    自动下载缺失的数据文件
-
-    Args:
-        data_cfg: 数据配置对象
-        backtest_cfg: 回测配置对象
-
-    Returns:
-        bool: 下载是否成功
-    """
-    try:
-        import ccxt
-
-        from utils.data_retrival import batch_fetch_ohlcv
-        from utils.time_helpers import get_ms_timestamp
-
-        # 使用 FilenameParser 解析文件名
-        csv_filename = data_cfg.csv_file_name
-        parsed = FilenameParser.parse(csv_filename)
-
-        if not parsed:
-            print(f"❌ Cannot parse filename format: {csv_filename}")
-            return False
-
-        exchange_id = parsed.exchange
-        symbol = parsed.symbol
-        timeframe = parsed.timeframe
-        start_date = parsed.start_date
-        end_date = parsed.end_date
-
-        # 使用batch_fetch_ohlcv函数
-        base_dir = Path(__file__).parent.parent  # 获取项目根目录
-        configs = batch_fetch_ohlcv(
-            symbols=[symbol],
-            start_date=start_date,
-            end_date=end_date,
-            timeframe=timeframe,
-            exchange_id=exchange_id,
-            base_dir=base_dir,
-        )
-
-        if configs and len(configs) > 0:
-            # 验证下载的数据文件是否存在且有效
-            csv_path = data_cfg.full_path
-            if csv_path.exists() and csv_path.stat().st_size > 1024:  # 至少1KB
-                return True
-            else:
-                print(f"❌ Downloaded file validation failed: {csv_path}")
-                return False
-        else:
-            return False
-
-    except Exception as e:
-        print(f"❌ Error during auto-download: {e}")
-        return False
+    """自动下载缺失的数据文件"""
+    from backtest.data_import_helpers import auto_download_data
+    return auto_download_data(data_cfg, backtest_cfg)
 
 
 def _clear_parquet_data(catalog: ParquetDataCatalog, bar_type: BarType) -> None:
