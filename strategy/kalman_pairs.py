@@ -254,9 +254,13 @@ class KalmanPairsTradingStrategy(BaseStrategy):
         if total_positions >= self.config.max_positions:
             return
 
+        # 余额检查
+        max_notional = Decimal(str(self.config.max_notional_per_trade))
+        if not self.check_sufficient_balance(max_notional, self.instrument_a):
+            return
+
         # 计算交易数量
         beta = self.current_beta
-        max_notional = Decimal(str(self.config.max_notional_per_trade))
 
         # 根据beta符号调整对冲方向
         if beta >= 0:
@@ -321,9 +325,13 @@ class KalmanPairsTradingStrategy(BaseStrategy):
         if total_positions >= self.config.max_positions:
             return
 
+        # 余额检查
+        max_notional = Decimal(str(self.config.max_notional_per_trade))
+        if not self.check_sufficient_balance(max_notional, self.instrument_a):
+            return
+
         # 计算交易数量
         beta = self.current_beta
-        max_notional = Decimal(str(self.config.max_notional_per_trade))
 
         # 根据beta符号调整对冲方向
         if beta >= 0:
