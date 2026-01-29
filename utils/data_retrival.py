@@ -18,7 +18,26 @@ from utils.symbol_parser import parse_timeframe, resolve_symbol_and_type
 from utils.time_helpers import get_ms_timestamp
 
 
-def fetch_ohlcv_data(exchange, symbol, timeframe, since, limit_ms):
+def fetch_ohlcv_data(exchange, symbol, timeframe, since, limit_ms, source="auto"):
+    """
+    获取OHLCV数据，支持多数据源
+
+    Args:
+        source: 数据源 (ccxt/auto)，auto会在ccxt失败时自动切换到其他源
+    """
+    if source == "auto":
+        try:
+            return _fetch_ohlcv_ccxt(exchange, symbol, timeframe, since, limit_ms)
+        except Exception:
+            from utils.data_fetcher import DataFetcher
+            fetcher = DataFetcher()
+            df = fetcher.fetch_ohlcv(symbol, timeframe, since, limit_ms, source="auto")
+            return df[df["timestamp"] < limit_ms] if not df.empty else df
+    else:
+        return _fetch_ohlcv_ccxt(exchange, symbol, timeframe, since, limit_ms)
+
+
+def _fetch_ohlcv_ccxt(exchange, symbol, timeframe, since, limit_ms):
     all_ohlcv = []
     current_since = since
     while current_since < limit_ms:
@@ -57,6 +76,7 @@ def batch_fetch_ohlcv(
     exchange_id: str,
     base_dir: Path,
     extra: bool = False,
+    source: str = "auto",
 ) -> List[DataConfig]:
     """批量抓取 OHLCV 数据并返回 DataConfig 列表"""
     exchange_class = getattr(ccxt, exchange_id.lower())
@@ -95,7 +115,7 @@ def batch_fetch_ohlcv(
 
             if not (output_path.exists() and output_path.stat().st_size > 10 * 1024):
                 df = fetch_ohlcv_data(
-                    exchange, ccxt_symbol, timeframe, start_ms, end_ms
+                    exchange, ccxt_symbol, timeframe, start_ms, end_ms, source=source
                 )
                 if not df.empty:
                     df["datetime"] = pd.to_datetime(df["timestamp"], unit="ms")

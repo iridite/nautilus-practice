@@ -75,8 +75,8 @@ def main():
         print(f"\n[{i + 1}/{total}] Processing {symbol}...")
 
         try:
-            # 使用 data_retrival.py 中的核心逻辑
-            df = fetch_ohlcv_data(exchange, symbol, timeframe, start_ms, end_ms)
+            # 使用 data_retrival.py 中的核心逻辑，启用自动数据源切换
+            df = fetch_ohlcv_data(exchange, symbol, timeframe, start_ms, end_ms, source="auto")
 
             if not df.empty:
                 # 按照要求，CSV 包含字段：timestamp, open, high, low, close, volume
