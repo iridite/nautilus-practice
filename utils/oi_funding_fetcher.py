@@ -27,6 +27,10 @@ def fetch_binance_oi_history(
     """
     获取 Binance 永续合约持仓量历史数据
 
+
+
+    注意：Binance API 限制只能获取最近约500条记录（约21天），不支持历史时间范围查询
+
     Parameters
     ----------
     exchange : ccxt.binance
@@ -34,60 +38,59 @@ def fetch_binance_oi_history(
     symbol : str
         交易对符号（如 "BTC/USDT:USDT"）
     start_ms : int
-        开始时间戳（毫秒）
+        开始时间戳（毫秒）- 注意：API不支持此参数，仅用于过滤
     end_ms : int
-        结束时间戳（毫秒）
+        结束时间戳（毫秒）- 注意：API不支持此参数，仅用于过滤
     period : str
         时间周期（"5m", "15m", "30m", "1h", "2h", "4h", "6h", "12h", "1d"）
 
     Returns
     -------
     pd.DataFrame
-        包含 timestamp, open_interest 列的数据框
+        包含 timestamp, open_interest 列的数据框（仅最近约500条记录）
     """
-    # Binance API 限制：每次最多返回 500 条数据
     all_data = []
-    current_start = start_ms
 
-    while current_start < end_ms:
-        try:
-            # Binance OI History API 参数
-            params = {
-                "symbol": symbol.replace("/", "").replace(":USDT", ""),
-                "period": period,
-                "startTime": current_start,
-                "endTime": min(current_start + 500 * _period_to_ms(period), end_ms),
-                "limit": 500,
-            }
+    try:
+        # Binance API 限制：只返回最近的数据，不支持 startTime/endTime 参数
+        params = {
+            "symbol": symbol.replace("/", "").replace(":USDT", ""),
+            "period": period,
+            "limit": 500,
+        }
 
-            # 使用 fapiDataGetOpenInterestHist
-            response = retry_fetch(
-                exchange.fapiDataGetOpenInterestHist,
-                params=params,
-            )
+        response = retry_fetch(
+            exchange.fapiDataGetOpenInterestHist,
+            params=params,
+        )
 
-            if not response:
-                break
+        if not response:
+            print(f"⚠️  Binance OI API: No data returned for {symbol}")
+            return pd.DataFrame()
 
-            for item in response:
+        for item in response:
+            ts = int(item["timestamp"])
+            # 只保留在请求时间范围内的数据
+            if start_ms <= ts <= end_ms:
                 all_data.append(
                     {
-                        "timestamp": int(item["timestamp"]),
+                        "timestamp": ts,
                         "open_interest": float(item["sumOpenInterest"]),
                         "open_interest_value": float(item["sumOpenInterestValue"]),
                     }
                 )
 
-            if len(response) < 500:
-                break
+        if all_data:
+            oldest_ts = min(item["timestamp"] for item in all_data)
+            newest_ts = max(item["timestamp"] for item in all_data)
+            from datetime import datetime
+            print(f"ℹ️  Binance OI: Got {len(all_data)} records from {datetime.fromtimestamp(oldest_ts/1000).date()} to {datetime.fromtimestamp(newest_ts/1000).date()}")
+            if oldest_ts > start_ms:
+                print(f"⚠️  Warning: Requested data from {datetime.fromtimestamp(start_ms/1000).date()}, but API only provides recent ~21 days")
 
-            # 更新下一个批次的起始时间
-            current_start = all_data[-1]["timestamp"] + _period_to_ms(period)
-            time.sleep(exchange.rateLimit / 1000)
-
-        except Exception as e:
-            print(f"Warning: Error fetching OI data: {e}")
-            break
+    except Exception as e:
+        print(f"❌ Error fetching Binance OI data: {e}")
+        return pd.DataFrame()
 
     if not all_data:
         return pd.DataFrame()
