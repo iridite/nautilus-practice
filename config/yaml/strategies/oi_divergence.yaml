@@ -2,7 +2,7 @@
 # 持仓量背离策略 (风控增强版 v3.0)
 
 name: "OIDivergenceStrategy"
-module_path: "strategy.oi_divergence_strategy"
+module_path: "strategy.oi_divergence"
 config_class: "OIDivergenceStrategyConfig"
 
 # 策略参数

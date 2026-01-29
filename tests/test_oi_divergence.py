@@ -21,7 +21,7 @@ from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs.data import TestDataStubs
 
-from strategy.oi_divergence_strategy import OIDivergenceStrategy, OIDivergenceStrategyConfig
+from strategy.oi_divergence import OIDivergenceStrategy, OIDivergenceStrategyConfig
 from utils.custom_data import FundingRateData, OpenInterestData
 
 
@@ -228,7 +228,7 @@ class TestOIDivergenceStrategy(unittest.TestCase):
         result = self.strategy._calculate_oi_divergence()
         self.assertIsNotNone(result)
         self.assertLess(result, Decimal("0"), "OI下降应返回负值")
-        
+
         # 验证下降幅度达到阈值
         is_declining = result <= -Decimal(str(self.strategy.config.oi_decline_threshold))
         self.assertTrue(is_declining, "下降6%应超过5%阈值")
