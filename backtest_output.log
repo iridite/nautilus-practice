@@ -1,0 +1,67 @@
+warning: `VIRTUAL_ENV=/home/yixian/Playground/quant/nautilus-practice/.venv` does not match the project environment path `.venv` and will be ignored; use `--active` to target the active environment instead
+🔧 配置系统已加载
+   环境: prod
+   策略: oi_divergence
+   配置目录: /home/yixian/Projects/nautilus-practice/config
+🎯 Building Single-Asset Config for SOLUSDT...
+==========================================
+🔍 Checking & Retrieving Data in batches...
+🔍 Checking data_feeds:   0%|                                    | 0/4 [00:00<?]🔍 Checking data_feeds:   0%|                                    | 0/4 [00:00<?]🔍 Checking data_feeds:   0%|                                    | 0/4 [00:00<?]🔍 Checking data_feeds:   0%|                                    | 0/4 [00:00<?]🔍 Checking data_feeds:   0%|                                    | 0/4 [00:00<?]🔍 Checking data_feeds: 100%|████████████████████████████████| 4/4 [00:00<00:00]
+⚠️ SOLUSDT: CSV missing, using Parquet (99.2% coverage)
+⚠️ SOLUSDT: CSV missing, using Parquet (99.2% coverage)
+⚠️ BTCUSDT: CSV missing, using Parquet (99.2% coverage)
+⚠️ BTCUSDT: CSV missing, using Parquet (99.2% coverage)
+📊 Data check summary: 4 exists, 0 missing
+✅ All required data files already exist!
+==========================================
+
+==========================================
+📊 Checking Strategy Data Dependencies...
+🔧 Max retries: 3
+🔍 Checking OI/Funding data for SOLUSDT...
+⚠️  Missing OI data for SOLUSDT
+🚀 Auto-downloading missing data...
+📊 Fetching OI/Funding from BINANCE:   0%|          | 0/1 [00:00<?, ?symbol/s]📊 Fetching OI/Funding from BINANCE:   0%|          | 0/1 [00:00<?, ?symbol/s, SOLUSDT]📊 Fetching OI/Funding from BINANCE: 100%|██████████| 1/1 [00:10<00:00, 10.52s/symbol, SOLUSDT]📊 Fetching OI/Funding from BINANCE: 100%|██████████| 1/1 [00:10<00:00, 10.52s/symbol, SOLUSDT]
+Warning: Error fetching OI data: binance {"msg":"parameter 'startTime' is invalid.","code":-1130}
+✅ OI/Funding data retrieval complete: 0 OI files, 0 Funding files
+❌ No data downloaded - check exchange availability
+❌ Failed to download data: Failed to download required OI/Funding data. Please check exchange availability and network connection.
+   Continuing with existing data...
+⚠️ Error checking strategy data dependencies: vars() argument must have __dict__ attribute
+   Continuing with existing data...
+==========================================
+
+🔄 Updating instrument definitions for: 2 instruments
+🔄 Fetching instruments:   0%|                                   | 0/2 [00:00<?]🔄 Fetching instruments:   0%|                                   | 0/2 [00:00<?]🔄 Fetching instruments:   0%|                                   | 0/2 [00:00<?]🔄 Fetching instruments: 100%|███████████████████████████████| 2/2 [00:00<00:00]
+📊 Instrument fetch complete: 0 new, 2 existed, 0 failed
+🚀 Starting High-Level Backtest: OIDivergenceStrategy
+✅ Loaded 2 instruments
+⚠️  [  1/4] Partial Parquet: SOLUSDT-PERP.BINANCE     ⚠️  [  2/4] Partial Parquet: SOLUSDT-PERP.BINANCE     ⚠️  [  3/4] Partial Parquet: BTCUSDT-PERP.BINANCE     ⚠️  [  4/4] Partial Parquet: BTCUSDT-PERP.BINANCE     
+✅ Data import complete. Created 2 data configs.
+✅ Created 1 strategy configurations
+⏳ Running BacktestNode with 1 strategy instances...
+📊 Loading custom data (OI, Funding Rate)...
+   ✅ Added 3738 custom data points for SOLUSDT
+✅ Total custom data loaded: 3738 points
+✅ Backtest Complete.
+
+=================================================================
+🏆 Backtest Report
+=================================================================
+Duration:       63068400.0000s
+Orders:         0
+Positions:      0
+💰 PnL (USDT):
+   * PnL (total)              : 0.0000
+   * PnL% (total)             : 0.0000
+- Returns Volatility (252 days) nan
+- Average (Return)          nan
+- Average Loss (Return)     nan
+- Average Win (Return)      nan
+- Sharpe Ratio (252 days)   nan
+- Sortino Ratio (252 days)  nan
+- Profit Factor             nan
+- Risk Return Ratio         nan
+=================================================================
+
+📁 Complete results saved to: /home/yixian/Projects/nautilus-practice/output/backtest/result/OIDivergenceStrategy_2026-01-29_14-43-25.json
