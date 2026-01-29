@@ -332,6 +332,9 @@ class OIDivergenceStrategy(BaseStrategy):
             self._log_warmup_status()
             return
 
+        # 更新关键价位
+        self._update_key_levels()
+
         # 获取持仓
         positions = self.cache.positions_open(instrument_id=self.instrument_id)
 

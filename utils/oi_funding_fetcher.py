@@ -55,7 +55,6 @@ def fetch_binance_oi_history(
             params = {
                 "symbol": symbol.replace("/", "").replace(":USDT", ""),
                 "period": period,
-                "startTime": current_start,
                 "limit": 500,
             }
 
