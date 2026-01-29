@@ -30,7 +30,7 @@ from nautilus_trader.model.enums import OrderSide, TimeInForce
 from nautilus_trader.model.events import OrderFilled
 from nautilus_trader.model.identifiers import InstrumentId
 
-from strategy.base import BaseStrategy, BaseStrategyConfig, DataDependency
+from strategy.base import BaseStrategy, BaseStrategyConfig
 from utils.custom_data import FundingRateData, OpenInterestData
 from utils.data_validator import FundingRateValidator, OIValidator
 from utils.signal_stale_guard import SignalStaleGuard
@@ -87,22 +87,7 @@ class OIDivergenceStrategyConfig(BaseStrategyConfig):
     tp_use_vwap: bool = True  # 止盈目标：VWAP
     vwap_period: int = 48
 
-    # === 🔥 Risk-Enhanced: ATR 动态止损 ===
-    use_atr_stop: bool = True  # 启用 ATR 止损（优先级高于固定百分比）
-    atr_period: int = 14  # ATR 计算周期
-    atr_stop_multiplier: float = 2.0  # ATR 止损倍数（2.0 = 2× ATR）
 
-    # Fallback: 固定百分比止损（当 ATR 未初始化时使用）
-    stop_loss_pct: Optional[float] = 0.01  # 硬止损 1%（仅作为后备）
-
-    # === 🔥 Risk-Enhanced: ATR 动态仓位管理 ===
-    use_atr_position_sizing: bool = True  # 启用基于 ATR 的仓位调整
-    atr_volatility_target: float = 0.02  # 目标波动率（2%）
-    max_position_risk_pct: float = 0.1  # 单笔最大风险（10% 账户权益）
-
-    # === 🔥 Risk-Enhanced: 滑点控制 ===
-    max_slippage_pct: float = 0.005  # 最大允许滑点（0.5%）
-    enable_slippage_alert: bool = True  # 启用滑点告警
 
     # === 时间止损 ===
     time_stop_bars: int = 24  # 时间止损：24 根 K 线
@@ -115,8 +100,7 @@ class OIDivergenceStrategyConfig(BaseStrategyConfig):
     signal_weight_oi: float = 0.4
     signal_weight_funding: float = 0.3
 
-    # === 🔥 Risk-Enhanced: ATR 动态止盈 ===
-    atr_tp_multiplier: float = 3.0  # ATR 止盈倍数（3.0 = 3× ATR）
+
 
     # === 🔥 Risk-Enhanced: 信号钝化保护 ===
     enable_divergence_stale_check: bool = True  # 启用背离钝化检测
@@ -582,69 +566,7 @@ class OIDivergenceStrategy(BaseStrategy):
     # 🔥 Risk-Enhanced: ATR Dynamic Position Sizing
     # ========================================================================
 
-    def _get_account_equity(self) -> Optional[Decimal]:
-        """
-        获取账户权益
 
-        Returns
-        -------
-        Optional[Decimal]
-            账户权益，如果获取失败则返回 None
-        """
-        try:
-            accounts = self.cache.accounts()
-            if not accounts:
-                return None
-
-            quote_currency = self.instrument.quote_currency
-            for account in accounts:
-                balance = account.balance(quote_currency)
-                if balance and balance.total.as_decimal() > 0:
-                    equity = balance.total.as_decimal()
-                    return equity if equity > 0 else None
-
-            self.log.warning(
-                f"⚠️  No account found with quote_currency={quote_currency}"
-            )
-            return None
-
-        except (AttributeError, KeyError, IndexError) as e:
-            self.log.error(
-                f"❌ Failed to get equity: {type(e).__name__}: {e}"
-            )
-            return None
-
-    def _calculate_position_size_from_risk(
-        self, equity: Decimal, atr_value: Decimal
-    ) -> Decimal:
-        """
-        基于风险计算目标仓位
-
-        Parameters
-        ----------
-        equity : Decimal
-            账户权益
-        atr_value : Decimal
-            ATR 值
-
-        Returns
-        -------
-        Decimal
-            目标仓位数量
-        """
-        stop_distance = atr_value * Decimal(str(self.config.atr_stop_multiplier))
-        max_risk_amount = equity * Decimal(str(self.config.max_position_risk_pct))
-        target_qty = max_risk_amount / stop_distance
-
-        leverage = max(1, self.config.leverage)
-        target_qty = target_qty * Decimal(str(leverage))
-
-        if self.instrument.multiplier:
-            multiplier = Decimal(str(self.instrument.multiplier))
-            if multiplier > 0:
-                target_qty = target_qty / multiplier
-
-        return target_qty
 
     def _calculate_atr_adjusted_qty(
         self, current_price: Decimal, order_side: OrderSide
