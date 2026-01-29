@@ -38,7 +38,7 @@ from backtest.strategy_loader import (
     load_strategy_config_class,
 )
 from config.definitions import BackTestConfig
-from utils.data_loader import CustomDataLoader
+from utils.oi_funding_adapter import OIFundingDataLoader
 from utils.filename_parser import FilenameParser
 from utils.instrument_loader import load_instrument
 

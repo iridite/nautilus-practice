@@ -2,7 +2,7 @@ strategy:
   class_path: strategy.kalman_pairs.KalmanPairsTradingStrategy
   config:
     instrument_a_id: "SOLUSDT-PERP.BINANCE"
-    instrument_b_id: "ETHUSDT-PERP.BINANCE"
+    instrument_b_id: "BTCUSDT-PERP.BINANCE"
     bar_type: "SOLUSDT-PERP.BINANCE-1-HOUR-MID"
     delta: 0.0001
     R: 1.0

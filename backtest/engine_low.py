@@ -47,7 +47,7 @@ from config.definitions import (
     DataConfig,
 )
 from utils import load_ohlcv_csv
-from utils.data_loader import CustomDataLoader
+from utils.oi_funding_adapter import OIFundingDataLoader
 from utils.data_validator import DataValidator
 from utils.instrument_loader import load_instrument
 

@@ -4,8 +4,8 @@
 # 当前环境 (可选: dev, prod)
 environment: "prod"
 
-# 当前策略 (可选: oi_divergence, rs_squeeze, dual_thrust)
-strategy: "oi_divergence"
+# 当前策略 (可选: oi_divergence, rs_squeeze, dual_thrust, kalman_pairs)
+strategy: "kalman_pairs"
 
 # 主要交易对 (单标的模式时使用)
 primary_symbol: "DOGEUSDT"
