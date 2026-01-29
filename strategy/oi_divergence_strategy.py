@@ -738,6 +738,18 @@ class OIDivergenceStrategy(BaseStrategy):
             self._execute_long_entry(bar, current_price, long_details)
             return
 
+        # 记录未通过的信号检查（每100根bar记录一次摘要）
+        if len(self.bars_main) % 100 == 0:
+            oi_div = self._calculate_oi_divergence()
+            self.log.info(
+                f"[SIGNAL CHECK] Price: {current_price:.2f} | "
+                f"R/S: {self.resistance:.2f}/{self.support:.2f} | "
+                f"OI Div: {oi_div:.2%} (req: <-{self.config.oi_decline_threshold:.1%}) | "
+                f"Funding: {self.current_funding_rate_annual:.1f}% (req: ±{self.config.funding_rate_threshold_annual:.0f}%)"
+                if oi_div and self.current_funding_rate_annual else
+                f"[SIGNAL CHECK] Price: {current_price:.2f} | R/S: {self.resistance:.2f}/{self.support:.2f} | Data loading..."
+            )
+
     def _detect_short_signal(
         self, bar: Bar, current_price: Decimal, current_high: Decimal
     ) -> tuple[bool, dict]:
@@ -762,10 +774,11 @@ class OIDivergenceStrategy(BaseStrategy):
         # Condition 2: OI 背离（如果OI数据可用）
         oi_divergence = self._calculate_oi_divergence()
         if oi_divergence is not None and oi_divergence >= -self.config.oi_decline_threshold:
-            if self.config.enable_signal_logging:
-                self.log.debug(
-                    f"⚠️  SHORT signal blocked by OI: divergence={oi_divergence:.2%}"
-                )
+            self.log.info(
+                f"[SIGNAL FILTERED] SHORT @ {current_price:.2f} | "
+                f"Reason: OI divergence insufficient | "
+                f"Current: {oi_divergence:.2%} | Required: <-{self.config.oi_decline_threshold:.1%}"
+            )
             return False, details
 
         details["cond2_oi_divergence"] = True
@@ -778,11 +791,11 @@ class OIDivergenceStrategy(BaseStrategy):
                 or self.current_funding_rate_annual
                 <= self.config.funding_rate_threshold_annual
             ):
-                if self.config.enable_signal_logging:
-                    self.log.debug(
-                        f"⚠️  SHORT signal blocked by Funding Rate: "
-                        f"{self.current_funding_rate_annual:.2f}%"
-                    )
+                self.log.info(
+                    f"[SIGNAL FILTERED] SHORT @ {current_price:.2f} | "
+                    f"Reason: Funding rate too low | "
+                    f"Current: {self.current_funding_rate_annual:.2f}% | Required: >{self.config.funding_rate_threshold_annual:.0f}%"
+                )
                 return False, details
 
         details["cond3_funding"] = True
@@ -835,10 +848,11 @@ class OIDivergenceStrategy(BaseStrategy):
         # Condition 2: OI 背离（如果OI数据可用）
         oi_divergence = self._calculate_oi_divergence()
         if oi_divergence is not None and oi_divergence >= -self.config.oi_decline_threshold:
-            if self.config.enable_signal_logging:
-                self.log.debug(
-                    f"⚠️  LONG signal blocked by OI: divergence={oi_divergence:.2%}"
-                )
+            self.log.info(
+                f"[SIGNAL FILTERED] LONG @ {current_price:.2f} | "
+                f"Reason: OI divergence insufficient | "
+                f"Current: {oi_divergence:.2%} | Required: <-{self.config.oi_decline_threshold:.1%}"
+            )
             return False, details
 
         details["cond2_oi_divergence"] = True
@@ -851,11 +865,11 @@ class OIDivergenceStrategy(BaseStrategy):
                 or self.current_funding_rate_annual
                 >= -self.config.funding_rate_threshold_annual
             ):
-                if self.config.enable_signal_logging:
-                    self.log.debug(
-                        f"⚠️  LONG signal blocked by Funding Rate: "
-                        f"{self.current_funding_rate_annual:.2f}%"
-                    )
+                self.log.info(
+                    f"[SIGNAL FILTERED] LONG @ {current_price:.2f} | "
+                    f"Reason: Funding rate too high | "
+                    f"Current: {self.current_funding_rate_annual:.2f}% | Required: <-{self.config.funding_rate_threshold_annual:.0f}%"
+                )
                 return False, details
 
         details["cond3_funding"] = True

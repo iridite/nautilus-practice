@@ -554,8 +554,9 @@ def main():
 
     # 1. Automatic Data Retrieval (Only for backtest if not skipped)
     if args.command == "backtest" and not args.skip_data:
-        print("==========================================")
-        print("🔍 Checking & Retrieving Data in batches...")
+        print("\n" + "="*70)
+        print("📊 DATA VALIDATION")
+        print("="*70)
 
         # 任务分组: (exchange, timeframe, start, end) -> set(symbols)
         tasks = {}
@@ -783,12 +784,13 @@ def main():
         else:
             print("✅ All required data files already exist!")
 
-        print("==========================================\n")
+        print("="*70 + "\n")
 
     # 1.4 检查策略数据依赖（OI、Funding Rate 等）
     if args.command == "backtest" and not args.skip_data and not getattr(args, 'skip_oi_data', False):
-        print("==========================================")
-        print("📊 Checking Strategy Data Dependencies...")
+        print("\n" + "="*70)
+        print("📊 STRATEGY DATA DEPENDENCIES")
+        print("="*70)
 
         # 显示配置信息
         if hasattr(args, 'oi_exchange') and args.oi_exchange != "auto":
@@ -835,8 +837,8 @@ def main():
                     if not funding_exists:
                         missing_types.append("Funding Rate")
 
-                    print(f"⚠️  Missing {', '.join(missing_types)} data for {primary_symbol}")
-                    print(f"🚀 Auto-downloading missing data...")
+                    print(f"\n[ERROR] Missing {', '.join(missing_types)} data for {primary_symbol}")
+                    print(f"[INFO] Auto-downloading missing data...")
 
                     try:
                         fetch_results = batch_fetch_oi_and_funding(
@@ -852,13 +854,13 @@ def main():
                         funding_count = len(fetch_results.get("funding_files", []))
 
                         if oi_count > 0 or funding_count > 0:
-                            print(f"✅ Successfully downloaded:")
+                            print(f"[SUCCESS] Downloaded:")
                             if oi_count > 0:
-                                print(f"   📈 {oi_count} OI data file(s)")
+                                print(f"  - OI data: {oi_count} file(s)")
                             if funding_count > 0:
-                                print(f"   💰 {funding_count} Funding Rate data file(s)")
+                                print(f"  - Funding Rate: {funding_count} file(s)")
                         else:
-                            print(f"❌ No data downloaded - check exchange availability")
+                            print(f"[ERROR] No data downloaded - check exchange availability")
                             raise RuntimeError(
                                 "Failed to download required OI/Funding data. "
                                 "Please check exchange availability and network connection."
@@ -868,7 +870,7 @@ def main():
                         print(f"❌ Failed to download data: {e}")
                         print(f"   Continuing with existing data...")
                 else:
-                    print(f"✅ OI and Funding Rate data available for {primary_symbol}")
+                    print(f"[OK] OI and Funding Rate data available for {primary_symbol}")
 
             # 检查策略数据依赖
             strategy_tasks = check_strategy_data_dependencies(
@@ -924,13 +926,13 @@ def main():
                             print(f"   • {error}")
 
             else:
-                print("✅ All strategy data dependencies satisfied")
+                print("[OK] All strategy data dependencies satisfied")
 
         except Exception as e:
-            print(f"⚠️ Error checking strategy data dependencies: {e}")
-            print("   Continuing with existing data...")
+            print(f"[WARNING] Error checking strategy data dependencies: {e}")
+            print("  Continuing with existing data...")
 
-        print("==========================================\n")
+        print("="*70 + "\n")
 
     # 2. Fetch & Update Instruments
     try:
