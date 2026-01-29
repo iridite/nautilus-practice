@@ -84,7 +84,6 @@ from . import config_helpers
 # 保持已有的自定义数据类型
 from . import custom_data
 from . import oi_funding_adapter
-from . import oi_funding_fetcher
 
 # ============================================================================
 # 便捷别名和组合功能

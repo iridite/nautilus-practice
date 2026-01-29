@@ -478,6 +478,60 @@ class BaseStrategy(Strategy):
             self.log.error(f"Dynamic qty calculation error: {e}")
             return Quantity.from_int(0)
 
+    def check_sufficient_balance(
+        self, notional_value: Decimal, instrument: Optional[Instrument] = None
+    ) -> bool:
+        """
+        检查账户余额是否足够支持交易
+
+        Parameters
+        ----------
+        notional_value : Decimal
+            交易名义价值
+        instrument : Optional[Instrument]
+            交易工具，默认使用self.instrument
+
+        Returns
+        -------
+        bool
+            True if sufficient balance, False otherwise
+        """
+        if notional_value <= 0:
+            return True
+
+        try:
+            if instrument is None:
+                instrument = self.get_instrument()
+
+            accounts = self.cache.accounts()
+            if not accounts:
+                self.log.warning("无法获取账户信息")
+                return False
+
+            quote_currency = instrument.quote_currency
+            account = next(
+                (a for a in accounts if a.balance(quote_currency)), accounts[0]
+            )
+
+            balance = account.balance(quote_currency)
+            if not balance:
+                self.log.warning(f"无法获取{quote_currency}余额")
+                return False
+
+            available = balance.free.as_decimal()
+
+            if available < notional_value:
+                self.log.warning(
+                    f"余额不足: 需要{notional_value:.2f}, 可用{available:.2f}"
+                )
+                return False
+
+            return True
+
+        except Exception as e:
+            self.log.error(f"余额检查失败: {e}")
+            return False
+
     def submit_order_safe(self, order: Order, reason: str = ""):
         """
         Submit an order with validation and standardized logging.

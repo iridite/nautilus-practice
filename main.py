@@ -25,7 +25,7 @@ from scripts.fetch_instrument import update_instruments
 from strategy.base import DataDependency
 from utils.config_helpers import parse_universe_symbols
 from utils.data_retrival import batch_fetch_ohlcv
-from utils.oi_funding_fetcher import batch_fetch_oi_and_funding
+from utils.data_retrival import batch_fetch_oi_and_funding
 from utils.smart_data_manager import SmartDataManager
 from utils.validation import (
     OIDataValidator,

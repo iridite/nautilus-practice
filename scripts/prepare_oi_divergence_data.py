@@ -18,7 +18,8 @@ import sys
 from pathlib import Path
 
 # 使用统一的工具函数
-from utils import batch_fetch_ohlcv, batch_fetch_oi_and_funding, get_project_root
+from utils import get_project_root
+from utils.data_retrival import batch_fetch_ohlcv, batch_fetch_oi_and_funding
 
 # 获取项目根目录
 PROJECT_ROOT = get_project_root()
