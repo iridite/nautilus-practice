@@ -86,6 +86,7 @@ class OIDivergenceStrategyConfig(BaseStrategyConfig):
     # === 出场逻辑参数 (Exit Logic) ===
     tp_use_vwap: bool = True  # 止盈目标：VWAP
     vwap_period: int = 48
+    atr_tp_multiplier: float = 3.0  # ATR止盈倍数
 
 
 
@@ -453,8 +454,8 @@ class OIDivergenceStrategy(BaseStrategy):
                 order_side=opposite_side,
                 quantity=quantity,
                 trigger_price=trigger_price,
-                time_in_force=TimeInForce.FOK,  # ✅ 立即成交或取消
-                reduce_only=True,  # ✅ 防止加仓，只减少持仓
+                time_in_force=TimeInForce.GTC,
+                reduce_only=True,
             )
 
             self.submit_order_safe(
@@ -1182,8 +1183,7 @@ class OIDivergenceStrategy(BaseStrategy):
         # 优先使用 ATR 动态止盈
         if self.entry_price is not None and self.atr and self.atr.initialized:
             atr_value = Decimal(str(self.atr.value))
-            tp_multiplier = getattr(self.config, "atr_tp_multiplier", 3.0)
-            tp_distance = atr_value * Decimal(str(tp_multiplier))
+            tp_distance = atr_value * Decimal(str(self.config.atr_tp_multiplier))
 
             if pos.is_long:
                 return self.entry_price + tp_distance
@@ -1303,10 +1303,7 @@ class OIDivergenceStrategy(BaseStrategy):
         self.entry_price = None
 
         # 🔥 Risk: 重置滑点监控
-        self.expected_entry_price = None
-        self.actual_slippage_pct = None
         self._stop_loss_submitted_order_ids.clear()
-        self._slippage_calculated_orders.clear()
 
         # 重置指标
         self.vwap_sma.reset()
