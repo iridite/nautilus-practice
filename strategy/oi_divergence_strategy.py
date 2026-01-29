@@ -324,13 +324,13 @@ class OIDivergenceStrategy(BaseStrategy):
         if self.atr:
             self.atr.handle_bar(bar)
 
+        # 更新关键价位（在热身检查前）
+        self._update_key_levels()
+
         # 热身检查
         if not self._is_ready():
             self._log_warmup_status()
             return
-
-        # 更新关键价位
-        self._update_key_levels()
 
         # 获取持仓
         positions = self.cache.positions_open(instrument_id=self.instrument_id)
