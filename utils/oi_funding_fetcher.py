@@ -52,7 +52,6 @@ def fetch_binance_oi_history(
     while current_start < end_ms:
         try:
             # Binance OI History API 参数
-            # 注意：Binance 不支持 endTime，只能通过 startTime + limit 控制范围
             params = {
                 "symbol": symbol.replace("/", "").replace(":USDT", ""),
                 "period": period,
@@ -60,23 +59,11 @@ def fetch_binance_oi_history(
                 "limit": 500,
             }
 
-            # 使用 CCXT Futures Data API
-            # 正确的方法名是 fapiDataGetOpenInterestHist (不是 fapiPublic)
-            if hasattr(exchange, "fapiDataGetOpenInterestHist"):
-                response = retry_fetch(
-                    exchange.fapiDataGetOpenInterestHist,
-                    params=params,  # type: ignore
-                )
-            else:
-                # 回退：尝试使用统一接口
-                print(
-                    "Warning: fapiDataGetOpenInterestHist not found, trying unified API"
-                )
-                response = retry_fetch(
-                    lambda: exchange.fetch_open_interest_history(
-                        symbol, since=current_start, limit=500
-                    )
-                )
+            # 使用 fapiDataGetOpenInterestHist
+            response = retry_fetch(
+                exchange.fapiDataGetOpenInterestHist,
+                params=params,
+            )
 
             if not response:
                 break
