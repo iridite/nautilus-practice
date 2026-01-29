@@ -88,16 +88,33 @@ def handle_parquet_exists(
         else:
             return f"\r⏩ [{feed_idx:3d}/{total_feeds}] Verified: {str(bar_type.instrument_id):<35}"
     else:
-        download_success = _auto_download_missing_data(data_cfg, cfg)
+        # 检查Parquet覆盖率
+        parquet_exists, coverage_pct = check_parquet_coverage(catalog, bar_type, cfg)
 
-        if download_success and csv_path.exists():
-            try:
-                catalog_loader(catalog, csv_path, inst, bar_type)
-                return f"\r📖 [{feed_idx:3d}/{total_feeds}] Imported: {str(bar_type.instrument_id):<32}"
-            except Exception:
-                return f"\r⚠️  [{feed_idx:3d}/{total_feeds}] Using Parquet: {str(bar_type.instrument_id):<28}"
+        if parquet_exists and coverage_pct < 95.0:
+            # 数据不完整，触发自动下载
+            download_success = _auto_download_missing_data(data_cfg, cfg)
+
+            if download_success and csv_path.exists():
+                try:
+                    catalog_loader(catalog, csv_path, inst, bar_type)
+                    return f"\r📖 [{feed_idx:3d}/{total_feeds}] Completed: {str(bar_type.instrument_id):<32}"
+                except Exception:
+                    return f"\r⚠️  [{feed_idx:3d}/{total_feeds}] Partial Parquet: {str(bar_type.instrument_id):<25} ({coverage_pct:.1f}%)"
+            else:
+                return f"\r⚠️  [{feed_idx:3d}/{total_feeds}] Partial Parquet: {str(bar_type.instrument_id):<25} ({coverage_pct:.1f}%)"
         else:
-            return f"\r⚠️  [{feed_idx:3d}/{total_feeds}] Partial Parquet: {str(bar_type.instrument_id):<25}"
+            # 尝试常规下载
+            download_success = _auto_download_missing_data(data_cfg, cfg)
+
+            if download_success and csv_path.exists():
+                try:
+                    catalog_loader(catalog, csv_path, inst, bar_type)
+                    return f"\r📖 [{feed_idx:3d}/{total_feeds}] Imported: {str(bar_type.instrument_id):<32}"
+                except Exception:
+                    return f"\r⚠️  [{feed_idx:3d}/{total_feeds}] Using Parquet: {str(bar_type.instrument_id):<28}"
+            else:
+                return f"\r⚠️  [{feed_idx:3d}/{total_feeds}] Partial Parquet: {str(bar_type.instrument_id):<25}"
 
 
 def handle_parquet_missing(
