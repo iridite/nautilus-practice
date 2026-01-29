@@ -15,7 +15,7 @@ primary_symbol: "SOLUSDT"
 overrides:
   # 可以覆盖回测时间范围
   backtest:
-    start_date: "2026-01-01"
+    start_date: "2025-01-01"
     end_date: "2026-01-29"
 
   # 可以覆盖交易设置
