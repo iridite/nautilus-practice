@@ -1,0 +1,14 @@
+strategy:
+  class_path: strategy.kalman_pairs_trader.KalmanPairsTradingStrategy
+  config:
+    instrument_a_id: "SOLUSDT-PERP.BINANCE"
+    instrument_b_id: "ETHUSDT-PERP.BINANCE"
+    bar_type: "SOLUSDT-PERP.BINANCE-1-HOUR-MID"
+    delta: 0.0001
+    R: 1.0
+    warmup_period: 50
+    entry_threshold: 2.0
+    exit_threshold: 0.5
+    stop_loss_threshold: 4.0
+    max_notional_per_trade: 10000.0
+    max_positions: 1

@@ -12,8 +12,8 @@ from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.persistence.catalog import ParquetDataCatalog
 
 from backtest.exceptions import DataLoadError
-from backtest.filename_parser import FilenameParser
 from config.definitions import BackTestConfig
+from utils.filename_parser import FilenameParser
 
 
 def check_parquet_coverage(

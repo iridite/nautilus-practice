@@ -27,19 +27,19 @@ from nautilus_trader.persistence.loaders import CSVBarDataLoader
 from nautilus_trader.persistence.wranglers import BarDataWrangler
 from pandas import DataFrame
 
-from backtest.data_loader import CustomDataLoader
 from backtest.exceptions import (
     BacktestEngineError,
     CatalogError,
     DataLoadError,
     InstrumentLoadError,
 )
-from backtest.filename_parser import FilenameParser
-from backtest.utils import (
+from backtest.strategy_loader import (
     filter_strategy_params,
     load_strategy_config_class,
 )
 from config.definitions import BackTestConfig
+from utils.data_loader import CustomDataLoader
+from utils.filename_parser import FilenameParser
 from utils.instrument_loader import load_instrument
 
 
