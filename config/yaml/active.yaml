@@ -8,14 +8,14 @@ environment: "prod"
 strategy: "oi_divergence"
 
 # 主要交易对 (单标的模式时使用)
-primary_symbol: "XPLUSDT"
+primary_symbol: "DOGEUSDT"
 
 # 运行时覆盖配置 (可选)
 # 这里的设置会覆盖环境和策略配置中的对应项
 overrides:
   # 可以覆盖回测时间范围
   backtest:
-    start_date: "2025-01-01"
+    start_date: "2022-01-01"
     end_date: "2026-01-29"
 
   # 可以覆盖交易设置
