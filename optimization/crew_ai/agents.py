@@ -14,7 +14,7 @@ from .tools import (
 
 def _get_llm():
     """获取配置的 LLM"""
-    auth_token = os.getenv("ANTHROPIC_AUTH_TOKEN") or os.getenv("ANTHROPIC_API_KEY") or os.getenv("ANTHROPIC_KEY")
+    auth_token = os.getenv("ANTHROPIC_API_KEY")
     base_url = os.getenv("ANTHROPIC_BASE_URL")
 
     if auth_token:

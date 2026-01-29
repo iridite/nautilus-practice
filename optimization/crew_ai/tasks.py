@@ -30,13 +30,10 @@ def create_market_analysis_task(agent, symbol: str, start_date: str, end_date: s
     )
 
 
-def create_asset_selection_task(agent, market_analysis_output: str) -> Task:
+def create_asset_selection_task(agent) -> Task:
     """任务2: 资产筛选（依赖任务1的输出）"""
     return Task(
-        description=f"""根据市场环境报告，筛选最适合的交易品种。
-
-        市场环境报告：
-        {market_analysis_output}
+        description="""根据市场环境报告，筛选最适合的交易品种。
 
         你需要：
         1. 使用 AssetScreener 工具筛选 Top 5 币种
@@ -57,13 +54,10 @@ def create_asset_selection_task(agent, market_analysis_output: str) -> Task:
     )
 
 
-def create_strategy_design_task(agent, asset_selection_output: str) -> Task:
+def create_strategy_design_task(agent) -> Task:
     """任务3: 策略逻辑设计（依赖任务2）"""
     return Task(
-        description=f"""为选定的资产设计动态策略参数。
-
-        推荐品种：
-        {asset_selection_output}
+        description="""为选定的资产设计动态策略参数。
 
         你需要：
         1. 根据资产的历史波幅，调整 Z-Score 窗口大小
@@ -90,13 +84,10 @@ def create_strategy_design_task(agent, asset_selection_output: str) -> Task:
     )
 
 
-def create_backtest_optimization_task(agent, strategy_design_output: str, start_date: str, end_date: str) -> Task:
+def create_backtest_optimization_task(agent, start_date: str, end_date: str) -> Task:
     """任务4: 回测与参数优化（依赖任务3）"""
     return Task(
         description=f"""执行 NautilusTrader 回测，测试多组参数组合。
-
-        策略设计：
-        {strategy_design_output}
 
         回测周期：{start_date} 至 {end_date}
 
@@ -131,13 +122,10 @@ def create_backtest_optimization_task(agent, strategy_design_output: str, start_
     )
 
 
-def create_risk_audit_task(agent, backtest_results_output: str) -> Task:
+def create_risk_audit_task(agent) -> Task:
     """任务5: 风控审计（依赖任务4）"""
     return Task(
-        description=f"""对回测结果进行严格审计，判断是否存在过拟合。
-
-        回测结果：
-        {backtest_results_output}
+        description="""对回测结果进行严格审计，判断是否存在过拟合。
 
         你需要检查：
         1. 夏普比率是否过高（>3.0 需警惕）
@@ -177,33 +165,23 @@ def build_task_pipeline(agents: dict, symbol: str, start_date: str, end_date: st
     )
 
     # 任务2: 资产筛选（依赖任务1）
-    task2 = create_asset_selection_task(
-        agents['asset_scout'],
-        market_analysis_output="{{task1_output}}"
-    )
+    task2 = create_asset_selection_task(agents['asset_scout'])
     task2.context = [task1]
 
     # 任务3: 策略设计（依赖任务2）
-    task3 = create_strategy_design_task(
-        agents['strategy_architect'],
-        asset_selection_output="{{task2_output}}"
-    )
+    task3 = create_strategy_design_task(agents['strategy_architect'])
     task3.context = [task2]
 
     # 任务4: 回测优化（依赖任务3）
     task4 = create_backtest_optimization_task(
         agents['optimization_engineer'],
-        strategy_design_output="{{task3_output}}",
         start_date=start_date,
         end_date=end_date
     )
     task4.context = [task3]
 
     # 任务5: 风控审计（依赖任务4）
-    task5 = create_risk_audit_task(
-        agents['risk_auditor'],
-        backtest_results_output="{{task4_output}}"
-    )
+    task5 = create_risk_audit_task(agents['risk_auditor'])
     task5.context = [task4]
 
     return [task1, task2, task3, task4, task5]

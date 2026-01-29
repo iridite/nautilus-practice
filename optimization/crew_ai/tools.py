@@ -38,22 +38,26 @@ def run_nautilus_backtest(config_dict: str) -> str:
             "--skip-data"
         ]
 
-        # 临时修改配置文件
+        # 使用临时配置文件
+        import shutil
+        import tempfile
+
+        import yaml
+
         yaml_path = base_dir / "config/yaml/strategies/oi_divergence.yaml"
         original_content = yaml_path.read_text()
 
+        with open(yaml_path, 'r') as f:
+            yaml_config = yaml.safe_load(f)
+
+        yaml_config['parameters'].update(config.get('strategy_params', {}))
+
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False, dir=yaml_path.parent) as tmp:
+            yaml.dump(yaml_config, tmp)
+            tmp_path = Path(tmp.name)
+
         try:
-            # 注入参数
-            import yaml
-            with open(yaml_path, 'r') as f:
-                yaml_config = yaml.safe_load(f)
-
-            yaml_config['parameters'].update(config.get('strategy_params', {}))
-
-            with open(yaml_path, 'w') as f:
-                yaml.dump(yaml_config, f)
-
-            # 执行回测
+            shutil.move(str(tmp_path), str(yaml_path))
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=300, cwd=base_dir)
 
             # 解析结果
@@ -61,22 +65,24 @@ def run_nautilus_backtest(config_dict: str) -> str:
             stats_file = list(output_dir.glob("*_stats.json"))
 
             if stats_file:
-                with open(stats_file[0], 'r') as f:
-                    stats = json.load(f)
-                    return json.dumps({
-                        "success": True,
-                        "sharpe_ratio": stats.get("sharpe_ratio", 0),
-                        "sortino_ratio": stats.get("sortino_ratio", 0),
-                        "max_drawdown": stats.get("max_drawdown", 0),
-                        "total_pnl": stats.get("total_pnl", 0),
-                        "win_rate": stats.get("win_rate", 0),
-                        "config": config
-                    })
+                try:
+                    with open(stats_file[0], 'r') as f:
+                        stats = json.load(f)
+                        return json.dumps({
+                            "success": True,
+                            "sharpe_ratio": stats.get("sharpe_ratio", 0),
+                            "sortino_ratio": stats.get("sortino_ratio", 0),
+                            "max_drawdown": stats.get("max_drawdown", 0),
+                            "total_pnl": stats.get("total_pnl", 0),
+                            "win_rate": stats.get("win_rate", 0),
+                            "config": config
+                        })
+                except (json.JSONDecodeError, KeyError) as e:
+                    return json.dumps({"success": False, "error": f"Failed to parse stats: {e}"})
             else:
                 return json.dumps({"success": False, "error": "No stats file generated", "stdout": result.stdout[-500:]})
 
         finally:
-            # 恢复原始配置
             yaml_path.write_text(original_content)
 
     except Exception as e:
