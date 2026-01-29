@@ -1,13 +1,26 @@
 """
 CrewAI Agents - 五个核心量化研究 Agent
 """
-from crewai import Agent
+import os
+
+from crewai import LLM, Agent
 
 from .tools import (
     analyze_market_conditions,
     run_nautilus_backtest,
     screen_assets_by_oi_potential,
 )
+
+
+def _get_llm():
+    """获取配置的 LLM"""
+    anthropic_key = os.getenv("ANTHROPIC_API_KEY") or os.getenv("ANTHROPIC_KEY")
+    if anthropic_key:
+        return LLM(model="claude-3-5-sonnet-20241022", provider="anthropic", api_key=anthropic_key)
+    elif os.getenv("OPENAI_API_KEY"):
+        return LLM(model="gpt-4o-mini", provider="openai")
+    else:
+        raise ValueError("需要设置 ANTHROPIC_API_KEY/ANTHROPIC_KEY 或 OPENAI_API_KEY 环境变量")
 
 
 def create_market_sentinel() -> Agent:
