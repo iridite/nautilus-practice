@@ -14,13 +14,18 @@ from .tools import (
 
 def _get_llm():
     """获取配置的 LLM"""
-    anthropic_key = os.getenv("ANTHROPIC_API_KEY") or os.getenv("ANTHROPIC_KEY")
-    if anthropic_key:
-        return LLM(model="claude-3-5-sonnet-20241022", provider="anthropic", api_key=anthropic_key)
+    auth_token = os.getenv("ANTHROPIC_AUTH_TOKEN") or os.getenv("ANTHROPIC_API_KEY") or os.getenv("ANTHROPIC_KEY")
+    base_url = os.getenv("ANTHROPIC_BASE_URL")
+
+    if auth_token:
+        kwargs = {"model": "claude-sonnet-4-5-20250929", "provider": "anthropic", "api_key": auth_token}
+        if base_url:
+            kwargs["base_url"] = base_url
+        return LLM(**kwargs)
     elif os.getenv("OPENAI_API_KEY"):
         return LLM(model="gpt-4o-mini", provider="openai")
     else:
-        raise ValueError("需要设置 ANTHROPIC_API_KEY/ANTHROPIC_KEY 或 OPENAI_API_KEY 环境变量")
+        raise ValueError("需要设置 ANTHROPIC_AUTH_TOKEN 或 OPENAI_API_KEY 环境变量")
 
 
 def create_market_sentinel() -> Agent:
