@@ -206,6 +206,46 @@ class StrategyConfig(BaseModel):
         return v.strip()
 
 
+class SandboxConfig(BaseModel):
+    """Sandbox实时交易配置"""
+
+    # 交易所配置
+    venue: str = "OKX"
+    is_testnet: bool = True
+
+    # 标的配置
+    instrument_ids: List[str] = Field(default_factory=list)
+
+    # 账户配置
+    initial_balance: Optional[Decimal] = None
+
+    # API配置
+    api_key_env: str = "OKX_API_KEY"
+    api_secret_env: str = "OKX_API_SECRET"
+    api_passphrase_env: str = "OKX_API_PASSPHRASE"
+
+    # 执行引擎配置
+    reconciliation: bool = True
+    reconciliation_lookback_mins: int = 1440
+    filter_position_reports: bool = True
+
+    # 缓存配置
+    flush_cache_on_start: bool = False
+
+    @validator("venue")
+    def validate_venue(cls, v):
+        supported = ["OKX", "BINANCE"]
+        if v.upper() not in supported:
+            raise ValueError(f"Venue must be one of {supported}")
+        return v.upper()
+
+    @validator("instrument_ids")
+    def validate_instruments(cls, v):
+        if not v:
+            raise ValueError("At least one instrument_id is required")
+        return v
+
+
 class EnvironmentConfig(BaseModel):
     """环境配置"""
 
@@ -215,6 +255,7 @@ class EnvironmentConfig(BaseModel):
     backtest: BacktestConfig
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
     file_cleanup: FileCleanupConfig = Field(default_factory=FileCleanupConfig)
+    sandbox: Optional[SandboxConfig] = None
 
     class Config:
         # 允许额外字段，用于扩展配置
@@ -311,6 +352,7 @@ __all__ = [
     "FileCleanupConfig",
     "StrategyParametersConfig",
     "StrategyConfig",
+    "SandboxConfig",
     "EnvironmentConfig",
     "ActiveConfig",
     "ConfigValidationError",

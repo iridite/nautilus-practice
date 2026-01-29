@@ -1,0 +1,42 @@
+# Sandbox实时交易环境配置
+
+extends: "base.yaml"
+
+# Sandbox特定配置
+sandbox:
+  venue: "OKX"
+  is_testnet: true
+
+  # 交易标的列表
+  instrument_ids:
+    - "BTC-USDT-SWAP.OKX"
+
+  # API环境变量名称
+  api_key_env: "OKX_API_KEY"
+  api_secret_env: "OKX_API_SECRET"
+  api_passphrase_env: "OKX_API_PASSPHRASE"
+
+  # 执行引擎配置
+  reconciliation: true
+  reconciliation_lookback_mins: 1440
+  filter_position_reports: true
+
+  # 缓存配置
+  flush_cache_on_start: false
+
+# 日志配置
+logging:
+  level: "INFO"
+  file_level: "DEBUG"
+  components:
+    TradingNode: "INFO"
+    LiveExecEngine: "INFO"
+    Strategy: "DEBUG"
+  components_only: true
+
+# 交易配置
+trading:
+  venue: "OKX"
+  instrument_type: "SWAP"
+  initial_balance: 10000
+  currency: "USDT"
