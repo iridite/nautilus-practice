@@ -766,7 +766,7 @@ class OIDivergenceStrategy(BaseStrategy):
             return False, details
 
         details["cond2_oi_divergence"] = True
-        details["oi_divergence"] = float(oi_divergence) if oi_divergence else 0.0 if oi_divergence else 0.0
+        details["oi_divergence"] = float(oi_divergence) if oi_divergence else 0.0
 
         # Condition 3: 资金费率过滤
         if self.config.use_funding_filter:
