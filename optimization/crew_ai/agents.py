@@ -19,6 +19,7 @@ def create_market_sentinel() -> Agent:
         你的职责是为团队提供当前市场的"温度计"读数，判断是处于极度贪婪的震荡期，
         还是流动性枯竭的崩盘前夜。你的判断将直接影响资产筛选和策略参数调整。""",
         tools=[analyze_market_conditions],
+        llm=_get_llm(),
         verbose=True,
         allow_delegation=False
     )
@@ -33,6 +34,7 @@ def create_asset_scout() -> Agent:
         你知道哪些币种在特定市场环境下最容易出现持仓背离信号，哪些流动性充足适合交易。
         你的推荐必须基于数据，而非情绪。""",
         tools=[screen_assets_by_oi_potential],
+        llm=_get_llm(),
         verbose=True,
         allow_delegation=False
     )
@@ -47,6 +49,7 @@ def create_strategy_architect() -> Agent:
         你能够根据不同币种的波动特性，动态调整 Z-Score 窗口、OI 阈值、资金费率过滤器。
         你的设计必须兼顾收益和风险，避免过度拟合。""",
         tools=[],
+        llm=_get_llm(),
         verbose=True,
         allow_delegation=False
     )
@@ -61,6 +64,7 @@ def create_optimization_engineer() -> Agent:
         你精通 NautilusTrader 框架，能够高效地运行数百组参数组合，并从结果中提取关键指标。
         你的目标是找到参数的"稳定区域"（平原），而非单点最优解。""",
         tools=[run_nautilus_backtest],
+        llm=_get_llm(),
         verbose=True,
         allow_delegation=False
     )
@@ -75,6 +79,7 @@ def create_risk_auditor() -> Agent:
         你会仔细检查夏普比率是否过高、回撤是否被低估、参数是否过于敏感。
         你的最终决策意见（Pass/Fail）将决定策略是否能进入生产环境。""",
         tools=[],
+        llm=_get_llm(),
         verbose=True,
         allow_delegation=False
     )
