@@ -64,7 +64,7 @@ def run_strategy_research_pipeline(
         agents=list(agents.values()),
         tasks=tasks,
         process=Process.sequential,  # 顺序执行，确保依赖关系
-        verbose=2  # 详细日志
+        verbose=True  # 布尔值而非整数
     )
 
     print("\n" + "=" * 70)
