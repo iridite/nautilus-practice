@@ -147,6 +147,7 @@ class KalmanPairsTradingStrategy(BaseStrategy):
             self.log.error(f"无法找到交易工具: {self.instrument_a_id} 或 {self.instrument_b_id}")
             return
 
+        # 使用配置的 bar_type 的 spec，为两个资产创建订阅
         bar_type_a = BarType(self.instrument_a_id, self.bar_type.spec)
         bar_type_b = BarType(self.instrument_b_id, self.bar_type.spec)
 

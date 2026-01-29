@@ -172,11 +172,27 @@ def _load_custom_data_to_engine(
 
             # 加载OI数据
             if oi_files:
-                oi_data_list = CustomDataLoader.load_oi_data(oi_files, instrument_id)
+                loader = OIFundingDataLoader(base_dir)
+                for oi_file in oi_files:
+                    oi_data_list.extend(loader.load_oi_data(
+                        symbol=symbol,
+                        instrument_id=instrument_id,
+                        start_date=cfg.backtest.start_date,
+                        end_date=cfg.backtest.end_date,
+                        exchange=cfg.backtest.exchange_id
+                    ))
 
             # 加载Funding Rate数据
             if funding_files:
-                funding_data_list = CustomDataLoader.load_funding_data(funding_files, instrument_id)
+                loader = OIFundingDataLoader(base_dir)
+                for funding_file in funding_files:
+                    funding_data_list.extend(loader.load_funding_data(
+                        symbol=symbol,
+                        instrument_id=instrument_id,
+                        start_date=cfg.backtest.start_date,
+                        end_date=cfg.backtest.end_date,
+                        exchange=cfg.backtest.exchange_id
+                    ))
 
             # 合并并添加到引擎
             if oi_data_list or funding_data_list:

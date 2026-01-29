@@ -1,14 +1,26 @@
-strategy:
-  class_path: strategy.kalman_pairs.KalmanPairsTradingStrategy
-  config:
-    instrument_a_id: "SOLUSDT-PERP.BINANCE"
-    instrument_b_id: "BTCUSDT-PERP.BINANCE"
-    bar_type: "SOLUSDT-PERP.BINANCE-1-HOUR-MID"
-    delta: 0.0001
-    R: 1.0
-    warmup_period: 50
-    entry_threshold: 2.0
-    exit_threshold: 0.5
-    stop_loss_threshold: 4.0
-    max_notional_per_trade: 10000.0
-    max_positions: 1
+# Kalman Filter Pairs Trading Strategy Configuration
+
+name: "KalmanPairsTradingStrategy"
+module_path: "strategy.kalman_pairs"
+config_class: "KalmanPairsTradingConfig"
+
+# 策略参数
+parameters:
+  # 数据设定
+  instrument_a_id: "SOLUSDT-PERP.BINANCE"
+  instrument_b_id: "BTCUSDT-PERP.BINANCE"
+  bar_type: "SOLUSDT-PERP.BINANCE-1-HOUR-LAST-EXTERNAL"
+
+  # Kalman Filter 参数
+  delta: 0.0001
+  R: 1.0
+  warmup_period: 50
+
+  # 交易信号参数
+  entry_threshold: 2.0
+  exit_threshold: 0.5
+  stop_loss_threshold: 4.0
+
+  # 风险管理
+  max_notional_per_trade: 10000.0
+  max_positions: 1

@@ -38,9 +38,9 @@ from backtest.strategy_loader import (
     load_strategy_config_class,
 )
 from config.definitions import BackTestConfig
-from utils.oi_funding_adapter import OIFundingDataLoader
 from utils.filename_parser import FilenameParser
 from utils.instrument_loader import load_instrument
+from utils.oi_funding_adapter import OIFundingDataLoader
 
 
 def _load_instruments(cfg: BackTestConfig) -> Dict[str, Instrument]:
@@ -472,6 +472,24 @@ def _run_backtest_with_custom_data(
         _process_backtest_results(cfg, base_dir, results)
 
 
+def _check_if_needs_custom_data(strategies: List[ImportableStrategyConfig]) -> bool:
+    """检查策略是否需要自定义数据（OI/Funding）"""
+    for strategy in strategies:
+        # 检查策略配置中的 data_dependencies
+        if hasattr(strategy, 'config') and isinstance(strategy.config, dict):
+            data_deps = strategy.config.get('data_dependencies', [])
+            if data_deps:
+                for dep in data_deps:
+                    if isinstance(dep, dict):
+                        data_type = dep.get('data_type', '')
+                        if data_type in ['oi', 'funding']:
+                            return True
+                    elif hasattr(dep, 'data_type'):
+                        if dep.data_type in ['oi', 'funding']:
+                            return True
+    return False
+
+
 def _load_custom_data_to_engine(
     cfg: BackTestConfig,
     base_dir: Path,
@@ -518,13 +536,27 @@ def _load_custom_data_to_engine(
 
             # 加载OI数据
             if oi_files:
-                oi_data_list = CustomDataLoader.load_oi_data(oi_files, instrument_id)
+                loader = OIFundingDataLoader(base_dir)
+                for oi_file in oi_files:
+                    oi_data_list.extend(loader.load_oi_data(
+                        symbol=symbol,
+                        instrument_id=instrument_id,
+                        start_date=cfg.backtest.start_date,
+                        end_date=cfg.backtest.end_date,
+                        exchange=cfg.backtest.exchange_id
+                    ))
 
             # 加载Funding Rate数据
             if funding_files:
-                funding_data_list = CustomDataLoader.load_funding_data(
-                    funding_files, instrument_id
-                )
+                loader = OIFundingDataLoader(base_dir)
+                for funding_file in funding_files:
+                    funding_data_list.extend(loader.load_funding_data(
+                        symbol=symbol,
+                        instrument_id=instrument_id,
+                        start_date=cfg.backtest.start_date,
+                        end_date=cfg.backtest.end_date,
+                        exchange=cfg.backtest.exchange_id
+                    ))
 
             # 合并并添加到引擎
             if oi_data_list or funding_data_list:
