@@ -756,9 +756,9 @@ class OIDivergenceStrategy(BaseStrategy):
         details["breakout_price"] = float(current_high)
         details["resistance"] = float(self.resistance)
 
-        # Condition 2: OI 背离
+        # Condition 2: OI 背离（如果OI数据可用）
         oi_divergence = self._calculate_oi_divergence()
-        if oi_divergence is None or oi_divergence >= -self.config.oi_decline_threshold:
+        if oi_divergence is not None and oi_divergence >= -self.config.oi_decline_threshold:
             if self.config.enable_signal_logging:
                 self.log.debug(
                     f"⚠️  SHORT signal blocked by OI: divergence={oi_divergence:.2%}"
@@ -766,7 +766,7 @@ class OIDivergenceStrategy(BaseStrategy):
             return False, details
 
         details["cond2_oi_divergence"] = True
-        details["oi_divergence"] = float(oi_divergence)
+        details["oi_divergence"] = float(oi_divergence) if oi_divergence else 0.0 if oi_divergence else 0.0
 
         # Condition 3: 资金费率过滤
         if self.config.use_funding_filter:
@@ -829,9 +829,9 @@ class OIDivergenceStrategy(BaseStrategy):
         details["breakout_price"] = float(current_low)
         details["support"] = float(self.support)
 
-        # Condition 2: OI 背离
+        # Condition 2: OI 背离（如果OI数据可用）
         oi_divergence = self._calculate_oi_divergence()
-        if oi_divergence is None or oi_divergence >= -self.config.oi_decline_threshold:
+        if oi_divergence is not None and oi_divergence >= -self.config.oi_decline_threshold:
             if self.config.enable_signal_logging:
                 self.log.debug(
                     f"⚠️  LONG signal blocked by OI: divergence={oi_divergence:.2%}"
@@ -1209,11 +1209,13 @@ class OIDivergenceStrategy(BaseStrategy):
         if self.config.use_atr_stop and self.atr:
             atr_ready = self.atr.initialized
 
+        # 临时禁用OI依赖，允许策略在无OI数据时运行
+        oi_ready = len(self.oi_history) >= self.config.oi_lookback if self.oi_history else True
+
         return (
             len(self.bars_main) >= self.config.lookback_bars
             and self.vwap_sma.initialized
-            and len(self.oi_history) >= self.config.oi_lookback
-            and self.current_oi is not None
+            and oi_ready
             and atr_ready
         )
 
