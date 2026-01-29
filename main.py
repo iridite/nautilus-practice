@@ -108,8 +108,10 @@ def check_strategy_data_dependencies(
     strategy_name = getattr(strategy_config, '__class__', None)
     if strategy_name and 'OIDivergence' in str(strategy_name):
         from strategy.base import DataDependency
-        if not hasattr(strategy_config, 'data_dependencies') or not strategy_config.data_dependencies:
-            strategy_config.data_dependencies = [
+        if not strategy_config.data_dependencies:
+            strategy_config = type(strategy_config)(**{
+                **strategy_config.__dict__,
+                'data_dependencies': [
                 DataDependency(
                     data_type="oi",
                     required=True,
@@ -121,7 +123,8 @@ def check_strategy_data_dependencies(
                     required=True,
                     auto_fetch=True
                 )
-            ]
+                ]
+            })
 
     # 检查策略是否有数据依赖声明
     if not hasattr(strategy_config, 'data_dependencies') or not strategy_config.data_dependencies:
