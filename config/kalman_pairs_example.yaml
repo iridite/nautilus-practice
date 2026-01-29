@@ -1,0 +1,30 @@
+# Kalman Filter Pairs Trading Strategy Configuration
+# Example: SOLUSDT vs ETHUSDT
+
+strategy:
+  class_path: strategy.kalman_pairs_trader.KalmanPairsTradingStrategy
+  config:
+    # Trading Pair
+    instrument_a_id: "SOLUSDT-PERP.BINANCE"  # Target Asset (Y)
+    instrument_b_id: "ETHUSDT-PERP.BINANCE"  # Hedge Asset (X)
+    bar_type: "SOLUSDT-PERP.BINANCE-1-HOUR-MID"
+
+    # Kalman Filter Parameters
+    delta: 0.0001  # State transition covariance (smaller = slower adaptation)
+    R: 1.0  # Observation noise variance
+    warmup_period: 50  # Number of bars before trading starts
+
+    # Trading Signal Thresholds
+    entry_threshold: 2.0  # Z-Score threshold for entry (±2.0 standard deviations)
+    exit_threshold: 0.5  # Z-Score threshold for exit (mean reversion)
+    stop_loss_threshold: 4.0  # Z-Score threshold for stop loss (correlation breakdown)
+
+    # Risk Management
+    max_notional_per_trade: 10000.0  # Maximum notional value per trade (USD)
+    max_positions: 1  # Maximum number of concurrent pair positions
+
+# Notes:
+# 1. Delta控制参数适应速度: 较小值(1e-4)使beta变化缓慢，适合稳定相关性
+# 2. Entry threshold建议范围: 1.5-2.5，取决于资产波动性
+# 3. Stop loss threshold应设置为entry的2倍以上，防止假突破
+# 4. Warmup period建议至少50个bar，让滤波器收敛
