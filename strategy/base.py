@@ -74,6 +74,8 @@ class BaseStrategyConfig(StrategyConfig):  # pyright: ignore[reportGeneralTypeIs
 
     instrument_id: str = ""
 
+    data_dependencies: list = []
+
     # --- Position Sizing Parameters ---
     # 1. Fixed Quantity Mode: If set (not None), this fixed quantity is used (e.g., 0.1 for 0.1 BTC).
     # This takes precedence over dynamic calculation.
