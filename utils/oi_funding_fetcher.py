@@ -485,6 +485,11 @@ def batch_fetch_oi_and_funding(
             else:
                 ccxt_symbol = raw_symbol
 
+            # 验证交易对是否存在
+            if ccxt_symbol not in exchange.markets:
+                print(f"\n[WARNING] {raw_symbol} not found in {exchange_id.upper()}, skipping")
+                continue
+
             safe_symbol = raw_symbol.replace("/", "")
 
             # === 获取 OI 数据 ===

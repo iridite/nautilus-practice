@@ -860,7 +860,7 @@ def main():
                             if funding_count > 0:
                                 print(f"  - Funding Rate: {funding_count} file(s)")
                         else:
-                            print(f"[ERROR] No data downloaded - check exchange availability")
+                            print(f"[ERROR] No data downloaded - symbol may not exist or API unavailable")
                             raise RuntimeError(
                                 "Failed to download required OI/Funding data. "
                                 "Please check exchange availability and network connection."
