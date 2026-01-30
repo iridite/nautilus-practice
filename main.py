@@ -154,6 +154,62 @@ def check_strategy_data_dependencies(
     return tasks
 
 
+def _fetch_data_with_retry(
+    data_type: str,
+    symbols: list,
+    exchange: str,
+    start_date: str,
+    end_date: str,
+    period: str,
+    base_dir: Path,
+    max_retries: int,
+    supported_exchanges: list
+) -> tuple:
+    """带重试和回退的数据获取"""
+    import time
+
+    for attempt in range(max_retries):
+        try:
+            fetch_results = batch_fetch_oi_and_funding(
+                symbols=symbols,
+                start_date=start_date,
+                end_date=end_date,
+                exchange_id=exchange,
+                base_dir=base_dir,
+                oi_period=period
+            )
+
+            files_count = len(fetch_results.get(f"{data_type}_files", []))
+            if files_count > 0:
+                return files_count, 0, 0, None
+
+        except Exception as e:
+            if attempt < max_retries - 1:
+                time.sleep(5)
+            else:
+                # 尝试回退交易所
+                fallback_exchanges = [ex for ex in supported_exchanges if ex != exchange]
+                for fallback in fallback_exchanges:
+                    try:
+                        fetch_results = batch_fetch_oi_and_funding(
+                            symbols=symbols,
+                            start_date=start_date,
+                            end_date=end_date,
+                            exchange_id=fallback,
+                            base_dir=base_dir,
+                            oi_period=period
+                        )
+                        files_count = len(fetch_results.get(f"{data_type}_files", []))
+                        if files_count > 0:
+                            return files_count, attempt + 1, 1, None
+                    except:
+                        continue
+
+                return 0, attempt + 1, 0, f"All attempts failed for {data_type}: {exchange}"
+
+    return 0, max_retries, 0, None
+
+
 def execute_oi_funding_data_fetch(
     tasks: dict,
     base_dir: Path,
@@ -161,184 +217,49 @@ def execute_oi_funding_data_fetch(
     max_retries: int = 3,
     force_fetch: bool = False
 ) -> dict:
-    """
-    执行 OI 和 Funding Rate 数据获取（带智能重试和错误恢复）
-
-    Parameters
-    ----------
-    tasks : dict
-        数据获取任务字典
-    base_dir : Path
-        基础目录
-    preferred_exchange : str, optional
-        首选交易所，默认 "auto"
-    max_retries : int, optional
-        最大重试次数，默认 3
-    force_fetch : bool, optional
-        是否强制重新获取，默认 False
-
-    Returns
-    -------
-    dict
-        获取结果统计
-    """
+    """执行 OI 和 Funding Rate 数据获取（带智能重试和错误恢复）"""
     results = {"oi_files": 0, "funding_files": 0, "errors": [], "retries": 0, "fallbacks": 0}
 
-    # 支持的交易所列表（按优先级排序）
-    if preferred_exchange == "auto":
-        supported_exchanges = ["binance", "okx"]
-    elif preferred_exchange in ["binance", "okx"]:
-        supported_exchanges = [preferred_exchange, "binance" if preferred_exchange == "okx" else "okx"]
-    else:
-        supported_exchanges = ["binance", "okx"]
+    supported_exchanges = (
+        ["binance", "okx"] if preferred_exchange == "auto"
+        else [preferred_exchange, "okx" if preferred_exchange == "binance" else "binance"]
+        if preferred_exchange in ["binance", "okx"]
+        else ["binance", "okx"]
+    )
 
-    # 执行 OI 数据获取
+    # 处理 OI 数据
     for (exchange, period, start_date, end_date), symbols in tasks["oi_tasks"].items():
         if not symbols:
             continue
 
         symbols_list = sorted(list(symbols))
-        success = False
-        current_exchange = exchange
+        files, retries, fallbacks, error = _fetch_data_with_retry(
+            "oi", symbols_list, exchange, start_date, end_date, period,
+            base_dir, max_retries, supported_exchanges
+        )
 
-        # 尝试从指定交易所获取数据
-        for attempt in range(max_retries):
-            print(f"📊 Fetching OI data: {current_exchange} {period} for {len(symbols_list)} symbols (attempt {attempt + 1}/{max_retries})")
+        results["oi_files"] += files
+        results["retries"] += retries
+        results["fallbacks"] += fallbacks
+        if error:
+            results["errors"].append(error)
 
-            try:
-                fetch_results = batch_fetch_oi_and_funding(
-                    symbols=symbols_list,
-                    start_date=start_date,
-                    end_date=end_date,
-                    exchange_id=current_exchange,
-                    base_dir=base_dir,
-                    oi_period=period
-                )
-
-                oi_files_count = len(fetch_results.get("oi_files", []))
-                if oi_files_count > 0:
-                    results["oi_files"] += oi_files_count
-                    print(f"✅ Successfully fetched {oi_files_count} OI files from {current_exchange}")
-                    success = True
-                    break
-                else:
-                    print(f"⚠️ No OI files downloaded from {current_exchange} (attempt {attempt + 1})")
-
-            except Exception as e:
-                error_msg = f"Attempt {attempt + 1} failed for OI data from {current_exchange}: {e}"
-                print(f"❌ {error_msg}")
-                results["retries"] += 1
-
-                if attempt < max_retries - 1:
-                    print(f"🔄 Retrying in 5 seconds...")
-                    import time
-                    time.sleep(5)
-
-        # 如果主交易所失败，尝试备用交易所
-        if not success and current_exchange in supported_exchanges:
-            fallback_exchanges = [ex for ex in supported_exchanges if ex != current_exchange]
-
-            for fallback_exchange in fallback_exchanges:
-                print(f"🔄 Trying fallback exchange: {fallback_exchange}")
-                results["fallbacks"] += 1
-
-                try:
-                    fetch_results = batch_fetch_oi_and_funding(
-                        symbols=symbols_list,
-                        start_date=start_date,
-                        end_date=end_date,
-                        exchange_id=fallback_exchange,
-                        base_dir=base_dir,
-                        oi_period=period
-                    )
-
-                    oi_files_count = len(fetch_results.get("oi_files", []))
-                    if oi_files_count > 0:
-                        results["oi_files"] += oi_files_count
-                        print(f"✅ Successfully fetched {oi_files_count} OI files from fallback {fallback_exchange}")
-                        success = True
-                        break
-
-                except Exception as e:
-                    print(f"❌ Fallback {fallback_exchange} also failed: {e}")
-
-        if not success:
-            error_msg = f"All attempts failed for OI data: {exchange} {period} ({len(symbols_list)} symbols)"
-            results["errors"].append(error_msg)
-
-    # 执行 Funding Rate 数据获取（类似的重试逻辑）
+    # 处理 Funding 数据
     for (exchange, start_date, end_date), symbols in tasks["funding_tasks"].items():
         if not symbols:
             continue
 
         symbols_list = sorted(list(symbols))
-        success = False
-        current_exchange = exchange
+        files, retries, fallbacks, error = _fetch_data_with_retry(
+            "funding", symbols_list, exchange, start_date, end_date, "1h",
+            base_dir, max_retries, supported_exchanges
+        )
 
-        # 尝试从指定交易所获取数据
-        for attempt in range(max_retries):
-            print(f"💰 Fetching Funding Rate data: {current_exchange} for {len(symbols_list)} symbols (attempt {attempt + 1}/{max_retries})")
-
-            try:
-                fetch_results = batch_fetch_oi_and_funding(
-                    symbols=symbols_list,
-                    start_date=start_date,
-                    end_date=end_date,
-                    exchange_id=current_exchange,
-                    base_dir=base_dir,
-                    oi_period="1h"  # Funding rate 不依赖周期
-                )
-
-                funding_files_count = len(fetch_results.get("funding_files", []))
-                if funding_files_count > 0:
-                    results["funding_files"] += funding_files_count
-                    print(f"✅ Successfully fetched {funding_files_count} Funding Rate files from {current_exchange}")
-                    success = True
-                    break
-                else:
-                    print(f"⚠️ No Funding Rate files downloaded from {current_exchange} (attempt {attempt + 1})")
-
-            except Exception as e:
-                error_msg = f"Attempt {attempt + 1} failed for Funding Rate data from {current_exchange}: {e}"
-                print(f"❌ {error_msg}")
-                results["retries"] += 1
-
-                if attempt < max_retries - 1:
-                    print(f"🔄 Retrying in 5 seconds...")
-                    import time
-                    time.sleep(5)
-
-        # 如果主交易所失败，尝试备用交易所
-        if not success and current_exchange in supported_exchanges:
-            fallback_exchanges = [ex for ex in supported_exchanges if ex != current_exchange]
-
-            for fallback_exchange in fallback_exchanges:
-                print(f"🔄 Trying fallback exchange: {fallback_exchange}")
-                results["fallbacks"] += 1
-
-                try:
-                    fetch_results = batch_fetch_oi_and_funding(
-                        symbols=symbols_list,
-                        start_date=start_date,
-                        end_date=end_date,
-                        exchange_id=fallback_exchange,
-                        base_dir=base_dir,
-                        oi_period="1h"
-                    )
-
-                    funding_files_count = len(fetch_results.get("funding_files", []))
-                    if funding_files_count > 0:
-                        results["funding_files"] += funding_files_count
-                        print(f"✅ Successfully fetched {funding_files_count} Funding Rate files from fallback {fallback_exchange}")
-                        success = True
-                        break
-
-                except Exception as e:
-                    print(f"❌ Fallback {fallback_exchange} also failed: {e}")
-
-        if not success:
-            error_msg = f"All attempts failed for Funding Rate data: {exchange} ({len(symbols_list)} symbols)"
-            results["errors"].append(error_msg)
+        results["funding_files"] += files
+        results["retries"] += retries
+        results["fallbacks"] += fallbacks
+        if error:
+            results["errors"].append(error)
 
     return results
 
