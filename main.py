@@ -25,16 +25,9 @@ from utils.config_helpers import parse_universe_symbols
 from utils.data_retrival import batch_fetch_ohlcv, batch_fetch_oi_and_funding
 from utils.smart_data_manager import SmartDataManager
 from utils.validation import (
-    OIDataValidator,
-    analyze_universe_data_coverage,
-    check_data_exists,
     check_funding_data_exists,
     check_oi_data_exists,
-    check_parquet_data_coverage,
     check_single_data_file,
-    check_single_data_file_enhanced,
-    validate_funding_data_structure,
-    validate_oi_data_structure,
 )
 
 
@@ -66,6 +59,29 @@ def run_batch_data_retrieval(
         return []
 
 
+def _extract_strategy_symbols(strategy_config, universe_symbols: set) -> set:
+    """提取策略相关的符号列表"""
+    symbols = set()
+
+    if hasattr(strategy_config, 'data_feeds') and strategy_config.data_feeds:
+        for feed in strategy_config.data_feeds:
+            try:
+                symbols.add(feed.csv_file_name.split("/")[0])
+            except Exception:
+                pass
+
+    if universe_symbols:
+        symbols.update(s.split(":")[0] for s in universe_symbols)
+
+    if hasattr(strategy_config, 'instrument_id') and strategy_config.instrument_id:
+        try:
+            symbols.add(strategy_config.instrument_id.split('.')[1].split('-')[0])
+        except Exception:
+            pass
+
+    return symbols
+
+
 def check_strategy_data_dependencies(
     strategy_config,
     start_date: str,
@@ -74,48 +90,17 @@ def check_strategy_data_dependencies(
     universe_symbols: set = None
 ) -> dict:
     """检查策略数据依赖并返回缺失的数据任务"""
-    tasks = {
-        "oi_tasks": {},
-        "funding_tasks": {},
-        "missing_count": 0,
-        "warnings": []
-    }
+    tasks = {"oi_tasks": {}, "funding_tasks": {}, "missing_count": 0, "warnings": []}
 
-    # 获取策略所需的数据类型
     data_types = getattr(strategy_config, 'data_types', [])
     if not data_types:
         return tasks
 
-    print(f"🔍 检查策略数据依赖: {len(data_types)} 个数据类型")
-
-    # 获取策略相关的符号列表
-    strategy_symbols = set()
-
-    if hasattr(strategy_config, 'data_feeds') and strategy_config.data_feeds:
-        for feed in strategy_config.data_feeds:
-            try:
-                symbol_quote = feed.csv_file_name.split("/")[0]
-                strategy_symbols.add(symbol_quote)
-            except Exception:
-                continue
-
-    if universe_symbols:
-        for symbol in universe_symbols:
-            symbol_str = symbol.split(":")[0]
-            strategy_symbols.add(symbol_str)
-
-    if hasattr(strategy_config, 'instrument_id') and strategy_config.instrument_id:
-        try:
-            symbol_part = strategy_config.instrument_id.split('.')[1].split('-')[0]
-            strategy_symbols.add(symbol_part)
-        except Exception:
-            pass
-
+    strategy_symbols = _extract_strategy_symbols(strategy_config, universe_symbols)
     if not strategy_symbols:
-        print("⚠️ 未找到符号")
         return tasks
 
-    print(f"📊 检查 {len(strategy_symbols)} 个符号的数据依赖")
+    print(f"🔍 检查 {len(strategy_symbols)} 个符号的 {len(data_types)} 种数据类型")
 
     # 检查每个数据类型
     for data_type in data_types:
@@ -214,8 +199,7 @@ def execute_oi_funding_data_fetch(
     tasks: dict,
     base_dir: Path,
     preferred_exchange: str = "auto",
-    max_retries: int = 3,
-    force_fetch: bool = False
+    max_retries: int = 3
 ) -> dict:
     """执行 OI 和 Funding Rate 数据获取（带智能重试和错误恢复）"""
     results = {"oi_files": 0, "funding_files": 0, "errors": [], "retries": 0, "fallbacks": 0}
@@ -315,23 +299,12 @@ def load_universe_symbols(adapter, base_dir: Path) -> set:
 
 def prepare_data_feeds(args, adapter, base_dir: Path, universe_symbols: set):
     """准备数据feeds"""
-    if args.command != "backtest" or args.skip_data:
-        return
-
     print("\n" + "="*70)
     print("📊 DATA PREPARATION")
     print("="*70)
 
     current_config = adapter.get_config()
     existing_csvs = {feed.csv_file_name for feed in current_config.data_feeds}
-
-    if args.smart_mode:
-        print("🧠 Smart Data Management Mode")
-        manager = SmartDataManager(base_dir)
-        manager.analyze_and_optimize(
-            auto_fix=args.auto_fix,
-            report_path=args.data_quality_report
-        )
 
     symbols = set()
     if universe_symbols:
@@ -373,9 +346,6 @@ def prepare_data_feeds(args, adapter, base_dir: Path, universe_symbols: set):
 
 def check_and_fetch_strategy_data(args, adapter, base_dir: Path, universe_symbols: set):
     """检查并获取策略所需数据"""
-    if args.command != "backtest" or args.skip_data or getattr(args, 'skip_oi_data', False):
-        return
-
     print("\n" + "="*70)
     print("📊 STRATEGY DATA DEPENDENCIES")
     print("="*70)
@@ -396,8 +366,7 @@ def check_and_fetch_strategy_data(args, adapter, base_dir: Path, universe_symbol
             strategy_tasks,
             base_dir,
             preferred_exchange=getattr(args, 'oi_exchange', 'auto'),
-            max_retries=getattr(args, 'max_retries', 3),
-            force_fetch=getattr(args, 'force_oi_fetch', False)
+            max_retries=getattr(args, 'max_retries', 3)
         )
 
         total_files = fetch_results["oi_files"] + fetch_results["funding_files"]
@@ -436,37 +405,40 @@ def update_instrument_definitions(adapter, base_dir: Path, universe_symbols: set
 
 def run_backtest(args, adapter):
     """执行回测"""
-    if args.command == "backtest":
-        try:
-            run_file_cleanup()
-            if args.type == "high":
-                run_high_level()
-            else:
-                run_low_level()
-        except Exception as e:
-            print(f"❌ Backtest failed: {e}")
-            sys.exit(1)
+    try:
+        run_file_cleanup()
+        if args.type == "high":
+            run_high_level()
+        else:
+            run_low_level()
+    except Exception as e:
+        print(f"❌ Backtest failed: {e}")
+        sys.exit(1)
 
 
 def main():
     args = parse_arguments()
 
-    if args.command == "backtest" and args.erase:
-        adapter = get_adapter()
-        strategy_name = adapter.get_strategy_name()
-        catalog_path = BASE_DIR / "data" / "parquet" / strategy_name
+    if args.command != "backtest":
+        print("⚠️ Only backtest command is supported")
+        return
+
+    adapter = get_adapter()
+
+    if args.erase:
+        catalog_path = BASE_DIR / "data" / "parquet" / adapter.get_strategy_name()
         if catalog_path.exists():
-            print(f"🗑️ Erasing catalog: {catalog_path}")
             shutil.rmtree(catalog_path)
             print("✅ Catalog erased")
 
-    adapter = get_adapter()
     universe_symbols = load_universe_symbols(adapter, BASE_DIR)
 
-    prepare_data_feeds(args, adapter, BASE_DIR, universe_symbols)
-    check_and_fetch_strategy_data(args, adapter, BASE_DIR, universe_symbols)
-    update_instrument_definitions(adapter, BASE_DIR, universe_symbols)
+    if not args.skip_data:
+        prepare_data_feeds(args, adapter, BASE_DIR, universe_symbols)
+        if not getattr(args, 'skip_oi_data', False):
+            check_and_fetch_strategy_data(args, adapter, BASE_DIR, universe_symbols)
 
+    update_instrument_definitions(adapter, BASE_DIR, universe_symbols)
     run_backtest(args, adapter)
 
 if __name__ == "__main__":
