@@ -117,25 +117,29 @@ class ConfigAdapter:
             return self._backtest_config_cache
 
         # 数据限制检查（严格模式）
-        # 注意：测试环境可通过环境变量 SKIP_DATA_LIMIT_CHECK=1 跳过检查
+        # 注意：仅对声明需要 OI 数据的策略进行检查
+        # 测试环境可通过环境变量 SKIP_DATA_LIMIT_CHECK=1 跳过检查
         import os
         if os.environ.get('SKIP_DATA_LIMIT_CHECK') != '1':
-            from utils.data_limits import check_data_availability
+            # 检查策略是否声明需要 OI 数据
+            data_types = self.strategy_config.parameters.get('data_types', [])
+            if 'oi' in data_types:
+                from utils.data_limits import check_data_availability
 
-            from .schemas import ConfigValidationError
+                from .schemas import ConfigValidationError
 
-            is_available, warning = check_data_availability(
-                self.get_start_date(),
-                self.get_end_date(),
-                self.get_venue(),
-                "oi"
-            )
-
-            if not is_available and warning:
-                raise ConfigValidationError(
-                    f"数据范围超出交易所限制\n\n{warning}\n\n"
-                    f"请修改配置文件中的日期范围或切换交易所。"
+                is_available, warning = check_data_availability(
+                    self.get_start_date(),
+                    self.get_end_date(),
+                    self.get_venue(),
+                    "oi"
                 )
+
+                if not is_available and warning:
+                    raise ConfigValidationError(
+                        f"数据范围超出交易所限制\n\n{warning}\n\n"
+                        f"请修改配置文件中的日期范围或切换交易所。"
+                    )
 
         final_instruments = []
         final_data_feeds = []
