@@ -73,68 +73,24 @@ def check_strategy_data_dependencies(
     base_dir: Path,
     universe_symbols: set = None
 ) -> dict:
-    """
-    检查策略的数据依赖并返回缺失的数据任务
-
-    Parameters
-    ----------
-    strategy_config
-        策略配置对象
-    start_date : str
-        开始日期
-    end_date : str
-        结束日期
-    base_dir : Path
-        基础目录
-    universe_symbols : set, optional
-        Universe 符号集合
-
-    Returns
-    -------
-    dict
-        包含缺失数据任务的字典
-    """
+    """检查策略数据依赖并返回缺失的数据任务"""
     tasks = {
-        "oi_tasks": {},      # (exchange, period, start, end) -> set(symbols)
-        "funding_tasks": {}, # (exchange, start, end) -> set(symbols)
+        "oi_tasks": {},
+        "funding_tasks": {},
         "missing_count": 0,
         "warnings": []
     }
 
-    # 特殊处理：为 OIDivergenceStrategy 硬编码数据依赖
-    strategy_name = getattr(strategy_config, '__class__', None)
-    if strategy_name and 'OIDivergence' in str(strategy_name):
-        from strategy.base import DataDependency
-        if not strategy_config.data_dependencies:
-            try:
-                config_dict = {k: v for k, v in vars(strategy_config).items() if not k.startswith('_')}
-                config_dict['data_dependencies'] = [
-                    DataDependency(
-                        data_type="oi",
-                        required=True,
-                        period="1h",
-                        auto_fetch=True
-                    ),
-                    DataDependency(
-                        data_type="funding",
-                        required=True,
-                        auto_fetch=True
-                    )
-                ]
-                strategy_config = type(strategy_config)(**config_dict)
-            except (TypeError, AttributeError):
-                pass
-
-    # 检查策略是否有数据依赖声明
-    if not hasattr(strategy_config, 'data_dependencies') or not strategy_config.data_dependencies:
+    # 获取策略所需的数据类型
+    data_types = getattr(strategy_config, 'data_types', [])
+    if not data_types:
         return tasks
 
-    print(f"🔍 Checking strategy data dependencies: {len(strategy_config.data_dependencies)} dependencies found")
+    print(f"🔍 检查策略数据依赖: {len(data_types)} 个数据类型")
 
     # 获取策略相关的符号列表
     strategy_symbols = set()
 
-    # 从 data_feeds 获取符号
     if hasattr(strategy_config, 'data_feeds') and strategy_config.data_feeds:
         for feed in strategy_config.data_feeds:
             try:
@@ -143,72 +99,50 @@ def check_strategy_data_dependencies(
             except Exception:
                 continue
 
-    # 从 universe 获取符号
     if universe_symbols:
         for symbol in universe_symbols:
-            symbol_str = symbol.split(":")[0]  # SOLUSDT:USDT -> SOLUSDT
+            symbol_str = symbol.split(":")[0]
             strategy_symbols.add(symbol_str)
 
-    # 从单标的配置获取符号
     if hasattr(strategy_config, 'instrument_id') and strategy_config.instrument_id:
         try:
-            # 从 instrument_id 提取符号 (如 BINANCE.BTCUSDT-PERP -> BTCUSDT)
             symbol_part = strategy_config.instrument_id.split('.')[1].split('-')[0]
             strategy_symbols.add(symbol_part)
         except Exception:
             pass
 
     if not strategy_symbols:
-        print("⚠️ No symbols found for strategy data dependency check")
+        print("⚠️ 未找到符号")
         return tasks
 
-    print(f"📊 Checking data dependencies for {len(strategy_symbols)} symbols: {sorted(list(strategy_symbols))}")
+    print(f"📊 检查 {len(strategy_symbols)} 个符号的数据依赖")
 
-    # 检查每个数据依赖
-    for dep in strategy_config.data_dependencies:
-        if not dep.auto_fetch:
-            continue
-
-        # 确定要检查的符号列表
-        check_symbols = dep.symbols if dep.symbols else strategy_symbols
-
-        # 确定交易所和周期
-        exchange = dep.exchange or getattr(strategy_config, 'default_data_exchange', 'binance')
-        period = dep.period or getattr(strategy_config, 'default_data_period', '1h')
-
-        if dep.data_type == "oi":
-            # 检查 OI 数据
+    # 检查每个数据类型
+    for data_type in data_types:
+        if data_type == "oi":
             exists, missing_files = check_oi_data_exists(
-                list(check_symbols), start_date, end_date, period, exchange, base_dir
+                list(strategy_symbols), start_date, end_date, "1h", "binance", base_dir
             )
-
             if not exists:
-                key = (exchange, period, start_date, end_date)
+                key = ("binance", "1h", start_date, end_date)
                 if key not in tasks["oi_tasks"]:
                     tasks["oi_tasks"][key] = set()
-
-                # 从缺失文件路径中提取符号
                 for file_path in missing_files:
                     try:
-                        # 从路径中提取符号: .../BTCUSDT/binance-BTCUSDT-oi-1h-2024-01-01_2024-12-31.csv
                         symbol = file_path.split('/')[-2]
                         tasks["oi_tasks"][key].add(symbol)
                         tasks["missing_count"] += 1
                     except Exception:
                         continue
 
-        elif dep.data_type == "funding":
-            # 检查 Funding Rate 数据
+        elif data_type == "funding":
             exists, missing_files = check_funding_data_exists(
-                list(check_symbols), start_date, end_date, exchange, base_dir
+                list(strategy_symbols), start_date, end_date, "binance", base_dir
             )
-
             if not exists:
-                key = (exchange, start_date, end_date)
+                key = ("binance", start_date, end_date)
                 if key not in tasks["funding_tasks"]:
                     tasks["funding_tasks"][key] = set()
-
-                # 从缺失文件路径中提取符号
                 for file_path in missing_files:
                     try:
                         symbol = file_path.split('/')[-2]
@@ -415,76 +349,204 @@ def get_default_venue_and_type():
     return adapter.get_venue(), "USDT", "SWAP"
 
 
-def main():
+def parse_arguments():
+    """解析命令行参数"""
     parser = argparse.ArgumentParser(description="Nautilus Trader Unified Runner")
-
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
 
-    # Backtest Command
     bt_parser = subparsers.add_parser("backtest", help="Run backtest")
-    bt_parser.add_argument(
-        "--type",
-        choices=["high", "low"],
-        default="high",
-        help="Backtest engine type (high-level node or low-level engine)",
-    )
-    bt_parser.add_argument(
-        "--skip-data",
-        action="store_true",
-        help="Skip automatic data retrieval",
-    )
-    bt_parser.add_argument(
-        "--erase",
-        action="store_true",
-        help="Erase existing parquet catalog data before running backtest (forces re-import of all CSV data)",
-    )
-    bt_parser.add_argument(
-        "--skip-oi-data",
-        action="store_true",
-        help="Skip automatic OI and Funding Rate data retrieval",
-    )
-    bt_parser.add_argument(
-        "--force-oi-fetch",
-        action="store_true",
-        help="Force re-download of all OI and Funding Rate data (ignore existing files)",
-    )
-    bt_parser.add_argument(
-        "--oi-exchange",
-        choices=["binance", "okx", "auto"],
-        default="auto",
-        help="Preferred exchange for OI data (auto = try all available)",
-    )
-    bt_parser.add_argument(
-        "--max-retries",
-        type=int,
-        default=3,
-        help="Maximum number of retries for failed data downloads",
-    )
-    bt_parser.add_argument(
-        "--smart-mode",
-        action="store_true",
-        help="Enable smart data management with automatic optimization",
-    )
-    bt_parser.add_argument(
-        "--auto-fix",
-        action="store_true",
-        help="Automatically fix data issues (requires --smart-mode)",
-    )
-    bt_parser.add_argument(
-        "--data-quality-report",
-        type=str,
-        help="Generate data quality report to specified file path",
+    bt_parser.add_argument("--type", choices=["high", "low"], default="high")
+    bt_parser.add_argument("--skip-data", action="store_true")
+    bt_parser.add_argument("--erase", action="store_true")
+    bt_parser.add_argument("--skip-oi-data", action="store_true")
+    bt_parser.add_argument("--force-oi-fetch", action="store_true")
+    bt_parser.add_argument("--oi-exchange", choices=["binance", "okx", "auto"], default="auto")
+    bt_parser.add_argument("--max-retries", type=int, default=3)
+    bt_parser.add_argument("--smart-mode", action="store_true")
+    bt_parser.add_argument("--auto-fix", action="store_true")
+    bt_parser.add_argument("--data-quality-report", type=str)
+
+    subparsers.add_parser("sandbox", help="Run sandbox (Not implemented yet)")
+    subparsers.add_parser("live", help="Run live trading (Not implemented yet)")
+
+    return parser.parse_args()
+
+
+def load_universe_symbols(adapter, base_dir: Path) -> set:
+    """加载Universe符号"""
+    universe_symbols = set()
+    params = adapter.get_strategy_parameters()
+    u_name = params.get("universe_filename") or params.get("universe_filepath")
+
+    if u_name:
+        u_path = Path(u_name) if Path(u_name).is_absolute() else base_dir / "data" / Path(u_name).name
+        if u_path.exists():
+            try:
+                with open(u_path, "r") as f:
+                    data = json.load(f)
+                    universe_symbols = set(data.get("symbols", []))
+                    print(f"📊 Universe: {len(universe_symbols)} symbols")
+            except Exception as e:
+                print(f"⚠️ Failed to load universe: {e}")
+
+    return universe_symbols
+
+
+def prepare_data_feeds(args, adapter, base_dir: Path, universe_symbols: set):
+    """准备数据feeds"""
+    if args.command != "backtest" or args.skip_data:
+        return
+
+    print("\n" + "="*70)
+    print("📊 DATA PREPARATION")
+    print("="*70)
+
+    current_config = adapter.get_config()
+    existing_csvs = {feed.csv_file_name for feed in current_config.data_feeds}
+
+    if args.smart_mode:
+        print("🧠 Smart Data Management Mode")
+        manager = SmartDataManager(base_dir)
+        manager.analyze_and_optimize(
+            auto_fix=args.auto_fix,
+            report_path=args.data_quality_report
+        )
+
+    symbols = set()
+    if universe_symbols:
+        symbols.update(universe_symbols)
+    else:
+        for feed in current_config.data_feeds:
+            try:
+                symbol = feed.csv_file_name.split("/")[0]
+                symbols.add(symbol)
+            except Exception:
+                continue
+
+    if symbols:
+        start = get_start_date()
+        end = get_end_date()
+        timeframe = current_config.bar_type.spec.aggregation.value
+        exchange = get_venue()
+
+        missing = []
+        for symbol in symbols:
+            csv_name = f"{symbol}/{exchange}-{symbol}-{timeframe}-{start}_{end}.csv"
+            if csv_name not in existing_csvs:
+                if not check_single_data_file(symbol, start, end, timeframe, exchange, base_dir):
+                    missing.append(symbol)
+
+        if missing:
+            print(f"⚠️ {len(missing)} symbols missing data")
+            new_configs = run_batch_data_retrieval(sorted(missing), start, end, timeframe, exchange)
+            for nc in new_configs:
+                if nc.csv_file_name not in existing_csvs:
+                    current_config.data_feeds.append(nc)
+                    existing_csvs.add(nc.csv_file_name)
+            print("✅ Data completion finished")
+        else:
+            print("✅ All data files exist")
+
+    print("="*70 + "\n")
+
+
+def check_and_fetch_strategy_data(args, adapter, base_dir: Path, universe_symbols: set):
+    """检查并获取策略所需数据"""
+    if args.command != "backtest" or args.skip_data or getattr(args, 'skip_oi_data', False):
+        return
+
+    print("\n" + "="*70)
+    print("📊 STRATEGY DATA DEPENDENCIES")
+    print("="*70)
+
+    current_config = adapter.get_config()
+    strategy_tasks = check_strategy_data_dependencies(
+        current_config.strategy.params if hasattr(current_config.strategy, 'params') else current_config.strategy,
+        get_start_date(),
+        get_end_date(),
+        base_dir,
+        universe_symbols
     )
 
-    # Sandbox Command
-    sb_parser = subparsers.add_parser(
-        "sandbox", help="Run sandbox (Not implemented yet)"
-    )
+    if strategy_tasks["missing_count"] > 0:
+        print(f"📊 {strategy_tasks['missing_count']} missing data files")
 
-    # Live Command
-    live_parser = subparsers.add_parser(
-        "live", help="Run live trading (Not implemented yet)"
-    )
+        fetch_results = execute_oi_funding_data_fetch(
+            strategy_tasks,
+            base_dir,
+            preferred_exchange=getattr(args, 'oi_exchange', 'auto'),
+            max_retries=getattr(args, 'max_retries', 3),
+            force_fetch=getattr(args, 'force_oi_fetch', False)
+        )
+
+        total_files = fetch_results["oi_files"] + fetch_results["funding_files"]
+        if total_files > 0:
+            print(f"✅ Downloaded {total_files} files")
+    else:
+        print("✅ All strategy data satisfied")
+
+    print("="*70 + "\n")
+
+
+def update_instrument_definitions(adapter, base_dir: Path, universe_symbols: set):
+    """更新instrument定义"""
+    try:
+        instrument_ids = set()
+        current_config = adapter.get_config()
+
+        if current_config.instrument:
+            instrument_ids.add(current_config.instrument.instrument_id)
+
+        for feed in current_config.data_feeds:
+            if feed.instrument_id:
+                instrument_ids.add(feed.instrument_id)
+
+        if universe_symbols:
+            venue, base_currency, inst_type = get_default_venue_and_type()
+            universe_inst_ids = parse_universe_symbols(universe_symbols, venue, base_currency, inst_type)
+            instrument_ids.update(universe_inst_ids)
+
+        if instrument_ids:
+            print(f"🔄 Updating {len(instrument_ids)} instruments")
+            update_instruments(list(instrument_ids))
+    except Exception as e:
+        print(f"⚠️ Failed to update instruments: {e}")
+
+
+def run_backtest(args, adapter):
+    """执行回测"""
+    if args.command == "backtest":
+        try:
+            run_file_cleanup()
+            if args.type == "high":
+                run_high_level()
+            else:
+                run_low_level()
+        except Exception as e:
+            print(f"❌ Backtest failed: {e}")
+            sys.exit(1)
+
+
+def main():
+    args = parse_arguments()
+
+    if args.command == "backtest" and args.erase:
+        adapter = get_adapter()
+        strategy_name = adapter.get_strategy_name()
+        catalog_path = BASE_DIR / "data" / "parquet" / strategy_name
+        if catalog_path.exists():
+            print(f"🗑️ Erasing catalog: {catalog_path}")
+            shutil.rmtree(catalog_path)
+            print("✅ Catalog erased")
+
+    adapter = get_adapter()
+    universe_symbols = load_universe_symbols(adapter, BASE_DIR)
+
+    prepare_data_feeds(args, adapter, BASE_DIR, universe_symbols)
+    check_and_fetch_strategy_data(args, adapter, BASE_DIR, universe_symbols)
+    update_instrument_definitions(adapter, BASE_DIR, universe_symbols)
+
+    run_backtest(args, adapter)
 
     # 处理 --erase 参数：清除 catalog 数据
     if args.command == "backtest" and args.erase:
