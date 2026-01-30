@@ -121,6 +121,7 @@ class ConfigAdapter:
         import os
         if os.environ.get('SKIP_DATA_LIMIT_CHECK') != '1':
             from utils.data_limits import check_data_availability
+
             from .schemas import ConfigValidationError
 
             is_available, warning = check_data_availability(
