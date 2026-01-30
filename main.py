@@ -23,7 +23,6 @@ from config.settings import (
 from scripts.fetch_instrument import update_instruments
 from utils.config_helpers import parse_universe_symbols
 from utils.data_retrival import batch_fetch_ohlcv, batch_fetch_oi_and_funding
-from utils.smart_data_manager import SmartDataManager
 from utils.validation import (
     check_funding_data_exists,
     check_oi_data_exists,
