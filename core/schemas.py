@@ -297,7 +297,7 @@ class ConfigPaths:
     """配置文件路径管理"""
 
     def __init__(self, config_root: Optional[Path] = None):
-        self.config_root = config_root or (project_root / "config_yaml")
+        self.config_root = config_root or (project_root / "config")
         self.yaml_dir = self.config_root
         self.environments_dir = self.yaml_dir / "environments"
         self.strategies_dir = self.yaml_dir / "strategies"
