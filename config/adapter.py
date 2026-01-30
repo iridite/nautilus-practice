@@ -116,8 +116,9 @@ class ConfigAdapter:
         if self._backtest_config_cache is not None:
             return self._backtest_config_cache
 
-        # 数据限制检查
+        # 数据限制检查（严格模式）
         from utils.data_limits import check_data_availability
+        from .schemas import ConfigValidationError
 
         is_available, warning = check_data_availability(
             self.get_start_date(),
@@ -127,7 +128,10 @@ class ConfigAdapter:
         )
 
         if not is_available and warning:
-            print(f"\n{warning}\n")
+            raise ConfigValidationError(
+                f"数据范围超出交易所限制\n\n{warning}\n\n"
+                f"请修改配置文件中的日期范围或切换交易所。"
+            )
 
         final_instruments = []
         final_data_feeds = []
