@@ -33,35 +33,20 @@ __author__ = "NautilusTrader Utils"
 # ============================================================================
 
 # 时间处理
-from .time_helpers import (
-    get_ms_timestamp,
-)
-
-# 网络请求
-from .network import (
-    retry_fetch,
-)
-
-# 数据验证
-from .validation import (
-    check_data_exists,
-)
-
-# 符号解析
-from .symbol_parser import (
-    resolve_symbol_and_type,
-    parse_timeframe,
-)
-
-# 数据加载
-from .data_loader import (
-    load_ohlcv_csv,
-    detect_time_column,
-)
-
-# 路径管理
-from .path_helpers import (
-    get_project_root,
+# ============================================================================
+# 模块级别导入 - 用于需要完整功能的场景
+# ============================================================================
+# 保持已有的自定义数据类型
+from . import (
+    config_helpers,
+    custom_data,
+    data_loader,
+    network,
+    oi_funding_adapter,
+    path_helpers,
+    symbol_parser,
+    time_helpers,
+    validation,
 )
 
 # 配置解析
@@ -69,21 +54,32 @@ from .config_helpers import (
     parse_universe_symbols,
 )
 
-# ============================================================================
-# 模块级别导入 - 用于需要完整功能的场景
-# ============================================================================
+# 数据加载
+from .data_loader import (
+    detect_time_column,
+    load_ohlcv_csv,
+)
 
-from . import time_helpers
-from . import network
-from . import validation
-from . import symbol_parser
-from . import data_loader
-from . import path_helpers
-from . import config_helpers
+# 网络请求
+from .network import (
+    retry_fetch,
+)
 
-# 保持已有的自定义数据类型
-from . import custom_data
-from . import oi_funding_adapter
+# 路径管理
+from .path_helpers import (
+    get_project_root,
+)
+
+# 数据验证
+# validation 模块导入已移除，使用时直接从 validation 模块导入
+# 符号解析
+from .symbol_parser import (
+    parse_timeframe,
+    resolve_symbol_and_type,
+)
+from .time_helpers import (
+    get_ms_timestamp,
+)
 
 # ============================================================================
 # 便捷别名和组合功能
@@ -92,7 +88,6 @@ from . import oi_funding_adapter
 # 常用组合功能别名
 parse_symbol = resolve_symbol_and_type
 load_csv = load_ohlcv_csv
-check_file = check_data_exists
 get_timestamp = get_ms_timestamp
 
 
@@ -103,29 +98,31 @@ get_timestamp = get_ms_timestamp
 def batch_validate_data(base_dir, symbols, start_date, end_date, timeframe="1h", exchange="binance"):
     """
     批量验证数据文件的便捷函数
-    
+
     Parameters
     ----------
     base_dir : str | Path
-        项目基础目录
-    symbols : List[str]
-        符号列表
+        基础目录路径
+    symbols : list
+        交易对符号列表
     start_date : str
-        开始日期
+        开始日期（YYYY-MM-DD）
     end_date : str
-        结束日期
+        结束日期（YYYY-MM-DD）
     timeframe : str, optional
         时间框架，默认 "1h"
     exchange : str, optional
         交易所，默认 "binance"
-        
+
     Returns
     -------
     dict
         验证结果统计
     """
     from pathlib import Path
-    
+
+    from .validation import check_single_data_file
+
     base_path = Path(base_dir)
     results = {
         "total": len(symbols),
@@ -134,25 +131,22 @@ def batch_validate_data(base_dir, symbols, start_date, end_date, timeframe="1h",
         "warnings": [],
         "details": {}
     }
-    
+
     for symbol in symbols:
-        exists, warning = check_data_exists(
+        exists, filepath = check_single_data_file(
             symbol, start_date, end_date, timeframe, exchange, base_path
         )
-        
+
         results["details"][symbol] = {
             "exists": exists,
-            "warning": warning
+            "filepath": filepath
         }
-        
+
         if exists:
             results["exists"] += 1
         else:
             results["missing"] += 1
-            
-        if warning:
-            results["warnings"].append(warning)
-    
+
     return results
 
 
@@ -164,27 +158,25 @@ __all__ = [
     # 版本信息
     "__version__",
     "__author__",
-    
+
     # 核心功能 - 实际导入的函数
     "get_ms_timestamp",
     "retry_fetch",
-    "check_data_exists",
     "resolve_symbol_and_type",
     "parse_timeframe",
     "load_ohlcv_csv",
     "detect_time_column",
     "get_project_root",
     "parse_universe_symbols",
-    
+
     # 别名
     "parse_symbol",
     "load_csv",
-    "check_file",
     "get_timestamp",
-    
+
     # 便捷组合功能
     "batch_validate_data",
-    
+
     # 模块导入
     "time_helpers",
     "network",
@@ -223,7 +215,7 @@ def get_utils_info():
             "data_loader", "path_helpers", "config_helpers"
         ],
         "core_functions": [
-            "get_ms_timestamp", "retry_fetch", "check_data_exists",
+            "get_ms_timestamp", "retry_fetch",
             "parse_timeframe", "load_ohlcv_csv", "detect_time_column",
             "get_project_root", "parse_universe_symbols"
         ],
