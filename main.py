@@ -12,20 +12,17 @@ sys.path.insert(0, str(BASE_DIR))
 
 from backtest.engine_high import run_high_level
 from backtest.engine_low import run_low_level
-from config.definitions import InstrumentConfig, InstrumentType
+from config.adapter import DataConfig
 from config.settings import (
-    build_backtest_config,
+    get_adapter,
     get_end_date,
-    get_instrument_type,
     get_start_date,
     get_venue,
     run_file_cleanup,
 )
 from scripts.fetch_instrument import update_instruments
-from strategy.base import DataDependency
 from utils.config_helpers import parse_universe_symbols
-from utils.data_retrival import batch_fetch_ohlcv
-from utils.data_retrival import batch_fetch_oi_and_funding
+from utils.data_retrival import batch_fetch_ohlcv, batch_fetch_oi_and_funding
 from utils.smart_data_manager import SmartDataManager
 from utils.validation import (
     OIDataValidator,
@@ -413,20 +410,9 @@ def execute_oi_funding_data_fetch(
 
 
 def get_default_venue_and_type():
-    """
-    获取默认的交易所和标的类型。
-    优先从 current_config.instrument 读取，如果为 None 则从全局设置读取。
-    """
-    current_config = build_backtest_config()
-    if current_config.instrument:
-        return (
-            current_config.instrument.venue_name,
-            current_config.instrument.base_currency,
-            current_config.instrument.type,
-        )
-    else:
-        # 多标的模式：从全局设置读取默认值
-        return get_venue(), "USDT", get_instrument_type()
+    """获取默认的交易所和标的类型"""
+    adapter = get_adapter()
+    return adapter.get_venue(), "USDT", "SWAP"
 
 
 def main():
@@ -506,12 +492,12 @@ def main():
         parser.print_help()
         return
 
-    # 获取当前配置
-    current_config = build_backtest_config()
+    # 获取配置适配器
+    adapter = get_adapter()
 
     # 处理 --erase 参数：清除 catalog 数据
     if args.command == "backtest" and args.erase:
-        strategy_name = current_config.strategy.name
+        strategy_name = adapter.get_strategy_name()
         catalog_path = BASE_DIR / "data" / "parquet" / strategy_name
         if catalog_path.exists():
             print(f"🗑️  Erasing existing catalog data: {catalog_path}")
@@ -526,14 +512,8 @@ def main():
     # 检测是否有关联的 Universe 文件
     universe_symbols = set()
     if args.command == "backtest":
-        params = current_config.strategy.params
-        u_name = None
-        if isinstance(params, dict):
-            u_name = params.get("universe_filename") or params.get("universe_filepath")
-        else:
-            u_name = getattr(params, "universe_filename", None) or getattr(
-                params, "universe_filepath", None
-            )
+        params = adapter.get_strategy_parameters()
+        u_name = params.get("universe_filename") or params.get("universe_filepath")
         if u_name:
             u_path = (
                 Path(u_name)
@@ -567,7 +547,8 @@ def main():
         warnings_list = []
 
         # 1.1 遍历 data_feeds 收集需要更新的行情数据
-        if current_config.data_feeds:
+        data_feeds = []  # 暂时为空，后续从配置生成
+        if data_feeds:
             with tqdm(
                 current_config.data_feeds,
                 desc="🔍 Checking data_feeds",
@@ -604,7 +585,7 @@ def main():
 
         # 收集已检查的符号，避免重复检查
         checked_symbols = set()
-        for feed in current_config.data_feeds:
+        for feed in data_feeds:
             try:
                 parts = feed.csv_file_name.split("/")
                 symbol_quote = parts[0]
@@ -621,7 +602,7 @@ def main():
         if universe_symbols:
             # 尝试从 main feed 获取参数，如果没有则使用默认值
             main_feed = next(
-                (f for f in current_config.data_feeds if f.label == "main"), None
+                (f for f in data_feeds if f.label == "main"), None
             )
 
             # 获取默认参数
