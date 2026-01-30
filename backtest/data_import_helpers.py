@@ -38,7 +38,6 @@ def check_parquet_coverage(
 
     # 简化逻辑：如果 Parquet 数据存在则返回 True
     return True, 100.0
-    return True, stats.get("coverage_percentage", 0.0)
 
 
 def handle_parquet_exists(
