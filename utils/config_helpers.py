@@ -16,7 +16,7 @@ import json
 from pathlib import Path
 from typing import Any, Dict, List, Set, Tuple, Union
 
-from config.definitions import InstrumentConfig, InstrumentType
+# Removed legacy imports
 
 
 class ConfigError(Exception):
@@ -209,7 +209,7 @@ def parse_universe_symbols(
     Examples
     --------
     >>> symbols = {"SOLUSDT:USDT", "BTCUSDT:USDT"}
-    >>> ids = parse_universe_symbols(symbols, "BINANCE", "USDT", InstrumentType.SWAP)
+    >>> ids = parse_universe_symbols(symbols, "BINANCE", "USDT", "SWAP")
     >>> print(ids)  # {"SOL-USDT-PERP.BINANCE", "BTC-USDT-PERP.BINANCE"}
     """
     instrument_ids = set()
@@ -250,8 +250,8 @@ def get_default_venue_and_type(
     config_instrument: Any = None,
     fallback_venue: str = "BINANCE",
     fallback_currency: str = "USDT",
-    fallback_type: InstrumentType = InstrumentType.SWAP
-) -> Tuple[str, str, InstrumentType]:
+    fallback_type: str = "SWAP"
+) -> Tuple[str, str, str]:
     """
     获取默认的交易所和标的类型
     
@@ -265,18 +265,18 @@ def get_default_venue_and_type(
         备用交易所名称，默认 "BINANCE"
     fallback_currency : str, optional
         备用基准货币，默认 "USDT"
-    fallback_type : InstrumentType, optional
+    fallback_type : str, optional
         备用标的类型，默认 SWAP
         
     Returns
     -------
-    Tuple[str, str, InstrumentType]
+    Tuple[str, str, str]
         (交易所名称, 基准货币, 标的类型)
         
     Examples
     --------
     >>> venue, currency, inst_type = get_default_venue_and_type()
-    >>> print(venue, currency, inst_type)  # BINANCE USDT InstrumentType.SWAP
+    >>> print(venue, currency, inst_type)  # BINANCE USDT SWAP
     """
     if config_instrument:
         return (
@@ -672,7 +672,7 @@ class ConfigManager:
         strategy_params: Union[Dict, Any],
         venue: str = "BINANCE",
         base_currency: str = "USDT",
-        inst_type: InstrumentType = InstrumentType.SWAP
+        inst_type: str = "SWAP"
     ) -> Set[str]:
         """
         解析策略配置中的 universe 并返回 instrument IDs
@@ -685,7 +685,7 @@ class ConfigManager:
             交易所名称
         base_currency : str, optional
             基准货币
-        inst_type : InstrumentType, optional
+        inst_type : str, optional
             标的类型
             
         Returns

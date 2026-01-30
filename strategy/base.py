@@ -105,42 +105,24 @@ class BaseStrategy(Strategy):
         self._manage_auto_stop_loss()
 
     def _manage_auto_stop_loss(self):
-        """
-        Monitors open positions and ensures a stop-loss order exists if configured.
-        Priority: If the strategy has already placed a stop order (e.g., ATR stop),
-        this managed SL will back off to avoid conflicts.
-        """
-        if (
-            not self.base_config.use_auto_sl
-            or self.base_config.stop_loss_pct is None
-            or self.base_config.stop_loss_pct <= 0
-        ):
+        """自动止损：为持仓补充缺失的止损单"""
+        if not self.base_config.use_auto_sl or not self.base_config.stop_loss_pct:
             return
 
         instrument = self.get_instrument()
         positions = self.cache.positions_open(instrument_id=instrument.id)
-
         if not positions:
             return
 
-        # Check for any existing stop orders for this instrument
-        open_orders = self.cache.orders_open(instrument_id=instrument.id)
-        has_stop = any(
-            order.order_type in (OrderType.STOP_MARKET, OrderType.STOP_LIMIT)
-            for order in open_orders
-        )
-
-        if has_stop:
+        # 如果已有止损单，跳过
+        if any(o.order_type in (OrderType.STOP_MARKET, OrderType.STOP_LIMIT)
+               for o in self.cache.orders_open(instrument_id=instrument.id)):
             return
 
-        for pos in positions:
-            self.log.info(
-                f"BaseStrategy: Auto-managing missing SL for position {str(pos.id)[:8]}"
-            )
+        sl_pct = Decimal(str(self.base_config.stop_loss_pct))
 
+        for pos in positions:
             entry_price = Decimal(str(pos.avg_px_open))
-            qty = pos.quantity
-            sl_pct = Decimal(str(self.base_config.stop_loss_pct))
 
             if pos.side == PositionSide.LONG:
                 stop_price = entry_price * (1 - sl_pct)
@@ -149,29 +131,19 @@ class BaseStrategy(Strategy):
                 stop_price = entry_price * (1 + sl_pct)
                 sl_side = OrderSide.BUY
 
-            # Round to instrument precision
             if instrument.price_precision:
                 stop_price = round(stop_price, instrument.price_precision)
 
-            try:
-                trigger_price = instrument.make_price(stop_price)
+            sl_order = self.order_factory.stop_market(
+                instrument_id=instrument.id,
+                order_side=sl_side,
+                quantity=pos.quantity,
+                trigger_price=instrument.make_price(stop_price),
+                reduce_only=False,
+                time_in_force=TimeInForce.GTC,
+            )
 
-                # Use reduce_only=False for better compatibility with HEDGING backtests.
-                sl_order = self.order_factory.stop_market(
-                    instrument_id=instrument.id,
-                    order_side=sl_side,
-                    quantity=qty,
-                    trigger_price=trigger_price,
-                    reduce_only=False,
-                    time_in_force=TimeInForce.GTC,
-                )
-
-                self.submit_order_safe(
-                    sl_order,
-                    reason=f"Auto-Managed SL ({self.base_config.stop_loss_pct:.1%})",
-                )
-            except Exception as e:
-                self.log.error(f"Failed to submit auto-managed SL: {e}")
+            self.submit_order_safe(sl_order, f"Auto SL {self.base_config.stop_loss_pct:.1%}")
 
     def on_position_closed(self, event: PositionClosed):
         """

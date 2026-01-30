@@ -538,60 +538,13 @@ def main():
         data_missing_count = 0
         warnings_list = []
 
-        # 1.1 遍历 data_feeds 收集需要更新的行情数据
-        data_feeds = []  # 暂时为空，后续从配置生成
-        if data_feeds:
-            with tqdm(
-                current_config.data_feeds,
-                desc="🔍 Checking data_feeds",
-                unit="feed",
-                ncols=80,
-                bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]",
-            ) as pbar:
-                for feed in pbar:
-                    try:
-                        parts = feed.csv_file_name.split("/")
-                        symbol_quote = parts[0]
-                        file_parts = parts[1].split("-")
-                        exchange = file_parts[0]
-                        timeframe = file_parts[2]
-
-                        pbar.set_postfix_str(symbol_quote, refresh=True)
-
-                        exists, warning = check_single_data_file_enhanced(
-                            symbol_quote, get_start_date(), get_end_date(), timeframe, exchange, BASE_DIR,
-                            check_parquet=True, strategy_name=current_config.strategy.name
-                        )
-                        if not exists:
-                            key = (exchange, timeframe, get_start_date(), get_end_date())
-                            tasks.setdefault(key, set()).add(symbol_quote)
-                            data_missing_count += 1
-                        else:
-                            data_exists_count += 1
-                            if warning:
-                                warnings_list.append(warning)
-                    except Exception as e:
-                        tqdm.write(
-                            f"⚠️ Failed to parse data feed config: {feed.label}, error: {e}"
-                        )
-
-        # 收集已检查的符号，避免重复检查
+        # 数据验证暂时禁用 - 配置系统重构中
+        data_exists_count = 0
+        data_missing_count = 0
         checked_symbols = set()
-        for feed in data_feeds:
-            try:
-                parts = feed.csv_file_name.split("/")
-                symbol_quote = parts[0]
-                checked_symbols.add(symbol_quote)
-            except Exception:
-                continue
 
-        # 打印收集到的警告
-        for warning in warnings_list:
-            print(warning)
-        warnings_list.clear()
-
-        # 1.2 如果存在 Universe，为其中的每个币种补充到任务列表 (使用 main feed 的参数)
-        if universe_symbols:
+        # 1.2 Universe 数据检查
+        if False and universe_symbols:  # 暂时禁用
             # 尝试从 main feed 获取参数，如果没有则使用默认值
             main_feed = next(
                 (f for f in data_feeds if f.label == "main"), None
@@ -667,10 +620,11 @@ def main():
             print("📈 Analyzing Universe Data Coverage...")
 
             try:
-                # 获取默认参数
                 venue, base_currency, inst_type = get_default_venue_and_type()
+                exchange = venue.lower()
+                timeframe = adapter.get_main_timeframe()
 
-                if main_feed:
+                if False:
                     try:
                         parts = main_feed.csv_file_name.split("/")
                         file_parts = parts[1].split("-")
