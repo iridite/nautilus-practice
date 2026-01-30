@@ -45,8 +45,6 @@ class TestEngineLowRewrite(unittest.TestCase):
             from backtest.engine_low import (
                 _load_custom_data_to_engine,
                 _load_data_for_feed,
-                _load_funding_data_from_files,
-                _load_oi_data_from_files,
                 _process_backtest_results,
                 run_low_level,
             )
