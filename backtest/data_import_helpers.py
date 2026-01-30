@@ -36,7 +36,9 @@ def check_parquet_coverage(
     except Exception:
         return False, 0.0
 
-    from utils.validation import check_parquet_data_coverage
+    # check_parquet_data_coverage 已从 validation 模块移除
+    # 直接返回 False 以触发数据导入
+    return False, 0.0
 
     symbol_str = str(bar_type.instrument_id).split("-")[0]
     _, _, stats = check_parquet_data_coverage(
