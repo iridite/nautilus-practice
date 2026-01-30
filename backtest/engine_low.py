@@ -88,7 +88,7 @@ def _load_data_for_feed(
     try:
         # 使用统一的数据加载器 (智能时间列检测 + 优化加载)
         df: DataFrame = load_ohlcv_csv(
-            file_path=csv_path,
+            csv_path=csv_path,
             start_date=cfg.start_date,
             end_date=cfg.end_date,
         )
