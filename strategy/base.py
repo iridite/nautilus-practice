@@ -365,15 +365,10 @@ class BaseStrategy(Strategy):
             return
 
         self.submit_order(order)
-        self._log_order_submission(order, reason)
 
-    def _log_order_submission(self, order: Order, reason: str):
-        """
-        Pretty-print order submission details.
-        """
+        # Log order submission
         side = "BUY" if order.side == OrderSide.BUY else "SELL"
         order_type = str(order.order_type)
-
         price_str = "Market"
         if hasattr(order, "trigger_price"):
             price_str = f"Trigger@{order.trigger_price}"

@@ -12,7 +12,8 @@ from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field, model_validator, validator
 
-from .definitions import InstrumentType, project_root
+# 项目根目录
+project_root: Path = Path(__file__).parent.parent.resolve()
 
 
 class TradingConfig(BaseModel):
@@ -32,12 +33,10 @@ class TradingConfig(BaseModel):
 
     @validator("instrument_type")
     def validate_instrument_type(cls, v):
-        try:
-            InstrumentType(v)
-        except ValueError:
-            valid_types = [t.value for t in InstrumentType]
+        valid_types = ["SPOT", "FUTURES", "SWAP", "OPTION"]
+        if v.upper() not in valid_types:
             raise ValueError(f"Instrument type must be one of {valid_types}")
-        return v
+        return v.upper()
 
     @validator("initial_balance")
     def validate_initial_balance(cls, v):

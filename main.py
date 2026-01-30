@@ -486,15 +486,6 @@ def main():
         "live", help="Run live trading (Not implemented yet)"
     )
 
-    args = parser.parse_args()
-
-    if not args.command:
-        parser.print_help()
-        return
-
-    # 获取配置适配器
-    adapter = get_adapter()
-
     # 处理 --erase 参数：清除 catalog 数据
     if args.command == "backtest" and args.erase:
         strategy_name = adapter.get_strategy_name()
@@ -511,6 +502,7 @@ def main():
 
     # 检测是否有关联的 Universe 文件
     universe_symbols = set()
+    adapter = get_adapter()
     if args.command == "backtest":
         params = adapter.get_strategy_parameters()
         u_name = params.get("universe_filename") or params.get("universe_filepath")
@@ -703,7 +695,7 @@ def main():
                     timeframe,
                     exchange,
                     BASE_DIR,
-                    current_config.strategy.name
+                    adapter.get_strategy_name()
                 )
 
                 # 显示分析结果 - 双列格式
