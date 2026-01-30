@@ -96,15 +96,6 @@ def _load_data_for_feed(
         if len(df) == 0:
             raise DataLoadError(f"No data available in range for {data_cfg.csv_file_name}", str(csv_path))
 
-        # 数据质量验证
-        expected_interval = DataValidator.parse_interval_from_bar_type(data_cfg.bar_type_str)
-        issues = DataValidator.validate_dataframe(df, file_path=csv_path, expected_interval_ms=expected_interval)
-        for issue in issues:
-            if issue.severity == "error":
-                raise DataLoadError(f"Data quality error: {issue.message}", str(csv_path))
-            elif issue.severity == "warning":
-                logger.warning(f"   {issue}")
-
         # 使用 Wrangler 转换并注入引擎
         wrangler = BarDataWrangler(feed_bar_type, inst)
         bars = wrangler.process(df)
