@@ -44,9 +44,9 @@ from backtest.strategy_loader import (
 )
 from core.models import BackTestConfig, DataConfig
 from utils import load_ohlcv_csv
-from utils.oi_funding_adapter import OIFundingDataLoader
 from utils.data_validator import DataValidator
 from utils.instrument_loader import load_instrument
+from utils.oi_funding_adapter import OIFundingDataLoader
 
 
 def _load_data_for_feed(
