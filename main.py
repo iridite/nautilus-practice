@@ -12,7 +12,7 @@ sys.path.insert(0, str(BASE_DIR))
 
 from backtest.engine_high import run_high_level
 from backtest.engine_low import run_low_level
-from config.adapter import DataConfig
+from config.models import DataConfig
 from config.settings import (
     get_adapter,
     get_end_date,

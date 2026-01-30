@@ -42,7 +42,7 @@ from backtest.strategy_loader import (
     load_strategy_class,
     load_strategy_config_class,
 )
-from config.adapter import DataConfig
+from config.models import BackTestConfig, DataConfig
 from utils import load_ohlcv_csv
 from utils.oi_funding_adapter import OIFundingDataLoader
 from utils.data_validator import DataValidator

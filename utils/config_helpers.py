@@ -16,7 +16,14 @@ import json
 from pathlib import Path
 from typing import Any, Dict, List, Set, Tuple, Union
 
-# Removed legacy imports
+from config.models import (
+    BackTestConfig,
+    DataConfig,
+    InstrumentConfig,
+    InstrumentType,
+    LegacyStrategyConfig,
+    project_root,
+)
 
 
 class ConfigError(Exception):

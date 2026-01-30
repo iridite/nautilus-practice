@@ -96,14 +96,6 @@ class BacktestConfig(BaseModel):
             if start_dt >= end_dt:
                 raise ValueError("start_date must be before end_date")
 
-            # OI数据限制：Binance仅提供最近30天数据
-            date_range = (end_dt - start_dt).days
-            if date_range > 30:
-                raise ValueError(
-                    f"Date range is {date_range} days. "
-                    "Binance OI data is limited to 30 days range"
-                )
-
         return self
 
 

@@ -37,7 +37,7 @@ from backtest.strategy_loader import (
     filter_strategy_params,
     load_strategy_config_class,
 )
-from config.definitions import BackTestConfig
+from config.models import BackTestConfig
 from utils.filename_parser import FilenameParser
 from utils.instrument_loader import load_instrument
 from utils.oi_funding_adapter import OIFundingDataLoader

@@ -204,7 +204,7 @@ class TestEngineImportIntegration(unittest.TestCase):
                 InstrumentLoadError,
             )
             from backtest.strategy_loader import filter_strategy_params
-            from config.definitions import BackTestConfig, DataConfig
+            from config.models import BackTestConfig, DataConfig
             from utils.instrument_loader import load_instrument
 
             self.assertTrue(True, "所有必需导入都成功")

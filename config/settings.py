@@ -135,6 +135,11 @@ def get_adapter() -> ConfigAdapter:
     return _adapter
 
 
+def build_backtest_config():
+    """构建回测配置"""
+    return _adapter.build_backtest_config()
+
+
 def run_file_cleanup() -> int:
     """执行文件清理"""
     from pathlib import Path
@@ -189,5 +194,10 @@ __all__ = [
     "print_config_summary",
     "get_adapter",
     "run_file_cleanup",
+    "build_backtest_config",
+    "BackTestConfig",
     "DataConfig",
+    "InstrumentConfig",
+    "InstrumentType",
+    "LegacyStrategyConfig",
 ]
