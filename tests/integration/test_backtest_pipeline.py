@@ -8,7 +8,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-from config import build_backtest_config
+from core import build_backtest_config
 
 
 class TestBacktestPipeline(unittest.TestCase):

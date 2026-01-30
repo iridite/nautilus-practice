@@ -12,7 +12,7 @@ import ccxt
 import pandas as pd
 from tqdm import tqdm
 
-from config.adapter import DataConfig
+from core.adapter import DataConfig
 from utils.network import retry_fetch
 from utils.symbol_parser import parse_timeframe, resolve_symbol_and_type
 from utils.time_helpers import get_ms_timestamp

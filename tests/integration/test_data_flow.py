@@ -8,7 +8,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-from config import build_backtest_config, get_start_date, get_end_date, get_venue
+from core import build_backtest_config, get_start_date, get_end_date, get_venue
 from utils.validation import check_single_data_file
 
 

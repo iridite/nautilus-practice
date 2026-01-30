@@ -18,7 +18,7 @@ def test_config_loading():
     print("🧪 Testing configuration loading...")
     
     try:
-        from config.loader import ConfigLoader, load_config
+        from core.loader import ConfigLoader, load_config
         
         # 测试配置加载器
         loader = ConfigLoader()
@@ -56,7 +56,7 @@ def test_config_manager():
     print("🧪 Testing configuration manager...")
     
     try:
-        from config.manager import ConfigManager, get_config_manager
+        from core.manager import ConfigManager, get_config_manager
         
         # 测试配置管理器创建
         print("  📁 Testing config manager creation...")
@@ -97,7 +97,7 @@ def test_backward_compatibility():
     try:
         # 测试导入现有settings模块
         print("  📁 Testing settings module import...")
-        import config.settings as settings
+        import core.settings as settings
         
         # 测试全局变量访问
         print("  📁 Testing global variables...")
@@ -140,7 +140,7 @@ def test_config_validation():
     print("🧪 Testing configuration validation...")
     
     try:
-        from config.loader import ConfigLoader
+        from core.loader import ConfigLoader
         
         loader = ConfigLoader()
         
@@ -174,7 +174,7 @@ def test_config_switching():
     print("🧪 Testing configuration switching...")
     
     try:
-        import config.settings as settings
+        import core.settings as settings
         
         # 记录原始配置
         original_env = settings._config_manager.active_config.environment

@@ -16,7 +16,7 @@ import json
 from pathlib import Path
 from typing import Any, Dict, List, Set, Tuple, Union
 
-from config.models import (
+from core.models import (
     BackTestConfig,
     DataConfig,
     InstrumentConfig,
@@ -294,7 +294,7 @@ def get_default_venue_and_type(
     else:
         # 多标的模式：使用fallback值或从全局设置读取
         try:
-            from config.settings import VENUE, INSTRUMENT_TYPE
+            from core.settings import VENUE, INSTRUMENT_TYPE
             return VENUE, fallback_currency, INSTRUMENT_TYPE
         except ImportError:
             return fallback_venue, fallback_currency, fallback_type

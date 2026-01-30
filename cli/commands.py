@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from config.settings import get_end_date, get_start_date
+from core.settings import get_end_date, get_start_date
 from data.oi_funding_manager import execute_oi_funding_data_fetch
 from scripts.fetch_instrument import update_instruments
 from strategy.dependency_checker import check_strategy_data_dependencies
@@ -61,7 +61,7 @@ def update_instrument_definitions(adapter, base_dir: Path, universe_symbols: set
                 instrument_ids.add(feed.instrument_id)
 
         if universe_symbols:
-            from config.models import InstrumentType
+            from core.models import InstrumentType
             venue = adapter.get_venue()
             inst_type = InstrumentType(adapter.env_config.trading.instrument_type)
             universe_inst_ids = parse_universe_symbols(universe_symbols, venue, "USDT", inst_type)
@@ -78,7 +78,7 @@ def run_backtest(args, adapter, base_dir: Path):
     """执行回测"""
     from backtest.engine_high import run_high_level
     from backtest.engine_low import run_low_level
-    from config.settings import run_file_cleanup
+    from core.settings import run_file_cleanup
 
     cfg = adapter.build_backtest_config()
 

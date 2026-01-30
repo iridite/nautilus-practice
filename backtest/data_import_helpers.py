@@ -12,7 +12,7 @@ from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.persistence.catalog import ParquetDataCatalog
 
 from backtest.exceptions import DataLoadError
-from config.models import BackTestConfig
+from core.models import BackTestConfig
 from utils.filename_parser import FilenameParser
 
 

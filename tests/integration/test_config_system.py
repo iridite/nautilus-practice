@@ -7,7 +7,7 @@
 import unittest
 from pathlib import Path
 
-from config import (
+from core import (
     BackTestConfig,
     ConfigAdapter,
     build_backtest_config,

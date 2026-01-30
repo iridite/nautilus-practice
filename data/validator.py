@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from config.settings import get_end_date, get_start_date, get_venue
+from core.settings import get_end_date, get_start_date, get_venue
 from utils.validation import check_single_data_file
 
 

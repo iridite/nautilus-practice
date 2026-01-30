@@ -18,7 +18,7 @@ sys.path.insert(0, str(project_root))
 def cmd_validate(args):
     """验证配置文件"""
     try:
-        import config.settings as settings
+        import core.settings as settings
         
         print("🔍 验证配置文件...")
         report = settings.validate_config()
@@ -49,7 +49,7 @@ def cmd_validate(args):
 def cmd_list(args):
     """列出可用的环境和策略"""
     try:
-        import config.settings as settings
+        import core.settings as settings
         
         print("📋 可用配置:")
         print("-" * 30)
@@ -80,7 +80,7 @@ def cmd_list(args):
 def cmd_show(args):
     """显示当前配置"""
     try:
-        import config.settings as settings
+        import core.settings as settings
         
         print("📋 当前配置摘要:")
         print("=" * 40)
@@ -103,7 +103,7 @@ def cmd_show(args):
 def cmd_switch(args):
     """切换环境或策略"""
     try:
-        import config.settings as settings
+        import core.settings as settings
         
         if args.environment:
             print(f"🔄 切换到环境: {args.environment}")
@@ -174,7 +174,7 @@ def cmd_test(args):
 def cmd_migrate(args):
     """迁移现有配置"""
     try:
-        from config.migration import migrate_settings
+        from core.migration import migrate_settings
         
         print("🚀 开始配置迁移...")
         
@@ -212,7 +212,7 @@ def cmd_migrate(args):
 def cmd_reload(args):
     """重新加载配置"""
     try:
-        import config.settings as settings
+        import core.settings as settings
         
         print("🔄 重新加载配置...")
         settings.reload_config()
@@ -232,7 +232,7 @@ def cmd_reload(args):
 def cmd_init(args):
     """初始化配置系统"""
     try:
-        from config.schemas import ConfigPaths
+        from core.schemas import ConfigPaths
         
         print("🚀 初始化配置系统...")
         
