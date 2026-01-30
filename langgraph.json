@@ -1,8 +1,0 @@
-{
-  "dependencies": ["."],
-  "graphs": {
-    "optimization_agent": "optimization:graph"
-  },
-  "env": ".env",
-  "python_version": "3.12"
-}
