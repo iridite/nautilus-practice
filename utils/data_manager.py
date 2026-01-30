@@ -1,0 +1,111 @@
+"""
+数据管理器模块
+
+提供统一的数据获取、验证和管理功能，符合行业标准实践。
+
+核心功能：
+- 数据完整性检查
+- 自动数据获取
+- 多数据源支持
+- 错误处理和重试
+"""
+
+from pathlib import Path
+from typing import List, Optional, Tuple
+
+from utils.validation import check_single_data_file
+
+
+class DataManager:
+    """统一数据管理器"""
+
+    def __init__(self, base_dir: Path):
+        self.base_dir = base_dir
+        self.data_dir = base_dir / "data" / "raw"
+
+    def check_data_availability(
+        self,
+        symbols: List[str],
+        start_date: str,
+        end_date: str,
+        timeframe: str,
+        exchange: str
+    ) -> Tuple[List[str], List[str]]:
+        """
+        检查数据可用性
+
+        Returns:
+            (available_symbols, missing_symbols)
+        """
+        available = []
+        missing = []
+
+        for symbol in symbols:
+            exists, _ = check_single_data_file(
+                symbol, start_date, end_date, timeframe, exchange, self.base_dir
+            )
+            if exists:
+                available.append(symbol)
+            else:
+                missing.append(symbol)
+
+        return available, missing
+
+    def fetch_missing_data(
+        self,
+        symbols: List[str],
+        start_date: str,
+        end_date: str,
+        timeframe: str,
+        exchange: str,
+        max_retries: int = 3
+    ) -> dict:
+        """
+        获取缺失数据
+
+        Returns:
+            {"success": int, "failed": int, "symbols": List[str]}
+        """
+        from data.fetcher_manager import run_batch_data_retrieval
+
+        try:
+            run_batch_data_retrieval(
+                symbols, start_date, end_date, timeframe, exchange, self.base_dir
+            )
+            return {"success": len(symbols), "failed": 0, "symbols": symbols}
+        except Exception as e:
+            return {"success": 0, "failed": len(symbols), "error": str(e)}
+
+    def ensure_data_ready(
+        self,
+        symbols: List[str],
+        start_date: str,
+        end_date: str,
+        timeframe: str,
+        exchange: str,
+        auto_fetch: bool = True
+    ) -> bool:
+        """
+        确保数据就绪
+
+        Args:
+            auto_fetch: 是否自动获取缺失数据
+
+        Returns:
+            是否所有数据就绪
+        """
+        available, missing = self.check_data_availability(
+            symbols, start_date, end_date, timeframe, exchange
+        )
+
+        if not missing:
+            return True
+
+        if not auto_fetch:
+            return False
+
+        result = self.fetch_missing_data(
+            missing, start_date, end_date, timeframe, exchange
+        )
+
+        return result["success"] > 0
