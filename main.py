@@ -12,7 +12,7 @@ from cli.commands import (
     run_backtest,
     update_instrument_definitions,
 )
-from core.settings import get_adapter
+from core.adapter import get_adapter
 from utils.data_management import prepare_data_feeds
 
 

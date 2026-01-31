@@ -8,7 +8,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-from core import build_backtest_config
+from core import get_adapter
 
 
 class TestBacktestPipeline(unittest.TestCase):
@@ -17,7 +17,8 @@ class TestBacktestPipeline(unittest.TestCase):
     def setUp(self):
         """测试前准备"""
         self.base_dir = Path(__file__).parent.parent.parent
-        self.cfg = build_backtest_config()
+        self.adapter = get_adapter()
+        self.cfg = self.adapter.build_backtest_config()
 
     def test_config_completeness(self):
         """测试配置完整性"""

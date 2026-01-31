@@ -8,7 +8,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-from core import build_backtest_config, get_adapter
+from core import get_adapter
 from utils.validation import check_single_data_file
 
 
@@ -19,7 +19,7 @@ class TestDataFlowIntegration(unittest.TestCase):
         """测试前准备"""
         self.base_dir = Path(__file__).parent.parent.parent
         self.adapter = get_adapter()
-        self.cfg = build_backtest_config()
+        self.cfg = self.adapter.build_backtest_config()
 
     def test_config_to_data_feeds(self):
         """测试配置到数据流的转换"""

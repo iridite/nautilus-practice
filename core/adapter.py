@@ -15,16 +15,18 @@ from nautilus_trader.model.enums import BarAggregation
 
 from .exceptions import ConfigValidationError
 from .loader import ConfigLoader
-from .models import (
-    BackTestConfig,
+from .schemas import (
+    ActiveConfig,
+    BacktestConfig,
     DataConfig,
+    EnvironmentConfig,
     InstrumentConfig,
     InstrumentType,
     LegacyStrategyConfig,
     LogConfig,
+    StrategyConfig,
     project_root,
 )
-from .schemas import ActiveConfig, EnvironmentConfig, StrategyConfig
 
 
 class ConfigAdapter:
@@ -39,7 +41,7 @@ class ConfigAdapter:
         self.strategy_config: StrategyConfig = self.loader.load_strategy_config(
             self.active_config.strategy
         )
-        self._backtest_config_cache: BackTestConfig | None = None
+        self._backtest_config_cache: BacktestConfig | None = None
 
     def get_venue(self) -> str:
         return self.env_config.trading.venue
@@ -119,7 +121,7 @@ class ConfigAdapter:
             return ["main"]
         return timeframes
 
-    def build_backtest_config(self) -> BackTestConfig:
+    def build_backtest_config(self) -> BacktestConfig:
         """构建回测配置"""
         if self._backtest_config_cache is not None:
             return self._backtest_config_cache
@@ -269,7 +271,7 @@ class ConfigAdapter:
             log_components_only=self.env_config.logging.components_only,
         )
 
-        self._backtest_config_cache = BackTestConfig(
+        self._backtest_config_cache = BacktestConfig(
             instrument=primary_instrument,
             instruments=final_instruments,
             data_feeds=final_data_feeds,

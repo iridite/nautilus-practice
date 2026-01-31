@@ -8,12 +8,9 @@ import unittest
 from pathlib import Path
 
 from core import (
-    BackTestConfig,
+    BacktestConfig,
     ConfigAdapter,
-    build_backtest_config,
     get_adapter,
-    get_available_environments,
-    get_available_strategies,
 )
 
 
@@ -47,9 +44,9 @@ class TestConfigSystemIntegration(unittest.TestCase):
 
     def test_build_backtest_config(self):
         """测试回测配置构建"""
-        cfg = build_backtest_config()
+        cfg = self.adapter.build_backtest_config()
 
-        self.assertIsInstance(cfg, BackTestConfig)
+        self.assertIsInstance(cfg, BacktestConfig)
         self.assertIsNotNone(cfg.strategy)
         self.assertIsNotNone(cfg.instrument)
         self.assertGreater(len(cfg.instruments), 0)
@@ -60,12 +57,12 @@ class TestConfigSystemIntegration(unittest.TestCase):
 
     def test_config_list_functions(self):
         """测试配置列表函数"""
-        envs = get_available_environments()
+        envs = self.adapter.loader.paths.list_environments()
         self.assertIsInstance(envs, list)
         self.assertGreater(len(envs), 0)
         self.assertIn("prod", envs)
 
-        strategies = get_available_strategies()
+        strategies = self.adapter.loader.paths.list_strategies()
         self.assertIsInstance(strategies, list)
         self.assertGreater(len(strategies), 0)
 
@@ -80,7 +77,7 @@ class TestConfigSystemIntegration(unittest.TestCase):
 
     def test_backtest_config_consistency(self):
         """测试回测配置一致性"""
-        cfg = build_backtest_config()
+        cfg = self.adapter.build_backtest_config()
 
         self.assertEqual(cfg.start_date, self.adapter.get_start_date())
         self.assertEqual(cfg.end_date, self.adapter.get_end_date())
@@ -90,7 +87,7 @@ class TestConfigSystemIntegration(unittest.TestCase):
 
     def test_data_feeds_instrument_binding(self):
         """测试数据流与标的绑定"""
-        cfg = build_backtest_config()
+        cfg = self.adapter.build_backtest_config()
 
         instrument_ids = {inst.instrument_id for inst in cfg.instruments}
 

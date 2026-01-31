@@ -32,7 +32,7 @@ from backtest.exceptions import (
     DataLoadError,
     InstrumentLoadError,
 )
-from core.models import BackTestConfig
+from core.schemas import BacktestConfig
 from strategy.loader import (
     filter_strategy_params,
     load_strategy_config_class,
@@ -42,7 +42,7 @@ from utils.instrument_loader import load_instrument
 from utils.oi_funding_adapter import OIFundingDataLoader
 
 
-def _load_instruments(cfg: BackTestConfig) -> Dict[str, Instrument]:
+def _load_instruments(cfg: BacktestConfig) -> Dict[str, Instrument]:
     """
     加载交易标的信息
 
@@ -80,7 +80,7 @@ def _load_instruments(cfg: BackTestConfig) -> Dict[str, Instrument]:
 def _check_parquet_coverage(
     catalog: ParquetDataCatalog,
     bar_type: BarType,
-    cfg: BackTestConfig,
+    cfg: BacktestConfig,
 ) -> Tuple[bool, float]:
     """
     检查Parquet数据覆盖率
@@ -107,7 +107,7 @@ def _handle_parquet_exists(
     inst: Instrument,
     bar_type: BarType,
     data_cfg,
-    cfg: BackTestConfig,
+    cfg: BacktestConfig,
     feed_idx: int,
     total_feeds: int,
 ) -> str:
@@ -166,7 +166,7 @@ def _handle_parquet_missing(
     inst: Instrument,
     bar_type: BarType,
     data_cfg,
-    cfg: BackTestConfig,
+    cfg: BacktestConfig,
     feed_idx: int,
     total_feeds: int,
 ) -> str:
@@ -208,7 +208,7 @@ def _handle_parquet_missing(
         )
 
 
-def _auto_download_data(data_cfg, cfg: BackTestConfig) -> bool:
+def _auto_download_data(data_cfg, cfg: BacktestConfig) -> bool:
     """
     自动下载缺失的数据文件
 
@@ -242,7 +242,7 @@ def _auto_download_data(data_cfg, cfg: BackTestConfig) -> bool:
 
 
 def _import_data_to_catalog(
-    cfg: BackTestConfig,
+    cfg: BacktestConfig,
     loaded_instruments: Dict[str, Instrument],
     catalog_path: Path,
 ) -> Tuple[Dict[str, Dict], Dict[str, str], Dict]:
@@ -307,7 +307,7 @@ def _import_data_to_catalog(
     return data_config_by_inst, global_feeds, feeds_by_inst
 
 
-def _auto_download_missing_data(data_cfg, backtest_cfg: BackTestConfig) -> bool:
+def _auto_download_missing_data(data_cfg, backtest_cfg: BacktestConfig) -> bool:
     """自动下载缺失的数据文件"""
     return _auto_download_data(data_cfg, backtest_cfg)
 
@@ -437,7 +437,7 @@ def _verify_data_consistency(
 
 
 def _create_strategy_configs(
-    cfg: BackTestConfig,
+    cfg: BacktestConfig,
     loaded_instruments: Dict[str, Instrument],
     feeds_by_inst: Dict,
     global_feeds: Dict[str, str],
@@ -490,7 +490,7 @@ def _create_strategy_configs(
     return strategies
 
 
-def run_high_level(cfg: BackTestConfig, base_dir: Path):
+def run_high_level(cfg: BacktestConfig, base_dir: Path):
     """
     运行高级引擎回测 (High-level Engine/BacktestNode)
 
@@ -551,7 +551,7 @@ def run_high_level(cfg: BackTestConfig, base_dir: Path):
 
 
 def _run_backtest_with_custom_data(
-    cfg: BackTestConfig,
+    cfg: BacktestConfig,
     base_dir: Path,
     strategies: List[ImportableStrategyConfig],
     backtest_data_configs: List[BacktestDataConfig],
@@ -647,7 +647,7 @@ def _check_if_needs_custom_data(strategies: List[ImportableStrategyConfig]) -> b
 
 
 def _load_custom_data_to_engine(
-    cfg: BackTestConfig,
+    cfg: BacktestConfig,
     base_dir: Path,
     node: BacktestNode,
     run_config: BacktestRunConfig,
@@ -733,7 +733,7 @@ def _load_custom_data_to_engine(
 
 
 def _process_backtest_results(
-    cfg: BackTestConfig, base_dir: Path, results: List[BacktestResult]
+    cfg: BacktestConfig, base_dir: Path, results: List[BacktestResult]
 ):
     """处理回测结果"""
     # 收集策略统计数据

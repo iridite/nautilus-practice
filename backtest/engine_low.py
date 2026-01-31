@@ -37,7 +37,7 @@ from backtest.exceptions import (
     InstrumentLoadError,
     ValidationError,
 )
-from core.models import BackTestConfig, DataConfig
+from core.schemas import BacktestConfig, DataConfig
 from strategy.loader import (
     filter_strategy_params,
     load_strategy_class,
@@ -51,7 +51,7 @@ from utils.oi_funding_adapter import OIFundingDataLoader
 def _load_data_for_feed(
     engine: BacktestEngine,
     base_dir: Path,
-    cfg: BackTestConfig,
+    cfg: BacktestConfig,
     data_cfg: DataConfig,
     loaded_instruments: Dict[str, Instrument],
 ) -> Optional[BarType]:
@@ -110,7 +110,7 @@ def _load_data_for_feed(
 
 
 def _load_custom_data_to_engine(
-    cfg: BackTestConfig,
+    cfg: BacktestConfig,
     base_dir: Path,
     engine: BacktestEngine,
     loaded_instruments: Dict[str, Instrument],
@@ -198,7 +198,7 @@ def _load_custom_data_to_engine(
 
 
 def _process_backtest_results(
-    cfg: BackTestConfig,
+    cfg: BacktestConfig,
     base_dir: Path,
     engine: BacktestEngine,
 ) -> None:
@@ -244,7 +244,7 @@ def _process_backtest_results(
         logger.warning(f"⚠️ Error saving results: {e}")
 
 
-def run_low_level(cfg: BackTestConfig, base_dir: Path):
+def run_low_level(cfg: BacktestConfig, base_dir: Path):
     """
     运行低级引擎回测 (Low-level Engine)
 

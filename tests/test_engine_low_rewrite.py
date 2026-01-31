@@ -201,7 +201,7 @@ class TestEngineImportIntegration(unittest.TestCase):
                 DataLoadError,
                 InstrumentLoadError,
             )
-            from core.models import BackTestConfig, DataConfig
+            from core.schemas import BacktestConfig, DataConfig
             from strategy.loader import filter_strategy_params
             from utils.instrument_loader import load_instrument
 
