@@ -194,9 +194,76 @@ class ConfigAdapter:
 
         return feeds
 
+    def _restore_instrument_id(self, symbol: str) -> str:
+        """从简化标的名称还原完整 instrument_id"""
+        venue = self.get_venue()
+        inst_type = self.env_config.trading.instrument_type
+
+        # 判断是现货还是永续
+        if symbol.endswith("USDT"):
+            # ETHUSDT -> 永续合约
+            if inst_type == "SWAP":
+                return f"{symbol}-PERP.{venue}"
+            elif inst_type == "SPOT":
+                return f"{symbol}.{venue}"
+        else:
+            # ETH -> 现货
+            return f"{symbol}USDT.{venue}"
+
+        return f"{symbol}-PERP.{venue}"
+
+    def _restore_bar_type(self, symbol: str, timeframe: str, price_type: str = "LAST", origination: str = "EXTERNAL") -> str:
+        """从简化字段还原完整 bar_type"""
+        instrument_id = self._restore_instrument_id(symbol)
+
+        # 转换 timeframe 格式: "1d" -> "1-DAY"
+        unit = timeframe[-1].lower()
+        period = timeframe[:-1] if len(timeframe) > 1 else "1"
+
+        unit_map = {
+            "m": "MINUTE",
+            "h": "HOUR",
+            "d": "DAY"
+        }
+
+        bar_unit = unit_map.get(unit, "DAY")
+        return f"{instrument_id}-{period}-{bar_unit}-{price_type.upper()}-{origination.upper()}"
+
     def _build_strategy_params(self) -> Any:
         """构建策略参数"""
         params_dict = deepcopy(self.strategy_config.parameters)
+
+        # 配置还原：从简化字段生成完整字段
+        if "symbol" in params_dict and not params_dict.get("instrument_id"):
+            params_dict["instrument_id"] = self._restore_instrument_id(params_dict["symbol"])
+
+        if "symbol" in params_dict and "timeframe" in params_dict and not params_dict.get("bar_type"):
+            params_dict["bar_type"] = self._restore_bar_type(
+                params_dict["symbol"],
+                params_dict["timeframe"],
+                params_dict.get("price_type", "LAST"),
+                params_dict.get("origination", "EXTERNAL")
+            )
+
+        # 还原 btc_symbol -> btc_instrument_id
+        if "btc_symbol" in params_dict and not params_dict.get("btc_instrument_id"):
+            params_dict["btc_instrument_id"] = self._restore_instrument_id(params_dict["btc_symbol"])
+
+        # 还原 symbol_a/symbol_b -> instrument_a_id/instrument_b_id (for kalman_pairs)
+        if "symbol_a" in params_dict and not params_dict.get("instrument_a_id"):
+            params_dict["instrument_a_id"] = self._restore_instrument_id(params_dict["symbol_a"])
+
+        if "symbol_b" in params_dict and not params_dict.get("instrument_b_id"):
+            params_dict["instrument_b_id"] = self._restore_instrument_id(params_dict["symbol_b"])
+
+        # 还原 bar_type for kalman_pairs (使用 symbol_a 作为主标的)
+        if "symbol_a" in params_dict and "timeframe" in params_dict and not params_dict.get("bar_type"):
+            params_dict["bar_type"] = self._restore_bar_type(
+                params_dict["symbol_a"],
+                params_dict["timeframe"],
+                params_dict.get("price_type", "LAST"),
+                params_dict.get("origination", "EXTERNAL")
+            )
 
         if self.active_config.overrides:
             strategy_overrides = self.active_config.overrides.get("strategy", {})

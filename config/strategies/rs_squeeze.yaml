@@ -7,6 +7,11 @@ config_class: "RSSqueezeConfig"
 
 # 策略参数
 parameters:
+  # 简化配置字段
+  timeframe: "" # 由系统自动填充
+  price_type: "LAST"
+  origination: "EXTERNAL"
+
   # Universe配置 - 多标的模式
   universe_filename: "universe_50.json"
 

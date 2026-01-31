@@ -7,9 +7,12 @@ config_class: "DKAlphaTrendConfig"
 
 # 策略参数
 parameters:
-  instrument_id: "ETHUSDT-PERP.BINANCE"
-  bar_type: "ETHUSDT-PERP.BINANCE-1-DAY-LAST-EXTERNAL"
-  btc_instrument_id: "BTCUSDT-PERP.BINANCE"
+  # 简化配置字段
+  symbol: "ETHUSDT"
+  timeframe: "1d"
+  price_type: "LAST"
+  origination: "EXTERNAL"
+  btc_symbol: "BTCUSDT"
 
   # 时间框架依赖
   timeframes: ["main"]

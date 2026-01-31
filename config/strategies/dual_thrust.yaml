@@ -6,8 +6,11 @@ config_class: "DualThrustConfig"
 
 # 策略参数
 parameters:
-  instrument_id: "BTCUSDT-PERP.BINANCE"
-  bar_type: "BTCUSDT-PERP.BINANCE-1-HOUR-LAST-EXTERNAL"
+  # 简化配置字段
+  symbol: "BTCUSDT"
+  timeframe: "1h"
+  price_type: "LAST"
+  origination: "EXTERNAL"
 
   # 时间框架依赖：只需要主时间框架
   timeframes: ["main"]

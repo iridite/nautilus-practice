@@ -20,7 +20,15 @@ class BaseStrategyConfig(StrategyConfig):  # pyright: ignore[reportGeneralTypeIs
 
     oms_type: str = "NETTING"
 
-    instrument_id: str = ""
+    # 简化配置字段（推荐使用）
+    symbol: str = ""  # 简化标的名称，如 "ETHUSDT"（永续）或 "ETH"（现货）
+    timeframe: str = ""  # 时间框架，如 "1d", "1h", "15m"
+    price_type: str = "LAST"  # 价格类型：LAST, MID, BID, ASK
+    origination: str = "EXTERNAL"  # 数据来源：EXTERNAL, INTERNAL
+
+    # 完整配置字段（向后兼容，自动从简化字段生成）
+    instrument_id: str = ""  # 完整标的ID，如 "ETHUSDT-PERP.BINANCE"
+    bar_type: str = ""  # 完整bar类型，如 "ETHUSDT-PERP.BINANCE-1-DAY-LAST-EXTERNAL"
 
     # 数据依赖列表：策略所需的数据类型，例如 ["ohlcv", "oi", "funding"]
     data_types: List[str] = []

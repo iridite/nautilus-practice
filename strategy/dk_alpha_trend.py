@@ -18,9 +18,17 @@ from strategy.core.base import BaseStrategy, BaseStrategyConfig
 class DKAlphaTrendConfig(BaseStrategyConfig):
     """DK_Alpha_Trend 策略配置"""
 
+    # 简化配置字段（推荐使用）
+    symbol: str = ""
+    timeframe: str = ""
+    price_type: str = "LAST"
+    origination: str = "EXTERNAL"
+    btc_symbol: str = "BTCUSDT"
+
+    # 完整配置字段（向后兼容，自动从简化字段生成）
     instrument_id: str = ""
     bar_type: str = ""
-    btc_instrument_id: str = "BTCUSDT-PERP.BINANCE"
+    btc_instrument_id: str = ""
 
     # 指标参数
     ema_period: int = 20
