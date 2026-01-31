@@ -175,6 +175,41 @@ class MyStrategy(BaseStrategy):
 - Data dependency declaration (`data_types` list)
 - Timeframe dependency declaration (`timeframes` list)
 
+### NautilusTrader Framework Constraints (2026-01-31)
+
+**Critical: `Actor.config` is Read-Only**
+
+NautilusTrader's `Strategy` class inherits from `Actor` (Rust implementation via pyo3 bindings). The `config` attribute is **read-only** and cannot be reassigned in `__init__`.
+
+**❌ Incorrect Pattern** (causes `AttributeError`):
+```python
+class MyStrategy(BaseStrategy):
+    def __init__(self, config: MyStrategyConfig):
+        super().__init__(config)
+        self.config = config  # ❌ ERROR: attribute is not writable
+```
+
+**✅ Correct Pattern**:
+```python
+class MyStrategy(BaseStrategy):
+    def __init__(self, config: MyStrategyConfig):
+        super().__init__(config)
+        # ✅ self.config is already set by parent class
+        # Access config directly: self.config.lookback_period
+        self.lookback_period = config.lookback_period
+```
+
+**Why This Happens**:
+- `Actor` class is implemented in Rust with pyo3 bindings
+- `config` attribute has strict mutability control at the Rust level
+- Framework design enforces configuration immutability after initialization
+- `super().__init__(config)` already sets `self.config` correctly
+
+**Best Practice**:
+- Never reassign `self.config` in strategy `__init__`
+- Access configuration via `self.config.parameter_name` or `config.parameter_name`
+- Reference existing strategies (`dual_thrust.py`, `kalman_pairs.py`) for correct patterns
+
 ### Data Dependency Declaration Mechanism
 
 Strategies declare required data types and timeframes through simple lists:
