@@ -121,126 +121,83 @@ class ConfigAdapter:
             return ["main"]
         return timeframes
 
-    def build_backtest_config(self) -> BacktestConfig:
-        """构建回测配置"""
-        if self._backtest_config_cache is not None:
-            return self._backtest_config_cache
-
-        # 数据限制检查（严格模式）
-        # 注意：仅对声明需要 OI 数据的策略进行检查
-        # 测试环境可通过环境变量 SKIP_DATA_LIMIT_CHECK=1 跳过检查
-        import os
-        if os.environ.get('SKIP_DATA_LIMIT_CHECK') != '1':
-            # 检查策略是否声明需要 OI 数据
-            data_types = self.strategy_config.parameters.get('data_types', [])
-            if 'oi' in data_types:
-                from utils.data_management.data_limits import check_data_availability
-
-                is_available, warning = check_data_availability(
-                    self.get_start_date(),
-                    self.get_end_date(),
-                    self.get_venue(),
-                    "oi"
-                )
-
-                if not is_available and warning:
-                    raise ConfigValidationError(
-                        f"数据范围超出交易所限制\n\n{warning}\n\n"
-                        f"请修改配置文件中的日期范围或切换交易所。"
-                    )
-
-        final_instruments = []
-        final_data_feeds = []
-
-        # 获取策略声明的时间框架需求
-        required_timeframes = self.get_required_timeframes()
-
+    def _load_universe_symbols(self) -> set[str] | None:
+        """加载 universe 符号集合"""
         params = self.strategy_config.parameters
         universe_file = params.get("universe_filename") or params.get("universe_filepath")
 
-        if universe_file:
-            u_path = Path(universe_file)
-            if not u_path.is_absolute():
-                u_path = project_root / "data" / u_path.name
+        if not universe_file:
+            return None
 
-            if u_path.exists():
-                with open(u_path, "r") as f:
-                    u_data = json.load(f)
-                    universe_symbols = set()
-                    for month_list in u_data.values():
-                        universe_symbols.update(month_list)
+        u_path = Path(universe_file)
+        if not u_path.is_absolute():
+            u_path = project_root / "data" / u_path.name
 
-                for symbol in sorted(universe_symbols):
-                    raw_symbol = symbol.split(":")[0]
-                    inst_cfg = self.create_instrument_config(symbol)
-                    final_instruments.append(inst_cfg)
+        if not u_path.exists():
+            return None
 
-                    # 根据策略声明的时间框架需求加载数据
-                    for tf_label in required_timeframes:
-                        if tf_label == "main":
-                            tf_value = self.get_main_timeframe()
-                        elif tf_label == "trend":
-                            tf_value = self.get_trend_timeframe()
-                        else:
-                            continue
+        with open(u_path, "r") as f:
+            u_data = json.load(f)
+            symbols = set()
+            for month_list in u_data.values():
+                symbols.update(month_list)
+            return symbols
 
-                        data_cfg = self.create_data_config(raw_symbol, tf_value, tf_label)
-                        data_cfg.instrument_id = inst_cfg.instrument_id
-                        final_data_feeds.append(data_cfg)
+    def _create_data_feeds_for_symbol(self, symbol: str, inst_cfg: InstrumentConfig) -> List[DataConfig]:
+        """为单个标的创建数据流"""
+        feeds = []
+        raw_symbol = symbol.split(":")[0]
+        required_timeframes = self.get_required_timeframes()
+
+        for tf_label in required_timeframes:
+            if tf_label == "main":
+                tf_value = self.get_main_timeframe()
+            elif tf_label == "trend":
+                tf_value = self.get_trend_timeframe()
             else:
-                inst = self.create_instrument_config(self.get_primary_symbol())
-                final_instruments.append(inst)
-                final_data_feeds.append(
-                    self.create_data_config(self.get_primary_symbol(), self.get_main_timeframe(), "main")
-                )
-        else:
-            inst = self.create_instrument_config(self.get_primary_symbol())
-            final_instruments.append(inst)
+                continue
 
-            # 根据策略声明的时间框架需求加载数据
-            for tf_label in required_timeframes:
-                if tf_label == "main":
-                    tf_value = self.get_main_timeframe()
-                elif tf_label == "trend":
-                    tf_value = self.get_trend_timeframe()
-                else:
-                    # 如果策略声明了未知的时间框架标签，跳过
-                    continue
+            data_cfg = self.create_data_config(raw_symbol, tf_value, tf_label)
+            data_cfg.instrument_id = inst_cfg.instrument_id
+            feeds.append(data_cfg)
 
-                data_cfg = self.create_data_config(self.get_primary_symbol(), tf_value, tf_label)
-                data_cfg.instrument_id = inst.instrument_id
-                final_data_feeds.append(data_cfg)
+        return feeds
 
-        btc_exists = any(inst.quote_currency == "BTC" for inst in final_instruments)
-        if not btc_exists:
-            btc_inst = self.create_instrument_config("BTCUSDT")
-            final_instruments.append(btc_inst)
-
-        # 为 benchmark 加载策略需要的时间框架
-        btc_instrument_id = None
-        for inst in final_instruments:
+    def _ensure_benchmark_instrument(self, instruments: List[InstrumentConfig]) -> InstrumentConfig:
+        """确保 BTC benchmark 标的存在"""
+        for inst in instruments:
             if inst.quote_currency == "BTC":
-                btc_instrument_id = inst.instrument_id
-                break
+                return inst
 
-        if btc_instrument_id:
-            for tf_label in required_timeframes:
-                if tf_label == "main":
-                    tf_value = self.get_main_timeframe()
-                    label = "benchmark"
-                elif tf_label == "trend":
-                    tf_value = self.get_trend_timeframe()
-                    label = "benchmark_trend"
-                else:
-                    continue
+        btc_inst = self.create_instrument_config("BTCUSDT")
+        instruments.append(btc_inst)
+        return btc_inst
 
-                benchmark_cfg = self.create_data_config("BTCUSDT", tf_value, label)
-                benchmark_cfg.instrument_id = btc_instrument_id
-                final_data_feeds.append(benchmark_cfg)
+    def _create_benchmark_feeds(self, btc_instrument_id: str) -> List[DataConfig]:
+        """创建 benchmark 数据流"""
+        feeds = []
+        required_timeframes = self.get_required_timeframes()
 
-        primary_instrument = final_instruments[0]
+        for tf_label in required_timeframes:
+            if tf_label == "main":
+                tf_value = self.get_main_timeframe()
+                label = "benchmark"
+            elif tf_label == "trend":
+                tf_value = self.get_trend_timeframe()
+                label = "benchmark_trend"
+            else:
+                continue
 
+            cfg = self.create_data_config("BTCUSDT", tf_value, label)
+            cfg.instrument_id = btc_instrument_id
+            feeds.append(cfg)
+
+        return feeds
+
+    def _build_strategy_params(self) -> Any:
+        """构建策略参数"""
         params_dict = deepcopy(self.strategy_config.parameters)
+
         if self.active_config.overrides:
             strategy_overrides = self.active_config.overrides.get("strategy", {})
             if strategy_overrides:
@@ -251,35 +208,84 @@ class ConfigAdapter:
                 import importlib
                 module = importlib.import_module(self.strategy_config.module_path)
                 config_class = getattr(module, self.strategy_config.config_class)
-                strategy_params = config_class(**params_dict)
+                return config_class(**params_dict)
             except Exception:
-                strategy_params = params_dict
+                return params_dict
+
+        return params_dict
+
+    def _check_data_limits(self):
+        """检查数据限制"""
+        import os
+        if os.environ.get('SKIP_DATA_LIMIT_CHECK') == '1':
+            return
+
+        data_types = self.strategy_config.parameters.get('data_types', [])
+        if 'oi' not in data_types:
+            return
+
+        from utils.data_management.data_limits import check_data_availability
+
+        is_available, warning = check_data_availability(
+            self.get_start_date(),
+            self.get_end_date(),
+            self.get_venue(),
+            "oi"
+        )
+
+        if not is_available and warning:
+            raise ConfigValidationError(
+                f"数据范围超出交易所限制\n\n{warning}\n\n"
+                f"请修改配置文件中的日期范围或切换交易所。"
+            )
+
+    def build_backtest_config(self) -> BacktestConfig:
+        """构建回测配置"""
+        if self._backtest_config_cache is not None:
+            return self._backtest_config_cache
+
+        self._check_data_limits()
+
+        instruments = []
+        data_feeds = []
+
+        # 加载 universe 或使用主交易对
+        universe_symbols = self._load_universe_symbols()
+
+        if universe_symbols:
+            for symbol in sorted(universe_symbols):
+                inst_cfg = self.create_instrument_config(symbol)
+                instruments.append(inst_cfg)
+                data_feeds.extend(self._create_data_feeds_for_symbol(symbol, inst_cfg))
         else:
-            strategy_params = params_dict
+            inst_cfg = self.create_instrument_config(self.get_primary_symbol())
+            instruments.append(inst_cfg)
+            data_feeds.extend(self._create_data_feeds_for_symbol(self.get_primary_symbol(), inst_cfg))
 
-        strategy_cfg = LegacyStrategyConfig(
-            name=self.strategy_config.name,
-            module_path=self.strategy_config.module_path,
-            config_class=self.strategy_config.config_class,
-            params=strategy_params,
-        )
+        # 确保 benchmark 标的存在并创建数据流
+        btc_inst = self._ensure_benchmark_instrument(instruments)
+        data_feeds.extend(self._create_benchmark_feeds(btc_inst.instrument_id))
 
-        log_cfg = LogConfig(
-            log_level=self.env_config.logging.level,
-            log_level_file=self.env_config.logging.file_level,
-            log_component_levels=self.env_config.logging.components,
-            log_components_only=self.env_config.logging.components_only,
-        )
-
+        # 构建配置对象
         self._backtest_config_cache = BacktestConfig(
-            instrument=primary_instrument,
-            instruments=final_instruments,
-            data_feeds=final_data_feeds,
-            strategy=strategy_cfg,
+            instrument=instruments[0],
+            instruments=instruments,
+            data_feeds=data_feeds,
+            strategy=LegacyStrategyConfig(
+                name=self.strategy_config.name,
+                module_path=self.strategy_config.module_path,
+                config_class=self.strategy_config.config_class,
+                params=self._build_strategy_params(),
+            ),
             start_date=self.get_start_date(),
             end_date=self.get_end_date(),
             initial_balances=self.get_initial_balances(),
-            logging=log_cfg,
+            logging=LogConfig(
+                log_level=self.env_config.logging.level,
+                log_level_file=self.env_config.logging.file_level,
+                log_component_levels=self.env_config.logging.components,
+                log_components_only=self.env_config.logging.components_only,
+            ),
         )
 
         return self._backtest_config_cache
