@@ -5,10 +5,10 @@
 environment: "prod"
 
 # 当前策略 (可选: oi_divergence, rs_squeeze, dual_thrust, kalman_pairs)
-strategy: "kalman_pairs"
+strategy: "dual_thrust"
 
 # 主要交易对 (单标的模式时使用)
-primary_symbol: "SOLUSDT"
+primary_symbol: "ETHUSDT"
 
 # 运行时覆盖配置 (可选)
 # 这里的设置会覆盖环境和策略配置中的对应项
