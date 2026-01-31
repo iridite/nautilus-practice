@@ -114,7 +114,7 @@ The project adopts a clear modular architecture with well-defined responsibiliti
 - `fetcher_manager.py` - Data fetching management
 - `oi_funding_manager.py` - OI/Funding data management
 
-**Configuration System** (`config/` - Unified Architecture)
+**Configuration System** (`core/` - Unified Architecture)
 - `schemas.py` - Pydantic data models
 - `loader.py` - YAML configuration loader
 - `adapter.py` - Configuration adapter
