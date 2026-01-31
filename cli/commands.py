@@ -69,7 +69,7 @@ def update_instrument_definitions(adapter, base_dir: Path, universe_symbols: set
 
         if instrument_ids:
             print(f"🔄 Updating {len(instrument_ids)} instruments")
-            update_instruments(list(instrument_ids), base_dir)
+            update_instruments(list(instrument_ids), base_dir / "data" / "instrument")
     except Exception as e:
         print(f"⚠️ Error updating instruments: {e}")
 
