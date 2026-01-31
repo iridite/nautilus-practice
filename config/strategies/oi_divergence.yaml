@@ -11,6 +11,9 @@ parameters:
   instrument_id: "" # 由系统自动填充
   bar_type: "" # 由系统自动填充
 
+  # 时间框架依赖：需要主时间框架和趋势时间框架
+  timeframes: ["main", "trend"]
+
   # Research 参数 (策略核心逻辑)
   lookback_bars: 48 # 48小时回溯期计算支撑/阻力
   oi_lookback: 12 # OI移动平均周期12小时

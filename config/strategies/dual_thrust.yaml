@@ -9,6 +9,9 @@ parameters:
   instrument_id: "BTCUSDT-PERP.BINANCE"
   bar_type: "BTCUSDT-PERP.BINANCE-1-HOUR-LAST-EXTERNAL"
 
+  # 时间框架依赖：只需要主时间框架
+  timeframes: ["main"]
+
   # Dual Thrust 参数
   lookback_period: 4
   k1: 0.5

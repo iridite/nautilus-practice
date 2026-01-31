@@ -25,6 +25,10 @@ class BaseStrategyConfig(StrategyConfig):  # pyright: ignore[reportGeneralTypeIs
     # 数据依赖列表：策略所需的数据类型，例如 ["ohlcv", "oi", "funding"]
     data_types: List[str] = []
 
+    # 时间框架依赖列表：策略所需的时间框架，例如 ["main"] 或 ["main", "trend"]
+    # 如果为空列表，默认加载 ["main"]
+    timeframes: List[str] = []
+
     # --- Position Sizing Parameters ---
     # 1. Fixed Quantity Mode: DEPRECATED - 已废弃，不再支持
     # 使用此参数将抛出错误，请改用 qty_percent 或 use_atr_position_sizing

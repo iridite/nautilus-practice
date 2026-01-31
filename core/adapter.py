@@ -111,6 +111,13 @@ class ConfigAdapter:
             label=label,
         )
 
+    def get_required_timeframes(self) -> List[str]:
+        """获取策略声明的时间框架需求"""
+        timeframes = self.strategy_config.parameters.get('timeframes', [])
+        if not timeframes:
+            return ["main"]
+        return timeframes
+
     def build_backtest_config(self) -> BackTestConfig:
         """构建回测配置"""
         if self._backtest_config_cache is not None:
@@ -144,6 +151,9 @@ class ConfigAdapter:
         final_instruments = []
         final_data_feeds = []
 
+        # 获取策略声明的时间框架需求
+        required_timeframes = self.get_required_timeframes()
+
         params = self.strategy_config.parameters
         universe_file = params.get("universe_filename") or params.get("universe_filepath")
 
@@ -164,9 +174,18 @@ class ConfigAdapter:
                     inst_cfg = self.create_instrument_config(symbol)
                     final_instruments.append(inst_cfg)
 
-                    data_cfg = self.create_data_config(raw_symbol, self.get_main_timeframe(), "main")
-                    data_cfg.instrument_id = inst_cfg.instrument_id
-                    final_data_feeds.append(data_cfg)
+                    # 根据策略声明的时间框架需求加载数据
+                    for tf_label in required_timeframes:
+                        if tf_label == "main":
+                            tf_value = self.get_main_timeframe()
+                        elif tf_label == "trend":
+                            tf_value = self.get_trend_timeframe()
+                        else:
+                            continue
+
+                        data_cfg = self.create_data_config(raw_symbol, tf_value, tf_label)
+                        data_cfg.instrument_id = inst_cfg.instrument_id
+                        final_data_feeds.append(data_cfg)
             else:
                 inst = self.create_instrument_config(self.get_primary_symbol())
                 final_instruments.append(inst)
@@ -177,32 +196,46 @@ class ConfigAdapter:
             inst = self.create_instrument_config(self.get_primary_symbol())
             final_instruments.append(inst)
 
-            main_cfg = self.create_data_config(self.get_primary_symbol(), self.get_main_timeframe(), "main")
-            main_cfg.instrument_id = inst.instrument_id
-            final_data_feeds.append(main_cfg)
+            # 根据策略声明的时间框架需求加载数据
+            for tf_label in required_timeframes:
+                if tf_label == "main":
+                    tf_value = self.get_main_timeframe()
+                elif tf_label == "trend":
+                    tf_value = self.get_trend_timeframe()
+                else:
+                    # 如果策略声明了未知的时间框架标签，跳过
+                    continue
 
-            trend_cfg = self.create_data_config(self.get_primary_symbol(), self.get_trend_timeframe(), "trend")
-            trend_cfg.instrument_id = inst.instrument_id
-            final_data_feeds.append(trend_cfg)
+                data_cfg = self.create_data_config(self.get_primary_symbol(), tf_value, tf_label)
+                data_cfg.instrument_id = inst.instrument_id
+                final_data_feeds.append(data_cfg)
 
         btc_exists = any(inst.quote_currency == "BTC" for inst in final_instruments)
         if not btc_exists:
             btc_inst = self.create_instrument_config("BTCUSDT")
             final_instruments.append(btc_inst)
 
-        benchmark_cfg = self.create_data_config("BTCUSDT", self.get_main_timeframe(), "benchmark")
+        # 为 benchmark 加载策略需要的时间框架
         btc_instrument_id = None
         for inst in final_instruments:
             if inst.quote_currency == "BTC":
                 btc_instrument_id = inst.instrument_id
-                benchmark_cfg.instrument_id = btc_instrument_id
                 break
-        final_data_feeds.append(benchmark_cfg)
 
         if btc_instrument_id:
-            benchmark_trend_cfg = self.create_data_config("BTCUSDT", self.get_trend_timeframe(), "benchmark_trend")
-            benchmark_trend_cfg.instrument_id = btc_instrument_id
-            final_data_feeds.append(benchmark_trend_cfg)
+            for tf_label in required_timeframes:
+                if tf_label == "main":
+                    tf_value = self.get_main_timeframe()
+                    label = "benchmark"
+                elif tf_label == "trend":
+                    tf_value = self.get_trend_timeframe()
+                    label = "benchmark_trend"
+                else:
+                    continue
+
+                benchmark_cfg = self.create_data_config("BTCUSDT", tf_value, label)
+                benchmark_cfg.instrument_id = btc_instrument_id
+                final_data_feeds.append(benchmark_cfg)
 
         primary_instrument = final_instruments[0]
 
