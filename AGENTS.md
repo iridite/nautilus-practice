@@ -389,7 +389,7 @@ from nautilus_trader.model.data import Bar, BarType
 from nautilus_trader.model.identifiers import InstrumentId
 
 # Local
-from strategy.base import BaseStrategy, BaseStrategyConfig
+from strategy.core.base import BaseStrategy, BaseStrategyConfig
 from utils.custom_data import FundingRateData, OpenInterestData
 ```
 

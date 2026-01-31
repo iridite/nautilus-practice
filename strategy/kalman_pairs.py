@@ -15,7 +15,7 @@ from nautilus_trader.model.data import Bar, BarType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import InstrumentId
 
-from strategy.base import BaseStrategy, BaseStrategyConfig
+from strategy.core.base import BaseStrategy, BaseStrategyConfig
 
 
 class OnlineKalmanFilter:

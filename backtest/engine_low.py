@@ -38,7 +38,7 @@ from backtest.exceptions import (
     ValidationError,
 )
 from core.schemas import BacktestConfig, DataConfig
-from strategy.loader import (
+from strategy.core.loader import (
     filter_strategy_params,
     load_strategy_class,
     load_strategy_config_class,

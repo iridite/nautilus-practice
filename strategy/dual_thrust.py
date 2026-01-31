@@ -9,7 +9,7 @@ from decimal import Decimal
 from nautilus_trader.model.data import Bar, BarType
 from nautilus_trader.model.enums import OrderSide
 
-from strategy.base import BaseStrategy, BaseStrategyConfig
+from strategy.core.base import BaseStrategy, BaseStrategyConfig
 
 
 class DualThrustConfig(BaseStrategyConfig):

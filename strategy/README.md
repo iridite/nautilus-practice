@@ -6,60 +6,23 @@
 
 ```
 strategy/
-├── base.py                        # 基础策略类和配置
-├── oi_divergence_strategy.py     # OI Divergence 策略 (主策略)
-└── archived/                      # 归档策略 (参考用途)
-    ├── README.md
-    ├── dual_thrust.py
-    └── rs_squeeze.py
+├── core/                          # 基础设施模块
+│   ├── base.py                   # 基础策略类和配置
+│   ├── loader.py                 # 策略动态加载器
+│   ├── dependency_checker.py     # 数据依赖检查
+│   └── __init__.py              # 导出接口
+├── dk_alpha_trend.py             # DK Alpha Trend 策略
+├── dual_thrust.py                # Dual Thrust 策略
+├── kalman_pairs.py               # Kalman 配对交易策略
+├── __init__.py                   # 向后兼容导出
+└── README.md                     # 本文档
 ```
-
-## 🚀 活跃策略
-
-### OI Divergence Strategy (推荐使用)
-
-**文件**: `oi_divergence_strategy.py`  
-**版本**: Risk-Enhanced v3.0  
-**状态**: ✅ 活跃维护
-
-**核心功能**:
-- 持仓量 (Open Interest) 背离检测
-- 资金费率 (Funding Rate) 过滤
-- 价格突破确认
-- ATR 动态止损
-- ATR 动态仓位管理
-- 滑点监控和告警
-
-**适用场景**:
-- 永续合约交易
-- 中短期交易 (1H-4H)
-- 趋势跟随 + 反转捕捉
-
-**配置示例**:
-```yaml
-# config/strategies/oi_divergence.yaml
-name: "OIDivergenceStrategy"
-module_path: "strategy.oi_divergence_strategy"
-config_class: "OIDivergenceStrategyConfig"
-parameters:
-  lookback_bars: 48
-  oi_decline_threshold: 0.05
-  use_atr_stop: true
-  atr_stop_multiplier: 2.0
-```
-
-**相关文档**:
-- [策略概念说明](../docs/strategies/oi_divergence/concept.md)
-- [数据使用指南](../docs/strategies/oi_divergence/data_usage.md)
-- [实现细节](../docs/strategies/oi_divergence/implementation.md)
-
----
 
 ## 🏗️ 基础架构
 
 ### BaseStrategy 基类
 
-**文件**: `base.py`
+**文件**: `core/base.py`
 
 所有策略都应继承 `BaseStrategy` 基类，自动获得：
 
@@ -71,7 +34,7 @@ parameters:
 
 **基本用法**:
 ```python
-from strategy.base import BaseStrategy, BaseStrategyConfig
+from strategy.core.base import BaseStrategy, BaseStrategyConfig
 
 class MyStrategyConfig(BaseStrategyConfig):
     # 策略特定参数
@@ -81,29 +44,70 @@ class MyStrategy(BaseStrategy):
     def __init__(self, config: MyStrategyConfig):
         super().__init__(config)
         # 初始化策略
-    
+
     def on_start(self):
         super().on_start()
         # 订阅数据
-    
+
     def on_bar(self, bar):
         super().on_bar(bar)
         # 处理 K 线数据
 ```
 
+**向后兼容导入**:
+```python
+# 推荐：直接从 core 导入
+from strategy.core.base import BaseStrategy, BaseStrategyConfig
+
+# 兼容：从顶层导入（内部转发到 core）
+from strategy import BaseStrategy, BaseStrategyConfig
+```
+
 ---
 
-## 📦 归档策略
+## 🚀 策略实现
 
-已过时或不再维护的策略移至 `archived/` 目录，仅供参考学习。
+### DK Alpha Trend 策略
 
-**查看归档策略**: [archived/README.md](./archived/README.md)
+**文件**: `dk_alpha_trend.py`
+**状态**: ✅ 活跃维护
 
-**归档策略列表**:
-- `dual_thrust.py` - Dual Thrust 突破策略
-- `rs_squeeze.py` - 相对强度挤压策略
+**核心功能**:
+- 动态肯特纳通道突破
+- 相对强弱选币（vs BTC）
+- TTM Squeeze 波动率状态
+- Chandelier Exit 追踪止损
 
-⚠️ **不推荐在生产环境使用归档策略**，它们缺少现代风控机制且不再维护。
+**适用场景**:
+- 加密货币日线交易
+- 中低频趋势跟随
+
+### Kalman Pairs Trading 策略
+
+**文件**: `kalman_pairs.py`
+**状态**: ✅ 活跃维护
+
+**核心功能**:
+- 在线卡尔曼滤波器动态估计对冲比率
+- 基于残差 Z-Score 的均值回归交易
+- 适用于高度相关的资产对
+
+**适用场景**:
+- 配对交易（如 SOL/ETH）
+- 市场中性策略
+
+### Dual Thrust 策略
+
+**文件**: `dual_thrust.py`
+**状态**: ⚠️ 基础实现
+
+**核心功能**:
+- 经典日内突破策略
+- 基于前N天价格范围的动态通道
+
+**适用场景**:
+- 日内交易
+- 突破系统
 
 ---
 
@@ -113,14 +117,14 @@ class MyStrategy(BaseStrategy):
 
 1. **继承基类**
    ```python
-   from strategy.base import BaseStrategy, BaseStrategyConfig
+   from strategy.core.base import BaseStrategy, BaseStrategyConfig
    ```
 
 2. **定义配置类**
    ```python
    class MyStrategyConfig(BaseStrategyConfig):
        # 继承通用参数: trade_size, qty_percent, leverage, stop_loss_pct
-       
+
        # 添加策略特定参数
        my_param: int = 100
        my_threshold: float = 0.05
@@ -133,7 +137,7 @@ class MyStrategy(BaseStrategy):
            super().on_start()
            # 订阅数据
            self.subscribe_bars(self.bar_type)
-       
+
        def on_bar(self, bar):
            super().on_bar(bar)
            # 策略逻辑
@@ -154,7 +158,7 @@ class MyStrategy(BaseStrategy):
    ```bash
    # 修改 config/active.yaml
    strategy: "my_strategy"
-   
+
    # 运行回测
    uv run python main.py backtest
    ```
@@ -215,9 +219,9 @@ class MyStrategy(BaseStrategy):
 - [回测引擎指南](../backtest/README.md) - 回测系统使用
 
 ### 示例
-- [OI Divergence 策略](./oi_divergence_strategy.py) - 完整的现代策略实现
-- [Base 策略类](./base.py) - 基础类实现参考
-- [归档策略](./archived/) - 历史实现参考
+- [DK Alpha Trend 策略](./dk_alpha_trend.py) - 完整的现代策略实现
+- [Kalman Pairs 策略](./kalman_pairs.py) - 配对交易实现
+- [Base 策略类](./core/base.py) - 基础类实现参考
 
 ### 工具
 - NautilusTrader 文档: https://nautilustrader.io/docs/
@@ -241,20 +245,20 @@ class MyStrategy(BaseStrategy):
 
 | 日期 | 版本 | 说明 |
 |------|------|------|
+| 2026-01-31 | 3.0 | 重构：基础设施移至 core/ 子目录 |
 | 2026-01-24 | 2.0 | 归档 Dual Thrust 和 RS Squeeze 策略 |
-| 2026-01-21 | 1.5 | OI Divergence 升级到 Risk-Enhanced v3.0 |
 | 2025-12-xx | 1.0 | 初始版本 |
 
 ---
 
 ## ⚡ 快速开始
 
-**运行 OI Divergence 策略回测**:
+**运行 DK Alpha Trend 策略回测**:
 
 ```bash
-# 1. 切换到 OI Divergence 策略
+# 1. 切换到 DK Alpha Trend 策略
 # 编辑 config/active.yaml:
-#   strategy: "oi_divergence"
+#   strategy: "dk_alpha_trend"
 
 # 2. 运行回测
 uv run python main.py backtest

@@ -239,7 +239,7 @@ from utils import (
 所有策略都继承自 `BaseStrategy` 并实现：
 
 ```python
-from strategy.base import BaseStrategy, BaseStrategyConfig
+from strategy.core.base import BaseStrategy, BaseStrategyConfig
 
 class MyStrategyConfig(BaseStrategyConfig):
     # 策略特定参数
@@ -266,7 +266,7 @@ class MyStrategy(BaseStrategy):
 新的数据依赖声明机制让策略可以明确声明所需的数据类型：
 
 ```python
-from strategy.base import BaseStrategy, BaseStrategyConfig
+from strategy.core.base import BaseStrategy, BaseStrategyConfig
 
 class MyStrategyConfig(BaseStrategyConfig):
     def __init__(self):

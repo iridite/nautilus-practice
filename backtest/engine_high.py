@@ -33,7 +33,7 @@ from backtest.exceptions import (
     InstrumentLoadError,
 )
 from core.schemas import BacktestConfig
-from strategy.loader import (
+from strategy.core.loader import (
     filter_strategy_params,
     load_strategy_config_class,
 )
