@@ -240,15 +240,19 @@ class DKAlphaTrendStrategy(BaseStrategy):
                 alpha = 2.0 / (self.config.ema_period + 1)
                 self.ema = alpha * self.closes[-1] + (1 - alpha) * self.ema
 
-        # ATR (使用 Wilder's Smoothing)
+        # ATR (简单平均)
         if len(self.trs) >= self.config.atr_period:
-            if self.atr is None:
-                # 初始化：使用简单平均
-                self.atr = sum(list(self.trs)[-self.config.atr_period:]) / self.config.atr_period
-            else:
-                # Wilder's Smoothing: α = 1/period
-                alpha = 1.0 / self.config.atr_period
-                self.atr = alpha * self.trs[-1] + (1 - alpha) * self.atr
+            self.atr = sum(list(self.trs)[-self.config.atr_period:]) / self.config.atr_period
+
+        # ATR (Wilder's Smoothing) - 注释掉，保留以供参考
+        # if len(self.trs) >= self.config.atr_period:
+        #     if self.atr is None:
+        #         # 初始化：使用简单平均
+        #         self.atr = sum(list(self.trs)[-self.config.atr_period:]) / self.config.atr_period
+        #     else:
+        #         # Wilder's Smoothing: α = 1/period
+        #         alpha = 1.0 / self.config.atr_period
+        #         self.atr = alpha * self.trs[-1] + (1 - alpha) * self.atr
 
         # SMA
         if len(self.closes) >= self.config.sma_period:
