@@ -15,7 +15,7 @@
 from pathlib import Path
 from typing import List, Optional, Tuple
 
-from utils.validation import check_single_data_file
+from utils.data_file_checker import check_single_data_file
 
 from .data_retrieval import batch_fetch_ohlcv, batch_fetch_oi_and_funding
 

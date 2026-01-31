@@ -1,7 +1,7 @@
 """
-数据验证工具模块
+数据文件存在性检查模块
 
-提供核心的数据验证功能。
+提供数据文件验证功能。
 """
 
 from pathlib import Path
@@ -9,25 +9,11 @@ from typing import List, Tuple
 
 import pandas as pd
 
-
-class ValidationError(Exception):
-    """验证错误的基类"""
-    pass
-
-
-class FileValidationError(ValidationError):
-    """文件验证错误"""
-    pass
-
-
-class DataValidationError(ValidationError):
-    """数据验证错误"""
-    pass
-
-
-class ConfigValidationError(ValidationError):
-    """配置验证错误"""
-    pass
+from utils.exceptions import (
+    ConfigValidationError,
+    FileValidationError,
+    ValidationError,
+)
 
 
 def check_single_data_file(

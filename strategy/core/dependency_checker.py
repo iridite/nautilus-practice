@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from utils.validation import check_funding_data_exists, check_oi_data_exists
+from utils.data_file_checker import check_funding_data_exists, check_oi_data_exists
 
 
 def extract_strategy_symbols(strategy_config, universe_symbols: set) -> set:

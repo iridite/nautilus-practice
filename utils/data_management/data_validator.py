@@ -348,7 +348,7 @@ def validate_multi_instrument_alignment(
 
 def prepare_data_feeds(args, adapter, base_dir, universe_symbols: set):
     """准备数据流（验证或获取）"""
-    from utils.validation import check_single_data_file
+    from utils.data_file_checker import check_single_data_file
 
     from .data_manager import run_batch_data_retrieval
 

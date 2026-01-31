@@ -9,7 +9,7 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 
 from core import get_adapter
-from utils.validation import check_single_data_file
+from utils.data_file_checker import check_single_data_file
 
 
 class TestDataFlowIntegration(unittest.TestCase):

@@ -652,7 +652,7 @@ class DataLoader:
         Tuple[bool, str | None]
             (数据是否可用, 错误信息)
         """
-        from utils.validation import check_single_data_file
+        from utils.data_file_checker import check_single_data_file
 
         exists, _ = check_single_data_file(
             symbol_str=symbol,
