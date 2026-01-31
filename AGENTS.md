@@ -110,16 +110,15 @@ The project adopts a clear modular architecture with well-defined responsibiliti
 **CLI Module** (`cli/`)
 - `commands.py` - Command implementations (data checking, backtest execution)
 
-**Data Management** (`utils/data_management/` - Unified Module)
-- `validator.py` - Data validation and feed preparation
-- `fetcher_manager.py` - Data fetching management
+### Data Management** (`utils/data_management/` - Unified Module, 8 files)
+- `data_validator.py` - Data validation and feed preparation (merged from `validator.py`)
+- `data_manager.py` - High-level data manager (merged from `fetcher_manager.py`)
 - `oi_funding_manager.py` - OI/Funding data management
-- `data_retrival.py` - Main data retrieval logic
+- `data_retrieval.py` - Main data retrieval logic (renamed from `data_retrival.py`)
 - `data_fetcher.py` - Multi-source OHLCV fetcher
 - `data_limits.py` - Exchange data limits checking
-- `data_loader.py` - CSV data loading utilities
-- `data_manager.py` - High-level data manager
-- `data_validator.py` - Data validation utilities
+- `data_loader.py` - CSV data loading utilities (refactored for maintainability)
+- `data_limits.py` - Exchange data limits checking
 
 **Data Directory** (`data/`)
 - Pure data storage (no code files)
@@ -274,6 +273,97 @@ Extends NautilusTrader's data system to support derivatives data:
 Implemented through `utils.custom_data` and `utils.oi_funding_adapter` modules for data loading and adaptation.
 
 **Note**: While OI data fetching is disabled, the data types and loading infrastructure remain intact for future use.
+
+## 🔧 Module Refactoring Best Practices (2026-01-31)
+
+### Refactoring Strategy
+
+When refactoring large modules, follow a prioritized approach:
+
+**P0 (Critical Issues)** - Fix immediately:
+- Spelling errors in file names (affects all imports)
+- Merge redundant modules with overlapping functionality
+- Remove unused code with zero references
+
+**P1 (Performance & Maintainability)** - Optimize next:
+- Simplify over-engineered modules
+- Create unified exception classes
+- Refactor long functions (>100 lines) into smaller units
+- Extract repeated code patterns
+
+**P2 (Long-term Optimization)** - Plan for future:
+- Analyze and resolve circular dependencies
+- Extract common utilities to shared modules
+- Document dependency graphs
+
+### Module Consolidation Guidelines
+
+When merging redundant modules:
+1. **Analyze usage**: Use `grep` to find all import references
+2. **Preserve functionality**: Move all functions to the target module
+3. **Update imports**: Update `__init__.py` and all dependent files
+4. **Verify tests**: Ensure 100% test pass rate after changes
+5. **Document changes**: Update architecture documentation
+
+**Example**: Merged `validator.py` and `fetcher_manager.py` into `data_validator.py` and `data_manager.py`, reducing module count by 13.6%.
+
+### Code Extraction Patterns
+
+**Extract repeated timestamp conversions**:
+```python
+# Before: Repeated in multiple files
+ts = pd.Timestamp(date_str)
+if ts.tz is not None:
+    ts = ts.tz_localize(None)
+
+# After: Unified in time_helpers.py
+from utils.time_helpers import parse_date_to_timestamp
+ts = parse_date_to_timestamp(date_str)
+```
+
+**Extract data validation logic**:
+```python
+# Before: Scattered validation code
+if not csv_path.exists():
+    raise DataLoadError(f"File not found: {csv_path}")
+
+# After: Unified exception classes
+from utils.exceptions import DataValidationError
+if not csv_path.exists():
+    raise DataValidationError(f"File not found: {csv_path}")
+```
+
+### Dependency Analysis
+
+Use simple scripts to analyze module dependencies:
+```python
+# Check for circular dependencies
+for f in Path('utils/data_management').glob('*.py'):
+    imports = [line for line in f.read_text().split('\n') 
+               if line.startswith('from .')]
+    print(f'{f.stem} → {imports}')
+```
+
+**Healthy dependency pattern** (no cycles):
+```
+data_manager → data_retrieval → data_fetcher
+data_validator → data_manager
+oi_funding_manager → data_manager
+```
+
+### Refactoring Metrics
+
+Track these metrics during refactoring:
+- **Module count**: Target 10-20% reduction
+- **Code lines**: Net reduction through deduplication
+- **Test coverage**: Maintain 100% pass rate
+- **Import complexity**: Reduce cross-module dependencies
+
+**Example results** (Utils module refactoring):
+- Modules: 22 → 19 (-13.6%)
+- Code: -179 lines net reduction
+- Tests: 97/97 (100% pass)
+- Dependencies: Clear hierarchy, no cycles
 
 ## 📝 Code Style Guidelines
 
