@@ -171,24 +171,40 @@ class MyStrategy(BaseStrategy):
 - Risk management parameters (`stop_loss_pct`, `use_auto_sl`)
 - ATR risk mode (`use_atr_position_sizing`)
 - Data dependency declaration (`data_types` list)
+- Timeframe dependency declaration (`timeframes` list)
 
 ### Data Dependency Declaration Mechanism
 
-Strategies declare required data types through a simple list:
+Strategies declare required data types and timeframes through simple lists:
 
 ```python
 class MyStrategyConfig(BaseStrategyConfig):
-    def __init__(self):
-        super().__init__()
-        # Simplified data dependency declaration
-        self.data_types = ["oi", "funding"]  # Declare required data types
+    data_types: List[str] = ["oi", "funding"]  # Declare required data types
+    timeframes: List[str] = ["main", "trend"]  # Declare required timeframes
 ```
 
-The system automatically before backtest:
-1. Checks strategy's `data_types` list
-2. Validates data file existence
-3. Auto-downloads missing **Funding Rate** data (OI data fetching currently disabled)
-4. Supports multi-exchange fallback and smart retry
+**Data Types Declaration** (`data_types`):
+- System automatically checks strategy's `data_types` list before backtest
+- Validates data file existence
+- Auto-downloads missing **Funding Rate** data (OI data fetching currently disabled)
+- Supports multi-exchange fallback and smart retry
+
+**Timeframe Declaration** (`timeframes`):
+- Strategies declare which timeframes they need (e.g., `["main"]` or `["main", "trend"]`)
+- System only loads declared timeframes, avoiding unnecessary data loading
+- Default: `["main"]` if not specified
+- Applies to all data loading modes: single instrument, universe, and benchmark
+
+**Example Strategy Configurations**:
+```yaml
+# Single timeframe strategy (dual_thrust.yaml)
+parameters:
+  timeframes: ["main"]
+
+# Multi-timeframe strategy (oi_divergence.yaml)
+parameters:
+  timeframes: ["main", "trend"]
+```
 
 **Note**: OI data auto-fetching is temporarily disabled. See "OI Data Status" section below.
 
