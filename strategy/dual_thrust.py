@@ -15,8 +15,16 @@ from strategy.core.base import BaseStrategy, BaseStrategyConfig
 class DualThrustConfig(BaseStrategyConfig):
     """Dual Thrust 策略配置"""
 
+    # 简化配置字段（推荐使用）
+    symbol: str = ""
+    timeframe: str = ""
+    price_type: str = "LAST"
+    origination: str = "EXTERNAL"
+
+    # 完整配置字段（向后兼容，自动从简化字段生成）
     instrument_id: str = ""
     bar_type: str = ""
+
     lookback_period: int = 4
     k1: float = 0.5
     k2: float = 0.5

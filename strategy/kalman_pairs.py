@@ -83,6 +83,14 @@ class OnlineKalmanFilter:
 class KalmanPairsTradingConfig(BaseStrategyConfig):
     """卡尔曼配对交易策略配置"""
 
+    # 简化配置字段（推荐使用）
+    symbol_a: str = ""
+    symbol_b: str = ""
+    timeframe: str = ""
+    price_type: str = "LAST"
+    origination: str = "EXTERNAL"
+
+    # 完整配置字段（向后兼容，自动从简化字段生成）
     instrument_a_id: str = ""
     instrument_b_id: str = ""
     bar_type: str = ""
