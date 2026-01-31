@@ -1,0 +1,42 @@
+# DK_Alpha_Trend 策略配置
+# Dynamic Keltner Alpha Trend - 中低频趋势跟踪策略
+
+name: "DKAlphaTrendStrategy"
+module_path: "strategy.dk_alpha_trend"
+config_class: "DKAlphaTrendConfig"
+
+# 策略参数
+parameters:
+  instrument_id: "ETHUSDT-PERP.BINANCE"
+  bar_type: "ETHUSDT-PERP.BINANCE-1-DAY-LAST-EXTERNAL"
+  btc_instrument_id: "BTCUSDT-PERP.BINANCE"
+
+  # 时间框架依赖
+  timeframes: ["main"]
+
+  # 指标参数
+  ema_period: 20
+  atr_period: 20
+  sma_period: 200
+  bb_period: 20
+  bb_std: 2.0
+  volume_period: 20
+
+  # 通道参数
+  keltner_base_multiplier: 1.5
+  keltner_trigger_multiplier: 2.25
+
+  # 风控参数
+  base_risk_pct: 0.01
+  high_conviction_risk_pct: 0.015
+  stop_loss_atr_multiplier: 3.0
+
+  # 过滤器参数
+  volume_multiplier: 1.5
+  rs_lookback_days: 5
+  squeeze_memory_days: 3
+
+  # 仓位管理
+  qty_percent: 0.1
+  leverage: 1
+  max_positions: 1
