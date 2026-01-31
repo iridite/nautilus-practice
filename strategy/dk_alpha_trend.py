@@ -89,6 +89,7 @@ class DKAlphaTrendStrategy(BaseStrategy):
         # 价格历史（用于 RS 计算）- 使用字典存储时间戳对齐的数据
         self.price_history = {}  # {timestamp: price}
         self.btc_price_history = {}  # {timestamp: price}
+        self.common_timestamps = []  # 有序的共同时间戳列表（性能优化）
 
         # Squeeze 状态历史
         self.squeeze_history = deque(maxlen=config.squeeze_memory_days)
@@ -169,10 +170,17 @@ class DKAlphaTrendStrategy(BaseStrategy):
             self.last_bar_ts = bar.ts_event
             self._bar_updated = True
 
+            # 更新共同时间戳列表（性能优化）
+            if bar.ts_event in self.btc_price_history and bar.ts_event not in self.common_timestamps:
+                self.common_timestamps.append(bar.ts_event)
+
             # 清理过期数据
             if len(self.price_history) > self.MAX_HISTORY_SIZE:
                 oldest_ts = min(self.price_history.keys())
                 del self.price_history[oldest_ts]
+                # 同步清理共同时间戳列表
+                if oldest_ts in self.common_timestamps:
+                    self.common_timestamps.remove(oldest_ts)
 
         elif bar.bar_type.instrument_id == self.btc_instrument_id:
             # BTC数据
@@ -181,10 +189,17 @@ class DKAlphaTrendStrategy(BaseStrategy):
             self._btc_bar_updated = True
             self._bars_since_btc_update = 0
 
+            # 更新共同时间戳列表（性能优化）
+            if bar.ts_event in self.price_history and bar.ts_event not in self.common_timestamps:
+                self.common_timestamps.append(bar.ts_event)
+
             # 清理过期数据
             if len(self.btc_price_history) > self.MAX_HISTORY_SIZE:
                 oldest_ts = min(self.btc_price_history.keys())
                 del self.btc_price_history[oldest_ts]
+                # 同步清理共同时间戳列表
+                if oldest_ts in self.common_timestamps:
+                    self.common_timestamps.remove(oldest_ts)
         else:
             return
 
@@ -326,16 +341,12 @@ class DKAlphaTrendStrategy(BaseStrategy):
         if len(self.btc_price_history) < self.config.rs_lookback_days + 1:
             return False
 
-        # 获取时间对齐的价格序列
-        common_timestamps = sorted(
-            set(self.price_history.keys()) & set(self.btc_price_history.keys())
-        )
-
-        if len(common_timestamps) < self.config.rs_lookback_days + 1:
+        # 使用预维护的共同时间戳列表（性能优化：避免每次排序和集合操作）
+        if len(self.common_timestamps) < self.config.rs_lookback_days + 1:
             return False
 
         # 使用最近的对齐数据计算涨幅
-        recent_ts = common_timestamps[-(self.config.rs_lookback_days + 1):]
+        recent_ts = self.common_timestamps[-(self.config.rs_lookback_days + 1):]
         symbol_prices = [self.price_history[ts] for ts in recent_ts]
         btc_prices = [self.btc_price_history[ts] for ts in recent_ts]
 
