@@ -67,7 +67,6 @@ class DKAlphaTrendStrategy(BaseStrategy):
 
     def __init__(self, config: DKAlphaTrendConfig):
         super().__init__(config)
-        self.config = config
 
         # BTC 标的 ID
         self.btc_instrument_id = InstrumentId.from_str(config.btc_instrument_id)

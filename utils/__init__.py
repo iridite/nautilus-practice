@@ -10,7 +10,6 @@ Utils 工具模块统一接口
 - symbol_parser: 符号格式解析和转换
 - data_loader: CSV数据加载和处理
 - path_helpers: 路径操作和文件管理
-- config_helpers: 配置解析和Universe处理
 
 常用导入：
     from utils import get_ms_timestamp, retry_fetch, check_data_exists
