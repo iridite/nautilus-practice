@@ -17,7 +17,7 @@ Utils 工具模块统一接口
     from utils import parse_universe_symbols
 
 完整模块导入：
-    from utils import time_helpers, network, validation
+    from utils import time_helpers, network
     from utils import symbol_parser, data_loader, path_helpers
 
 版本：1.0.0
@@ -45,7 +45,6 @@ from . import (
     symbol_parser,
     time_helpers,
     universe,
-    validation,
 )
 
 # 数据加载
@@ -71,8 +70,6 @@ from .path_helpers import (
     get_project_root,
 )
 
-# 数据验证
-# validation 模块导入已移除，使用时直接从 validation 模块导入
 # 符号解析
 from .symbol_parser import (
     parse_timeframe,
@@ -130,7 +127,7 @@ def batch_validate_data(base_dir, symbols, start_date, end_date, timeframe="1h",
     """
     from pathlib import Path
 
-    from .validation import check_single_data_file
+    from .data_file_checker import check_single_data_file
 
     base_path = Path(base_dir)
     results = {
@@ -197,7 +194,6 @@ __all__ = [
     # 模块导入
     "time_helpers",
     "network",
-    "validation",
     "symbol_parser",
     "path_helpers",
     "universe",
@@ -228,7 +224,7 @@ def get_utils_info():
         "version": __version__,
         "author": __author__,
         "modules": [
-            "time_helpers", "network", "validation", "symbol_parser",
+            "time_helpers", "network", "symbol_parser",
             "path_helpers", "data_management"
         ],
         "core_functions": [

@@ -7,14 +7,6 @@
 from pathlib import Path
 from typing import List, Tuple
 
-import pandas as pd
-
-from utils.exceptions import (
-    ConfigValidationError,
-    FileValidationError,
-    ValidationError,
-)
-
 
 def check_single_data_file(
     symbol: str,
