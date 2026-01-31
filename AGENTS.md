@@ -4,11 +4,13 @@ This document provides coding guidelines for AI agents working in this repositor
 
 ## 📦 Project Overview
 
-- **Framework**: NautilusTrader (nautilus-trader)
+- **Framework**: NautilusTrader 1.223.0
 - **Python Version**: 3.12.12+ (strictly `>=3.12.12, <3.13`)
 - **Package Manager**: `uv` (modern Python package manager)
 - **Domain**: Cryptocurrency quantitative trading (perpetual futures)
 - **Main Exchanges**: Binance, OKX
+- **Code Scale**: 19,454 lines (optimized)
+- **Test Coverage**: 106 tests, 100% pass rate
 
 ## 🛠️ Build/Test/Run Commands
 
@@ -81,6 +83,146 @@ uv run python
 uv run ipython  # if available
 ```
 
+### Data Preparation
+```bash
+# Generate trading pair Universe
+uv run python scripts/generate_universe.py
+
+# Prepare top market cap data
+uv run python scripts/prepare_top_data.py
+
+# Fetch instrument info
+uv run python scripts/fetch_instrument.py
+```
+
+## 🏗️ Architecture Patterns
+
+### Modular Architecture (2026-01-30 Refactored)
+
+The project adopts a clear modular architecture with well-defined responsibilities:
+
+**Main Entry** (`main.py` - 81 lines)
+- Streamlined entry file responsible only for orchestration
+- Command-line argument parsing
+- Module coordination
+
+**CLI Module** (`cli/`)
+- `commands.py` - Command implementations (data checking, backtest execution)
+
+**Data Management** (`data/`)
+- `validator.py` - Data validation
+- `fetcher_manager.py` - Data fetching management
+- `oi_funding_manager.py` - OI/Funding data management
+
+**Configuration System** (`config/` - Unified Architecture)
+- `schemas.py` - Pydantic data models
+- `loader.py` - YAML configuration loader
+- `adapter.py` - Configuration adapter
+- `settings.py` - Unified access interface
+- Architecture: YAML → Pydantic Validation → Adapter → Application
+
+**Strategy Module** (`strategy/`)
+- `base.py` - Base strategy class
+- `dependency_checker.py` - Strategy dependency checking
+- `kalman_pairs.py` - Active strategy
+
+### Dual Backtest Engine Architecture
+
+1. **Low-Level Engine** (`backtest/engine_low.py`)
+   - Direct use of BacktestEngine API
+   - Full control over backtest process
+   - Suitable for advanced users and custom requirements
+
+2. **High-Level Engine** (`backtest/engine_high.py`)
+   - Uses BacktestNode and Parquet catalog
+   - Simplified configuration and usage
+   - Suitable for rapid strategy validation
+
+### Strategy Architecture
+
+All strategies inherit from `BaseStrategy` and implement core lifecycle methods:
+
+```python
+class MyStrategy(BaseStrategy):
+    def on_start(self):
+        """Initialize indicators and validate configuration"""
+        super().on_start()  # Must call
+
+    def on_bar(self, bar):
+        """Process Bar data and trading logic"""
+
+    def on_data(self, data):
+        """Process custom data (OI, funding rates)"""
+```
+
+**Configuration Classes** inherit from `BaseStrategyConfig`:
+- Unified position management (`qty_percent`, `leverage`)
+- Risk management parameters (`stop_loss_pct`, `use_auto_sl`)
+- ATR risk mode (`use_atr_position_sizing`)
+- Data dependency declaration (`data_types` list)
+
+### Data Dependency Declaration Mechanism
+
+Strategies declare required data types through a simple list:
+
+```python
+class MyStrategyConfig(BaseStrategyConfig):
+    def __init__(self):
+        super().__init__()
+        # Simplified data dependency declaration
+        self.data_types = ["oi", "funding"]  # Declare required data types
+```
+
+The system automatically before backtest:
+1. Checks strategy's `data_types` list
+2. Validates data file existence
+3. Auto-downloads missing OI/Funding Rate data
+4. Supports multi-exchange fallback and smart retry
+
+### Data Limits Auto-Check
+
+System automatically checks exchange data limits (`utils/data_limits.py`):
+
+```python
+# Binance OI data limit: 21 days
+# OKX OI data limit: 90 days
+# Auto-validation and warnings during config building
+```
+
+### Utility Module Unified Interface
+
+`utils/` module provides standardized utility functions to eliminate code duplication:
+
+```python
+from utils import (
+    get_ms_timestamp,      # Time handling
+    retry_fetch,           # Network retry
+    check_data_exists,     # Data validation
+    parse_timeframe,       # Symbol parsing
+    load_ohlcv_csv,        # Data loading
+    get_project_root,      # Path operations
+    parse_universe_symbols # Config parsing
+)
+```
+
+**Module Organization**:
+- `time_helpers`: Timestamp conversion and handling
+- `network`: HTTP requests and retry mechanism
+- `validation`: Data file validation and checking
+- `symbol_parser`: Trading pair symbol parsing and conversion
+- `data_loader`: CSV data loading and time column detection
+- `path_helpers`: Project path management (with caching)
+- `config_helpers`: Universe configuration parsing
+
+### Custom Data Types
+
+Extends NautilusTrader's data system to support derivatives data:
+
+- **OpenInterestData**: Open interest data
+- **FundingRateData**: Funding rate data
+
+Implemented through `utils.custom_data` and `utils.oi_funding_adapter` modules for data loading and adaptation.
+
 ## 📝 Code Style Guidelines
 
 ### Import Organization
@@ -133,210 +275,4 @@ class StrategyConfig:
 - **Functions/Methods**: snake_case (e.g., `calculate_position_size`, `on_bar`)
 - **Constants**: UPPER_SNAKE_CASE (e.g., `START_DATE`, `MAX_POSITIONS`)
 - **Private methods**: Leading underscore (e.g., `_is_ready`, `_update_key_levels`)
-- **Module names**: snake_case (e.g., `oi_divergence.py`, `custom_data.py`)
-
-### Docstrings
-Use detailed docstrings with parameter descriptions. Support mixed Chinese/English:
-
-```python
-"""
-OI Divergence 策略单元测试
-
-测试内容：
-1. 自定义数据类型（OpenInterestData, FundingRateData）
-2. 策略配置验证
-3. 信号检测逻辑
-4. 数据加载器功能
-5. 策略基本功能
-
-Usage:
-    uv run python -m unittest tests.test_oi_divergence -v
-"""
-```
-
-### Error Handling
-- Use explicit error handling with informative messages
-- Log errors using NautilusTrader's logging system (`self.log.error()`)
-- Validate inputs in strategy initialization
-
-```python
-def on_start(self):
-    """Initialize strategy and validate configuration."""
-    if not self.instrument:
-        self.log.error(
-            f"Could not find instrument {self.config.instrument_id}"
-        )
-        return
-    
-    self.log.info(f"Strategy initialized for {self.instrument.id}")
-```
-
-### Financial Calculations
-- **Always use Decimal**: Never use `float` for prices, quantities, or percentages
-- **Precision**: Be explicit about decimal places and rounding
-- **Validation**: Check for division by zero and invalid ranges
-
-```python
-from decimal import Decimal
-
-# Correct
-funding_annual = funding_rate * Decimal("3") * Decimal("365") * Decimal("100")
-position_size = Decimal("0.1")
-
-# Wrong - do not use float for financial values
-position_size = 0.1  # ❌
-```
-
-## 🏗️ Architecture Patterns
-
-### Strategy Structure
-Strategies should inherit from `BaseStrategy` and implement:
-- `on_start()`: Initialize indicators and validate configuration
-- `on_bar()`: Process bar data and execute trading logic
-- `on_data()`: Handle custom data (OI, funding rates)
-- Helper methods prefixed with `_` for internal logic
-
-### Configuration Classes
-Configuration should inherit from `BaseStrategyConfig`:
-```python
-class MyStrategyConfig(BaseStrategyConfig):
-    # Strategy-specific parameters
-    lookback_bars: int = 48
-    entry_threshold: float = 0.05
-    
-    # Inherited from BaseStrategyConfig:
-    # - trade_size, qty_percent, leverage
-    # - stop_loss_pct, use_auto_sl
-```
-
-### 🆕 Strategy Data Dependencies
-Declare strategy data requirements using the new dependency system:
-
-```python
-class OIStrategyConfig(BaseStrategyConfig):
-    def __init__(self):
-        super().__init__()
-        
-        # Declare required OI data
-        self.add_data_dependency(
-            data_type="oi",
-            required=True,
-            period="1h",
-            exchange="binance",
-            auto_fetch=True
-        )
-        
-        # Declare required Funding Rate data
-        self.add_data_dependency(
-            data_type="funding",
-            required=True,
-            exchange="binance",
-            auto_fetch=True
-        )
-
-class OIStrategy(BaseStrategy):
-    def on_start(self):
-        super().on_start()
-        
-        # Check data dependency status
-        if self.base_config.has_oi_dependency():
-            self.log.info("Strategy requires OI data")
-        
-        if self.base_config.has_funding_dependency():
-            self.log.info("Strategy requires Funding Rate data")
-    
-    def on_data(self, data):
-        """Handle custom data (OI, funding rates)"""
-        from utils.custom_data import OpenInterestData, FundingRateData
-        
-        if isinstance(data, OpenInterestData):
-            # Process OI data
-            self.log.info(f"Received OI: {data.open_interest}")
-            
-        elif isinstance(data, FundingRateData):
-            # Process funding rate data
-            self.log.info(f"Received Funding Rate: {data.funding_rate}")
-```
-
-**Best Practices for Data Dependencies:**
-- Always declare data dependencies in strategy configuration
-- Use `required=True` for essential data, `required=False` for optional
-- Set `auto_fetch=True` to enable automatic data downloading
-- Specify exchange and period for better data management
-- Check dependency status in `on_start()` method
-
-### Custom Data Types
-Extend `nautilus_trader.core.data.Data` for market data:
-```python
-from nautilus_trader.core.data import Data
-
-class OpenInterestData(Data):
-    def __init__(self, instrument_id, open_interest, ts_event, ts_init):
-        super().__init__()
-        self._ts_event = ts_event
-        self._ts_init = ts_init
-        # ... implement required properties
-```
-
-## 🚫 Common Pitfalls
-
-1. **Don't use float for financial calculations** - always use `Decimal`
-2. **Don't forget to call `super().on_start()`** in strategy initialization
-3. **Don't access positions without checking cache first**
-4. **Don't hardcode file paths** - use `Path(__file__).parent` or `BASE_DIR`
-5. **Don't commit secrets** - use `.env` files (already in `.gitignore`)
-
-## 📁 Project Structure
-
-```
-nautilus-practice/
-├── strategy/          # Trading strategy implementations
-│   ├── base.py       # Base strategy class with common logic
-│   └── *.py          # Specific strategies (oi_divergence, rs_squeeze, etc.)
-├── utils/            # Utility modules
-│   ├── custom_data.py         # Custom data types (OI, funding rates)
-│   ├── oi_funding_adapter.py  # Data loaders and adapters
-│   └── data_retrival.py       # OHLCV data fetching
-├── backtest/         # Backtesting engines
-├── tests/            # Unit tests (unittest framework)
-├── scripts/          # Standalone scripts for data prep, etc.
-├── config/           # Configuration files
-├── data/             # Market data (gitignored, generated)
-└── main.py           # Main entry point
-```
-
-## 🧪 Testing Guidelines
-
-- Use `unittest` framework (standard library)
-- Test file naming: `test_*.py`
-- Test class naming: `Test<FeatureName>`
-- Include docstrings explaining what each test validates
-- Use `setUp()` for common test fixtures
-- Test both happy paths and edge cases
-
-## 📚 Key Dependencies
-
-- **nautilus-trader**: Core backtesting and live trading framework
-- **ccxt**: Exchange API integration for data fetching
-- **pandas**: Data manipulation and analysis
-- **scikit-learn**: Machine learning models
-- **langchain**: LLM integration (for research/optimization)
-
-## 🔧 Special Notes
-
-### Environment Variables
-- **`.env` files**: Store API keys and secrets (already in `.gitignore`)
-- **`.env.example`**: Template for required environment variables
-- **`live.env`**, **`test.env`**: Environment-specific configurations
-- Never commit secrets to version control
-
-### Linting & Formatting
-- **No automated linting configured**: No black, ruff, flake8, or mypy setup currently
-- Follow PEP 8 style guidelines manually
-- Type hints are required but not enforced by tooling
-
-### NautilusTrader Specifics
-- Custom package index: `https://packages.nautechsystems.io/simple`
-- Allow prereleases in `pyproject.toml` for alpha/dev Nautilus versions
-- Chinese comments are acceptable and common in this codebase
-- Data files are large and gitignored - run data preparation scripts first before backtesting
+- **Module names**: snake
