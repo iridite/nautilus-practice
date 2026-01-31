@@ -40,7 +40,6 @@ __author__ = "NautilusTrader Utils"
 from . import (
     config_helpers,
     custom_data,
-    data_loader,
     network,
     oi_funding_adapter,
     path_helpers,
@@ -55,7 +54,7 @@ from .config_helpers import (
 )
 
 # 数据加载
-from .data_loader import (
+from .data_management.data_loader import (
     detect_time_column,
     load_ohlcv_csv,
 )
@@ -182,7 +181,6 @@ __all__ = [
     "network",
     "validation",
     "symbol_parser",
-    "data_loader",
     "path_helpers",
     "config_helpers",
     "custom_data",
@@ -212,7 +210,7 @@ def get_utils_info():
         "author": __author__,
         "modules": [
             "time_helpers", "network", "validation", "symbol_parser",
-            "data_loader", "path_helpers", "config_helpers"
+            "path_helpers", "config_helpers", "data_management"
         ],
         "core_functions": [
             "get_ms_timestamp", "retry_fetch",

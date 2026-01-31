@@ -120,7 +120,7 @@ class TestEngineLowRewrite(unittest.TestCase):
         self.assertIn(test_type, str(error))
         self.assertIn("Test error message", str(error))
 
-    @patch('utils.data_loader.load_ohlcv_csv')
+    @patch('utils.data_management.data_loader.load_ohlcv_csv')
     def test_load_data_for_feed_time_column_detection(self, mock_load_csv):
         """测试数据加载函数的时间列检测功能"""
         from unittest.mock import Mock

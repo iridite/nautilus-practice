@@ -8,14 +8,8 @@ dist/
 build/
 .vscode/
 
-# catalog data
-data/parquet/**
-data/instrument/**
-data/record/**
-data/raw/**
-data/models/**
-data/top/**
-data/universe_*.json
+# Data directory (pure data storage)
+data/
 output/**
 log/**
 
