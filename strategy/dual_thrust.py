@@ -7,6 +7,7 @@ Dual Thrust 突破策略
 from decimal import Decimal
 
 from nautilus_trader.model.data import Bar, BarType
+from nautilus_trader.model.enums import OrderSide
 
 from strategy.base import BaseStrategy, BaseStrategyConfig
 
@@ -86,26 +87,36 @@ class DualThrustStrategy(BaseStrategy):
             if current_price > self.upper_band:
                 qty = self.calculate_order_qty(bar.close)
                 if qty and qty > 0:
-                    self.buy(qty)
+                    order = self.order_factory.market(
+                        instrument_id=self.instrument.id,
+                        order_side=OrderSide.BUY,
+                        quantity=qty,
+                    )
+                    self.submit_order(order)
                     self.position_opened = True
                     self.log.info(f"突破上轨做多: price={current_price:.2f}, upper={self.upper_band:.2f}")
 
             elif current_price < self.lower_band:
                 qty = self.calculate_order_qty(bar.close)
                 if qty and qty > 0:
-                    self.sell(qty)
+                    order = self.order_factory.market(
+                        instrument_id=self.instrument.id,
+                        order_side=OrderSide.SELL,
+                        quantity=qty,
+                    )
+                    self.submit_order(order)
                     self.position_opened = True
                     self.log.info(f"突破下轨做空: price={current_price:.2f}, lower={self.lower_band:.2f}")
 
         else:
-            if self.portfolio.is_net_long(bar.instrument_id):
+            if self.portfolio.is_net_long(self.instrument.id):
                 if current_price < self.lower_band:
-                    self.close_all_positions(bar.instrument_id)
+                    self.close_all_positions(self.instrument.id)
                     self.position_opened = False
                     self.log.info(f"多头止损: price={current_price:.2f}")
 
-            elif self.portfolio.is_net_short(bar.instrument_id):
+            elif self.portfolio.is_net_short(self.instrument.id):
                 if current_price > self.upper_band:
-                    self.close_all_positions(bar.instrument_id)
+                    self.close_all_positions(self.instrument.id)
                     self.position_opened = False
                     self.log.info(f"空头止损: price={current_price:.2f}")
