@@ -36,14 +36,11 @@ from .data_retrieval import (
     fetch_okx_oi_history,
 )
 from .data_validator import DataValidator, prepare_data_feeds
-from .oi_funding_manager import execute_oi_funding_data_fetch
 
 __all__ = [
     # Fetcher manager
     "run_batch_data_retrieval",
     "fetch_data_with_retry",
-    # OI/Funding manager
-    "execute_oi_funding_data_fetch",
     # Validator
     "prepare_data_feeds",
     # Data fetcher

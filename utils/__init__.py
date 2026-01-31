@@ -19,7 +19,7 @@ Utils 工具模块统一接口
 
 完整模块导入：
     from utils import time_helpers, network, validation
-    from utils import symbol_parser, data_loader, path_helpers, config_helpers
+    from utils import symbol_parser, data_loader, path_helpers
 
 版本：1.0.0
 """
@@ -38,7 +38,6 @@ __author__ = "NautilusTrader Utils"
 # ============================================================================
 # 保持已有的自定义数据类型
 from . import (
-    config_helpers,
     custom_data,
     exceptions,
     network,
@@ -202,7 +201,6 @@ __all__ = [
     "validation",
     "symbol_parser",
     "path_helpers",
-    "config_helpers",
     "universe",
     "custom_data",
     "oi_funding_adapter",
@@ -232,7 +230,7 @@ def get_utils_info():
         "author": __author__,
         "modules": [
             "time_helpers", "network", "validation", "symbol_parser",
-            "path_helpers", "config_helpers", "data_management"
+            "path_helpers", "data_management"
         ],
         "core_functions": [
             "get_ms_timestamp", "retry_fetch",

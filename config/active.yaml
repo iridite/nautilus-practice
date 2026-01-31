@@ -5,7 +5,7 @@
 environment: "prod"
 
 # 当前策略 (可选: oi_divergence, rs_squeeze, dual_thrust, kalman_pairs, dk_alpha_trend)
-strategy: "dual_thrust"
+strategy: "dk_alpha_trend"
 
 # 主要交易对 (单标的模式时使用)
 primary_symbol: "ETHUSDT"

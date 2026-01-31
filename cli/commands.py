@@ -4,7 +4,7 @@ from pathlib import Path
 
 from scripts.fetch_instrument import update_instruments
 from strategy.core.dependency_checker import check_strategy_data_dependencies
-from utils.data_management import execute_oi_funding_data_fetch
+from utils.oi_funding_adapter import execute_oi_funding_data_fetch
 from utils.universe import parse_universe_symbols
 
 
