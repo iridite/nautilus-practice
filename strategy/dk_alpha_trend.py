@@ -138,6 +138,23 @@ class DKAlphaTrendStrategy(BaseStrategy):
             btc_bar_type = BarType.from_str(btc_bar_type_str)
             self.subscribe_bars(btc_bar_type)
 
+    def on_stop(self) -> None:
+        """策略停止时清理资源"""
+        # 取消订阅 Bar 数据
+        bar_type = BarType.from_str(self.config.bar_type)
+        self.unsubscribe_bars(bar_type)
+
+        # 取消订阅 BTC Bar 数据（如果不是同一标的）
+        if self.instrument.id != self.btc_instrument_id:
+            btc_bar_type_str = self.config.bar_type.replace(
+                self.instrument.id.symbol.value,
+                self.btc_instrument_id.symbol.value
+            )
+            btc_bar_type = BarType.from_str(btc_bar_type_str)
+            self.unsubscribe_bars(btc_bar_type)
+
+        super().on_stop()
+
     def on_bar(self, bar: Bar) -> None:
         """处理 Bar 数据"""
         # 更新价格缓存并标记更新状态
