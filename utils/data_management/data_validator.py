@@ -6,6 +6,7 @@
 """
 
 from decimal import Decimal
+from pathlib import Path
 from typing import Optional
 
 
@@ -209,14 +210,144 @@ class DataValidator:
         self._last_valid_value = None
 
 
+def validate_multi_instrument_alignment(
+    primary_csv: Path,
+    secondary_csv: Path,
+    min_alignment_rate: float = 0.95,
+    logger=None
+) -> tuple[bool, Optional[str]]:
+    """
+    验证多标的数据时间戳对齐
+
+    用于检查策略需要的多个标的数据是否时间同步，防止未来函数。
+    例如：DK_Alpha_Trend策略需要主标的(ETH)和BTC数据对齐。
+
+    Parameters
+    ----------
+    primary_csv : Path
+        主标的CSV文件路径
+    secondary_csv : Path
+        辅助标的CSV文件路径（如BTC）
+    min_alignment_rate : float
+        最小对齐率阈值（默认95%）
+    logger : Logger, optional
+        日志记录器
+
+    Returns
+    -------
+    tuple[bool, Optional[str]]
+        (是否对齐, 错误信息)
+
+    Examples
+    --------
+    >>> is_aligned, error = validate_multi_instrument_alignment(
+    ...     Path("data/raw/ETHUSDT-PERP_1-DAY.csv"),
+    ...     Path("data/raw/BTCUSDT-PERP_1-DAY.csv")
+    ... )
+    >>> if not is_aligned:
+    ...     print(f"数据对齐问题: {error}")
+    """
+    import pandas as pd
+
+    try:
+        # 检查文件存在性
+        if not primary_csv.exists():
+            error_msg = f"主标的数据文件不存在: {primary_csv}"
+            if logger:
+                logger.error(error_msg)
+            return False, error_msg
+
+        if not secondary_csv.exists():
+            error_msg = f"辅助标的数据文件不存在: {secondary_csv}"
+            if logger:
+                logger.error(error_msg)
+            return False, error_msg
+
+        # 加载时间戳列（自动检测列名）
+        primary_df = pd.read_csv(primary_csv)
+        secondary_df = pd.read_csv(secondary_csv)
+
+        # 检测时间列名
+        time_cols = ['timestamp', 'datetime', 'time', 'date']
+        primary_time_col = None
+        secondary_time_col = None
+
+        for col in time_cols:
+            if col in primary_df.columns:
+                primary_time_col = col
+                break
+
+        for col in time_cols:
+            if col in secondary_df.columns:
+                secondary_time_col = col
+                break
+
+        if not primary_time_col:
+            error_msg = f"主标的数据缺少时间列: {primary_csv}"
+            if logger:
+                logger.error(error_msg)
+            return False, error_msg
+
+        if not secondary_time_col:
+            error_msg = f"辅助标的数据缺少时间列: {secondary_csv}"
+            if logger:
+                logger.error(error_msg)
+            return False, error_msg
+
+        # 提取时间戳集合
+        primary_timestamps = set(primary_df[primary_time_col])
+        secondary_timestamps = set(secondary_df[secondary_time_col])
+
+        # 计算对齐情况
+        common_timestamps = primary_timestamps & secondary_timestamps
+        primary_count = len(primary_timestamps)
+        secondary_count = len(secondary_timestamps)
+        common_count = len(common_timestamps)
+
+        # 计算对齐率（基于主标的）
+        alignment_rate = common_count / primary_count if primary_count > 0 else 0.0
+
+        # 记录详细信息
+        if logger:
+            logger.info(
+                f"数据对齐检查: "
+                f"主标的={primary_count}条, "
+                f"辅助标的={secondary_count}条, "
+                f"共同={common_count}条, "
+                f"对齐率={alignment_rate:.1%}"
+            )
+
+        # 检查对齐率
+        if alignment_rate < min_alignment_rate:
+            error_msg = (
+                f"数据对齐率过低: {alignment_rate:.1%} < {min_alignment_rate:.1%}\n"
+                f"主标的: {primary_csv.name} ({primary_count}条)\n"
+                f"辅助标的: {secondary_csv.name} ({secondary_count}条)\n"
+                f"共同时间戳: {common_count}条\n"
+                f"建议: 检查数据源或重新下载数据"
+            )
+            if logger:
+                logger.warning(f"⚠️  {error_msg}")
+            return False, error_msg
+
+        # 对齐率合格
+        if logger:
+            logger.info(f"✅ 数据对齐验证通过: {alignment_rate:.1%}")
+
+        return True, None
+
+    except Exception as e:
+        error_msg = f"数据对齐验证失败: {e}"
+        if logger:
+            logger.error(error_msg)
+        return False, error_msg
+
+
 
 
 
 def prepare_data_feeds(args, adapter, base_dir, universe_symbols: set):
     """准备数据流（验证或获取）"""
-    from pathlib import Path
-
-    from core.adapter import get_adapter
     from utils.validation import check_single_data_file
 
     from .data_manager import run_batch_data_retrieval
@@ -252,4 +383,48 @@ def prepare_data_feeds(args, adapter, base_dir, universe_symbols: set):
     else:
         print("✅ All data files present")
 
+    # 多标的数据对齐检查
+    _check_multi_instrument_alignment(adapter, base_dir, venue, timeframe)
+
     print("="*70 + "\n")
+
+
+def _check_multi_instrument_alignment(adapter, base_dir: Path, venue: str, timeframe: str):
+    """检查多标的数据对齐（如果策略需要）"""
+    import logging
+
+    logger = logging.getLogger(__name__)
+
+    try:
+        # 获取策略配置
+        config = adapter.build_backtest_config()
+        strategy_params = config.strategy.params if hasattr(config.strategy, 'params') else config.strategy
+
+        # 检查是否有辅助标的配置（如 btc_instrument_id）
+        btc_instrument_id = getattr(strategy_params, 'btc_instrument_id', None)
+        if not btc_instrument_id:
+            return  # 策略不需要多标的对齐检查
+
+        # 提取主标的和BTC标的的symbol
+        primary_symbol = adapter.get_primary_symbol().split(":")[0]
+        btc_symbol = btc_instrument_id.split(".")[0] if "." in btc_instrument_id else "BTCUSDT-PERP"
+
+        # 构建CSV文件路径
+        data_dir = Path(base_dir) / "data" / "raw"
+        primary_csv = data_dir / f"{primary_symbol}_{timeframe}.csv"
+        btc_csv = data_dir / f"{btc_symbol}_{timeframe}.csv"
+
+        # 执行对齐检查
+        print(f"🔍 检查多标的数据对齐: {primary_symbol} vs {btc_symbol}")
+        is_aligned, error_msg = validate_multi_instrument_alignment(
+            primary_csv, btc_csv, min_alignment_rate=0.95, logger=logger
+        )
+
+        if not is_aligned:
+            print(f"⚠️  数据对齐警告: {error_msg}")
+            print("   建议: 检查数据源或重新下载数据")
+        else:
+            print("✅ 数据对齐验证通过")
+
+    except Exception as e:
+        logger.warning(f"多标的对齐检查失败: {e}")
