@@ -19,5 +19,4 @@ log/**
 .langgraph_api/
 .aider*
 .env
-.env
-.env
+test.env

@@ -27,7 +27,6 @@ class ConfigLoader:
 
     def __init__(self, config_dir: Optional[Path] = None):
         self.paths = ConfigPaths(config_dir)
-        self._cache = {}
         self._env_var_pattern = re.compile(r"\$\{([^}]+)\}")
 
     def load_environment_config(self, env_name: str) -> EnvironmentConfig:
@@ -335,9 +334,7 @@ class ConfigLoader:
 
         return report
 
-    def clear_cache(self):
-        """清除配置缓存"""
-        self._cache.clear()
+
 
 
 # 便利函数
