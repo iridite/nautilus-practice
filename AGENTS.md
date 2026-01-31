@@ -9,8 +9,8 @@ This document provides coding guidelines for AI agents working in this repositor
 - **Package Manager**: `uv` (modern Python package manager)
 - **Domain**: Cryptocurrency quantitative trading (perpetual futures)
 - **Main Exchanges**: Binance, OKX
-- **Code Scale**: 19,454 lines (optimized)
-- **Test Coverage**: 97 tests, 100% pass rate
+- **Code Scale**: 13,158 lines (optimized from 19,454)
+- **Test Coverage**: 84 tests, 100% pass rate
 
 ## 🛠️ Build/Test/Run Commands
 
@@ -109,16 +109,15 @@ The project adopts a clear modular architecture with well-defined responsibiliti
 
 **CLI Module** (`cli/`)
 - `commands.py` - Command implementations (data checking, backtest execution)
+- `file_cleanup.py` - Automatic cleanup of old log/output files (moved from utils/)
 
-### Data Management** (`utils/data_management/` - Unified Module, 8 files)
+**Data Management** (`utils/data_management/` - Unified Module, 7 files)
 - `data_validator.py` - Data validation and feed preparation (merged from `validator.py`)
-- `data_manager.py` - High-level data manager (merged from `fetcher_manager.py`)
-- `oi_funding_manager.py` - OI/Funding data management
-- `data_retrieval.py` - Main data retrieval logic (renamed from `data_retrival.py`)
+- `data_manager.py` - High-level data manager
+- `data_retrieval.py` - Main data retrieval logic
 - `data_fetcher.py` - Multi-source OHLCV fetcher
 - `data_limits.py` - Exchange data limits checking
-- `data_loader.py` - CSV data loading utilities (refactored for maintainability)
-- `data_limits.py` - Exchange data limits checking
+- `data_loader.py` - CSV data loading utilities
 
 **Data Directory** (`data/`)
 - Pure data storage (no code files)
@@ -135,9 +134,21 @@ The project adopts a clear modular architecture with well-defined responsibiliti
 - **Refactoring Results**: 2 files deleted, 429 lines removed, architecture simplified from 4 layers to 3 layers
 
 **Strategy Module** (`strategy/`)
-- `base.py` - Base strategy class
-- `dependency_checker.py` - Strategy dependency checking
-- `kalman_pairs.py` - Active strategy
+- `core/base.py` - Base strategy class with unified position management
+- `core/dependency_checker.py` - Strategy dependency checking
+- `core/loader.py` - Strategy configuration loader
+- `dk_alpha_trend.py` - DK Alpha Trend strategy (Squeeze + RS filtering)
+- `dual_thrust.py` - Dual Thrust breakout strategy
+- `kalman_pairs.py` - Kalman filter pairs trading strategy
+</text>
+
+<old_text line=175>
+    def on_bar(self, bar):
+        """Process Bar data and trading logic"""
+
+    def on_data(self, data):
+        """Process custom data (OI, funding rates)"""
+```
 
 ### Dual Backtest Engine Architecture
 
@@ -259,7 +270,7 @@ parameters:
 - Continuously collect and store OI data for long-term historical analysis
 - Service will run independently and maintain a comprehensive OI database
 
-**Implementation Location**: `utils/data_management/data_retrival.py` - `ENABLE_OI_FETCH = False`
+**Implementation Location**: `utils/data_management/data_retrieval.py` - `ENABLE_OI_FETCH = False`
 
 **For Developers**: 
 - OI data fetching code structure is preserved but inactive
@@ -292,14 +303,23 @@ from utils import (
 )
 ```
 
-**Module Organization**:
-- `time_helpers`: Timestamp conversion and handling
-- `network`: HTTP requests and retry mechanism
-- `validation`: Data file validation and checking
-- `symbol_parser`: Trading pair symbol parsing and conversion
-- `path_helpers`: Project path management (with caching)
-- `config_helpers`: Universe configuration parsing
-- `data_management/`: Unified data management module (see Data Management section above)
+**Module Organization** (2026-02-01 Optimized):
+- `time_helpers` (223 lines, 3 uses): Timestamp conversion and handling
+- `network` (94 lines, 2 uses): HTTP requests and retry mechanism (optimized from 377 lines)
+- `data_file_checker` (114 lines, 5 uses): Data file validation and checking
+- `symbol_parser` (475 lines, 2 uses): Trading pair symbol parsing (reserved for multi-exchange support)
+- `path_helpers` (50 lines, 1 use): Project path management with caching
+- `universe` (229 lines, 1 use): Universe configuration parsing
+- `instrument_loader` (61 lines, 3 uses): Instrument loading utilities
+- `oi_funding_adapter` (478 lines, 3 uses): OI/Funding data adapter
+- `custom_data` (160 lines, 2 uses): Custom data type definitions
+- `data_management/` (7 files): Unified data management module
+
+**Recent Optimizations** (2026-02-01):
+- Removed 529 lines of dead code (10.9% reduction)
+- Simplified `__init__.py` from 240 to 97 lines
+- Moved `file_cleanup.py` to `cli/` module (single-use relocation)
+- Optimized `network.py` from 377 to 94 lines (removed unused utilities)
 
 ### Custom Data Types
 
@@ -312,9 +332,34 @@ Implemented through `utils.custom_data` and `utils.oi_funding_adapter` modules f
 
 **Note**: While OI data fetching is disabled, the data types and loading infrastructure remain intact for future use.
 
-## 🔧 Module Refactoring Best Practices (2026-01-31)
+## 🔧 Module Refactoring Best Practices (2026-02-01)
 
 ### Refactoring Strategy
+
+### Code Optimization Analysis Workflow
+
+**Step 1: Usage Analysis**
+```python
+# Analyze module import frequency
+for root, dirs, files in os.walk("."):
+    if ".venv" not in root:
+        for file in files:
+            if file.endswith(".py"):
+                content = Path(root, file).read_text()
+                # Count imports for each module
+```
+
+**Step 2: Identify Optimization Targets**
+- 🔴 Low-use large files (>100 lines, ≤2 uses) - High priority
+- 🟡 Single-use modules - Consider relocation
+- 🟢 High-use modules (≥5 uses) - Keep as-is
+
+**Step 3: Verify Before Deletion**
+- Check if code is reserved for future features (e.g., multi-exchange support)
+- Confirm zero actual usage with `grep` searches
+- Verify functions aren't used internally within the module
+
+### Refactoring Priority Levels
 
 When refactoring large modules, follow a prioritized approach:
 
@@ -343,7 +388,13 @@ When merging redundant modules:
 4. **Verify tests**: Ensure 100% test pass rate after changes
 5. **Document changes**: Update architecture documentation
 
-**Example**: Merged `validator.py` and `fetcher_manager.py` into `data_validator.py` and `data_manager.py`, reducing module count by 13.6%.
+**Example 1**: Merged `validator.py` and `fetcher_manager.py` into `data_validator.py` and `data_manager.py`, reducing module count by 13.6%.
+
+**Example 2** (2026-02-01): Utils module optimization
+- Simplified `__init__.py`: 240 → 97 lines (-59.6%)
+- Relocated `file_cleanup.py` to `cli/` (single-use module)
+- Optimized `network.py`: 377 → 94 lines (-75.1%)
+- Total reduction: 529 lines (10.9%)
 
 ### Code Extraction Patterns
 
@@ -397,11 +448,55 @@ Track these metrics during refactoring:
 - **Test coverage**: Maintain 100% pass rate
 - **Import complexity**: Reduce cross-module dependencies
 
-**Example results** (Utils module refactoring):
-- Modules: 22 → 19 (-13.6%)
-- Code: -179 lines net reduction
-- Tests: 97/97 (100% pass)
+**Example results** (Project-wide optimization):
+- Code: 19,454 → 13,158 lines (-32.4% reduction)
+- Utils module: 4,868 → 4,339 lines (-10.9%)
+- Tests: 84/84 (100% pass)
 - Dependencies: Clear hierarchy, no cycles
+
+**Utils Module Optimization Case Study** (2026-02-01):
+1. **Analysis Phase**: Used automated scripts to analyze import frequency and file sizes
+2. **Identified Issues**:
+   - `__init__.py`: 240 lines with unused helper functions
+   - `network.py`: 377 lines but only `retry_fetch()` used
+   - `file_cleanup.py`: 103 lines, single use in `cli/commands.py`
+3. **Actions Taken**:
+   - Removed unused functions: `batch_validate_data()`, `get_utils_info()`, `_check_python_version()`
+   - Deleted 7 unused functions from `network.py` (RateLimiter, decorators, helpers)
+   - Relocated single-use module to its usage location
+4. **Results**: 529 lines removed, 100% test pass rate maintained
+5. **Key Lesson**: Always verify if "unused" code is reserved for future features before deletion
+
+### Single-Use Module Relocation Pattern
+
+When a module is only used in one location:
+
+**Decision Criteria**:
+- ✅ Relocate if: Module is tightly coupled to single usage location
+- ✅ Relocate if: Module size is small-to-medium (<200 lines)
+- ❌ Keep if: Module provides independent, reusable functionality
+- ❌ Keep if: Module is reserved for future multi-location usage
+
+**Example**: `file_cleanup.py` (103 lines, 1 use)
+```python
+# Before: utils/file_cleanup.py
+# After: cli/file_cleanup.py
+# Update import: from utils.file_cleanup → from .file_cleanup
+```
+
+### Reserved Code vs Dead Code
+
+**Reserved Code** (Keep):
+- Explicitly documented for future features (e.g., "multi-exchange support")
+- Part of a complete API surface (even if partially unused)
+- Infrastructure for planned functionality
+
+**Dead Code** (Remove):
+- Zero references in codebase
+- No documentation indicating future use
+- Redundant or superseded functionality
+
+**Example**: `symbol_parser.py` contains 7 unused functions but is **reserved** for multi-exchange support - keep intact.
 
 ## 📝 Code Style Guidelines
 
