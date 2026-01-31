@@ -37,12 +37,12 @@ from backtest.exceptions import (
     InstrumentLoadError,
     ValidationError,
 )
-from backtest.strategy_loader import (
+from core.models import BackTestConfig, DataConfig
+from strategy.loader import (
     filter_strategy_params,
     load_strategy_class,
     load_strategy_config_class,
 )
-from core.models import BackTestConfig, DataConfig
 from utils import load_ohlcv_csv
 from utils.data_validator import DataValidator
 from utils.instrument_loader import load_instrument
@@ -165,9 +165,9 @@ def _load_custom_data_to_engine(
                     oi_data_list.extend(loader.load_oi_data(
                         symbol=symbol,
                         instrument_id=instrument_id,
-                        start_date=cfg.backtest.start_date,
-                        end_date=cfg.backtest.end_date,
-                        exchange=cfg.backtest.exchange_id
+                        start_date=cfg.start_date,
+                        end_date=cfg.end_date,
+                        exchange=cfg.instrument.venue_name.lower() if cfg.instrument else "binance"
                     ))
 
             # 加载Funding Rate数据
@@ -177,9 +177,9 @@ def _load_custom_data_to_engine(
                     funding_data_list.extend(loader.load_funding_data(
                         symbol=symbol,
                         instrument_id=instrument_id,
-                        start_date=cfg.backtest.start_date,
-                        end_date=cfg.backtest.end_date,
-                        exchange=cfg.backtest.exchange_id
+                        start_date=cfg.start_date,
+                        end_date=cfg.end_date,
+                        exchange=cfg.instrument.venue_name.lower() if cfg.instrument else "binance"
                     ))
 
             # 合并并添加到引擎

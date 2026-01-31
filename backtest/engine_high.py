@@ -33,11 +33,11 @@ from backtest.exceptions import (
     DataLoadError,
     InstrumentLoadError,
 )
-from backtest.strategy_loader import (
+from core.models import BackTestConfig
+from strategy.loader import (
     filter_strategy_params,
     load_strategy_config_class,
 )
-from core.models import BackTestConfig
 from utils.filename_parser import FilenameParser
 from utils.instrument_loader import load_instrument
 from utils.oi_funding_adapter import OIFundingDataLoader
@@ -78,6 +78,170 @@ def _load_instruments(cfg: BackTestConfig) -> Dict[str, Instrument]:
     return loaded_instruments
 
 
+def _check_parquet_coverage(
+    catalog: ParquetDataCatalog,
+    bar_type: BarType,
+    cfg: BackTestConfig,
+) -> Tuple[bool, float]:
+    """
+    检查Parquet数据覆盖率
+
+    Returns:
+        Tuple[bool, float]: (是否存在, 覆盖率百分比)
+    """
+    try:
+        existing_intervals = catalog.get_intervals(
+            data_cls=Bar, identifier=str(bar_type)
+        )
+        if not existing_intervals:
+            return False, 0.0
+    except Exception:
+        return False, 0.0
+
+    # 简化逻辑：如果 Parquet 数据存在则返回 True
+    return True, 100.0
+
+
+def _handle_parquet_exists(
+    catalog: ParquetDataCatalog,
+    csv_path: Path,
+    inst: Instrument,
+    bar_type: BarType,
+    data_cfg,
+    cfg: BackTestConfig,
+    feed_idx: int,
+    total_feeds: int,
+) -> str:
+    """
+    处理Parquet数据已存在的情况
+
+    Returns:
+        str: 状态消息（用于日志）
+    """
+    csv_exists = csv_path.exists()
+
+    if csv_exists:
+        is_consistent = _verify_data_consistency(csv_path, catalog, bar_type)
+
+        if not is_consistent:
+            try:
+                catalog_loader(catalog, csv_path, inst, bar_type)
+                return f"\r📖 [{feed_idx:3d}/{total_feeds}] Updated: {str(bar_type.instrument_id):<32}"
+            except Exception:
+                return f"\r⚠️  [{feed_idx:3d}/{total_feeds}] Using Parquet: {str(bar_type.instrument_id):<28}"
+        else:
+            return f"\r⏩ [{feed_idx:3d}/{total_feeds}] Verified: {str(bar_type.instrument_id):<35}"
+    else:
+        # 检查Parquet覆盖率
+        parquet_exists, coverage_pct = _check_parquet_coverage(catalog, bar_type, cfg)
+
+        if parquet_exists and coverage_pct < 95.0:
+            # 数据不完整，触发自动下载
+            download_success = _auto_download_missing_data(data_cfg, cfg)
+
+            if download_success and csv_path.exists():
+                try:
+                    catalog_loader(catalog, csv_path, inst, bar_type)
+                    return f"\r📖 [{feed_idx:3d}/{total_feeds}] Completed: {str(bar_type.instrument_id):<32}"
+                except Exception:
+                    return f"\r⚠️  [{feed_idx:3d}/{total_feeds}] Partial Parquet: {str(bar_type.instrument_id):<25} ({coverage_pct:.1f}%)"
+            else:
+                return f"\r⚠️  [{feed_idx:3d}/{total_feeds}] Partial Parquet: {str(bar_type.instrument_id):<25} ({coverage_pct:.1f}%)"
+        else:
+            # 尝试常规下载
+            download_success = _auto_download_missing_data(data_cfg, cfg)
+
+            if download_success and csv_path.exists():
+                try:
+                    catalog_loader(catalog, csv_path, inst, bar_type)
+                    return f"\r📖 [{feed_idx:3d}/{total_feeds}] Imported: {str(bar_type.instrument_id):<32}"
+                except Exception:
+                    return f"\r⚠️  [{feed_idx:3d}/{total_feeds}] Using Parquet: {str(bar_type.instrument_id):<28}"
+            else:
+                return f"\r⚠️  [{feed_idx:3d}/{total_feeds}] Partial Parquet: {str(bar_type.instrument_id):<25}"
+
+
+def _handle_parquet_missing(
+    catalog: ParquetDataCatalog,
+    csv_path: Path,
+    inst: Instrument,
+    bar_type: BarType,
+    data_cfg,
+    cfg: BackTestConfig,
+    feed_idx: int,
+    total_feeds: int,
+) -> str:
+    """
+    处理Parquet数据不存在的情况
+
+    Returns:
+        str: 状态消息
+
+    Raises:
+        DataLoadError: 当数据完全缺失时
+    """
+    csv_exists = csv_path.exists()
+
+    if csv_exists:
+        try:
+            catalog_loader(catalog, csv_path, inst, bar_type)
+            return f"\r📖 [{feed_idx:3d}/{total_feeds}] Imported: {str(bar_type.instrument_id):<32}"
+        except Exception as e:
+            raise DataLoadError(
+                f"Error loading {data_cfg.csv_file_name}: {e}", str(csv_path), e
+            )
+    else:
+        download_success = _auto_download_missing_data(data_cfg, cfg)
+
+        if download_success and csv_path.exists():
+            try:
+                catalog_loader(catalog, csv_path, inst, bar_type)
+                return f"\r📖 [{feed_idx:3d}/{total_feeds}] Imported: {str(bar_type.instrument_id):<32}"
+            except Exception:
+                pass
+
+        # 数据完全缺失
+        raise DataLoadError(
+            f"Critical data missing for {bar_type.instrument_id}. "
+            f"CSV file not found: {csv_path}, Parquet data not available, "
+            f"and auto-download failed.",
+            str(csv_path),
+        )
+
+
+def _auto_download_data(data_cfg, cfg: BackTestConfig) -> bool:
+    """
+    自动下载缺失的数据文件
+
+    Returns:
+        bool: 下载是否成功
+    """
+    try:
+        from utils.data_retrival import batch_fetch_ohlcv
+
+        parsed = FilenameParser.parse(data_cfg.csv_file_name)
+        if not parsed:
+            return False
+
+        base_dir = Path(__file__).parent.parent
+        configs = batch_fetch_ohlcv(
+            symbols=[parsed.symbol],
+            start_date=parsed.start_date,
+            end_date=parsed.end_date,
+            timeframe=parsed.timeframe,
+            exchange_id=parsed.exchange,
+            base_dir=base_dir,
+        )
+
+        if configs:
+            csv_path = data_cfg.full_path
+            return csv_path.exists() and csv_path.stat().st_size > 1024
+
+        return False
+    except Exception:
+        return False
+
+
 def _import_data_to_catalog(
     cfg: BackTestConfig,
     loaded_instruments: Dict[str, Instrument],
@@ -88,12 +252,6 @@ def _import_data_to_catalog(
 
     智能数据处理：检查Parquet覆盖率，按需导入CSV或下载数据
     """
-    from backtest.data_import_helpers import (
-        check_parquet_coverage,
-        handle_parquet_exists,
-        handle_parquet_missing,
-    )
-
     _catalog = ParquetDataCatalog(catalog_path)
     data_config_by_inst = {}
     feeds_by_inst = defaultdict(dict)
@@ -111,17 +269,17 @@ def _import_data_to_catalog(
         bar_type = BarType.from_str(feed_bar_type_str)
 
         # 检查Parquet数据覆盖率
-        parquet_exists, coverage_pct = check_parquet_coverage(_catalog, bar_type, cfg)
+        parquet_exists, coverage_pct = _check_parquet_coverage(_catalog, bar_type, cfg)
 
         # 处理数据导入
         if parquet_exists and coverage_pct >= 80:
             status_msg = f"\r✅ [{feed_idx:3d}/{total_feeds}] Ready: {str(bar_type.instrument_id):<35}"
         elif parquet_exists:
-            status_msg = handle_parquet_exists(
+            status_msg = _handle_parquet_exists(
                 _catalog, csv_path, inst, bar_type, data_cfg, cfg, feed_idx, total_feeds
             )
         else:
-            status_msg = handle_parquet_missing(
+            status_msg = _handle_parquet_missing(
                 _catalog, csv_path, inst, bar_type, data_cfg, cfg, feed_idx, total_feeds
             )
 
@@ -152,8 +310,7 @@ def _import_data_to_catalog(
 
 def _auto_download_missing_data(data_cfg, backtest_cfg: BackTestConfig) -> bool:
     """自动下载缺失的数据文件"""
-    from backtest.data_import_helpers import auto_download_data
-    return auto_download_data(data_cfg, backtest_cfg)
+    return _auto_download_data(data_cfg, backtest_cfg)
 
 
 def _clear_parquet_data(catalog: ParquetDataCatalog, bar_type: BarType) -> None:
@@ -541,9 +698,9 @@ def _load_custom_data_to_engine(
                     oi_data_list.extend(loader.load_oi_data(
                         symbol=symbol,
                         instrument_id=instrument_id,
-                        start_date=cfg.backtest.start_date,
-                        end_date=cfg.backtest.end_date,
-                        exchange=cfg.backtest.exchange_id
+                        start_date=cfg.start_date,
+                        end_date=cfg.end_date,
+                        exchange=cfg.instrument.venue_name.lower() if cfg.instrument else "binance"
                     ))
 
             # 加载Funding Rate数据
@@ -553,9 +710,9 @@ def _load_custom_data_to_engine(
                     funding_data_list.extend(loader.load_funding_data(
                         symbol=symbol,
                         instrument_id=instrument_id,
-                        start_date=cfg.backtest.start_date,
-                        end_date=cfg.backtest.end_date,
-                        exchange=cfg.backtest.exchange_id
+                        start_date=cfg.start_date,
+                        end_date=cfg.end_date,
+                        exchange=cfg.instrument.venue_name.lower() if cfg.instrument else "binance"
                     ))
 
             # 合并并添加到引擎
