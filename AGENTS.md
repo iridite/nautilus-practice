@@ -10,7 +10,7 @@ This document provides coding guidelines for AI agents working in this repositor
 - **Domain**: Cryptocurrency quantitative trading (perpetual futures)
 - **Main Exchanges**: Binance, OKX
 - **Code Scale**: 19,454 lines (optimized)
-- **Test Coverage**: 106 tests, 100% pass rate
+- **Test Coverage**: 97 tests, 100% pass rate
 
 ## 🛠️ Build/Test/Run Commands
 
@@ -124,12 +124,15 @@ The project adopts a clear modular architecture with well-defined responsibiliti
 - Pure data storage (no code files)
 - Subdirectories: `instrument/`, `raw/`, `parquet/`, `models/`, `record/`, `top/`
 
-**Configuration System** (`core/` - Unified Architecture)
-- `schemas.py` - Pydantic data models
+**Configuration System** (`core/` - Pydantic-based Architecture, 2026-01-31 Refactored)
+- `schemas.py` - Pydantic data models (unified configuration classes)
 - `loader.py` - YAML configuration loader
-- `adapter.py` - Configuration adapter
-- `settings.py` - Unified access interface
-- Architecture: YAML → Pydantic Validation → Adapter → Application
+- `adapter.py` - Configuration adapter and unified access interface (310 lines, simplified)
+- `exceptions.py` - Configuration exception classes
+- Architecture: YAML → Pydantic Validation → Adapter → Application (3-layer design)
+- **Removed**: `models.py` (dataclass models), `settings.py` (middleware layer)
+- **Access Pattern**: `from core.adapter import get_adapter`
+- **Refactoring Results**: 2 files deleted, 429 lines removed, architecture simplified from 4 layers to 3 layers
 
 **Strategy Module** (`strategy/`)
 - `base.py` - Base strategy class
