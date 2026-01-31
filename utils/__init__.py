@@ -40,6 +40,7 @@ __author__ = "NautilusTrader Utils"
 from . import (
     config_helpers,
     custom_data,
+    exceptions,
     network,
     oi_funding_adapter,
     path_helpers,
@@ -57,6 +58,13 @@ from .config_helpers import (
 from .data_management.data_loader import (
     detect_time_column,
     load_ohlcv_csv,
+)
+
+# 异常类
+from .exceptions import (
+    ConfigurationError,
+    DataFetchError,
+    DataValidationError,
 )
 
 # 网络请求
@@ -158,6 +166,11 @@ __all__ = [
     "__version__",
     "__author__",
 
+    # 异常类
+    "DataValidationError",
+    "DataFetchError",
+    "ConfigurationError",
+
     # 核心功能 - 实际导入的函数
     "get_ms_timestamp",
     "retry_fetch",
@@ -185,6 +198,7 @@ __all__ = [
     "config_helpers",
     "custom_data",
     "oi_funding_adapter",
+    "exceptions",
 ]
 
 

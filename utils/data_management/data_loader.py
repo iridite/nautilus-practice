@@ -24,6 +24,7 @@ from nautilus_trader.persistence.loaders import CSVBarDataLoader
 from nautilus_trader.persistence.wranglers import BarDataWrangler
 
 from utils.custom_data import FundingRateData, OpenInterestData
+from utils.time_helpers import parse_date_to_timestamp
 
 
 class DataLoadError(Exception):
@@ -129,6 +130,68 @@ def _looks_like_time_column(series: pd.Series) -> bool:
     return any(keyword in col_name for keyword in time_keywords)
 
 
+def _check_and_cleanup_data_range(
+    df: pd.DataFrame,
+    csv_path: Path,
+    start_date: str,
+    end_date: str,
+    auto_cleanup: bool,
+    logger
+) -> None:
+    """检查数据范围并执行清理"""
+    import shutil
+
+    actual_start = df.index.min()
+    actual_end = df.index.max()
+    config_start = pd.Timestamp(start_date)
+    config_end = pd.Timestamp(end_date)
+
+    if actual_end <= config_end:
+        return
+
+    logger.warning(
+        f"⚠️ Data range mismatch detected in {csv_path.name}:\n"
+        f"   CSV data: {actual_start.date()} to {actual_end.date()}\n"
+        f"   Config range: {config_start.date()} to {config_end.date()}\n"
+        f"   Data exceeds config by {(actual_end - config_end).days} days"
+    )
+
+    if not auto_cleanup:
+        return
+
+    logger.warning(f"🧹 Auto-cleanup enabled: removing {csv_path.name}")
+    csv_path.unlink()
+
+    symbol = csv_path.stem.split('-')[1] if '-' in csv_path.stem else None
+    if symbol:
+        parquet_base = csv_path.parent.parent / "parquet"
+        if parquet_base.exists():
+            for strategy_dir in parquet_base.iterdir():
+                if strategy_dir.is_dir():
+                    for symbol_dir in strategy_dir.rglob(f"*{symbol}*"):
+                        if symbol_dir.is_dir():
+                            logger.warning(f"   Removing Parquet: {symbol_dir}")
+                            shutil.rmtree(symbol_dir)
+
+    raise DataLoadError(
+        f"Data file removed due to range mismatch. "
+        f"Please re-run to download correct data range."
+    )
+
+
+def _filter_by_date_range(df: pd.DataFrame, start_date: str | None, end_date: str | None) -> pd.DataFrame:
+    """按日期范围过滤数据"""
+    if start_date:
+        start_ts = parse_date_to_timestamp(start_date)
+        df = df[df.index >= start_ts]
+
+    if end_date:
+        end_ts = parse_date_to_timestamp(end_date)
+        df = df[df.index <= end_ts]
+
+    return df
+
+
 def load_ohlcv_csv(
     csv_path: Union[str, Path],
     time_column: str | None = None,
@@ -166,7 +229,6 @@ def load_ohlcv_csv(
         当数据加载或处理失败时
     """
     import logging
-    import shutil
 
     logger = logging.getLogger(__name__)
     csv_path = Path(csv_path)
@@ -175,14 +237,11 @@ def load_ohlcv_csv(
         raise DataLoadError(f"CSV file not found: {csv_path}")
 
     try:
-        # 自动检测时间列
         if time_column is None:
             time_column = detect_time_column(csv_path)
 
-        # 定义必需的列
         required_columns = [time_column, "open", "high", "low", "close", "volume"]
 
-        # 使用 NautilusTrader 的高效加载器
         df_full = CSVBarDataLoader.load(
             file_path=csv_path,
             index_col=time_column,
@@ -190,66 +249,13 @@ def load_ohlcv_csv(
             parse_dates=True,
         )
 
-        # 确保索引已排序
         df_full.sort_index(inplace=True)
 
-        # 数据范围验证
         if start_date and end_date and len(df_full) > 0:
-            actual_start = df_full.index.min()
-            actual_end = df_full.index.max()
-            config_start = pd.Timestamp(start_date)
-            config_end = pd.Timestamp(end_date)
+            _check_and_cleanup_data_range(df_full, csv_path, start_date, end_date, auto_cleanup, logger)
 
-            # 检查数据是否超出配置范围
-            data_exceeds_range = actual_end > config_end
+        df = _filter_by_date_range(df_full, start_date, end_date)
 
-            if data_exceeds_range:
-                logger.warning(
-                    f"⚠️ Data range mismatch detected in {csv_path.name}:\n"
-                    f"   CSV data: {actual_start.date()} to {actual_end.date()}\n"
-                    f"   Config range: {config_start.date()} to {config_end.date()}\n"
-                    f"   Data exceeds config by {(actual_end - config_end).days} days"
-                )
-
-                if auto_cleanup:
-                    logger.warning(f"🧹 Auto-cleanup enabled: removing {csv_path.name}")
-
-                    # 删除 CSV 文件
-                    csv_path.unlink()
-
-                    # 删除对应的 Parquet 数据
-                    symbol = csv_path.stem.split('-')[1] if '-' in csv_path.stem else None
-                    if symbol:
-                        parquet_base = csv_path.parent.parent / "parquet"
-                        if parquet_base.exists():
-                            for strategy_dir in parquet_base.iterdir():
-                                if strategy_dir.is_dir():
-                                    symbol_dirs = list(strategy_dir.rglob(f"*{symbol}*"))
-                                    for symbol_dir in symbol_dirs:
-                                        if symbol_dir.is_dir():
-                                            logger.warning(f"   Removing Parquet: {symbol_dir}")
-                                            shutil.rmtree(symbol_dir)
-
-                    raise DataLoadError(
-                        f"Data file removed due to range mismatch. "
-                        f"Please re-run to download correct data range."
-                    )
-
-        # 时间范围过滤
-        df = df_full
-        if start_date:
-            start_ts = pd.Timestamp(start_date)
-            if start_ts.tz is not None:
-                start_ts = start_ts.tz_localize(None)
-            df = df[df.index >= start_ts]
-
-        if end_date:
-            end_ts = pd.Timestamp(end_date)
-            if end_ts.tz is not None:
-                end_ts = end_ts.tz_localize(None)
-            df = df[df.index <= end_ts]
-
-        # 验证数据
         if validate_data:
             _validate_ohlcv_data(df)
 

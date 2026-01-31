@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from .fetcher_manager import fetch_data_with_retry
+from .data_manager import fetch_data_with_retry
 
 
 def execute_oi_funding_data_fetch(

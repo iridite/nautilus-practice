@@ -143,16 +143,17 @@ def build_backtest_config():
 def run_file_cleanup() -> int:
     """执行文件清理"""
     from pathlib import Path
-    from utils.file_cleanup import auto_cleanup, FileCleanupConfig
+
+    from utils.file_cleanup import auto_cleanup
 
     base_dir = Path(__file__).parent.parent
     fc = _adapter.env_config.file_cleanup
-    config = FileCleanupConfig(
+    return auto_cleanup(
+        base_dir,
         max_files_per_dir=fc.max_files_per_dir,
         enabled=fc.enabled,
         target_dirs=fc.target_dirs,
     )
-    return auto_cleanup(base_dir, config)
 
 
 # ==========================================
