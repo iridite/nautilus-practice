@@ -6,55 +6,19 @@
 
 from typing import List
 
-from nautilus_trader.model import Money
-
 from .adapter import ConfigAdapter, DataConfig, get_adapter
+from .models import (
+    BackTestConfig,
+    InstrumentConfig,
+    InstrumentType,
+    LegacyStrategyConfig,
+)
 
 # ==========================================
 # 全局配置适配器
 # ==========================================
 
 _adapter = get_adapter()
-
-# ==========================================
-# 配置访问接口
-# ==========================================
-
-
-def get_venue() -> str:
-    """获取交易所名称"""
-    return _adapter.get_venue()
-
-
-def get_start_date() -> str:
-    """获取回测开始日期"""
-    return _adapter.get_start_date()
-
-
-def get_end_date() -> str:
-    """获取回测结束日期"""
-    return _adapter.get_end_date()
-
-
-def get_initial_balances() -> List[Money]:
-    """获取初始余额"""
-    return _adapter.get_initial_balances()
-
-
-def get_main_timeframe() -> str:
-    """获取主时间框架"""
-    return _adapter.get_main_timeframe()
-
-
-def get_trend_timeframe() -> str:
-    """获取趋势时间框架"""
-    return _adapter.get_trend_timeframe()
-
-
-def get_primary_symbol() -> str:
-    """获取主要交易对"""
-    return _adapter.get_primary_symbol()
-
 
 # ==========================================
 # 配置构建函数
@@ -118,11 +82,11 @@ def print_config_summary():
     print("📋 当前配置摘要:")
     print(f"  环境: {_adapter.active_config.environment}")
     print(f"  策略: {_adapter.active_config.strategy}")
-    print(f"  交易所: {get_venue()}")
-    print(f"  主要交易对: {get_primary_symbol()}")
-    print(f"  日期范围: {get_start_date()} 到 {get_end_date()}")
-    print(f"  初始余额: {get_initial_balances()[0]}")
-    print(f"  时间框架: {get_main_timeframe()} (主), {get_trend_timeframe()} (趋势)")
+    print(f"  交易所: {_adapter.get_venue()}")
+    print(f"  主要交易对: {_adapter.get_primary_symbol()}")
+    print(f"  日期范围: {_adapter.get_start_date()} 到 {_adapter.get_end_date()}")
+    print(f"  初始余额: {_adapter.get_initial_balances()[0]}")
+    print(f"  时间框架: {_adapter.get_main_timeframe()} (主), {_adapter.get_trend_timeframe()} (趋势)")
 
 
 # ==========================================
@@ -180,22 +144,15 @@ if __name__ != "__main__":
 # ==========================================
 
 __all__ = [
-    "get_venue",
-    "get_start_date",
-    "get_end_date",
-    "get_initial_balances",
-    "get_main_timeframe",
-    "get_trend_timeframe",
-    "get_primary_symbol",
+    "get_adapter",
     "create_data_config",
     "reload_config",
     "get_available_environments",
     "get_available_strategies",
     "validate_config",
     "print_config_summary",
-    "get_adapter",
-    "run_file_cleanup",
     "build_backtest_config",
+    "run_file_cleanup",
     "BackTestConfig",
     "DataConfig",
     "InstrumentConfig",

@@ -13,10 +13,10 @@ from typing import Any, Dict, List, Optional, Union
 
 import yaml
 
+from .exceptions import ConfigValidationError
 from .schemas import (
     ActiveConfig,
     ConfigPaths,
-    ConfigValidationError,
     EnvironmentConfig,
     StrategyConfig,
 )

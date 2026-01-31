@@ -15,7 +15,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from utils.config_helpers import load_universe_symbols_from_file
+from utils.universe import load_universe_symbols_from_file
 
 
 class TestConfigHelpers(unittest.TestCase):
@@ -26,7 +26,7 @@ class TestConfigHelpers(unittest.TestCase):
         # 创建临时目录用于测试
         self.temp_dir = tempfile.TemporaryDirectory()
         self.test_dir = Path(self.temp_dir.name)
-        
+
         # 创建测试Universe文件
         self.create_test_files()
 
@@ -69,7 +69,7 @@ ETHUSDT   # 带空格和注释
 # 一些垃圾行
 ADAUSDT
 
-    
+
 SOLUSDT
 """
         with open(self.mixed_universe, 'w') as f:
@@ -105,11 +105,11 @@ ADAUSDT
     def test_load_universe_symbols_from_file_standard_format(self):
         """测试标准格式Universe文件解析"""
         symbols = load_universe_symbols_from_file(self.standard_universe)
-        
+
         # 验证解析出正确数量的符号
         expected_symbols = ["BTCUSDT", "ETHUSDT", "BNBUSDT", "ADAUSDT", "SOLUSDT", "XRPUSDT", "DOTUSDT", "LINKUSDT"]
         self.assertEqual(len(symbols), len(expected_symbols))
-        
+
         # 验证所有预期符号都在结果中
         for symbol in expected_symbols:
             self.assertIn(symbol, symbols)
@@ -117,11 +117,11 @@ ADAUSDT
     def test_load_universe_symbols_from_file_mixed_format(self):
         """测试混合格式Universe文件解析"""
         symbols = load_universe_symbols_from_file(self.mixed_universe)
-        
+
         # 验证解析出正确的符号（忽略空行、注释、空格）
         expected_symbols = ["BTCUSDT", "ETHUSDT", "BNBUSDT", "ADAUSDT", "SOLUSDT"]
         self.assertEqual(len(symbols), len(expected_symbols))
-        
+
         # 验证所有符号都被正确清理
         for symbol in symbols:
             self.assertIn(symbol, expected_symbols)
@@ -131,7 +131,7 @@ ADAUSDT
     def test_load_universe_symbols_from_file_empty_file(self):
         """测试空Universe文件解析"""
         symbols = load_universe_symbols_from_file(self.empty_universe)
-        
+
         # 空文件应该返回空列表
         self.assertEqual(len(symbols), 0)
         self.assertEqual(symbols, [])
@@ -139,11 +139,11 @@ ADAUSDT
     def test_load_universe_symbols_from_file_simple_format(self):
         """测试简单格式Universe文件解析"""
         symbols = load_universe_symbols_from_file(self.simple_universe)
-        
+
         # 验证解析出正确的符号
         expected_symbols = ["BTCUSDT", "ETHUSDT", "BNBUSDT", "ADAUSDT", "SOLUSDT"]
         self.assertEqual(len(symbols), len(expected_symbols))
-        
+
         # 验证顺序保持
         for i, symbol in enumerate(expected_symbols):
             self.assertEqual(symbols[i], symbol)
@@ -151,11 +151,11 @@ ADAUSDT
     def test_load_universe_symbols_from_file_duplicate_removal(self):
         """测试重复符号去除"""
         symbols = load_universe_symbols_from_file(self.duplicate_universe)
-        
+
         # 验证重复符号被去除
         expected_symbols = ["BTCUSDT", "ETHUSDT", "BNBUSDT", "ADAUSDT"]
         self.assertEqual(len(symbols), len(expected_symbols))
-        
+
         # 验证没有重复符号
         unique_symbols = list(set(symbols))
         self.assertEqual(len(symbols), len(unique_symbols))
@@ -163,9 +163,9 @@ ADAUSDT
     def test_load_universe_symbols_from_file_file_not_found(self):
         """测试文件不存在的情况"""
         nonexistent_file = self.test_dir / "does_not_exist.txt"
-        
+
         symbols = load_universe_symbols_from_file(nonexistent_file)
-        
+
         # 不存在的文件应该返回空列表
         self.assertEqual(symbols, [])
 
@@ -175,9 +175,9 @@ ADAUSDT
         lowercase_universe = self.test_dir / "lowercase_universe.txt"
         with open(lowercase_universe, 'w') as f:
             f.write("btcusdt\nethusdt\nBNBUSDT\nadausdt\n")
-        
+
         symbols = load_universe_symbols_from_file(lowercase_universe)
-        
+
         # 验证所有符号都被转换为大写
         expected_symbols = ["BTCUSDT", "ETHUSDT", "BNBUSDT", "ADAUSDT"]
         for symbol in symbols:
@@ -190,13 +190,13 @@ ADAUSDT
         whitespace_universe = self.test_dir / "whitespace_universe.txt"
         with open(whitespace_universe, 'w') as f:
             f.write("  BTCUSDT  \n\tETHUSDT\t\n BNBUSDT \n")
-        
+
         symbols = load_universe_symbols_from_file(whitespace_universe)
-        
+
         # 验证空白字符被正确去除
         expected_symbols = ["BTCUSDT", "ETHUSDT", "BNBUSDT"]
         self.assertEqual(symbols, expected_symbols)
-        
+
         # 验证没有空白字符残留
         for symbol in symbols:
             self.assertEqual(symbol, symbol.strip())
@@ -216,9 +216,9 @@ ADAUSDT
 """
         with open(comment_universe, 'w') as f:
             f.write(comment_content)
-        
+
         symbols = load_universe_symbols_from_file(comment_universe)
-        
+
         # 验证只解析出符号，忽略注释
         expected_symbols = ["BTCUSDT", "ETHUSDT", "BNBUSDT", "ADAUSDT"]
         self.assertEqual(symbols, expected_symbols)
@@ -229,9 +229,9 @@ ADAUSDT
         invalid_universe = self.test_dir / "invalid_universe.txt"
         with open(invalid_universe, 'w') as f:
             f.write("BTCUSDT\n123INVALID\nETHUSDT\n@#$%\nBNBUSDT\n")
-        
+
         symbols = load_universe_symbols_from_file(invalid_universe)
-        
+
         # 验证有效符号被保留，无效符号被过滤
         # 注意：当前实现可能不会过滤无效符号，这取决于具体实现
         self.assertIn("BTCUSDT", symbols)
@@ -246,12 +246,12 @@ ADAUSDT
             f.write("# 大量符号测试\n")
             for i in range(100):
                 f.write(f"SYMBOL{i:03d}USDT\n")
-        
+
         symbols = load_universe_symbols_from_file(large_universe)
-        
+
         # 验证解析出正确数量的符号
         self.assertEqual(len(symbols), 100)
-        
+
         # 验证符号格式正确
         for i, symbol in enumerate(symbols):
             expected_symbol = f"SYMBOL{i:03d}USDT"
@@ -267,9 +267,9 @@ ADAUSDT
             f.write("ETHUSDT  # 以太坊\n")
             f.write("# 更多交易对\n")
             f.write("BNBUSDT\n")
-        
+
         symbols = load_universe_symbols_from_file(encoding_universe)
-        
+
         # 验证正确处理UTF-8编码
         expected_symbols = ["BTCUSDT", "ETHUSDT", "BNBUSDT"]
         self.assertEqual(symbols, expected_symbols)
@@ -277,7 +277,7 @@ ADAUSDT
     def test_load_universe_symbols_from_file_preserve_order(self):
         """测试顺序保持"""
         symbols = load_universe_symbols_from_file(self.simple_universe)
-        
+
         # 验证符号顺序与文件中的顺序一致
         expected_order = ["BTCUSDT", "ETHUSDT", "BNBUSDT", "ADAUSDT", "SOLUSDT"]
         self.assertEqual(symbols, expected_order)

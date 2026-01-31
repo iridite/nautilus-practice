@@ -46,12 +46,8 @@ from . import (
     path_helpers,
     symbol_parser,
     time_helpers,
+    universe,
     validation,
-)
-
-# 配置解析
-from .config_helpers import (
-    parse_universe_symbols,
 )
 
 # 数据加载
@@ -86,6 +82,14 @@ from .symbol_parser import (
 )
 from .time_helpers import (
     get_ms_timestamp,
+)
+
+# Universe 解析
+from .universe import (
+    extract_universe_symbols,
+    load_universe_file,
+    load_universe_symbols_from_file,
+    parse_universe_symbols,
 )
 
 # ============================================================================
@@ -179,6 +183,9 @@ __all__ = [
     "load_ohlcv_csv",
     "detect_time_column",
     "get_project_root",
+    "load_universe_file",
+    "extract_universe_symbols",
+    "load_universe_symbols_from_file",
     "parse_universe_symbols",
 
     # 别名
@@ -196,6 +203,7 @@ __all__ = [
     "symbol_parser",
     "path_helpers",
     "config_helpers",
+    "universe",
     "custom_data",
     "oi_funding_adapter",
     "exceptions",
@@ -229,7 +237,7 @@ def get_utils_info():
         "core_functions": [
             "get_ms_timestamp", "retry_fetch",
             "parse_timeframe", "load_ohlcv_csv", "detect_time_column",
-            "get_project_root", "parse_universe_symbols"
+            "get_project_root", "load_universe_file", "parse_universe_symbols"
         ],
         "python_version": ">=3.12.12",
     }

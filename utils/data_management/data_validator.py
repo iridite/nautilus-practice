@@ -209,46 +209,14 @@ class DataValidator:
         self._last_valid_value = None
 
 
-class OIValidator(DataValidator):
-    """OI 数据验证器（专用）"""
 
-    def __init__(self, spike_threshold: float = 0.5, enable_logging: bool = True):
-        super().__init__(spike_threshold, enable_logging)
-
-    def validate(
-        self, oi_value: Optional[Decimal], logger=None
-    ) -> tuple[bool, Optional[str]]:
-        """验证 OI 数据"""
-        return self.validate_oi(oi_value, logger)
-
-
-class FundingRateValidator(DataValidator):
-    """Funding Rate 数据验证器（专用）"""
-
-    def __init__(
-        self,
-        max_abs_value: float = 500.0,
-        spike_threshold: float = 200.0,
-        enable_logging: bool = True,
-    ):
-        super().__init__(spike_threshold=0, enable_logging=enable_logging)
-        self.max_abs_value = max_abs_value
-        self.spike_threshold_funding = spike_threshold
-
-    def validate(
-        self, funding_annual: Optional[Decimal], logger=None
-    ) -> tuple[bool, Optional[str]]:
-        """验证 Funding Rate 数据"""
-        return self.validate_funding_rate(
-            funding_annual, self.max_abs_value, self.spike_threshold_funding, logger
-        )
 
 
 def prepare_data_feeds(args, adapter, base_dir, universe_symbols: set):
     """准备数据流（验证或获取）"""
     from pathlib import Path
 
-    from core.settings import get_end_date, get_start_date, get_venue
+    from core.settings import get_adapter
     from utils.validation import check_single_data_file
 
     from .data_manager import run_batch_data_retrieval
@@ -261,9 +229,9 @@ def prepare_data_feeds(args, adapter, base_dir, universe_symbols: set):
     print("📊 Data Validation")
     print("="*70)
 
-    venue = get_venue().lower()
-    start_date = get_start_date()
-    end_date = get_end_date()
+    venue = adapter.get_venue().lower()
+    start_date = adapter.get_start_date()
+    end_date = adapter.get_end_date()
     timeframe = adapter.get_main_timeframe()
 
     symbols_to_check = universe_symbols if universe_symbols else {adapter.get_primary_symbol()}

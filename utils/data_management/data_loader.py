@@ -114,7 +114,7 @@ def _validate_time_column(series: pd.Series) -> bool:
             return True
         else:
             return False
-    except:
+    except Exception:
         return False
 
 
@@ -124,7 +124,7 @@ def _looks_like_time_column(series: pd.Series) -> bool:
         return False
 
     # 检查列名是否包含时间相关关键词
-    col_name = series.name.lower() if series.name else ""
+    col_name = str(series.name).lower() if series.name else ""
     time_keywords = ["time", "date", "ts", "stamp"]
 
     return any(keyword in col_name for keyword in time_keywords)
@@ -174,8 +174,8 @@ def _check_and_cleanup_data_range(
                             shutil.rmtree(symbol_dir)
 
     raise DataLoadError(
-        f"Data file removed due to range mismatch. "
-        f"Please re-run to download correct data range."
+        "Data file removed due to range mismatch. "
+        "Please re-run to download correct data range."
     )
 
 
@@ -652,9 +652,9 @@ class DataLoader:
         Tuple[bool, str | None]
             (数据是否可用, 错误信息)
         """
-        from utils.validation import check_data_exists
+        from utils.validation import check_single_data_file
 
-        return check_data_exists(
+        exists, _ = check_single_data_file(
             symbol_str=symbol,
             start_date=start_date,
             end_date=end_date,
@@ -662,6 +662,7 @@ class DataLoader:
             exchange=exchange,
             base_dir=self.base_dir
         )
+        return (exists, None if exists else "Data file not found")
 
 
 def load_csv_with_time_detection(
@@ -716,11 +717,8 @@ def load_csv_with_time_detection(
             # 尝试转换datetime列
             if time_column.lower() == "datetime":
                 try:
-                    # 使用更智能的日期解析，支持混合格式
-                    df[time_column] = pd.to_datetime(df[time_column], format='mixed', errors='coerce')
-                    # 如果仍有解析错误，尝试使用infer方法
-                    if df[time_column].isnull().any():
-                        df[time_column] = pd.to_datetime(df[time_column], infer_datetime_format=True, errors='coerce')
+                    # 使用 ISO8601 格式支持混合日期时间格式
+                    df[time_column] = pd.to_datetime(df[time_column], format='ISO8601')
                 except Exception as e:
                     print(f"Warning: Failed to convert datetime column: {e}")
             # timestamp列保持原样（数值类型）

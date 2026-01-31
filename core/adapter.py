@@ -13,6 +13,7 @@ from nautilus_trader.model import Money
 from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.enums import BarAggregation
 
+from .exceptions import ConfigValidationError
 from .loader import ConfigLoader
 from .models import (
     BackTestConfig,
@@ -54,10 +55,10 @@ class ConfigAdapter:
         return [Money(str(balance), USDT)]
 
     def get_main_timeframe(self) -> str:
-        return self.env_config.timeframes.main
+        return self.env_config.trading.main_timeframe
 
     def get_trend_timeframe(self) -> str:
-        return self.env_config.timeframes.trend
+        return self.env_config.trading.trend_timeframe
 
     def get_primary_symbol(self) -> str:
         return self.active_config.primary_symbol
@@ -132,8 +133,6 @@ class ConfigAdapter:
             data_types = self.strategy_config.parameters.get('data_types', [])
             if 'oi' in data_types:
                 from utils.data_management.data_limits import check_data_availability
-
-                from .schemas import ConfigValidationError
 
                 is_available, warning = check_data_availability(
                     self.get_start_date(),

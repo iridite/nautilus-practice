@@ -14,9 +14,6 @@ from core import (
     get_adapter,
     get_available_environments,
     get_available_strategies,
-    get_end_date,
-    get_start_date,
-    get_venue,
 )
 
 
@@ -36,15 +33,15 @@ class TestConfigSystemIntegration(unittest.TestCase):
 
     def test_config_access_functions(self):
         """测试配置访问函数"""
-        venue = get_venue()
+        venue = self.adapter.get_venue()
         self.assertIsInstance(venue, str)
         self.assertIn(venue.upper(), ["BINANCE", "OKX"])
 
-        start_date = get_start_date()
+        start_date = self.adapter.get_start_date()
         self.assertIsInstance(start_date, str)
         self.assertRegex(start_date, r"\d{4}-\d{2}-\d{2}")
 
-        end_date = get_end_date()
+        end_date = self.adapter.get_end_date()
         self.assertIsInstance(end_date, str)
         self.assertRegex(end_date, r"\d{4}-\d{2}-\d{2}")
 
@@ -74,22 +71,22 @@ class TestConfigSystemIntegration(unittest.TestCase):
 
     def test_config_reload(self):
         """测试配置重载"""
-        original_venue = get_venue()
+        original_venue = self.adapter.get_venue()
 
         self.adapter.reload()
 
-        new_venue = get_venue()
+        new_venue = self.adapter.get_venue()
         self.assertEqual(original_venue, new_venue)
 
     def test_backtest_config_consistency(self):
         """测试回测配置一致性"""
         cfg = build_backtest_config()
 
-        self.assertEqual(cfg.start_date, get_start_date())
-        self.assertEqual(cfg.end_date, get_end_date())
+        self.assertEqual(cfg.start_date, self.adapter.get_start_date())
+        self.assertEqual(cfg.end_date, self.adapter.get_end_date())
 
         for inst in cfg.instruments:
-            self.assertEqual(inst.venue_name, get_venue())
+            self.assertEqual(inst.venue_name, self.adapter.get_venue())
 
     def test_data_feeds_instrument_binding(self):
         """测试数据流与标的绑定"""

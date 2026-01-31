@@ -4,25 +4,19 @@
 基于 YAML + Pydantic 的配置管理系统。
 """
 
-# 主要访问接口
-from .settings import (
-    build_backtest_config,
-    create_data_config,
-    get_adapter,
-    get_available_environments,
-    get_available_strategies,
-    get_end_date,
-    get_initial_balances,
-    get_main_timeframe,
-    get_primary_symbol,
-    get_start_date,
-    get_trend_timeframe,
-    get_venue,
-    print_config_summary,
-    reload_config,
-    run_file_cleanup,
-    validate_config,
+# 异常类
+# 配置适配器
+from .adapter import ConfigAdapter
+from .exceptions import (
+    ConfigError,
+    ConfigLoadError,
+    ConfigValidationError,
+    InstrumentConfigError,
+    UniverseParseError,
 )
+
+# 配置加载器
+from .loader import ConfigLoader
 
 # 配置模型
 from .models import (
@@ -35,30 +29,34 @@ from .models import (
     project_root,
 )
 
-# 配置适配器
-from .adapter import ConfigAdapter
-
 # Pydantic 模型
 from .schemas import (
     ActiveConfig,
-    BacktestConfig,
+    BacktestPeriodConfig,
     EnvironmentConfig,
     StrategyConfig,
     TradingConfig,
 )
-
-# 配置加载器
-from .loader import ConfigLoader
+from .settings import (
+    build_backtest_config,
+    create_data_config,
+    get_adapter,
+    get_available_environments,
+    get_available_strategies,
+    print_config_summary,
+    reload_config,
+    run_file_cleanup,
+    validate_config,
+)
 
 __all__ = [
+    # 异常类
+    "ConfigError",
+    "ConfigValidationError",
+    "ConfigLoadError",
+    "UniverseParseError",
+    "InstrumentConfigError",
     # 访问接口
-    "get_venue",
-    "get_start_date",
-    "get_end_date",
-    "get_initial_balances",
-    "get_main_timeframe",
-    "get_trend_timeframe",
-    "get_primary_symbol",
     "create_data_config",
     "build_backtest_config",
     "reload_config",
@@ -80,7 +78,7 @@ __all__ = [
     "ConfigAdapter",
     # Pydantic 模型
     "ActiveConfig",
-    "BacktestConfig",
+    "BacktestPeriodConfig",
     "EnvironmentConfig",
     "StrategyConfig",
     "TradingConfig",

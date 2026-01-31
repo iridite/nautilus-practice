@@ -12,6 +12,8 @@ from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field, model_validator, validator
 
+from .exceptions import ConfigValidationError
+
 # 项目根目录
 project_root: Path = Path(__file__).parent.parent.resolve()
 
@@ -23,6 +25,10 @@ class TradingConfig(BaseModel):
     instrument_type: str = "SWAP"
     initial_balance: Decimal = Decimal("100")
     currency: str = "USDT"
+
+    # Timeframes
+    main_timeframe: str = "1h"
+    trend_timeframe: str = "4h"
 
     @validator("venue")
     def validate_venue(cls, v):
@@ -44,34 +50,25 @@ class TradingConfig(BaseModel):
             raise ValueError("Initial balance must be positive")
         return v
 
-
-class TimeframesConfig(BaseModel):
-    """时间框架配置"""
-
-    main: str = "1h"
-    trend: str = "4h"
-
-    @validator("main", "trend")
+    @validator("main_timeframe", "trend_timeframe")
     def validate_timeframe(cls, v):
         if not v or not isinstance(v, str):
             raise ValueError("Timeframe must be a non-empty string")
-
-        # 验证时间框架格式 (如 1m, 5m, 1h, 4h, 1d)
         if v[-1] not in ["m", "h", "d"]:
             raise ValueError("Timeframe must end with 'm', 'h', or 'd'")
-
         try:
             period = int(v[:-1]) if len(v) > 1 else 1
             if period <= 0:
                 raise ValueError("Timeframe period must be positive")
         except ValueError:
             raise ValueError("Invalid timeframe format")
-
         return v
 
 
-class BacktestConfig(BaseModel):
-    """回测配置"""
+
+
+class BacktestPeriodConfig(BaseModel):
+    """回测周期配置"""
 
     start_date: str
     end_date: str
@@ -135,45 +132,6 @@ class FileCleanupConfig(BaseModel):
         return v
 
 
-class StrategyParametersConfig(BaseModel):
-    """策略参数基础配置"""
-
-    # 基础仓位参数
-    qty_percent: Optional[Decimal] = Decimal("0.1")
-    leverage: Optional[int] = 1
-    max_positions: Optional[int] = 1
-
-    # 风险管理参数
-    stop_loss_pct: Optional[Decimal] = None
-    use_atr_stop: Optional[bool] = False
-    atr_period: Optional[int] = 14
-    atr_stop_multiplier: Optional[Decimal] = Decimal("2.0")
-
-    # 滑点控制
-    max_slippage_pct: Optional[Decimal] = Decimal("0.005")
-    enable_slippage_alert: Optional[bool] = True
-
-    # 日志控制
-    enable_signal_logging: Optional[bool] = True
-    enable_quality_check: Optional[bool] = True
-
-    @validator("leverage")
-    def validate_leverage(cls, v):
-        if v is not None and not (1 <= v <= 100):
-            raise ValueError("Leverage must be between 1 and 100")
-        return v
-
-    @validator("qty_percent")
-    def validate_position_size(cls, v):
-        if v is not None and not (0 < v <= 1):
-            raise ValueError("Position size must be between 0 and 1")
-        return v
-
-    @validator("max_positions")
-    def validate_max_positions(cls, v):
-        if v is not None and v < 1:
-            raise ValueError("Max positions must be at least 1")
-        return v
 
 
 class StrategyConfig(BaseModel):
@@ -242,8 +200,7 @@ class EnvironmentConfig(BaseModel):
 
     extends: Optional[str] = None  # 继承的父配置文件
     trading: TradingConfig = Field(default_factory=TradingConfig)
-    timeframes: TimeframesConfig = Field(default_factory=TimeframesConfig)
-    backtest: BacktestConfig
+    backtest: BacktestPeriodConfig
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
     file_cleanup: FileCleanupConfig = Field(default_factory=FileCleanupConfig)
     sandbox: Optional[SandboxConfig] = None
@@ -283,14 +240,7 @@ class ActiveConfig(BaseModel):
         return v.strip().upper()
 
 
-class ConfigValidationError(Exception):
-    """配置验证错误"""
 
-    def __init__(self, message: str, field: Optional[str] = None, value: Any = None):
-        self.message = message
-        self.field = field
-        self.value = value
-        super().__init__(self.message)
 
 
 class ConfigPaths:
@@ -337,15 +287,12 @@ class ConfigPaths:
 # 导出主要类和函数
 __all__ = [
     "TradingConfig",
-    "TimeframesConfig",
-    "BacktestConfig",
+    "BacktestPeriodConfig",
     "LoggingConfig",
     "FileCleanupConfig",
-    "StrategyParametersConfig",
     "StrategyConfig",
     "SandboxConfig",
     "EnvironmentConfig",
     "ActiveConfig",
-    "ConfigValidationError",
     "ConfigPaths",
 ]

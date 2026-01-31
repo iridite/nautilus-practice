@@ -298,6 +298,10 @@ class BaseStrategy(Strategy):
             if instrument is None:
                 instrument = self.get_instrument()
 
+            if instrument is None:
+                self.log.warning("无法获取标的信息")
+                return False
+
             accounts = self.cache.accounts()
             if not accounts:
                 self.log.warning("无法获取账户信息")

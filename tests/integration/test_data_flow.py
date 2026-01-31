@@ -8,7 +8,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-from core import build_backtest_config, get_start_date, get_end_date, get_venue
+from core import build_backtest_config, get_adapter
 from utils.validation import check_single_data_file
 
 
@@ -18,6 +18,7 @@ class TestDataFlowIntegration(unittest.TestCase):
     def setUp(self):
         """测试前准备"""
         self.base_dir = Path(__file__).parent.parent.parent
+        self.adapter = get_adapter()
         self.cfg = build_backtest_config()
 
     def test_config_to_data_feeds(self):
@@ -39,9 +40,9 @@ class TestDataFlowIntegration(unittest.TestCase):
 
     def test_data_validation_integration(self):
         """测试数据验证集成"""
-        venue = get_venue().lower()
-        start_date = get_start_date()
-        end_date = get_end_date()
+        venue = self.adapter.get_venue().lower()
+        start_date = self.adapter.get_start_date()
+        end_date = self.adapter.get_end_date()
 
         for feed in self.cfg.data_feeds[:1]:
             symbol = feed.csv_file_name.split("/")[0]

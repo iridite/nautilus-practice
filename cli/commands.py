@@ -2,11 +2,10 @@
 
 from pathlib import Path
 
-from core.settings import get_end_date, get_start_date
 from scripts.fetch_instrument import update_instruments
 from strategy.dependency_checker import check_strategy_data_dependencies
-from utils.config_helpers import parse_universe_symbols
 from utils.data_management import execute_oi_funding_data_fetch
+from utils.universe import parse_universe_symbols
 
 
 def check_and_fetch_strategy_data(args, adapter, base_dir: Path, universe_symbols: set):
@@ -22,8 +21,8 @@ def check_and_fetch_strategy_data(args, adapter, base_dir: Path, universe_symbol
     current_config = adapter.build_backtest_config()
     strategy_tasks = check_strategy_data_dependencies(
         current_config.strategy.params if hasattr(current_config.strategy, 'params') else current_config.strategy,
-        get_start_date(),
-        get_end_date(),
+        adapter.get_start_date(),
+        adapter.get_end_date(),
         base_dir,
         universe_symbols
     )
