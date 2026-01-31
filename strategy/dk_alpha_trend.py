@@ -218,6 +218,12 @@ class DKAlphaTrendStrategy(BaseStrategy):
 
         # 检查是否有持仓
         if self.portfolio.is_net_long(self.instrument.id):
+            # 更新最高价（Chandelier Exit需要）
+            if self.highest_high is None:
+                self.highest_high = float(bar.high)
+            else:
+                self.highest_high = max(self.highest_high, float(bar.high))
+
             self._handle_exit(bar)
         elif not self._pending_entry_order:
             self._handle_entry(bar, is_squeezing)
@@ -234,9 +240,15 @@ class DKAlphaTrendStrategy(BaseStrategy):
                 alpha = 2.0 / (self.config.ema_period + 1)
                 self.ema = alpha * self.closes[-1] + (1 - alpha) * self.ema
 
-        # ATR
+        # ATR (使用 Wilder's Smoothing)
         if len(self.trs) >= self.config.atr_period:
-            self.atr = sum(list(self.trs)[-self.config.atr_period:]) / self.config.atr_period
+            if self.atr is None:
+                # 初始化：使用简单平均
+                self.atr = sum(list(self.trs)[-self.config.atr_period:]) / self.config.atr_period
+            else:
+                # Wilder's Smoothing: α = 1/period
+                alpha = 1.0 / self.config.atr_period
+                self.atr = alpha * self.trs[-1] + (1 - alpha) * self.atr
 
         # SMA
         if len(self.closes) >= self.config.sma_period:
@@ -398,18 +410,18 @@ class DKAlphaTrendStrategy(BaseStrategy):
             else self.config.base_risk_pct
         )
 
-        # 计算止损距离
-        stop_distance = self.config.stop_loss_atr_multiplier * self.atr
+        # 计算止损距离（统一使用Decimal）
+        stop_distance = Decimal(str(self.config.stop_loss_atr_multiplier)) * Decimal(str(self.atr))
 
         # 防止ATR过小导致仓位过大
-        min_stop_distance = float(bar.close) * 0.005
+        min_stop_distance = bar.close.as_decimal() * Decimal("0.005")
         if stop_distance < min_stop_distance:
-            self.log.warning(f"ATR过小({self.atr:.6f})，使用最小止损距离{min_stop_distance:.2f}")
+            self.log.warning(f"ATR过小({self.atr:.6f})，使用最小止损距离{min_stop_distance}")
             stop_distance = min_stop_distance
 
         # 计算仓位：(权益 * 风险%) / 止损距离
         risk_amount = equity.as_decimal() * Decimal(str(risk_pct))
-        qty = risk_amount / Decimal(str(stop_distance))
+        qty = risk_amount / stop_distance
 
         # 使用基类的仓位计算方法进行标准化
         return self.instrument.make_qty(qty)
@@ -417,15 +429,8 @@ class DKAlphaTrendStrategy(BaseStrategy):
     def _handle_exit(self, bar: Bar):
         """处理出场逻辑"""
         close = float(bar.close)
-        high = float(bar.high)
 
-        # 更新最高价
-        if self.highest_high is None:
-            self.highest_high = high
-        else:
-            self.highest_high = max(self.highest_high, high)
-
-        # 计算 Chandelier Exit 止损线
+        # 计算 Chandelier Exit 止损线（highest_high已在on_bar中更新）
         if self.atr is None:
             return
 
