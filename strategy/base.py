@@ -32,7 +32,7 @@ class BaseStrategyConfig(StrategyConfig):  # pyright: ignore[reportGeneralTypeIs
 
     # 2. Dynamic Percentage Mode: 动态百分比模式
     # Logic: Qty = (Equity * qty_percent * leverage) / Price
-    qty_percent: Optional[Decimal] = None  # e.g., 0.1 for 10% of equity
+    qty_percent: Optional[Decimal | float] = None  # e.g., 0.1 for 10% of equity
 
     # 3. ATR Risk Mode: ATR风险模式（优先级高于动态百分比）
     # 启用后需要在 calculate_order_qty 中传入 atr_value 参数
@@ -246,11 +246,12 @@ class BaseStrategy(Strategy):
             if equity <= 0:
                 return Quantity.from_int(0)
 
-            leverage = max(1, self.base_config.leverage)
+            leverage = Decimal(max(1, self.base_config.leverage))
             if hasattr(instrument, "max_leverage") and instrument.max_leverage:
-                leverage = min(leverage, instrument.max_leverage)
+                leverage = min(leverage, Decimal(instrument.max_leverage))
 
-            target_notional = equity * self.base_config.qty_percent * leverage
+            qty_percent = Decimal(str(self.base_config.qty_percent)) if isinstance(self.base_config.qty_percent, float) else self.base_config.qty_percent
+            target_notional = equity * qty_percent * leverage
             raw_qty = target_notional / price
 
             if instrument.multiplier:
@@ -426,10 +427,10 @@ class BaseStrategy(Strategy):
             raw_qty = max_risk_amount / stop_distance
 
             # 应用杠杆
-            leverage = max(1, self.base_config.leverage)
+            leverage = Decimal(max(1, self.base_config.leverage))
             if hasattr(instrument, "max_leverage") and instrument.max_leverage:
-                leverage = min(leverage, instrument.max_leverage)
-            raw_qty = raw_qty * Decimal(str(leverage))
+                leverage = min(leverage, Decimal(instrument.max_leverage))
+            raw_qty = raw_qty * leverage
 
             # 处理合约乘数
             if instrument.multiplier:
