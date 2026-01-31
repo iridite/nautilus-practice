@@ -110,10 +110,20 @@ The project adopts a clear modular architecture with well-defined responsibiliti
 **CLI Module** (`cli/`)
 - `commands.py` - Command implementations (data checking, backtest execution)
 
-**Data Management** (`data/`)
-- `validator.py` - Data validation
+**Data Management** (`utils/data_management/` - Unified Module)
+- `validator.py` - Data validation and feed preparation
 - `fetcher_manager.py` - Data fetching management
 - `oi_funding_manager.py` - OI/Funding data management
+- `data_retrival.py` - Main data retrieval logic
+- `data_fetcher.py` - Multi-source OHLCV fetcher
+- `data_limits.py` - Exchange data limits checking
+- `data_loader.py` - CSV data loading utilities
+- `data_manager.py` - High-level data manager
+- `data_validator.py` - Data validation utilities
+
+**Data Directory** (`data/`)
+- Pure data storage (no code files)
+- Subdirectories: `instrument/`, `raw/`, `parquet/`, `models/`, `record/`, `top/`
 
 **Configuration System** (`core/` - Unified Architecture)
 - `schemas.py` - Pydantic data models
@@ -196,7 +206,7 @@ The system automatically before backtest:
 - Continuously collect and store OI data for long-term historical analysis
 - Service will run independently and maintain a comprehensive OI database
 
-**Implementation Location**: `utils/data_retrival.py` - `ENABLE_OI_FETCH = False`
+**Implementation Location**: `utils/data_management/data_retrival.py` - `ENABLE_OI_FETCH = False`
 
 **For Developers**: 
 - OI data fetching code structure is preserved but inactive
@@ -205,7 +215,7 @@ The system automatically before backtest:
 
 ### Data Limits Auto-Check
 
-System automatically checks exchange data limits (`utils/data_limits.py`):
+System automatically checks exchange data limits (`utils/data_management/data_limits.py`):
 
 ```python
 # Binance Funding Rate limit: ~90 days
@@ -234,9 +244,9 @@ from utils import (
 - `network`: HTTP requests and retry mechanism
 - `validation`: Data file validation and checking
 - `symbol_parser`: Trading pair symbol parsing and conversion
-- `data_loader`: CSV data loading and time column detection
 - `path_helpers`: Project path management (with caching)
 - `config_helpers`: Universe configuration parsing
+- `data_management/`: Unified data management module (see Data Management section above)
 
 ### Custom Data Types
 
