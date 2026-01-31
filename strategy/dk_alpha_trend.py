@@ -153,8 +153,6 @@ class DKAlphaTrendStrategy(BaseStrategy):
             btc_bar_type = BarType.from_str(btc_bar_type_str)
             self.unsubscribe_bars(btc_bar_type)
 
-        super().on_stop()
-
     def on_bar(self, bar: Bar) -> None:
         """处理 Bar 数据"""
         # 更新价格缓存并标记更新状态
