@@ -655,7 +655,7 @@ class DataLoader:
         from utils.data_file_checker import check_single_data_file
 
         exists, _ = check_single_data_file(
-            symbol_str=symbol,
+            symbol=symbol,
             start_date=start_date,
             end_date=end_date,
             timeframe=timeframe,

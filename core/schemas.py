@@ -16,8 +16,6 @@ from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.enums import BarAggregation, PriceType
 from pydantic import BaseModel, ConfigDict, Field, model_validator, validator
 
-from .exceptions import ConfigValidationError
-
 # 项目根目录
 project_root: Path = Path(__file__).parent.parent.resolve()
 

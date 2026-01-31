@@ -9,8 +9,9 @@ This document provides coding guidelines for AI agents working in this repositor
 - **Package Manager**: `uv` (modern Python package manager)
 - **Domain**: Cryptocurrency quantitative trading (perpetual futures)
 - **Main Exchanges**: Binance, OKX
-- **Code Scale**: 13,158 lines (optimized from 19,454)
+- **Code Scale**: 12,604 lines (optimized from 19,454 lines, -35.2%)
 - **Test Coverage**: 84 tests, 100% pass rate
+- **Documentation**: Organized in 4 categories (optimization/, analysis/, reviews/, refactoring/)
 
 ## 🛠️ Build/Test/Run Commands
 
@@ -316,10 +317,20 @@ from utils import (
 - `data_management/` (7 files): Unified data management module
 
 **Recent Optimizations** (2026-02-01):
-- Removed 529 lines of dead code (10.9% reduction)
-- Simplified `__init__.py` from 240 to 97 lines
-- Moved `file_cleanup.py` to `cli/` module (single-use relocation)
-- Optimized `network.py` from 377 to 94 lines (removed unused utilities)
+- **Phase 1**: Removed 529 lines of dead code (10.9% reduction)
+  - Simplified `__init__.py` from 240 to 97 lines
+  - Moved `file_cleanup.py` to `cli/` module (single-use relocation)
+  - Optimized `network.py` from 377 to 94 lines (removed unused utilities)
+- **Phase 2**: Code quality improvements
+  - Fixed duplicate exception class definitions (P0 priority)
+  - Removed unused imports and fixed static analysis warnings
+  - Organized documentation into thematic directories
+- **Phase 3**: Tests directory optimization
+  - Relocated independent test scripts to `scripts/` (2 files)
+  - Removed duplicate `test_config_system.py`
+  - Deleted disabled test file
+  - Result: 13 → 10 files (-23.1%), 1,905 → 1,480 lines (-22.3%)
+- **Total Impact**: 19,454 → 12,604 lines (-35.2% overall reduction)
 
 ### Custom Data Types
 
@@ -497,6 +508,24 @@ When a module is only used in one location:
 - Redundant or superseded functionality
 
 **Example**: `symbol_parser.py` contains 7 unused functions but is **reserved** for multi-exchange support - keep intact.
+
+## 📋 Optimization Documentation
+
+Project optimization efforts are documented in `docs/optimization/`:
+
+- **P0_critical_issues.md**: Critical issues requiring immediate fixes
+  - Status: ✅ Completed - Duplicate exception classes removed
+- **P1_performance_optimization.md**: Performance and maintainability improvements
+  - Status: ✅ Evaluated - `data_loader.py` (730 lines) assessed, no split needed
+- **P2_long_term_goals.md**: Long-term architectural improvements
+  - Status: 📋 Documented - `core ↔ utils` circular dependency recorded
+
+**Key Principles**:
+- P0: Fix immediately (correctness, maintainability)
+- P1: Optimize when beneficial (performance, code quality)
+- P2: Plan for future (architecture, design patterns)
+- Always maintain 100% test pass rate
+- Prioritize stability over theoretical perfection
 
 ## 📝 Code Style Guidelines
 
