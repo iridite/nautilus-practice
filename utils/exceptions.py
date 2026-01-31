@@ -48,18 +48,3 @@ class ConfigurationError(Exception):
         if self.config_key:
             return f"{self.args[0]} (config: {self.config_key})"
         return self.args[0]
-
-
-class ValidationError(Exception):
-    """验证错误的基类"""
-    pass
-
-
-class FileValidationError(ValidationError):
-    """文件验证错误"""
-    pass
-
-
-class ConfigValidationError(ValidationError):
-    """配置验证错误"""
-    pass
