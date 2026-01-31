@@ -115,7 +115,7 @@ class DKAlphaTrendStrategy(BaseStrategy):
         # 历史数据大小限制
         self.MAX_HISTORY_SIZE = 100
 
-    def on_start(self):
+    def on_start(self) -> None:
         """策略启动时初始化"""
         super().on_start()
 
@@ -138,7 +138,7 @@ class DKAlphaTrendStrategy(BaseStrategy):
             btc_bar_type = BarType.from_str(btc_bar_type_str)
             self.subscribe_bars(btc_bar_type)
 
-    def on_bar(self, bar: Bar):
+    def on_bar(self, bar: Bar) -> None:
         """处理 Bar 数据"""
         # 更新价格缓存并标记更新状态
         if bar.bar_type.instrument_id == self.instrument.id:
@@ -243,7 +243,7 @@ class DKAlphaTrendStrategy(BaseStrategy):
         elif not self._pending_entry_order:
             self._handle_entry(bar, is_squeezing)
 
-    def _update_indicators(self):
+    def _update_indicators(self) -> None:
         """更新所有指标"""
         # EMA
         if len(self.closes) >= self.config.ema_period:
@@ -360,7 +360,7 @@ class DKAlphaTrendStrategy(BaseStrategy):
 
         return symbol_perf > btc_perf
 
-    def _handle_entry(self, bar: Bar, is_squeezing: bool):
+    def _handle_entry(self, bar: Bar, is_squeezing: bool) -> None:
         """处理开仓逻辑"""
         close = float(bar.close)
 
@@ -441,7 +441,7 @@ class DKAlphaTrendStrategy(BaseStrategy):
         # 使用基类的仓位计算方法进行标准化
         return self.instrument.make_qty(qty)
 
-    def _handle_exit(self, bar: Bar):
+    def _handle_exit(self, bar: Bar) -> None:
         """处理出场逻辑"""
         close = float(bar.close)
 
@@ -464,12 +464,12 @@ class DKAlphaTrendStrategy(BaseStrategy):
             self.entry_price = None
             self.highest_high = None
 
-    def on_order_filled(self, event):
+    def on_order_filled(self, event) -> None:
         """订单成交回调"""
         super().on_order_filled(event)
         self._pending_entry_order = False
 
-    def on_order_rejected(self, event):
+    def on_order_rejected(self, event) -> None:
         """订单拒绝回调"""
         super().on_order_rejected(event)
         self._pending_entry_order = False
