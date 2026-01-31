@@ -77,7 +77,8 @@ def run_backtest(args, adapter, base_dir: Path):
     """执行回测"""
     from backtest.engine_high import run_high_level
     from backtest.engine_low import run_low_level
-    from utils.file_cleanup import auto_cleanup
+
+    from .file_cleanup import auto_cleanup
 
     cfg = adapter.build_backtest_config()
 
