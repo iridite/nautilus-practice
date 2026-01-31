@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Dict, List, Set, Union
 
 from core.exceptions import UniverseParseError
-from core.models import InstrumentConfig, InstrumentType
+from core.schemas import InstrumentConfig, InstrumentType
 
 
 def load_universe_file(universe_path: Union[str, Path]) -> Dict[str, List[str]]:

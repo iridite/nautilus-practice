@@ -216,7 +216,7 @@ def prepare_data_feeds(args, adapter, base_dir, universe_symbols: set):
     """准备数据流（验证或获取）"""
     from pathlib import Path
 
-    from core.settings import get_adapter
+    from core.adapter import get_adapter
     from utils.validation import check_single_data_file
 
     from .data_manager import run_batch_data_retrieval

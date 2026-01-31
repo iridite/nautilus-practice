@@ -60,7 +60,7 @@ def update_instrument_definitions(adapter, base_dir: Path, universe_symbols: set
                 instrument_ids.add(feed.instrument_id)
 
         if universe_symbols:
-            from core.models import InstrumentType
+            from core.schemas import InstrumentType
             venue = adapter.get_venue()
             inst_type = InstrumentType(adapter.env_config.trading.instrument_type)
             universe_inst_ids = parse_universe_symbols(universe_symbols, venue, "USDT", inst_type)
@@ -77,7 +77,7 @@ def run_backtest(args, adapter, base_dir: Path):
     """执行回测"""
     from backtest.engine_high import run_high_level
     from backtest.engine_low import run_low_level
-    from core.settings import run_file_cleanup
+    from utils.file_cleanup import auto_cleanup
 
     cfg = adapter.build_backtest_config()
 
@@ -86,4 +86,10 @@ def run_backtest(args, adapter, base_dir: Path):
     else:
         run_low_level(cfg, base_dir)
 
-    run_file_cleanup()
+    fc = adapter.env_config.file_cleanup
+    auto_cleanup(
+        base_dir,
+        max_files_per_dir=fc.max_files_per_dir,
+        enabled=fc.enabled,
+        target_dirs=fc.target_dirs,
+    )
