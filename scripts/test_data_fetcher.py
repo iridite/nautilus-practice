@@ -7,7 +7,7 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BASE_DIR))
 
-from utils.data_fetcher import DataFetcher
+from utils.data_management.data_fetcher import DataFetcher
 
 fetcher = DataFetcher()
 

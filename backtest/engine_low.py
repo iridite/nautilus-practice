@@ -43,8 +43,8 @@ from strategy.loader import (
     load_strategy_class,
     load_strategy_config_class,
 )
-from utils import load_ohlcv_csv
-from utils.data_validator import DataValidator
+from utils.data_management.data_loader import load_ohlcv_csv
+from utils.data_management.data_validator import DataValidator
 from utils.instrument_loader import load_instrument
 from utils.oi_funding_adapter import OIFundingDataLoader
 

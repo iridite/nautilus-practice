@@ -124,7 +124,7 @@ class ConfigAdapter:
             # 检查策略是否声明需要 OI 数据
             data_types = self.strategy_config.parameters.get('data_types', [])
             if 'oi' in data_types:
-                from utils.data_limits import check_data_availability
+                from utils.data_management.data_limits import check_data_availability
 
                 from .schemas import ConfigValidationError
 

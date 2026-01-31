@@ -29,7 +29,7 @@ def fetch_ohlcv_data(exchange, symbol, timeframe, since, limit_ms, source="auto"
         try:
             return _fetch_ohlcv_ccxt(exchange, symbol, timeframe, since, limit_ms)
         except Exception:
-            from utils.data_fetcher import DataFetcher
+            from .data_fetcher import DataFetcher
             fetcher = DataFetcher()
             df = fetcher.fetch_ohlcv(symbol, timeframe, since, limit_ms, source="auto")
             return df[df["timestamp"] < limit_ms] if not df.empty else df
@@ -375,7 +375,18 @@ def batch_fetch_oi_and_funding(
     base_dir: Path = Path("."),
     oi_period: str = "1h",
 ) -> dict:
-    """批量获取 OI 和 Funding Rate 数据"""
+    """
+    批量获取 OI 和 Funding Rate 数据
+
+    注意：OI 数据获取已临时禁用
+    原因：第三方 API 仅提供 21 天历史数据，不符合长期回测需求
+    计划：将通过本地服务持续采集和存储 OI 数据
+    """
+
+    # ⚠️ OI 数据获取已临时禁用
+    # 等待本地 OI 数据采集服务设计完成后重新启用
+    ENABLE_OI_FETCH = False
+
     exchange_class = getattr(ccxt, exchange_id.lower())
     exchange = exchange_class(
         {"enableRateLimit": True, "options": {"defaultType": "swap"}}
@@ -387,9 +398,10 @@ def batch_fetch_oi_and_funding(
 
     results = {"oi_files": [], "funding_files": []}
 
+    desc = f"📊 Fetching Funding from {exchange_id.upper()}" if not ENABLE_OI_FETCH else f"📊 Fetching OI/Funding from {exchange_id.upper()}"
     with tqdm(
         symbols,
-        desc=f"📊 Fetching OI/Funding from {exchange_id.upper()}",
+        desc=desc,
         unit="symbol",
     ) as pbar:
         for raw_symbol in pbar:
@@ -407,26 +419,27 @@ def batch_fetch_oi_and_funding(
 
             safe_symbol = raw_symbol.replace("/", "")
 
-            # 获取 OI 数据
-            oi_filename = f"{exchange_id}-{safe_symbol}-oi-{oi_period}-{start_date}_{end_date}.csv"
-            oi_path = base_dir / "data" / "raw" / safe_symbol / oi_filename
+            # 获取 OI 数据（已禁用）
+            if ENABLE_OI_FETCH:
+                oi_filename = f"{exchange_id}-{safe_symbol}-oi-{oi_period}-{start_date}_{end_date}.csv"
+                oi_path = base_dir / "data" / "raw" / safe_symbol / oi_filename
 
-            if not (oi_path.exists() and oi_path.stat().st_size > 1024):
-                if exchange_id == "binance":
-                    oi_df = fetch_binance_oi_history(
-                        exchange, ccxt_symbol, start_ms, end_ms, oi_period
-                    )
-                elif exchange_id == "okx":
-                    oi_df = fetch_okx_oi_history(
-                        exchange, ccxt_symbol, start_ms, end_ms, oi_period.upper()
-                    )
-                else:
-                    continue
+                if not (oi_path.exists() and oi_path.stat().st_size > 1024):
+                    if exchange_id == "binance":
+                        oi_df = fetch_binance_oi_history(
+                            exchange, ccxt_symbol, start_ms, end_ms, oi_period
+                        )
+                    elif exchange_id == "okx":
+                        oi_df = fetch_okx_oi_history(
+                            exchange, ccxt_symbol, start_ms, end_ms, oi_period.upper()
+                        )
+                    else:
+                        continue
 
-                if not oi_df.empty:
-                    oi_path.parent.mkdir(parents=True, exist_ok=True)
-                    oi_df.to_csv(oi_path, index=False)
-                    results["oi_files"].append(str(oi_path))
+                    if not oi_df.empty:
+                        oi_path.parent.mkdir(parents=True, exist_ok=True)
+                        oi_df.to_csv(oi_path, index=False)
+                        results["oi_files"].append(str(oi_path))
 
             # 获取 Funding Rate 数据
             funding_filename = (
@@ -453,10 +466,17 @@ def batch_fetch_oi_and_funding(
 
             time.sleep(0.2)
 
-    print(
-        f"✅ OI/Funding data retrieval complete: "
-        f"{len(results['oi_files'])} OI files, "
-        f"{len(results['funding_files'])} Funding files"
-    )
+    if ENABLE_OI_FETCH:
+        print(
+            f"✅ OI/Funding data retrieval complete: "
+            f"{len(results['oi_files'])} OI files, "
+            f"{len(results['funding_files'])} Funding files"
+        )
+    else:
+        print(
+            f"✅ Funding data retrieval complete: "
+            f"{len(results['funding_files'])} Funding files "
+            f"(OI data fetching disabled)"
+        )
 
     return results

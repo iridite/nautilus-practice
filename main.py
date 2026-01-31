@@ -13,7 +13,7 @@ from cli.commands import (
     update_instrument_definitions,
 )
 from core.settings import get_adapter
-from data.validator import prepare_data_feeds
+from utils.data_management import prepare_data_feeds
 
 
 def load_universe_symbols(adapter, base_dir: Path) -> set:

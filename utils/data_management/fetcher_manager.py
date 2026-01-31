@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from utils.data_retrival import batch_fetch_ohlcv, batch_fetch_oi_and_funding
+from .data_retrival import batch_fetch_ohlcv, batch_fetch_oi_and_funding
 
 
 def run_batch_data_retrieval(
@@ -51,29 +51,20 @@ def fetch_data_with_retry(
         try:
             current_exchange = supported_exchanges[min(attempt, len(supported_exchanges) - 1)]
 
-            if data_type == "oi":
-                result = batch_fetch_oi_and_funding(
-                    symbols=symbols,
-                    start_date=start_date,
-                    end_date=end_date,
-                    period=period,
-                    exchange_id=current_exchange,
-                    base_dir=base_dir,
-                    data_types=["oi"],
-                )
-            else:
-                result = batch_fetch_oi_and_funding(
-                    symbols=symbols,
-                    start_date=start_date,
-                    end_date=end_date,
-                    period=period,
-                    exchange_id=current_exchange,
-                    base_dir=base_dir,
-                    data_types=["funding"],
-                )
+            result = batch_fetch_oi_and_funding(
+                symbols=symbols,
+                start_date=start_date,
+                end_date=end_date,
+                exchange_id=current_exchange,
+                base_dir=base_dir,
+                oi_period=period,
+            )
 
             if result:
-                files_count = len(result)
+                if data_type == "oi":
+                    files_count = len(result.get("oi_files", []))
+                else:
+                    files_count = len(result.get("funding_files", []))
                 if attempt > 0:
                     retries_count = attempt
                 if current_exchange != exchange:

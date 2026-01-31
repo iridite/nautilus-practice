@@ -8,7 +8,7 @@ from utils.validation import check_single_data_file
 
 def prepare_data_feeds(args, adapter, base_dir: Path, universe_symbols: set):
     """准备数据流（验证或获取）"""
-    from data.fetcher_manager import run_batch_data_retrieval
+    from .fetcher_manager import run_batch_data_retrieval
 
     if args.skip_data_check:
         print("⏩ Skipping data validation")

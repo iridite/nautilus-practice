@@ -17,7 +17,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from utils.data_loader import load_csv_with_time_detection
+from utils.data_management.data_loader import load_csv_with_time_detection
 
 
 class TestDataLoader(unittest.TestCase):
@@ -28,7 +28,7 @@ class TestDataLoader(unittest.TestCase):
         # 创建临时目录用于测试
         self.temp_dir = tempfile.TemporaryDirectory()
         self.test_dir = Path(self.temp_dir.name)
-        
+
         # 创建测试CSV文件
         self.create_test_files()
 
@@ -86,19 +86,19 @@ class TestDataLoader(unittest.TestCase):
     def test_load_csv_datetime_column(self):
         """测试加载带datetime列的CSV文件"""
         df = load_csv_with_time_detection(self.datetime_file)
-        
+
         # 验证数据加载成功
         self.assertFalse(df.empty)
         self.assertEqual(len(df), 3)
-        
+
         # 验证列存在
         expected_columns = ['datetime', 'open', 'high', 'low', 'close', 'volume']
         for col in expected_columns:
             self.assertIn(col, df.columns)
-        
+
         # 验证datetime列已转换为datetime类型
         self.assertTrue(pd.api.types.is_datetime64_any_dtype(df['datetime']))
-        
+
         # 验证数据值
         self.assertEqual(df.loc[0, 'open'], 100.0)
         self.assertEqual(df.loc[1, 'open'], 101.0)
@@ -106,19 +106,19 @@ class TestDataLoader(unittest.TestCase):
     def test_load_csv_timestamp_column(self):
         """测试加载带timestamp列的CSV文件"""
         df = load_csv_with_time_detection(self.timestamp_file)
-        
+
         # 验证数据加载成功
         self.assertFalse(df.empty)
         self.assertEqual(len(df), 3)
-        
+
         # 验证列存在
         expected_columns = ['timestamp', 'open', 'high', 'low', 'close', 'volume']
         for col in expected_columns:
             self.assertIn(col, df.columns)
-        
+
         # 验证timestamp列保持为数值类型（毫秒）
         self.assertTrue(pd.api.types.is_numeric_dtype(df['timestamp']))
-        
+
         # 验证数据值
         self.assertEqual(df.loc[0, 'timestamp'], 1704067200000)
         self.assertEqual(df.loc[0, 'open'], 200.0)
@@ -126,43 +126,43 @@ class TestDataLoader(unittest.TestCase):
     def test_load_csv_no_time_column(self):
         """测试加载没有时间列的CSV文件"""
         df = load_csv_with_time_detection(self.no_time_file)
-        
+
         # 验证数据加载成功
         self.assertFalse(df.empty)
         self.assertEqual(len(df), 3)
-        
+
         # 验证列存在但没有时间列
         expected_columns = ['open', 'high', 'low', 'close', 'volume']
         for col in expected_columns:
             self.assertIn(col, df.columns)
-        
+
         # 验证没有时间相关列
         self.assertNotIn('datetime', df.columns)
         self.assertNotIn('timestamp', df.columns)
-        
+
         # 验证数据值
         self.assertEqual(df.loc[0, 'open'], 300.0)
 
     def test_load_csv_file_not_found(self):
         """测试文件不存在的情况"""
         nonexistent_file = self.test_dir / "does_not_exist.csv"
-        
+
         df = load_csv_with_time_detection(nonexistent_file)
-        
+
         # 应该返回空DataFrame
         self.assertTrue(df.empty)
 
     def test_load_csv_empty_file(self):
         """测试空文件的情况"""
         df = load_csv_with_time_detection(self.empty_file)
-        
+
         # 应该返回空DataFrame
         self.assertTrue(df.empty)
 
     def test_load_csv_malformed_file(self):
         """测试格式错误文件的处理"""
         df = load_csv_with_time_detection(self.malformed_file)
-        
+
         # 应该能加载但可能没有预期的列结构
         # 主要测试不会崩溃
         self.assertIsInstance(df, pd.DataFrame)
@@ -181,9 +181,9 @@ class TestDataLoader(unittest.TestCase):
             "close": [100.2, 101.2, 102.2]
         }
         pd.DataFrame(mixed_data).to_csv(mixed_datetime_file, index=False)
-        
+
         df = load_csv_with_time_detection(mixed_datetime_file)
-        
+
         # 验证datetime列转换成功
         self.assertTrue(pd.api.types.is_datetime64_any_dtype(df['datetime']))
         self.assertFalse(df['datetime'].isnull().any())
@@ -198,9 +198,9 @@ class TestDataLoader(unittest.TestCase):
             "close": [100.2, 101.2, 102.2]
         }
         pd.DataFrame(mixed_data).to_csv(mixed_timestamp_file, index=False)
-        
+
         df = load_csv_with_time_detection(mixed_timestamp_file)
-        
+
         # 验证timestamp列保持数值类型
         self.assertTrue(pd.api.types.is_numeric_dtype(df['timestamp']))
         self.assertFalse(df['timestamp'].isnull().any())
@@ -219,9 +219,9 @@ class TestDataLoader(unittest.TestCase):
             "extra_col2": [123, 456]
         }
         pd.DataFrame(extra_data).to_csv(extra_cols_file, index=False)
-        
+
         df = load_csv_with_time_detection(extra_cols_file)
-        
+
         # 验证所有列都被保留
         expected_columns = ['datetime', 'open', 'high', 'low', 'close', 'volume', 'extra_col1', 'extra_col2']
         for col in expected_columns:
@@ -238,9 +238,9 @@ class TestDataLoader(unittest.TestCase):
             "close": [100.2, 101.2]
         }
         pd.DataFrame(uppercase_data).to_csv(uppercase_file, index=False)
-        
+
         df = load_csv_with_time_detection(uppercase_file)
-        
+
         # 验证能正确识别大写的时间列
         self.assertIn('DATETIME', df.columns)
         self.assertIn('TIMESTAMP', df.columns)
@@ -248,7 +248,7 @@ class TestDataLoader(unittest.TestCase):
     def test_load_csv_data_types_preservation(self):
         """测试数据类型保持"""
         df = load_csv_with_time_detection(self.datetime_file)
-        
+
         # 验证数值列的类型
         numeric_columns = ['open', 'high', 'low', 'close', 'volume']
         for col in numeric_columns:
@@ -257,7 +257,7 @@ class TestDataLoader(unittest.TestCase):
     def test_load_csv_index_handling(self):
         """测试索引处理"""
         df = load_csv_with_time_detection(self.datetime_file)
-        
+
         # 验证索引从0开始
         self.assertEqual(df.index[0], 0)
         self.assertEqual(len(df.index), len(df))

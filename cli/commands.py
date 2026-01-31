@@ -3,10 +3,10 @@
 from pathlib import Path
 
 from core.settings import get_end_date, get_start_date
-from data.oi_funding_manager import execute_oi_funding_data_fetch
 from scripts.fetch_instrument import update_instruments
 from strategy.dependency_checker import check_strategy_data_dependencies
 from utils.config_helpers import parse_universe_symbols
+from utils.data_management import execute_oi_funding_data_fetch
 
 
 def check_and_fetch_strategy_data(args, adapter, base_dir: Path, universe_symbols: set):

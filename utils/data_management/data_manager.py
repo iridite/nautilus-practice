@@ -66,7 +66,7 @@ class DataManager:
         Returns:
             {"success": int, "failed": int, "symbols": List[str]}
         """
-        from data.fetcher_manager import run_batch_data_retrieval
+        from utils.data_management import run_batch_data_retrieval
 
         try:
             run_batch_data_retrieval(

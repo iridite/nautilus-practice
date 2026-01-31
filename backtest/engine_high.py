@@ -217,7 +217,7 @@ def _auto_download_data(data_cfg, cfg: BackTestConfig) -> bool:
         bool: 下载是否成功
     """
     try:
-        from utils.data_retrival import batch_fetch_ohlcv
+        from utils.data_management.data_retrival import batch_fetch_ohlcv
 
         parsed = FilenameParser.parse(data_cfg.csv_file_name)
         if not parsed:

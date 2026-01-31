@@ -40,16 +40,17 @@ uv run python -m unittest tests.test_oi_divergence.TestCustomData.test_open_inte
 
 ### Running Backtests
 ```bash
-# Main backtest entry point (with automatic OI data fetching)
+# Main backtest entry point (Funding Rate data auto-fetching)
 uv run python main.py backtest
 
 # Skip OI data checks (OHLCV only)
 uv run python main.py backtest --skip-oi-data
 
-# Force re-download OI data
-uv run python main.py backtest --force-oi-fetch
+# Note: OI data fetching is currently disabled (see OI Data Status section below)
+# The following flags are inactive until local OI service is implemented:
+# --force-oi-fetch, --oi-exchange
 
-# Specify preferred exchange and retry settings
+# Specify preferred exchange and retry settings for Funding Rate data
 uv run python main.py backtest --oi-exchange binance --max-retries 5
 
 # Strategy-specific backtest
@@ -176,16 +177,39 @@ class MyStrategyConfig(BaseStrategyConfig):
 The system automatically before backtest:
 1. Checks strategy's `data_types` list
 2. Validates data file existence
-3. Auto-downloads missing OI/Funding Rate data
+3. Auto-downloads missing **Funding Rate** data (OI data fetching currently disabled)
 4. Supports multi-exchange fallback and smart retry
+
+**Note**: OI data auto-fetching is temporarily disabled. See "OI Data Status" section below.
+
+### OI Data Status (2026-01-31)
+
+**Current Status**: OI data fetching from third-party APIs is **temporarily disabled**.
+
+**Reason**: 
+- Binance OI API: Only provides 21 days of historical data
+- OKX OI API: Only provides 90 days of historical data
+- These limitations do not meet long-term backtesting requirements
+
+**Future Plan**:
+- Design and implement a local OI data collection service
+- Continuously collect and store OI data for long-term historical analysis
+- Service will run independently and maintain a comprehensive OI database
+
+**Implementation Location**: `utils/data_retrival.py` - `ENABLE_OI_FETCH = False`
+
+**For Developers**: 
+- OI data fetching code structure is preserved but inactive
+- Set `ENABLE_OI_FETCH = True` to re-enable after local service is ready
+- Funding Rate data fetching remains fully functional
 
 ### Data Limits Auto-Check
 
 System automatically checks exchange data limits (`utils/data_limits.py`):
 
 ```python
-# Binance OI data limit: 21 days
-# OKX OI data limit: 90 days
+# Binance Funding Rate limit: ~90 days
+# OKX Funding Rate limit: ~90 days
 # Auto-validation and warnings during config building
 ```
 
@@ -218,10 +242,12 @@ from utils import (
 
 Extends NautilusTrader's data system to support derivatives data:
 
-- **OpenInterestData**: Open interest data
-- **FundingRateData**: Funding rate data
+- **OpenInterestData**: Open interest data (data fetching currently disabled, awaiting local service)
+- **FundingRateData**: Funding rate data (fully functional)
 
 Implemented through `utils.custom_data` and `utils.oi_funding_adapter` modules for data loading and adaptation.
+
+**Note**: While OI data fetching is disabled, the data types and loading infrastructure remain intact for future use.
 
 ## 📝 Code Style Guidelines
 
