@@ -51,37 +51,43 @@ P1 级别优化项目包含可提升性能和可维护性的改进，但不影�
 
 ---
 
-## 🔄 待处理项目
+## ❌ 已评估但不建议实施的项目
 
-### 1. 内存管理优化
+### 1. 内存管理优化 - OrderedDict → deque
 
-**问题**: 策略中使用 `OrderedDict` 存储历史价格，清理策略不够高效
+**评估时间**: 2026-02-01  
+**评估结论**: ❌ 不建议实施
 
-**当前实现** (strategy/keltner_rs_breakout.py:140):
+**问题描述**: `strategy/keltner_rs_breakout.py:99-100` 使用 OrderedDict 存储历史价格
+
+**原始优化方案**:
 ```python
-# 价格历史（用于 RS 计算）
-self.price_history = OrderedDict()
-self.btc_price_history = OrderedDict()
-
-# 清理过期数据
-if len(self.price_history) > self.config.max_history_size:
-    self.price_history.popitem(last=False)
-```
-
-**优化方案**:
-```python
-from collections import deque
-
-# 使用 deque 自动限制大小
+# 建议使用 deque 替换 OrderedDict
 self.price_history = deque(maxlen=self.config.max_history_size)
-self.btc_price_history = deque(maxlen=self.config.max_history_size)
-
-# 存储为 (timestamp, price) 元组
-self.price_history.append((bar.ts_event, close))
 ```
 
-**预估收益**: 减少 30% 内存占用，提升 20% 访问速度  
-**预估工作量**: 1-2小时
+**不建议实施的原因**:
+
+1. **需要按时间戳索引**: 代码在 `_check_relative_strength()` 方法中需要通过时间戳获取价格
+   ```python
+   # strategy/keltner_rs_breakout.py:353-354
+   symbol_prices = [self.price_history[ts] for ts in recent_ts]
+   btc_prices = [self.btc_price_history[ts] for ts in recent_ts]
+   ```
+
+2. **需要计算时间戳交集**: 代码需要找到主标的和 BTC 的共同时间戳
+   ```python
+   common_timestamps = sorted(set(self.price_history.keys()) & set(self.btc_price_history.keys()))
+   ```
+
+3. **deque 的限制**: deque 只支持位置索引（如 `deque[0]`），不支持键值索引（如 `dict[timestamp]`）
+
+4. **当前实现合理**: OrderedDict 提供了：
+   - 按时间戳快速查找 O(1)
+   - 保持插入顺序
+   - 支持 FIFO 清理（`popitem(last=False)`）
+
+**结论**: 当前使用 OrderedDict 是正确的设计选择，无需优化。
 
 ---
 
@@ -89,15 +95,15 @@ self.price_history.append((bar.ts_event, close))
 
 ### 1. data_loader.py 文件拆分评估
 
-**问题描述**: `utils/data_management/data_loader.py` 文件包含 730 行代码，需要评估是否需要拆分。
+**问题描述**: `utils/data_management/data_loader.py` 文件包含 751 行代码
 
 **评估结论**: ❌ 不建议拆分
 
 **理由**:
 1. **功能高度内聚** - 所有代码专注于 CSV 数据加载和预处理
-2. **核心模块被广泛使用** - `load_ohlcv_csv` 和 `DataLoader` 被 4-5 个文件使用
+2. **核心模块被广泛使用** - `load_ohlcv_csv` 和 `DataLoader` 被多个文件使用
 3. **函数间依赖紧密** - 拆分会增加模块间耦合
-4. **730 行规模合理** - 对于数据加载模块是正常规模
+4. **751 行规模合理** - 对于数据加载模块是正常规模
 5. **符合量化系统原则** - "稳定性 > 理论完美"
 
 ---
@@ -108,7 +114,7 @@ self.price_history.append((bar.ts_event, close))
 |------|------|----------|----------|
 | 数据加载缓存 | ✅ 完成 | 2026-01-XX | 6a1c59b |
 | 指标计算优化 | ✅ 完成 | 2026-01-XX | 094e80f |
-| 内存管理优化 | 🔄 待处理 | - | - |
+| OrderedDict 优化 | ❌ 不建议 | 2026-02-01 | - |
 
 ---
 
