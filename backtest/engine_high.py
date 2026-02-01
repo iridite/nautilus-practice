@@ -7,6 +7,9 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import pandas as pd
 from nautilus_trader.backtest.config import (
+import logging
+logger = logging.getLogger(__name__)
+
     BacktestDataConfig,
     BacktestRunConfig,
     BacktestVenueConfig,
@@ -282,7 +285,7 @@ def _import_data_to_catalog(
                 _catalog, csv_path, inst, bar_type, data_cfg, cfg, feed_idx, total_feeds
             )
 
-        print(status_msg, end="", flush=True)
+        logger.info(status_msg, end="", flush=True)
 
         # 归类数据流
         if data_cfg.label == "benchmark":
@@ -303,7 +306,7 @@ def _import_data_to_catalog(
         if bar_type_str not in data_config_by_inst[inst_id_str]["bar_types"]:
             data_config_by_inst[inst_id_str]["bar_types"].append(bar_type_str)
 
-    print(f"\n✅ Data import complete. Created {len(data_config_by_inst)} data configs.")
+    logger.info(f"\n✅ Data import complete. Created {len(data_config_by_inst)} data configs.")
     return data_config_by_inst, global_feeds, feeds_by_inst
 
 
@@ -338,7 +341,7 @@ def _clear_parquet_data(catalog: ParquetDataCatalog, bar_type: BarType) -> None:
 
         for data_dir in possible_dirs:
             if data_dir.exists():
-                print(f"   🗑️ Clearing existing Parquet data: {data_dir}")
+                logger.info(f"   🗑️ Clearing existing Parquet data: {data_dir}")
                 shutil.rmtree(data_dir)
                 break
         else:
@@ -347,12 +350,12 @@ def _clear_parquet_data(catalog: ParquetDataCatalog, bar_type: BarType) -> None:
                 if instrument_id in str(root) and any(
                     f.endswith(".parquet") for f in files
                 ):
-                    print(f"   🗑️ Clearing found Parquet data: {root}")
+                    logger.info(f"   🗑️ Clearing found Parquet data: {root}")
                     shutil.rmtree(root)
                     break
 
     except Exception as e:
-        print(f"   ⚠️ Warning: Could not clear Parquet data: {e}")
+        logger.warning(f"   ⚠️ Warning: Could not clear Parquet data: {e}")
         # 不抛出异常，因为这不是致命错误
 
 
@@ -498,7 +501,7 @@ def run_high_level(cfg: BacktestConfig, base_dir: Path):
         cfg: 回测配置
         base_dir: 项目根目录
     """
-    print(f"🚀 Starting High-Level Backtest: {cfg.strategy.name}")
+    logger.info(f"🚀 Starting High-Level Backtest: {cfg.strategy.name}")
 
     try:
         # 1. 准备配置类（用于参数过滤）
@@ -508,7 +511,7 @@ def run_high_level(cfg: BacktestConfig, base_dir: Path):
 
         # 2. 加载交易标的
         loaded_instruments = _load_instruments(cfg)
-        print(f"✅ Loaded {len(loaded_instruments)} instruments")
+        logger.info(f"✅ Loaded {len(loaded_instruments)} instruments")
 
         # 3. 导入数据到Parquet目录
         data_path = base_dir / "data"
@@ -522,7 +525,7 @@ def run_high_level(cfg: BacktestConfig, base_dir: Path):
         strategies = _create_strategy_configs(
             cfg, loaded_instruments, feeds_by_inst, global_feeds, ConfigClass
         )
-        print(f"✅ Created {len(strategies)} strategy configurations")
+        logger.info(f"✅ Created {len(strategies)} strategy configurations")
 
         # 5. 准备回测数据配置
         backtest_data_configs = []
@@ -544,7 +547,7 @@ def run_high_level(cfg: BacktestConfig, base_dir: Path):
         )
 
     except (InstrumentLoadError, DataLoadError, CatalogError) as e:
-        print(f"❌ Backtest failed: {e}")
+        logger.error(f"❌ Backtest failed: {e}")
         raise
     except Exception as e:
         raise BacktestEngineError(f"Unexpected error during backtest: {e}", e)
@@ -614,14 +617,14 @@ def _run_backtest_with_custom_data(
     # 创建并运行BacktestNode
     gc.collect()
     node = BacktestNode(configs=[run_config])
-    print(f"⏳ Running BacktestNode with {len(strategies)} strategy instances...")
+    logger.info(f"⏳ Running BacktestNode with {len(strategies)} strategy instances...")
 
     # 加载自定义数据
     _load_custom_data_to_engine(cfg, base_dir, node, run_config, loaded_instruments)
 
     # 运行回测
     results = node.run()
-    print("✅ Backtest Complete.")
+    logger.info("✅ Backtest Complete.")
 
     # 处理结果
     if results:
@@ -655,10 +658,10 @@ def _load_custom_data_to_engine(
 ):
     """加载自定义数据(OI, Funding Rate)到回测引擎"""
     if not (cfg.start_date and cfg.end_date):
-        print("⚠️ No date range specified, skipping custom data loading")
+        logger.warning("⚠️ No date range specified, skipping custom data loading")
         return
 
-    print("📊 Loading custom data (OI, Funding Rate)...")
+    logger.info("📊 Loading custom data (OI, Funding Rate)...")
 
     try:
         # 构建引擎
@@ -666,7 +669,7 @@ def _load_custom_data_to_engine(
         engine = node.get_engine(run_config.id)
 
         if engine is None:
-            print("⚠️ Could not get engine from node")
+            logger.warning("⚠️ Could not get engine from node")
             return
 
         # 加载自定义数据
@@ -721,13 +724,13 @@ def _load_custom_data_to_engine(
                 )
                 engine.add_data(merged_data)
                 total_loaded += len(merged_data)
-                print(f"   ✅ Added {len(merged_data)} custom data points for {symbol}")
+                logger.info(f"   ✅ Added {len(merged_data)} custom data points for {symbol}")
 
-        print(f"✅ Total custom data loaded: {total_loaded} points")
+        logger.info(f"✅ Total custom data loaded: {total_loaded} points")
 
     except Exception as e:
-        print(f"⚠️ Custom data loading failed: {e}")
-        print("Strategy will run without OI/Funding data")
+        logger.error(f"⚠️ Custom data loading failed: {e}")
+        logger.info("Strategy will run without OI/Funding data")
 
 
 
@@ -786,7 +789,7 @@ def _process_backtest_results(
 
         # 保存JSON文件
         json_path = _save_results_to_json(result_dict, cfg.strategy.name, base_dir)
-        print(f"📁 Complete results saved to: {json_path}")
+        logger.info(f"📁 Complete results saved to: {json_path}")
 
 
 def _build_result_dict(
@@ -1092,23 +1095,23 @@ def _print_results(
         result: 回测结果对象
         strategy_config: 策略配置（已移除，设为 None 以简化输出）
     """
-    print("\n" + "=" * 65)
-    print("🏆 Backtest Report")
-    print("=" * 65)
-    print(f"Duration:       {result.elapsed_time:.4f}s")
-    print(f"Orders:         {result.total_orders}")
-    print(f"Positions:      {result.total_positions}")
+    logger.info("\n" + "=" * 65)
+    logger.info("🏆 Backtest Report")
+    logger.info("=" * 65)
+    logger.info(f"Duration:       {result.elapsed_time:.4f}s")
+    logger.info(f"Orders:         {result.total_orders}")
+    logger.info(f"Positions:      {result.total_positions}")
 
     if result.stats_pnls:
         for currency, metrics in result.stats_pnls.items():
-            print(f"💰 PnL ({currency}):")
+            logger.info(f"💰 PnL ({currency}):")
             for k, v in metrics.items():
                 if v == v:  # Check for NaN
-                    print(f"   * {k:<25}: {v:,.4f}")
+                    logger.info(f"   * {k:<25}: {v:,.4f}")
 
     if result.stats_returns:
         for currency, val in result.stats_returns.items():
-            print(f"- {currency:<25} {val:,.4f}")
+            logger.info(f"- {currency:<25} {val:,.4f}")
 
     # 注意：策略配置参数已保存到 JSON 文件中，终端不再打印
     # 原因：
@@ -1117,7 +1120,7 @@ def _print_results(
     # 3. AI 可以从 JSON 文件中读取完整配置进行分析
     # 4. 人工查看时也更倾向于查看 JSON 文件而非终端滚动输出
 
-    print("=" * 65 + "\n")
+    logger.info("=" * 65 + "\n")
 
 
 def catalog_loader(

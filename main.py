@@ -3,6 +3,9 @@ import json
 import sys
 from pathlib import Path
 
+import logging
+logger = logging.getLogger(__name__)
+
 # Add workspace root to sys.path
 BASE_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(BASE_DIR))
@@ -64,7 +67,7 @@ def main():
     args = parse_arguments()
 
     if not args.command:
-        print("请指定命令。使用 --help 查看可用命令。")
+        logger.info("请指定命令。使用 --help 查看可用命令。")
         sys.exit(1)
 
     adapter = get_adapter()

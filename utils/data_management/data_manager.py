@@ -20,6 +20,9 @@ from utils.data_file_checker import check_single_data_file
 from .data_retrieval import batch_fetch_ohlcv, batch_fetch_oi_and_funding
 
 
+import logging
+logger = logging.getLogger(__name__)
+
 class DataManager:
     """统一数据管理器"""
 
@@ -136,7 +139,7 @@ def run_batch_data_retrieval(
         )
         return data_configs
     except Exception as e:
-        print(f"❌ Error during data retrieval: {e}")
+        logger.error(f"❌ Error during data retrieval: {e}")
         return []
 
 

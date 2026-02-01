@@ -8,15 +8,18 @@ from utils.oi_funding_adapter import execute_oi_funding_data_fetch
 from utils.universe import parse_universe_symbols
 
 
+import logging
+logger = logging.getLogger(__name__)
+
 def check_and_fetch_strategy_data(args, adapter, base_dir: Path, universe_symbols: set):
     """检查并获取策略所需数据"""
     if args.skip_oi_data:
-        print("⏩ Skipping OI/Funding data check")
+        logger.info("⏩ Skipping OI/Funding data check")
         return
 
-    print("="*70)
-    print("📊 Strategy Data Dependencies Check")
-    print("="*70)
+    logger.info("="*70)
+    logger.info("📊 Strategy Data Dependencies Check")
+    logger.info("="*70)
 
     current_config = adapter.build_backtest_config()
     strategy_tasks = check_strategy_data_dependencies(
@@ -28,7 +31,7 @@ def check_and_fetch_strategy_data(args, adapter, base_dir: Path, universe_symbol
     )
 
     if strategy_tasks["missing_count"] > 0:
-        print(f"📊 {strategy_tasks['missing_count']} missing data files")
+        logger.info(f"📊 {strategy_tasks['missing_count']} missing data files")
 
         fetch_results = execute_oi_funding_data_fetch(
             strategy_tasks,
@@ -39,11 +42,11 @@ def check_and_fetch_strategy_data(args, adapter, base_dir: Path, universe_symbol
 
         total_files = fetch_results["oi_files"] + fetch_results["funding_files"]
         if total_files > 0:
-            print(f"✅ Downloaded {total_files} files")
+            logger.info(f"✅ Downloaded {total_files} files")
     else:
-        print("✅ All strategy data satisfied")
+        logger.info("✅ All strategy data satisfied")
 
-    print("="*70 + "\n")
+    logger.info("="*70 + "\n")
 
 
 def update_instrument_definitions(adapter, base_dir: Path, universe_symbols: set):
@@ -67,10 +70,10 @@ def update_instrument_definitions(adapter, base_dir: Path, universe_symbols: set
             instrument_ids.update(universe_inst_ids)
 
         if instrument_ids:
-            print(f"🔄 Updating {len(instrument_ids)} instruments")
+            logger.info(f"🔄 Updating {len(instrument_ids)} instruments")
             update_instruments(list(instrument_ids), base_dir / "data" / "instrument")
     except Exception as e:
-        print(f"⚠️ Error updating instruments: {e}")
+        logger.error(f"⚠️ Error updating instruments: {e}")
 
 
 def run_backtest(args, adapter, base_dir: Path):

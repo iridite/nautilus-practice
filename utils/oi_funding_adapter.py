@@ -16,6 +16,9 @@ from nautilus_trader.model.identifiers import InstrumentId
 from utils.custom_data import FundingRateData, OpenInterestData
 
 
+import logging
+logger = logging.getLogger(__name__)
+
 class OIFundingDataLoader:
     """
     OI 和 Funding Rate 数据加载器
@@ -83,18 +86,18 @@ class OIFundingDataLoader:
         file_path = self.data_dir / safe_symbol / filename
 
         if not file_path.exists():
-            print(f"⚠️  OI data file not found: {file_path}")
+            logger.warning(f"⚠️  OI data file not found: {file_path}")
 
             # 查找可用的替代文件
             available_files = self._find_available_oi_files(symbol, exchange)
             if available_files:
-                print(f"💡 Found {len(available_files)} available OI file(s):")
+                logger.info(f"💡 Found {len(available_files)} available OI file(s):")
                 for f in available_files[:5]:  # 只显示前5个
-                    print(f"   - {f.name}")
+                    logger.info(f"   - {f.name}")
                 if len(available_files) > 5:
-                    print(f"   ... and {len(available_files) - 5} more")
+                    logger.info(f"   ... and {len(available_files) - 5} more")
             else:
-                print(f"❌ No OI data files found for {symbol} in {self.data_dir / safe_symbol}")
+                logger.error(f"❌ No OI data files found for {symbol} in {self.data_dir / safe_symbol}")
 
             return []
 
@@ -103,7 +106,7 @@ class OIFundingDataLoader:
 
             # 确保必需的列存在
             if "timestamp" not in df.columns or "open_interest" not in df.columns:
-                print(f"Warning: Invalid OI data format in {file_path}")
+                logger.warning(f"Warning: Invalid OI data format in {file_path}")
                 return []
 
             # 转换为 OpenInterestData 对象
@@ -123,11 +126,11 @@ class OIFundingDataLoader:
                 )
                 oi_data_list.append(oi_data)
 
-            print(f"✅ Loaded {len(oi_data_list)} OI data points for {symbol}")
+            logger.info(f"✅ Loaded {len(oi_data_list)} OI data points for {symbol}")
             return oi_data_list
 
         except Exception as e:
-            print(f"Error loading OI data from {file_path}: {e}")
+            logger.error(f"Error loading OI data from {file_path}: {e}")
             return []
 
     def _find_available_funding_files(self, symbol: str, exchange: str = "binance") -> list:
@@ -175,18 +178,18 @@ class OIFundingDataLoader:
         file_path = self.data_dir / safe_symbol / filename
 
         if not file_path.exists():
-            print(f"⚠️  Funding data file not found: {file_path}")
+            logger.warning(f"⚠️  Funding data file not found: {file_path}")
 
             # 查找可用的替代文件
             available_files = self._find_available_funding_files(symbol, exchange)
             if available_files:
-                print(f"💡 Found {len(available_files)} available Funding file(s):")
+                logger.info(f"💡 Found {len(available_files)} available Funding file(s):")
                 for f in available_files[:5]:  # 只显示前5个
-                    print(f"   - {f.name}")
+                    logger.info(f"   - {f.name}")
                 if len(available_files) > 5:
-                    print(f"   ... and {len(available_files) - 5} more")
+                    logger.info(f"   ... and {len(available_files) - 5} more")
             else:
-                print(f"❌ No Funding data files found for {symbol} in {self.data_dir / safe_symbol}")
+                logger.error(f"❌ No Funding data files found for {symbol} in {self.data_dir / safe_symbol}")
 
             return []
 
@@ -195,7 +198,7 @@ class OIFundingDataLoader:
 
             # 确保必需的列存在
             if "timestamp" not in df.columns or "funding_rate" not in df.columns:
-                print(f"Warning: Invalid funding data format in {file_path}")
+                logger.warning(f"Warning: Invalid funding data format in {file_path}")
                 return []
 
             # 转换为 FundingRateData 对象
@@ -229,7 +232,7 @@ class OIFundingDataLoader:
             return funding_data_list
 
         except Exception as e:
-            print(f"Error loading Funding data from {file_path}: {e}")
+            logger.error(f"Error loading Funding data from {file_path}: {e}")
             return []
 
     def load_all_custom_data(
@@ -468,10 +471,10 @@ if __name__ == "__main__":
         oi_period="1h",
     )
 
-    print(f"\n📊 Custom Data Summary:")
-    print(f"  OI Data Points: {len(custom_data['oi'])}")
-    print(f"  Funding Rate Data Points: {len(custom_data['funding'])}")
+    logger.info(f"\n📊 Custom Data Summary:")
+    logger.info(f"  OI Data Points: {len(custom_data['oi'])}")
+    logger.info(f"  Funding Rate Data Points: {len(custom_data['funding'])}")
 
     # 合并数据
     merged = merge_custom_data_with_bars(custom_data["oi"], custom_data["funding"])
-    print(f"  Total Custom Data Points: {len(merged)}")
+    logger.info(f"  Total Custom Data Points: {len(merged)}")

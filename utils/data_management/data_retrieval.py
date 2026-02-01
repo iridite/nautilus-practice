@@ -18,6 +18,9 @@ from utils.symbol_parser import parse_timeframe, resolve_symbol_and_type
 from utils.time_helpers import get_ms_timestamp
 
 
+import logging
+logger = logging.getLogger(__name__)
+
 def fetch_ohlcv_data(exchange, symbol, timeframe, since, limit_ms, source="auto"):
     """
     获取OHLCV数据，支持多数据源
@@ -167,7 +170,7 @@ def fetch_binance_oi_history(
         )
 
         if not response:
-            print(f"⚠️  Binance OI API: No data returned for {symbol}")
+            logger.warning(f"⚠️  Binance OI API: No data returned for {symbol}")
             return pd.DataFrame()
 
         for item in response:
@@ -185,12 +188,12 @@ def fetch_binance_oi_history(
             oldest_ts = min(item["timestamp"] for item in all_data)
             newest_ts = max(item["timestamp"] for item in all_data)
             from datetime import datetime
-            print(f"ℹ️  Binance OI: Got {len(all_data)} records from {datetime.fromtimestamp(oldest_ts/1000).date()} to {datetime.fromtimestamp(newest_ts/1000).date()}")
+            logger.info(f"ℹ️  Binance OI: Got {len(all_data)} records from {datetime.fromtimestamp(oldest_ts/1000).date()} to {datetime.fromtimestamp(newest_ts/1000).date()}")
             if oldest_ts > start_ms:
-                print(f"⚠️  Warning: Requested data from {datetime.fromtimestamp(start_ms/1000).date()}, but API only provides recent ~21 days")
+                logger.warning(f"⚠️  Warning: Requested data from {datetime.fromtimestamp(start_ms/1000).date()}, but API only provides recent ~21 days")
 
     except Exception as e:
-        print(f"❌ Error fetching Binance OI data: {e}")
+        logger.error(f"❌ Error fetching Binance OI data: {e}")
         return pd.DataFrame()
 
     if not all_data:
@@ -248,7 +251,7 @@ def fetch_okx_oi_history(
             time.sleep(exchange.rateLimit / 1000)
 
         except Exception as e:
-            print(f"Warning: Error fetching OKX OI data: {e}")
+            logger.error(f"Warning: Error fetching OKX OI data: {e}")
             break
 
     if not all_data:
@@ -297,7 +300,7 @@ def fetch_binance_funding_rate_history(
             time.sleep(exchange.rateLimit / 1000)
 
         except Exception as e:
-            print(f"Warning: Error fetching funding rate data: {e}")
+            logger.error(f"Warning: Error fetching funding rate data: {e}")
             break
 
     if not all_data:
@@ -354,7 +357,7 @@ def fetch_okx_funding_rate_history(
             time.sleep(exchange.rateLimit / 1000)
 
         except Exception as e:
-            print(f"Warning: Error fetching OKX funding rate data: {e}")
+            logger.error(f"Warning: Error fetching OKX funding rate data: {e}")
             break
 
     if not all_data:
@@ -414,7 +417,7 @@ def batch_fetch_oi_and_funding(
                 ccxt_symbol = raw_symbol
 
             if ccxt_symbol not in exchange.markets:
-                print(f"\n[WARNING] {raw_symbol} not found in {exchange_id.upper()}, skipping")
+                logger.warning(f"\n[WARNING] {raw_symbol} not found in {exchange_id.upper()}, skipping")
                 continue
 
             safe_symbol = raw_symbol.replace("/", "")

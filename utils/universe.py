@@ -12,6 +12,9 @@ from core.exceptions import UniverseParseError
 from core.schemas import InstrumentConfig, InstrumentType
 
 
+import logging
+logger = logging.getLogger(__name__)
+
 def load_universe_file(universe_path: Union[str, Path]) -> Dict[str, List[str]]:
     """
     加载 Universe JSON 文件
@@ -85,7 +88,7 @@ def extract_universe_symbols(
         if month in universe_data:
             symbols.update(universe_data[month])
         else:
-            print(f"⚠️ Month '{month}' not found in universe data")
+            logger.warning(f"⚠️ Month '{month}' not found in universe data")
 
     return symbols
 
@@ -109,7 +112,7 @@ def load_universe_symbols_from_file(file_path: Union[str, Path]) -> List[str]:
     file_path = Path(file_path)
 
     if not file_path.exists():
-        print(f"⚠️ Universe file not found: {file_path}")
+        logger.warning(f"⚠️ Universe file not found: {file_path}")
         return []
 
     try:
@@ -133,7 +136,7 @@ def load_universe_symbols_from_file(file_path: Union[str, Path]) -> List[str]:
         return symbols
 
     except Exception as e:
-        print(f"⚠️ Error reading universe file {file_path}: {e}")
+        logger.error(f"⚠️ Error reading universe file {file_path}: {e}")
         return []
 
 
@@ -169,13 +172,13 @@ def parse_universe_symbols(
             raw_pair = symbol.split(":")[0]
 
             if not raw_pair.endswith(base_currency):
-                print(f"⚠️ Symbol '{symbol}' doesn't end with base currency '{base_currency}'")
+                logger.warning(f"⚠️ Symbol '{symbol}' doesn't end with base currency '{base_currency}'")
                 continue
 
             quote_currency = raw_pair.replace(base_currency, "")
 
             if not quote_currency:
-                print(f"⚠️ Empty quote currency for symbol '{symbol}'")
+                logger.warning(f"⚠️ Empty quote currency for symbol '{symbol}'")
                 continue
 
             inst_id = InstrumentConfig.get_id_for(
@@ -187,7 +190,7 @@ def parse_universe_symbols(
             instrument_ids.add(inst_id)
 
         except Exception as e:
-            print(f"⚠️ Failed to parse symbol '{symbol}': {e}")
+            logger.error(f"⚠️ Failed to parse symbol '{symbol}': {e}")
             continue
 
     return instrument_ids

@@ -10,6 +10,9 @@ from pathlib import Path
 from typing import Optional
 
 
+import logging
+logger = logging.getLogger(__name__)
+
 class DataValidator:
     """
     数据验证器
@@ -353,12 +356,12 @@ def prepare_data_feeds(args, adapter, base_dir, universe_symbols: set):
     from .data_manager import run_batch_data_retrieval
 
     if args.skip_data_check:
-        print("⏩ Skipping data validation")
+        logger.info("⏩ Skipping data validation")
         return
 
-    print("="*70)
-    print("📊 Data Validation")
-    print("="*70)
+    logger.info("="*70)
+    logger.info("📊 Data Validation")
+    logger.info("="*70)
 
     venue = adapter.get_venue().lower()
     start_date = adapter.get_start_date()
@@ -377,17 +380,17 @@ def prepare_data_feeds(args, adapter, base_dir, universe_symbols: set):
             missing_symbols.append(symbol.split(":")[0])
 
     if missing_symbols:
-        print(f"📥 {len(missing_symbols)} symbols need data")
+        logger.info(f"📥 {len(missing_symbols)} symbols need data")
         run_batch_data_retrieval(
             missing_symbols, start_date, end_date, timeframe, venue, base_dir
         )
     else:
-        print("✅ All data files present")
+        logger.info("✅ All data files present")
 
     # 多标的数据对齐检查
     _check_multi_instrument_alignment(adapter, base_dir, venue, timeframe)
 
-    print("="*70 + "\n")
+    logger.info("="*70 + "\n")
 
 
 def _check_multi_instrument_alignment(adapter, base_dir: Path, venue: str, timeframe: str):
@@ -419,16 +422,16 @@ def _check_multi_instrument_alignment(adapter, base_dir: Path, venue: str, timef
         btc_csv = data_dir / f"{btc_symbol}_{timeframe}.csv"
 
         # 执行对齐检查
-        print(f"🔍 检查多标的数据对齐: {primary_symbol} vs {btc_symbol}")
+        logger.debug(f"🔍 检查多标的数据对齐: {primary_symbol} vs {btc_symbol}")
         is_aligned, error_msg = validate_multi_instrument_alignment(
             primary_csv, btc_csv, min_alignment_rate=0.95, logger=logger
         )
 
         if not is_aligned:
-            print(f"⚠️  数据对齐警告: {error_msg}")
-            print("   建议: 检查数据源或重新下载数据")
+            logger.error(f"⚠️  数据对齐警告: {error_msg}")
+            logger.info("   建议: 检查数据源或重新下载数据")
         else:
-            print("✅ 数据对齐验证通过")
+            logger.info("✅ 数据对齐验证通过")
 
     except Exception as e:
         logger.warning(f"多标的对齐检查失败: {e}")

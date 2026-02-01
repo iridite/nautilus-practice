@@ -27,6 +27,9 @@ from utils.custom_data import FundingRateData, OpenInterestData
 from utils.time_helpers import parse_date_to_timestamp
 
 
+import logging
+logger = logging.getLogger(__name__)
+
 class DataLoadError(Exception):
     """数据加载错误"""
     pass
@@ -469,7 +472,7 @@ def batch_load_custom_data(
                 custom_data = load_custom_csv_data(file_path, data_type, instrument_id)
                 result[data_type].extend(custom_data)
             except DataLoadError as e:
-                print(f"⚠️ Failed to load {file_path}: {e}")
+                logger.error(f"⚠️ Failed to load {file_path}: {e}")
                 continue
 
     return result
@@ -694,7 +697,7 @@ def load_csv_with_time_detection(
     csv_path = Path(csv_path)
 
     if not csv_path.exists():
-        print(f"Warning: CSV file not found: {csv_path}")
+        logger.warning(f"Warning: CSV file not found: {csv_path}")
         return pd.DataFrame()
 
     try:
@@ -720,11 +723,11 @@ def load_csv_with_time_detection(
                     # 使用 ISO8601 格式支持混合日期时间格式
                     df[time_column] = pd.to_datetime(df[time_column], format='ISO8601')
                 except Exception as e:
-                    print(f"Warning: Failed to convert datetime column: {e}")
+                    logger.error(f"Warning: Failed to convert datetime column: {e}")
             # timestamp列保持原样（数值类型）
 
         return df
 
     except Exception as e:
-        print(f"Warning: Error loading CSV from {csv_path}: {e}")
+        logger.error(f"Warning: Error loading CSV from {csv_path}: {e}")
         return pd.DataFrame()

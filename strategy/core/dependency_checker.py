@@ -1,8 +1,11 @@
 """策略数据依赖检查模块"""
 
+import logging
 from pathlib import Path
 
 from utils.data_file_checker import check_funding_data_exists, check_oi_data_exists
+
+logger = logging.getLogger(__name__)
 
 
 def extract_strategy_symbols(strategy_config, universe_symbols: set) -> set:
@@ -46,7 +49,7 @@ def check_strategy_data_dependencies(
     if not strategy_symbols:
         return tasks
 
-    print(f"🔍 检查 {len(strategy_symbols)} 个符号的 {len(data_types)} 种数据类型")
+    logger.info(f"检查 {len(strategy_symbols)} 个符号的 {len(data_types)} 种数据类型")
 
     # 检查每个数据类型
     for data_type in data_types:
