@@ -52,7 +52,6 @@ def run_single_backtest(params: dict, config_template: dict) -> dict:
         # 解析结果
         if result.returncode == 0:
             # 从输出中提取指标
-            output = result.stdout
 
             # 简化版：从最后的JSON结果文件读取
             result_files = sorted(Path('output/backtest/result').glob('*.json'))

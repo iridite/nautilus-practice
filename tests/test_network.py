@@ -26,9 +26,9 @@ class TestNetwork(unittest.TestCase):
     def test_retry_fetch_success_first_try(self):
         """测试第一次尝试就成功的情况"""
         mock_func = Mock(return_value="success")
-        
+
         result = retry_fetch(mock_func, "arg1", "arg2", retries=3, delay=1)
-        
+
         self.assertEqual(result, "success")
         self.assertEqual(mock_func.call_count, 1)
         mock_func.assert_called_once_with("arg1", "arg2")
@@ -42,11 +42,11 @@ class TestNetwork(unittest.TestCase):
             ccxt.ExchangeError("交易所错误"),
             "success"
         ]
-        
+
         start_time = time.time()
         result = retry_fetch(mock_func, retries=3, delay=0.1)
         end_time = time.time()
-        
+
         self.assertEqual(result, "success")
         self.assertEqual(mock_func.call_count, 3)
         # 验证确实有延时（至少2次延时）
@@ -56,10 +56,10 @@ class TestNetwork(unittest.TestCase):
         """测试所有重试都失败的情况"""
         mock_func = Mock()
         mock_func.side_effect = ccxt.NetworkError("持续网络错误")
-        
+
         with self.assertRaises(ccxt.NetworkError):
             retry_fetch(mock_func, retries=3, delay=0.1)
-        
+
         self.assertEqual(mock_func.call_count, 3)
 
     def test_retry_fetch_rate_limit_handling(self):
@@ -70,11 +70,11 @@ class TestNetwork(unittest.TestCase):
             ccxt.ExchangeError("418 - Too Many Requests"),
             "success"
         ]
-        
+
         start_time = time.time()
         result = retry_fetch(mock_func, retries=3, delay=0.1)
         end_time = time.time()
-        
+
         self.assertEqual(result, "success")
         # 应该有双倍延时（0.2秒而不是0.1秒）
         self.assertGreater(end_time - start_time, 0.15)
@@ -86,11 +86,11 @@ class TestNetwork(unittest.TestCase):
             ccxt.ExchangeError("-1003 - Rate limit exceeded"),
             "success"
         ]
-        
+
         start_time = time.time()
         result = retry_fetch(mock_func, retries=3, delay=0.1)
         end_time = time.time()
-        
+
         self.assertEqual(result, "success")
         # 应该有双倍延时
         self.assertGreater(end_time - start_time, 0.15)
@@ -98,7 +98,7 @@ class TestNetwork(unittest.TestCase):
     def test_retry_fetch_with_kwargs(self):
         """测试带关键字参数的函数调用"""
         mock_func = Mock(return_value="success")
-        
+
         result = retry_fetch(
             mock_func, 
             "positional_arg", 
@@ -107,7 +107,7 @@ class TestNetwork(unittest.TestCase):
             keyword_arg="test",
             another_kwarg=42
         )
-        
+
         self.assertEqual(result, "success")
         mock_func.assert_called_once_with(
             "positional_arg",
@@ -119,10 +119,10 @@ class TestNetwork(unittest.TestCase):
         """测试非网络错误不会重试"""
         mock_func = Mock()
         mock_func.side_effect = ValueError("普通错误，不应重试")
-        
+
         with self.assertRaises(ValueError):
             retry_fetch(mock_func, retries=3, delay=0.1)
-        
+
         # 非网络错误应该直接抛出，不重试
         self.assertEqual(mock_func.call_count, 1)
 
@@ -130,10 +130,10 @@ class TestNetwork(unittest.TestCase):
         """测试retries=0的情况"""
         mock_func = Mock()
         mock_func.side_effect = ccxt.NetworkError("网络错误")
-        
+
         with self.assertRaises(ccxt.NetworkError):
             retry_fetch(mock_func, retries=0, delay=0.1)
-        
+
         # retries=0意味着不重试，只执行一次
         self.assertEqual(mock_func.call_count, 1)
 
@@ -144,11 +144,11 @@ class TestNetwork(unittest.TestCase):
             ccxt.NetworkError("网络错误"),
             "success"
         ]
-        
+
         start_time = time.time()
         result = retry_fetch(mock_func, retries=2, delay=0.2)
         end_time = time.time()
-        
+
         self.assertEqual(result, "success")
         # 应该有大约0.2秒的延时
         self.assertGreater(end_time - start_time, 0.15)
@@ -160,7 +160,7 @@ class TestNetwork(unittest.TestCase):
         # 虽然当前实现会抛出异常，但这是正确的行为
         mock_func = Mock()
         mock_func.side_effect = ccxt.NetworkError("持续网络错误")
-        
+
         with self.assertRaises(ccxt.NetworkError):
             retry_fetch(mock_func, retries=1, delay=0.05)
 
@@ -172,7 +172,7 @@ class TestNetwork(unittest.TestCase):
             ccxt.ExchangeError("交易所错误"), 
             "success"
         ]
-        
+
         result = retry_fetch(mock_func, retries=3, delay=0.05)
         self.assertEqual(result, "success")
         self.assertEqual(mock_func.call_count, 3)

@@ -459,7 +459,7 @@ def _verify_data_consistency(
 # 策略配置模块
 # ============================================================
 
-    except Exception as e:
+    except Exception:
         return False
 
 

@@ -107,10 +107,10 @@ def main():
     print("\n卡尔曼配对交易策略 - 功能测试\n")
 
     # 测试卡尔曼滤波器
-    kalman = test_kalman_filter()
+    test_kalman_filter()
 
     # 测试策略配置
-    config = test_strategy_config()
+    test_strategy_config()
 
     print("\n" + "=" * 60)
     print("✓ 所有测试通过")

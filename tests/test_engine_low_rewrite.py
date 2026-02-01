@@ -158,7 +158,7 @@ class TestEngineLowRewrite(unittest.TestCase):
         mock_load_csv.return_value = sample_df
 
         try:
-            result = _load_data_for_feed(
+            _load_data_for_feed(
                 mock_engine, mock_base_dir, mock_cfg,
                 mock_data_cfg, mock_loaded_instruments
             )

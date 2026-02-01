@@ -330,10 +330,9 @@ def run_low_level(cfg: BacktestConfig, base_dir: Path):
 
         # 6. 加载自定义数据 (OI, Funding Rate)
         try:
-            custom_data_count = _load_custom_data_to_engine(cfg, base_dir, engine, loaded_instruments)
+            _load_custom_data_to_engine(cfg, base_dir, engine, loaded_instruments)
         except CustomDataError as e:
             logger.warning(f"⚠️ Custom data loading failed: {e}")
-            custom_data_count = 0
 
         # 7. 配置与添加策略
         StrategyClass = load_strategy_class(cfg.strategy.module_path, cfg.strategy.name)
