@@ -1,5 +1,6 @@
 import gc
 import json
+import logging
 from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
@@ -7,9 +8,6 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import pandas as pd
 from nautilus_trader.backtest.config import (
-import logging
-logger = logging.getLogger(__name__)
-
     BacktestDataConfig,
     BacktestRunConfig,
     BacktestVenueConfig,
@@ -43,6 +41,8 @@ from strategy.core.loader import (
 from utils.filename_parser import FilenameParser
 from utils.instrument_loader import load_instrument
 from utils.oi_funding_adapter import OIFundingDataLoader
+
+logger = logging.getLogger(__name__)
 
 
 def _load_instruments(cfg: BacktestConfig) -> Dict[str, Instrument]:
