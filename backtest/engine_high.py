@@ -305,7 +305,8 @@ def _import_data_to_catalog(
                 _catalog, csv_path, inst, bar_type, data_cfg, cfg, feed_idx, total_feeds
             )
 
-        logger.info(status_msg, end="", flush=True)
+        sys.stdout.write(status_msg)
+        sys.stdout.flush()
 
         # 归类数据流
         if data_cfg.label == "benchmark":
