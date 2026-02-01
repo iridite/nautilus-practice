@@ -697,76 +697,10 @@ def _load_custom_data_to_engine(
         logger.warning("⚠️ No date range specified, skipping custom data loading")
         return
 
-    logger.info("📊 Loading custom data (OI, Funding Rate)...")
-
-    try:
-        # 构建引擎
-        node.build()
-        engine = node.get_engine(run_config.id)
-
-        if engine is None:
-            logger.warning("⚠️ Could not get engine from node")
-            return
-
-        # 加载自定义数据
-        from utils.oi_funding_adapter import merge_custom_data_with_bars
-
-        data_dir = base_dir / "data" / "raw"
-        total_loaded = 0
-
-        for inst_id_str, inst in loaded_instruments.items():
-            instrument_id = inst.id
-            symbol = str(instrument_id.symbol).split("-")[0]  # BTCUSDT-PERP -> BTCUSDT
-            symbol_dir = data_dir / symbol
-
-            if not symbol_dir.exists():
-                continue
-
-            # 查找数据文件
-            oi_files = list(symbol_dir.glob("*-oi-1h-*.csv"))
-            funding_files = list(symbol_dir.glob("*-funding-*.csv"))
-
-            oi_data_list = []
-            funding_data_list = []
-
-            # 加载OI数据
-            if oi_files:
-                loader = OIFundingDataLoader(base_dir)
-                for oi_file in oi_files:
-                    oi_data_list.extend(loader.load_oi_data(
-                        symbol=symbol,
-                        instrument_id=instrument_id,
-                        start_date=cfg.start_date,
-                        end_date=cfg.end_date,
-                        exchange=cfg.instrument.venue_name.lower() if cfg.instrument else "binance"
-                    ))
-
-            # 加载Funding Rate数据
-            if funding_files:
-                loader = OIFundingDataLoader(base_dir)
-                for funding_file in funding_files:
-                    funding_data_list.extend(loader.load_funding_data(
-                        symbol=symbol,
-                        instrument_id=instrument_id,
-                        start_date=cfg.start_date,
-                        end_date=cfg.end_date,
-                        exchange=cfg.instrument.venue_name.lower() if cfg.instrument else "binance"
-                    ))
-
-            # 合并并添加到引擎
-            if oi_data_list or funding_data_list:
-                merged_data = merge_custom_data_with_bars(
-                    oi_data_list, funding_data_list
-                )
-                engine.add_data(merged_data)
-                total_loaded += len(merged_data)
-                logger.info(f"   ✅ Added {len(merged_data)} custom data points for {symbol}")
-
-        logger.info(f"✅ Total custom data loaded: {total_loaded} points")
-
-    except Exception as e:
-        logger.error(f"⚠️ Custom data loading failed: {e}")
-        logger.info("Strategy will run without OI/Funding data")
+    # 注意：高级回测引擎暂不支持 OI/Funding 自定义数据加载
+    # 这些数据的加载逻辑主要为低级回测引擎设计
+    # 如需使用 OI/Funding 数据，请使用低级回测引擎 (--type low)
+    logger.debug("📊 Custom data (OI, Funding Rate) loading skipped in high-level engine")
 
 # ============================================================
 # 结果处理模块
