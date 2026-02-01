@@ -300,6 +300,11 @@ class FileCleanupConfig(BaseModel):
     enabled: bool = True
     target_dirs: List[str] = Field(default_factory=lambda: ["log", "output"])
 
+    # 时间轮转参数
+    use_time_rotation: bool = False
+    keep_days: int = 7
+    delete_days: int = 30
+
     @validator("max_files_per_dir")
     def validate_max_files(cls, v):
         if v < 1:
@@ -310,6 +315,20 @@ class FileCleanupConfig(BaseModel):
     def validate_target_dirs(cls, v):
         if not v:
             raise ValueError("target_dirs cannot be empty")
+        return v
+
+    @validator("keep_days")
+    def validate_keep_days(cls, v):
+        if v < 1:
+            raise ValueError("keep_days must be at least 1")
+        return v
+
+    @validator("delete_days")
+    def validate_delete_days(cls, v, values):
+        if v < 1:
+            raise ValueError("delete_days must be at least 1")
+        if "keep_days" in values and v < values["keep_days"]:
+            raise ValueError("delete_days must be >= keep_days")
         return v
 
 

@@ -26,7 +26,10 @@ trading:
 # 文件清理配置 - 自动清理旧的日志和输出文件
 file_cleanup:
   enabled: true
-  max_files_per_dir: 50 # 开发环境保留较少文件
+  use_time_rotation: true # 启用时间轮转策略
+  keep_days: 7 # 保留最近7天的日志
+  delete_days: 30 # 删除超过30天的日志
+  max_files_per_dir: 50 # 开发环境保留较少文件（时间轮转模式下不使用）
   target_dirs:
     - "log"
     - "output"

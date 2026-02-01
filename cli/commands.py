@@ -78,7 +78,7 @@ def run_backtest(args, adapter, base_dir: Path):
     from backtest.engine_high import run_high_level
     from backtest.engine_low import run_low_level
 
-    from .file_cleanup import auto_cleanup
+    from .file_cleanup import auto_cleanup, auto_cleanup_by_age
 
     cfg = adapter.build_backtest_config()
 
@@ -88,9 +88,18 @@ def run_backtest(args, adapter, base_dir: Path):
         run_low_level(cfg, base_dir)
 
     fc = adapter.env_config.file_cleanup
-    auto_cleanup(
-        base_dir,
-        max_files_per_dir=fc.max_files_per_dir,
-        enabled=fc.enabled,
-        target_dirs=fc.target_dirs,
-    )
+    if fc.use_time_rotation:
+        auto_cleanup_by_age(
+            base_dir,
+            keep_days=fc.keep_days,
+            delete_days=fc.delete_days,
+            enabled=fc.enabled,
+            target_dirs=fc.target_dirs,
+        )
+    else:
+        auto_cleanup(
+            base_dir,
+            max_files_per_dir=fc.max_files_per_dir,
+            enabled=fc.enabled,
+            target_dirs=fc.target_dirs,
+        )
