@@ -509,6 +509,87 @@ When a module is only used in one location:
 
 **Example**: `symbol_parser.py` contains 7 unused functions but is **reserved** for multi-exchange support - keep intact.
 
+## 🔍 Code Scanning & Issue Identification (2026-02-01)
+
+### Systematic Scanning Methodology
+
+**Scan Order** (by criticality):
+1. `core/` - Configuration system (runtime errors impact all modules)
+2. `strategy/` - Strategy implementations (trading logic correctness)
+3. `backtest/` - Backtest engines (result accuracy)
+4. `utils/` - Utility modules (widespread usage)
+5. `sandbox/` - Live trading framework (production risk)
+
+**Analysis Tools**:
+```bash
+# Code statistics
+find module/ -name "*.py" | xargs wc -l | sort -rn
+
+# Import frequency analysis
+grep -r "from module import" --include="*.py" | wc -l
+
+# Dependency checking
+grep -r "^from\|^import" module/*.py
+```
+
+### Issue Classification
+
+**🔴 P0 - Runtime Issues** (Fix immediately):
+- Missing API credentials or configuration
+- Null pointer / AttributeError risks
+- Type mismatches causing crashes
+- Resource leaks (file handles, connections)
+- Exception handling gaps
+
+**🟡 P1 - Design Issues** (Optimize next):
+- Circular dependencies
+- Inconsistent exception handling
+- Unclear module responsibilities
+- High coupling between modules
+- Large files (>1000 lines) with multiple responsibilities
+
+**🟢 P2 - Long-term Optimization** (Plan for future):
+- Reserved code for future features
+- Architecture improvements
+- Performance optimizations
+- Documentation enhancements
+
+### Priority Decision Matrix
+
+| Impact | Frequency | Priority | Action |
+|--------|-----------|----------|--------|
+| High | High | P0 | Fix immediately |
+| High | Low | P1 | Fix in sprint |
+| Low | High | P1 | Optimize when beneficial |
+| Low | Low | P2 | Document for future |
+
+### Recent Fixes Summary (2026-02-01)
+
+**P0 Issues Resolved**:
+- ✅ `sandbox/engine.py`: API credentials not passed to config objects (commit `7482aec`)
+- ✅ `sandbox/engine.py`: Environment parameter missing (SANDBOX vs LIVE)
+- ✅ `strategy/core/base.py`: Added `max_positions` parameter support
+- ✅ `sandbox/engine.py`: Fixed `btc_instrument_id` empty string parsing error
+
+**P1 Issues Identified**:
+- 📋 `core/ ↔ utils/`: Circular dependency (documented in P2)
+- 📋 `utils/data_management/`: Inconsistent exception handling
+- 📋 `strategy/core/base.py`: Config reassignment risk (documented in guidelines)
+
+**Code Quality Metrics**:
+- Code reduction: 19,454 → 12,661 lines (-35.2%)
+- Test pass rate: 84/84 (100%)
+- P0 issues: 0 (all resolved)
+- P1 issues: 3 (impact controlled)
+
+### Scanning Best Practices
+
+1. **Start with tests**: Run full test suite before and after changes
+2. **Analyze usage**: Use `grep` to find actual usage patterns
+3. **Check documentation**: Verify if "unused" code is reserved for future
+4. **Verify dependencies**: Map import relationships before refactoring
+5. **Maintain stability**: Never sacrifice test pass rate for optimization
+
 ## 📋 Optimization Documentation
 
 Project optimization efforts are documented in `docs/optimization/`:
