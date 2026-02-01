@@ -1,0 +1,40 @@
+# 自动同步配置文件
+# 此文件定义了同步到公开仓库时需要排除和删除的内容
+
+# 是否启用自动同步（true/false）
+SYNC_ENABLED=true
+
+# 公开仓库路径
+PUBLIC_REPO_PATH=/home/yixian/Projects/Nautilus-Ops-Integrated
+
+# 需要排除的文件模式（rsync 格式）
+EXCLUDE_PATTERNS=(
+    ".git"
+    ".env"
+    "test.env"
+    "data/"
+    "output/"
+    "log/"
+    ".venv"
+    "__pycache__"
+    "*.pyc"
+    ".idea"
+    ".vscode"
+    ".DS_Store"
+    ".aider*"
+    ".langgraph_api"
+    ".ruff_cache"
+    ".claude"
+    "tmp/"
+)
+
+# 需要删除的敏感文件（相对于仓库根目录）
+SENSITIVE_FILES=(
+    "strategy/keltner_rs_breakout.py"
+    "config/strategies/keltner_rs_breakout.yaml"
+    "tests/test_keltner_rs_breakout.py"
+    "docs/reviews/dk_alpha_trend_audit.md"
+)
+
+# 同步日志文件路径
+LOG_FILE=/tmp/nautilus-sync.log
