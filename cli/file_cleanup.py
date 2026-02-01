@@ -109,7 +109,6 @@ def auto_cleanup(
 def cleanup_by_age(
     directory: Path,
     keep_days: int = 7,
-    compress_days: int = 30,
     delete_days: int = 30,
 ) -> dict[str, int]:
     """
@@ -118,7 +117,6 @@ def cleanup_by_age(
     Args:
         directory: 目标目录
         keep_days: 保留最近N天的日志（不压缩）
-        compress_days: 压缩超过N天的日志（已废弃，使用keep_days）
         delete_days: 删除超过N天的日志和压缩文件
 
     Returns:
@@ -218,7 +216,7 @@ def auto_cleanup_by_age(
     for target_dir in target_dirs:
         dir_path = base_dir / target_dir
         if dir_path.exists():
-            stats = cleanup_by_age(dir_path, keep_days, delete_days, delete_days)
+            stats = cleanup_by_age(dir_path, keep_days, delete_days)
             total_stats["compressed"] += stats["compressed"]
             total_stats["deleted"] += stats["deleted"]
 
