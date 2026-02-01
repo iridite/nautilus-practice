@@ -1,269 +1,269 @@
-# Nautilus Practice - 量化交易策略开发平台
+# Nautilus Practice - Quantitative Trading Strategy Development Platform
 
-基于 NautilusTrader 框架的加密货币量化交易策略开发和回测平台。
+A cryptocurrency quantitative trading strategy development and backtesting platform based on the NautilusTrader framework.
 
-## 🚀 项目概述
+## 🚀 Project Overview
 
-**Nautilus Practice** 是一个专业的量化交易项目，专注于加密货币永续合约的策略开发、回测和实盘交易。项目基于强大的 NautilusTrader 框架构建，提供完整的策略开发工具链。
+**Nautilus Practice** is a professional quantitative trading project focused on cryptocurrency perpetual contract strategy development, backtesting, and live trading. Built on the powerful NautilusTrader framework, it provides a complete strategy development toolchain.
 
-### 核心特性
+### Core Features
 
-- ✅ **多策略支持**: OI Divergence、RS Squeeze、Dual Thrust 等策略实现
-- ✅ **双回测引擎**: 低级别直接API和高级别Parquet目录支持
-- ✅ **自定义数据**: Open Interest、Funding Rate 等衍生品数据集成
-- ✅ **全自动OI数据获取**: 智能检查和自动下载OI/Funding Rate数据 🆕
-- ✅ **策略数据依赖声明**: 声明式数据需求管理 🆕
-- ✅ **多交易所**: 支持 Binance、OKX 等主流交易所
-- ✅ **完整测试**: 106个单元测试确保代码质量
-- ✅ **模块化架构**: 重构后的工具模块消除代码重复
+- ✅ **Multi-Strategy Support**: OI Divergence, RS Squeeze, Dual Thrust and other strategy implementations
+- ✅ **Dual Backtest Engines**: Low-level direct API and high-level Parquet directory support
+- ✅ **Custom Data**: Integration of derivatives data such as Open Interest and Funding Rate
+- ✅ **Fully Automated OI Data Acquisition**: Smart checking and automatic downloading of OI/Funding Rate data 🆕
+- ✅ **Strategy Data Dependency Declaration**: Declarative data requirement management 🆕
+- ✅ **Multi-Exchange**: Support for mainstream exchanges like Binance, OKX
+- ✅ **Complete Testing**: 106 unit tests ensuring code quality
+- ✅ **Modular Architecture**: Refactored utility modules eliminating code duplication
 
-## 🛠️ 技术栈
+## 🛠️ Tech Stack
 
 - **Framework**: NautilusTrader (nautilus-trader)
-- **Python**: 3.12.12+ (严格要求 `>=3.12.12, <3.13`)
-- **Package Manager**: `uv` (现代Python包管理器)
-- **Domain**: 加密货币量化交易 (永续合约)
+- **Python**: 3.12.12+ (strictly requires `>=3.12.12, <3.13`)
+- **Package Manager**: `uv` (modern Python package manager)
+- **Domain**: Cryptocurrency quantitative trading (perpetual contracts)
 - **Exchanges**: Binance, OKX
 
-## 📦 安装和环境配置
+## 📦 Installation and Environment Setup
 
-### 前置要求
+### Prerequisites
 
 - Python 3.12.12+
 - uv package manager
 - Git
 
-### 快速开始
+### Quick Start
 
 ```bash
-# 1. 克隆仓库
+# 1. Clone repository
 git clone <repository-url>
 cd nautilus-practice
 
-# 2. 安装依赖
+# 2. Install dependencies
 uv sync
 
-# 3. 激活虚拟环境（可选）
+# 3. Activate virtual environment (optional)
 source .venv/bin/activate
 
-# 4. 运行测试验证安装
+# 4. Run tests to verify installation
 uv run python -m unittest discover -s tests -p "test_*.py" -v
 
-# 5. 快速开始 - 运行带OI数据的回测
+# 5. Quick start - Run backtest with OI data
 uv run python main.py backtest
 ```
 
-### 🚀 快速开始指南
+### 🚀 Quick Start Guide
 
 ```bash
-# 1. 基本回测（自动获取所有需要的数据）
+# 1. Basic backtest (automatically fetches all required data)
 uv run python main.py backtest
 
-# 2. 查看OI策略示例
+# 2. View OI strategy example
 uv run python examples/oi_strategy_example.py
 
-# 3. 测试OI数据集成功能
+# 3. Test OI data integration functionality
 uv run python test_oi_integration.py
 ```
 
-**首次运行**: 系统会自动检测策略的数据需求，并从交易所下载所需的OI和Funding Rate数据。这个过程可能需要几分钟时间，取决于数据量和网络状况。
+**First Run**: The system will automatically detect strategy data requirements and download necessary OI and Funding Rate data from exchanges. This process may take a few minutes depending on data volume and network conditions.
 
-### 环境变量配置
+### Environment Variable Configuration
 
 ```bash
-# 复制环境变量模板
+# Copy environment variable template
 cp .env.example .env
 
-# 编辑配置文件，添加API密钥等
-# 注意：不要提交包含真实密钥的文件到版本控制
+# Edit configuration file, add API keys, etc.
+# Note: Never commit files containing real keys to version control
 ```
 
-## 🔧 使用指南
+## 🔧 Usage Guide
 
-### 运行回测
+### Running Backtests
 
 ```bash
-# 主回测入口（自动检查和获取所有数据）
+# Main backtest entry (automatically checks and fetches all data)
 uv run python main.py backtest
 
-# 跳过OI数据检查（仅使用OHLCV数据）
+# Skip OI data check (use OHLCV data only)
 uv run python main.py backtest --skip-oi-data
 
-# 强制重新下载所有OI数据
+# Force re-download all OI data
 uv run python main.py backtest --force-oi-fetch
 
-# 指定首选交易所和重试次数
+# Specify preferred exchange and retry count
 uv run python main.py backtest --oi-exchange binance --max-retries 5
 
-# 特定策略回测
+# Specific strategy backtest
 uv run python backtest/backtest_oi_divergence.py
 
-# 数据准备脚本
+# Data preparation script
 uv run python scripts/prepare_oi_divergence_data.py
 ```
 
-### 🆕 OI数据自动获取功能
+### 🆕 Automatic OI Data Acquisition
 
-系统现在支持全自动的Open Interest和Funding Rate数据管理：
+The system now supports fully automated Open Interest and Funding Rate data management:
 
-#### 新增命令行参数
+#### New Command Line Parameters
 
-| 参数 | 说明 | 默认值 |
-|------|------|--------|
-| `--skip-oi-data` | 跳过OI数据检查和获取 | False |
-| `--force-oi-fetch` | 强制重新下载所有OI数据 | False |
-| `--oi-exchange` | 指定首选交易所 (binance/okx/auto) | auto |
-| `--max-retries` | 设置最大重试次数 | 3 |
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `--skip-oi-data` | Skip OI data check and acquisition | False |
+| `--force-oi-fetch` | Force re-download all OI data | False |
+| `--oi-exchange` | Specify preferred exchange (binance/okx/auto) | auto |
+| `--max-retries` | Set maximum retry count | 3 |
 
-#### 智能数据管理特性
+#### Smart Data Management Features
 
-- **自动检测**: 根据策略配置自动识别所需的OI和Funding Rate数据
-- **增量下载**: 仅下载缺失的数据文件，避免重复下载
-- **多交易所支持**: 主交易所失败时自动切换到备用交易所
-- **智能重试**: 网络失败时自动重试，支持渐进式延迟
-- **数据验证**: 自动验证数据完整性和质量
+- **Auto Detection**: Automatically identifies required OI and Funding Rate data based on strategy configuration
+- **Incremental Download**: Only downloads missing data files, avoiding duplicate downloads
+- **Multi-Exchange Support**: Automatically switches to backup exchange when primary exchange fails
+- **Smart Retry**: Automatic retry on network failure with progressive delay support
+- **Data Validation**: Automatically validates data integrity and quality
 
-### 数据准备
+### Data Preparation
 
 ```bash
-# 生成交易对Universe
+# Generate trading pair Universe
 uv run python scripts/generate_universe.py
 
-# 准备Top市值数据
+# Prepare Top market cap data
 uv run python scripts/prepare_top_data.py
 
-# 获取工具信息
+# Fetch instrument information
 uv run python scripts/fetch_instrument.py
 ```
 
-### 运行测试
+### Running Tests
 
 ```bash
-# 运行所有测试
+# Run all tests
 uv run python -m unittest discover -s tests -p "test_*.py" -v
 
-# 运行单个测试文件
+# Run single test file
 uv run python -m unittest tests/test_oi_divergence.py -v
 
-# 运行特定测试类
+# Run specific test class
 uv run python -m unittest tests.test_oi_divergence.TestCustomData -v
 ```
 
-## 📁 项目结构
+## 📁 Project Structure
 
 ```
 nautilus-practice/
-├── strategy/              # 📈 交易策略实现
-│   ├── base.py           #     基础策略类
-│   ├── oi_divergence_strategy.py  #     OI背离策略
-│   ├── rs_squeeze.py     #     RS挤压策略
-│   └── dual_thrust.py    #     双推力策略
-├── utils/                # 🛠️ 工具模块 (新架构)
-│   ├── __init__.py       #     统一导入接口
-│   ├── time_helpers.py   #     时间处理工具
-│   ├── network.py        #     网络重试工具
-│   ├── validation.py     #     数据验证工具
-│   ├── symbol_parser.py  #     符号解析工具
-│   ├── data_loader.py    #     数据加载工具
-│   ├── path_helpers.py   #     路径操作工具
-│   ├── config_helpers.py #     配置解析工具
-│   ├── custom_data.py    #     自定义数据类型
-│   └── oi_funding_adapter.py   #     OI/Funding数据适配器
-├── backtest/             # 🔬 回测引擎
-│   ├── engine_low.py     #     低级别回测引擎
-│   ├── engine_high.py    #     高级别回测引擎
-│   └── exceptions.py     #     异常定义
-├── tests/                # 🧪 单元测试
-├── scripts/              # 📜 工具脚本
-├── config/               # ⚙️ 配置文件
-├── data/                 # 📊 市场数据 (gitignored)
-├── docs/                 # 📚 文档
-│   └── utils_guide.md    #     工具模块使用指南
-└── main.py               # 🚪 主入口
+├── strategy/              # 📈 Trading strategy implementations
+│   ├── base.py           #     Base strategy class
+│   ├── oi_divergence_strategy.py  #     OI divergence strategy
+│   ├── rs_squeeze.py     #     RS squeeze strategy
+│   └── dual_thrust.py    #     Dual thrust strategy
+├── utils/                # 🛠️ Utility modules (new architecture)
+│   ├── __init__.py       #     Unified import interface
+│   ├── time_helpers.py   #     Time processing utilities
+│   ├── network.py        #     Network retry utilities
+│   ├── validation.py     #     Data validation utilities
+│   ├── symbol_parser.py  #     Symbol parsing utilities
+│   ├── data_loader.py    #     Data loading utilities
+│   ├── path_helpers.py   #     Path operation utilities
+│   ├── config_helpers.py #     Configuration parsing utilities
+│   ├── custom_data.py    #     Custom data types
+│   └── oi_funding_adapter.py   #     OI/Funding data adapter
+├── backtest/             # 🔬 Backtest engines
+│   ├── engine_low.py     #     Low-level backtest engine
+│   ├── engine_high.py    #     High-level backtest engine
+│   └── exceptions.py     #     Exception definitions
+├── tests/                # 🧪 Unit tests
+├── scripts/              # 📜 Utility scripts
+├── config/               # ⚙️ Configuration files
+├── data/                 # 📊 Market data (gitignored)
+├── docs/                 # 📚 Documentation
+│   └── utils_guide.md    #     Utility module usage guide
+└── main.py               # 🚪 Main entry point
 ```
 
-## 🆕 工具模块架构 (重构亮点)
+## 🆕 Utility Module Architecture (Refactoring Highlights)
 
-项目经过全面重构，消除了代码重复，建立了模块化的工具架构：
+The project has undergone comprehensive refactoring, eliminating code duplication and establishing a modular utility architecture:
 
-### 统一导入接口
+### Unified Import Interface
 
 ```python
-# 推荐：通过统一接口导入
+# Recommended: Import through unified interface
 from utils import (
-    get_ms_timestamp,      # 时间处理
-    retry_fetch,           # 网络重试
-    check_data_exists,     # 数据验证
-    resolve_symbol_and_type,  # 符号解析
-    load_csv_with_time_detection,  # 数据加载
-    get_project_root,      # 路径操作
-    load_universe_symbols_from_file  # 配置解析
+    get_ms_timestamp,      # Time processing
+    retry_fetch,           # Network retry
+    check_data_exists,     # Data validation
+    resolve_symbol_and_type,  # Symbol parsing
+    load_csv_with_time_detection,  # Data loading
+    get_project_root,      # Path operations
+    load_universe_symbols_from_file  # Configuration parsing
 )
 ```
 
-### 模块化设计
+### Modular Design
 
-| 模块 | 功能 | 主要函数 |
-|------|------|----------|
-| `time_helpers` | 时间处理 | `get_ms_timestamp()` |
-| `network` | 网络重试 | `retry_fetch()` |
-| `validation` | 数据验证 | `check_data_exists()` |
-| `symbol_parser` | 符号解析 | `resolve_symbol_and_type()`, `parse_timeframe()` |
-| `data_loader` | 数据加载 | `load_csv_with_time_detection()` |
-| `path_helpers` | 路径操作 | `get_project_root()` |
-| `config_helpers` | 配置解析 | `load_universe_symbols_from_file()` |
+| Module | Functionality | Main Functions |
+|--------|---------------|----------------|
+| `time_helpers` | Time processing | `get_ms_timestamp()` |
+| `network` | Network retry | `retry_fetch()` |
+| `validation` | Data validation | `check_data_exists()` |
+| `symbol_parser` | Symbol parsing | `resolve_symbol_and_type()`, `parse_timeframe()` |
+| `data_loader` | Data loading | `load_csv_with_time_detection()` |
+| `path_helpers` | Path operations | `get_project_root()` |
+| `config_helpers` | Configuration parsing | `load_universe_symbols_from_file()` |
 
-**详细使用指南**: 📖 [工具模块使用指南](docs/utils_guide.md)
+**Detailed Usage Guide**: 📖 [Utility Module Usage Guide](docs/utils_guide.md)
 
-## 🏗️ 回测引擎
+## 🏗️ Backtest Engines
 
-### 1. 低级别引擎 (`backtest/engine_low.py`)
-- 直接使用 BacktestEngine API
-- 完全控制回测过程
-- 适合高级用户和自定义需求
+### 1. Low-Level Engine (`backtest/engine_low.py`)
+- Direct use of BacktestEngine API
+- Full control over backtest process
+- Suitable for advanced users and custom requirements
 
-### 2. 高级别引擎 (`backtest/engine_high.py`)  
-- 使用 BacktestNode 和 Parquet 目录
-- 简化配置和使用
-- 适合快速策略验证
+### 2. High-Level Engine (`backtest/engine_high.py`)  
+- Uses BacktestNode and Parquet directories
+- Simplified configuration and usage
+- Suitable for quick strategy validation
 
-### 重要注意事项
-- ⚠️ CSV数据文件必须使用 "datetime" 或 "timestamp" 作为时间列名
-- ⚠️ 高级别引擎默认期望 "datetime" 列
-- ✅ 两个引擎都已在 NautilusTrader 1.223.0 验证工作正常
+### Important Notes
+- ⚠️ CSV data files must use "datetime" or "timestamp" as time column name
+- ⚠️ High-level engine expects "datetime" column by default
+- ✅ Both engines verified working with NautilusTrader 1.223.0
 
-## 📈 策略开发
+## 📈 Strategy Development
 
-### 基础策略结构
+### Base Strategy Structure
 
-所有策略都继承自 `BaseStrategy` 并实现：
+All strategies inherit from `BaseStrategy` and implement:
 
 ```python
 from strategy.core.base import BaseStrategy, BaseStrategyConfig
 
 class MyStrategyConfig(BaseStrategyConfig):
-    # 策略特定参数
+    # Strategy-specific parameters
     lookback_bars: int = 48
     entry_threshold: float = 0.05
 
 class MyStrategy(BaseStrategy):
     def on_start(self):
-        """初始化指标和验证配置"""
+        """Initialize indicators and validate configuration"""
         super().on_start()
-        # 初始化逻辑
+        # Initialization logic
         
     def on_bar(self, bar):
-        """处理Bar数据和交易逻辑"""
-        # 交易逻辑
+        """Process Bar data and trading logic"""
+        # Trading logic
         
     def on_data(self, data):
-        """处理自定义数据 (OI, funding rates)"""
-        # 自定义数据处理
+        """Process custom data (OI, funding rates)"""
+        # Custom data processing
 ```
 
-### 🆕 策略数据依赖声明
+### 🆕 Strategy Data Dependency Declaration
 
-新的数据依赖声明机制让策略可以明确声明所需的数据类型：
+The new data dependency declaration mechanism allows strategies to explicitly declare required data types:
 
 ```python
 from strategy.core.base import BaseStrategy, BaseStrategyConfig
@@ -272,7 +272,7 @@ class MyStrategyConfig(BaseStrategyConfig):
     def __init__(self):
         super().__init__()
         
-        # 声明必需的OI数据依赖
+        # Declare required OI data dependency
         self.add_data_dependency(
             data_type="oi",
             required=True,
@@ -281,7 +281,7 @@ class MyStrategyConfig(BaseStrategyConfig):
             auto_fetch=True
         )
         
-        # 声明必需的Funding Rate数据依赖
+        # Declare required Funding Rate data dependency
         self.add_data_dependency(
             data_type="funding",
             required=True,
@@ -289,7 +289,7 @@ class MyStrategyConfig(BaseStrategyConfig):
             auto_fetch=True
         )
         
-        # 可选的备用数据源
+        # Optional backup data source
         self.add_data_dependency(
             data_type="oi",
             required=False,
@@ -302,7 +302,7 @@ class MyStrategy(BaseStrategy):
     def on_start(self):
         super().on_start()
         
-        # 检查数据依赖状态
+        # Check data dependency status
         if self.base_config.has_oi_dependency():
             self.log.info("Strategy requires OI data")
         
@@ -310,30 +310,30 @@ class MyStrategy(BaseStrategy):
             self.log.info("Strategy requires Funding Rate data")
 ```
 
-### 现有策略
+### Existing Strategies
 
-1. **OI Divergence Strategy**: 基于持仓量背离的趋势策略
-2. **RS Squeeze Strategy**: 基于相对强度挤压的突破策略
-3. **Dual Thrust Strategy**: 经典的双推力突破策略
+1. **OI Divergence Strategy**: Trend strategy based on open interest divergence
+2. **RS Squeeze Strategy**: Breakout strategy based on relative strength squeeze
+3. **Dual Thrust Strategy**: Classic dual thrust breakout strategy
 
-**示例**: 查看 [`examples/oi_strategy_example.py`](examples/oi_strategy_example.py) 了解完整的数据依赖声明用法
+**Example**: See [`examples/oi_strategy_example.py`](examples/oi_strategy_example.py) for complete data dependency declaration usage
 
-## 📊 数据管理
+## 📊 Data Management
 
-### 支持的数据类型
+### Supported Data Types
 
-- **OHLCV**: 标准K线数据
-- **Open Interest**: 持仓量数据
-- **Funding Rate**: 资金费率数据
-- **自定义数据**: 扩展的市场数据类型
+- **OHLCV**: Standard candlestick data
+- **Open Interest**: Open interest data
+- **Funding Rate**: Funding rate data
+- **Custom Data**: Extended market data types
 
-### 数据获取
+### Data Acquisition
 
 ```python
-# 使用重构后的工具模块
+# Use refactored utility modules
 from utils import batch_fetch_ohlcv, get_ms_timestamp
 
-# 批量获取OHLCV数据
+# Batch fetch OHLCV data
 configs = batch_fetch_ohlcv(
     symbols=["BTCUSDT", "ETHUSDT"],
     start_date="2024-01-01",
@@ -344,83 +344,83 @@ configs = batch_fetch_ohlcv(
 )
 ```
 
-## 🧪 测试框架
+## 🧪 Testing Framework
 
-项目包含106个全面的单元测试：
+The project includes 106 comprehensive unit tests:
 
 ```bash
-# 运行所有测试
+# Run all tests
 uv run python -m unittest discover -s tests -p "test_*.py" -v
 
-# 测试覆盖范围
-- 自定义数据类型测试
-- 策略逻辑测试  
-- 工具模块测试
-- 回测引擎测试
-- 数据加载测试
+# Test coverage
+- Custom data type tests
+- Strategy logic tests  
+- Utility module tests
+- Backtest engine tests
+- Data loading tests
 ```
 
-## ⚡ 性能优化
+## ⚡ Performance Optimization
 
-- **缓存机制**: `get_project_root()` 内置缓存
-- **批量操作**: 支持批量数据检查和处理
-- **智能重试**: 网络请求智能延迟策略
-- **内存优化**: 高效的数据加载和处理
+- **Caching Mechanism**: Built-in cache for `get_project_root()`
+- **Batch Operations**: Support for batch data checking and processing
+- **Smart Retry**: Intelligent delay strategy for network requests
+- **Memory Optimization**: Efficient data loading and processing
 
-## 🔒 安全注意事项
+## 🔒 Security Notes
 
-- 🔑 API密钥存储在 `.env` 文件中 (已在 `.gitignore`)
-- 🚫 永远不要提交包含真实密钥的文件
-- 🔐 使用环境特定的配置文件 (`live.env`, `test.env`)
+- 🔑 API keys stored in `.env` file (in `.gitignore`)
+- 🚫 Never commit files containing real keys
+- 🔐 Use environment-specific configuration files (`live.env`, `test.env`)
 
-## 🤝 贡献指南
+## 🤝 Contribution Guidelines
 
-### 代码风格
+### Code Style
 
-项目遵循严格的代码规范:
+The project follows strict coding standards:
 
-- **类型注解**: 所有函数都需要完整的类型注解
-- **现代语法**: 使用 Python 3.12+ 联合类型语法 (`int | None`)
-- **金融精度**: 财务计算必须使用 `Decimal` 而不是 `float`
-- **文档字符串**: 详细的参数说明，支持中英文混合
+- **Type Annotations**: All functions require complete type annotations
+- **Modern Syntax**: Use Python 3.12+ union type syntax (`int | None`)
+- **Financial Precision**: Financial calculations must use `Decimal` instead of `float`
+- **Docstrings**: Detailed parameter descriptions, supporting mixed Chinese-English
 
-### 添加新功能
+### Adding New Features
 
-1. 选择合适的模块或创建新模块
-2. 遵循命名约定 (`snake_case`)
-3. 添加完整的类型注解和文档字符串
-4. 创建对应的单元测试
-5. 更新统一导入接口
+1. Choose appropriate module or create new module
+2. Follow naming conventions (`snake_case`)
+3. Add complete type annotations and docstrings
+4. Create corresponding unit tests
+5. Update unified import interface
 
-详细指南请参考: [AGENTS.md](AGENTS.md)
+Detailed guide: [AGENTS.md](AGENTS.md)
 
-## 📚 文档
+## 📚 Documentation
 
-- 📖 [工具模块使用指南](docs/utils_guide.md)
-- 📝 [代码开发规范](AGENTS.md)
-- 🆕 [OI数据使用指南](docs/oi_data_usage_guide.md)
-- 📊 [OI Divergence策略文档](docs/oi_divergence_strategy.md)
-- 📊 [策略文档](docs/)
-- 🧪 [测试指南](tests/)
-- 📋 [OI数据集成报告](docs/AI%20Exec%20Reports/OI_DATA_INTEGRATION_REPORT.md)
+- 📖 [Utility Module Usage Guide](docs/utils_guide.md)
+- 📝 [Code Development Standards](AGENTS.md)
+- 🆕 [OI Data Usage Guide](docs/oi_data_usage_guide.md)
+- 📊 [OI Divergence Strategy Documentation](docs/oi_divergence_strategy.md)
+- 📊 [Strategy Documentation](docs/)
+- 🧪 [Testing Guide](tests/)
+- 📋 [OI Data Integration Report](docs/AI%20Exec%20Reports/OI_DATA_INTEGRATION_REPORT.md)
 
-## 📞 支持
+## 📞 Support
 
-遇到问题时:
+When encountering issues:
 
-1. 检查单元测试中的使用示例
-2. 查看源代码中的文档字符串  
-3. 运行测试验证功能是否正常
-4. 查阅相关文档
+1. Check usage examples in unit tests
+2. Review docstrings in source code  
+3. Run tests to verify functionality
+4. Consult relevant documentation
 
 ## 🎯 TODO
 
-- 研究下，在回测过程中的极大负净值能不能在现实中可行
+- Research whether extremely negative net values during backtesting are feasible in reality
 
 ---
 
-**版本**: v2.1 🆕
-**更新时间**: 2026-01-23
-**新增功能**: 全自动OI数据获取和策略数据依赖声明
-**作者**: Roo AI Assistant
+**Version**: v2.1 🆕
+**Updated**: 2026-01-23
+**New Features**: Fully automated OI data acquisition and strategy data dependency declaration
+**Author**: Roo AI Assistant
 **Framework**: NautilusTrader 1.223.0
