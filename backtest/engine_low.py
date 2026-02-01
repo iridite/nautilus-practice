@@ -6,7 +6,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, Optional
 
-
 logger = logging.getLogger(__name__)
 from nautilus_trader.analysis.tearsheet import create_tearsheet
 from nautilus_trader.backtest.config import BacktestEngineConfig
@@ -223,7 +222,7 @@ def _process_backtest_results(
         }
 
         # 保存 JSON 结果
-        result_dir = base_dir / "log" / "backtest" / "result"
+        result_dir = base_dir / "output" / "backtest" / "result"
         result_dir.mkdir(parents=True, exist_ok=True)
 
         timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
