@@ -12,6 +12,7 @@
 - 数据清洗和去重
 """
 
+import logging
 from decimal import Decimal
 from pathlib import Path
 from typing import Any, Dict, List, Tuple, Union
@@ -26,9 +27,11 @@ from nautilus_trader.persistence.wranglers import BarDataWrangler
 from utils.custom_data import FundingRateData, OpenInterestData
 from utils.time_helpers import parse_date_to_timestamp
 
-
-import logging
 logger = logging.getLogger(__name__)
+
+# 导入缓存模块
+from .data_cache import get_cache
+
 
 class DataLoadError(Exception):
     """数据加载错误"""
@@ -201,7 +204,8 @@ def load_ohlcv_csv(
     start_date: str | None = None,
     end_date: str | None = None,
     validate_data: bool = True,
-    auto_cleanup: bool = True
+    auto_cleanup: bool = True,
+    use_cache: bool = True
 ) -> pd.DataFrame:
     """
     加载OHLCV CSV数据，支持自动时间列检测和时间范围过滤
@@ -220,6 +224,8 @@ def load_ohlcv_csv(
         是否验证数据完整性，默认 True
     auto_cleanup : bool, optional
         当检测到数据范围异常时是否自动清理，默认 True
+    use_cache : bool, optional
+        是否使用缓存，默认 True
 
     Returns
     -------
@@ -238,6 +244,13 @@ def load_ohlcv_csv(
 
     if not csv_path.exists():
         raise DataLoadError(f"CSV file not found: {csv_path}")
+
+    # 尝试从缓存获取
+    if use_cache and start_date and end_date:
+        cache = get_cache()
+        cached_df = cache.get(csv_path, start_date, end_date)
+        if cached_df is not None:
+            return cached_df
 
     try:
         if time_column is None:
@@ -264,6 +277,11 @@ def load_ohlcv_csv(
 
         if len(df) == 0:
             raise DataLoadError(f"No data available in specified range for {csv_path}")
+
+        # 放入缓存
+        if use_cache and start_date and end_date:
+            cache = get_cache()
+            cache.put(csv_path, start_date, end_date, df)
 
         return df
 
