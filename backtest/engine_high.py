@@ -1131,16 +1131,10 @@ def catalog_loader(
             f"Expected 'datetime' or 'timestamp', got: {list(sample_df.columns)}"
         )
 
-    # 2. 高效加载 CSV（使用检测到的列名）
-    # 注意：必须使用 index_col='<time_col>' 而非 index_col=0
-    # 因为 usecols 会改变列的相对位置，index_col=0 会错误地把 'open' 作为索引
-    df: DataFrame = CSVBarDataLoader.load(
-        file_path=csv_path,
-        index_col=time_col,  # 动态使用检测到的列名
-        usecols=[time_col, "open", "high", "low", "close", "volume"],
-        parse_dates=True,
-    )
-    df.sort_index(inplace=True)
+    # 2. 高效加载 CSV（使用统一的数据加载器）
+    from utils.data_management.data_loader import load_ohlcv_csv
+
+    df: DataFrame = load_ohlcv_csv(csv_path=csv_path)
 
     # 3. 转换并写入
     # Wrangler 将 DataFrame 转换为 NT 内部的 Bar 序列
