@@ -66,8 +66,8 @@ def detect_time_column(csv_path: Union[str, Path], sample_rows: int = 5) -> str:
     try:
         sample_df = pd.read_csv(csv_path, nrows=sample_rows)
 
-        # 优先级：datetime > timestamp > 其他可能的时间列名
-        time_candidates = ["datetime", "timestamp", "time", "date", "ts"]
+        # 优先级：timestamp > datetime > 其他可能的时间列名
+        time_candidates = ["timestamp", "datetime", "time", "date", "ts"]
 
         for candidate in time_candidates:
             if candidate in sample_df.columns:

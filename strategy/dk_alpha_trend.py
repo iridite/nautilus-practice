@@ -215,23 +215,16 @@ class DKAlphaTrendStrategy(BaseStrategy):
                 # 同步清理共同时间戳列表
                 if oldest_ts in self.common_timestamps:
                     self.common_timestamps.remove(oldest_ts)
+
+            # 主标的驱动：只在主标的bar到达时执行交易逻辑
+            # 检查BTC是否有相同时间戳的数据
+            if bar.ts_event not in self.btc_price_history:
+                return  # BTC数据还没到达，等待
+
+        elif bar.bar_type.instrument_id == self.btc_instrument_id:
+            # BTC数据只更新，不触发交易逻辑
+            return
         else:
-            return
-
-        # 只有两个标的都更新且数据同步时才处理
-        if not self._btc_bar_updated:
-            self._bars_since_btc_update += 1
-            if self._bars_since_btc_update > self.MAX_BTC_DELAY_BARS:
-                self.log.error(
-                    f"BTC数据超过{self.MAX_BTC_DELAY_BARS}根bar未更新，"
-                    f"当前延迟: {self._bars_since_btc_update} bars"
-                )
-            return
-
-        if not (self._bar_updated and self._btc_bar_updated):
-            return
-
-        if not self._check_data_sync():
             return
 
         # 等待 SMA200 预热完成
@@ -301,21 +294,7 @@ class DKAlphaTrendStrategy(BaseStrategy):
         if len(self.volumes) >= self.config.volume_period:
             self.volume_sma = sum(list(self.volumes)[-self.config.volume_period:]) / self.config.volume_period
 
-    def _check_data_sync(self) -> bool:
-        """检查主标的和BTC数据是否时间同步"""
-        if self.last_bar_ts == 0 or self.last_btc_bar_ts == 0:
-            return False
 
-        time_diff = abs(self.last_bar_ts - self.last_btc_bar_ts)
-        is_synced = time_diff <= self.DATA_SYNC_TOLERANCE_NS
-
-        if not is_synced:
-            self.log.warning(
-                f"数据时间不同步: 主标的={self.last_bar_ts}, "
-                f"BTC={self.last_btc_bar_ts}, 差异={time_diff / 1_000_000_000:.1f}秒"
-            )
-
-        return is_synced
 
     def _check_squeeze(self) -> bool:
         """检查是否处于 Squeeze 状态"""

@@ -1137,11 +1137,11 @@ def catalog_loader(
     # 1. 读取前几行检查列名（兼容 "datetime" 和 "timestamp" 两种列名）
     sample_df = pd.read_csv(csv_path, nrows=5)
 
-    # 确定时间列名（优先使用 datetime，兼容 timestamp）
-    if "datetime" in sample_df.columns:
-        time_col = "datetime"
-    elif "timestamp" in sample_df.columns:
+    # 确定时间列名（优先使用 timestamp，兼容 datetime）
+    if "timestamp" in sample_df.columns:
         time_col = "timestamp"
+    elif "datetime" in sample_df.columns:
+        time_col = "datetime"
     else:
         raise ValueError(
             f"No valid time column found in {csv_path}. "
