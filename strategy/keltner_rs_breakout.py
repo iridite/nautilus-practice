@@ -13,6 +13,7 @@ Note: This strategy implements the "Breathing Trend" philosophy using Static Kel
 from collections import OrderedDict, deque
 from decimal import Decimal
 
+import numpy as np
 from nautilus_trader.model.data import Bar, BarType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import InstrumentId
@@ -280,12 +281,11 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
         if len(self.closes) >= self.config.sma_period:
             self.sma = sum(list(self.closes)[-self.config.sma_period:]) / self.config.sma_period
 
-        # Bollinger Bands
+        # Bollinger Bands (优化：使用 NumPy 向量化计算)
         if len(self.closes) >= self.config.bb_period:
-            bb_closes = list(self.closes)[-self.config.bb_period:]
-            bb_mean = sum(bb_closes) / self.config.bb_period
-            variance = sum((x - bb_mean) ** 2 for x in bb_closes) / self.config.bb_period
-            bb_std = variance ** 0.5
+            bb_closes = np.array(list(self.closes)[-self.config.bb_period:])
+            bb_mean = bb_closes.mean()
+            bb_std = bb_closes.std()
             self.bb_upper = bb_mean + self.config.bb_std * bb_std
             self.bb_lower = bb_mean - self.config.bb_std * bb_std
 
