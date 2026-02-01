@@ -671,3 +671,158 @@ class StrategyConfig:
 - **Constants**: UPPER_SNAKE_CASE (e.g., `START_DATE`, `MAX_POSITIONS`)
 - **Private methods**: Leading underscore (e.g., `_is_ready`, `_update_key_levels`)
 - **Module names**: snake
+
+---
+
+## 🔧 Code Quality Tools (2026-02-01)
+
+### Tool Integration
+
+项目已集成以下代码质量工具：
+
+**Ruff** - 代码检查和格式化
+```toml
+# pyproject.toml
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W"]
+ignore = ["E501"]
+```
+
+**Mypy** - 静态类型检查
+```toml
+[tool.mypy]
+python_version = "3.12"
+warn_return_any = true
+warn_unused_configs = true
+ignore_missing_imports = true
+```
+
+**Pre-commit Hooks**
+```yaml
+# .pre-commit-config.yaml
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.8.4
+    hooks:
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format
+```
+
+### Usage
+
+```bash
+# 运行代码检查
+uv run ruff check .
+
+# 自动修复问题
+uv run ruff check . --fix
+
+# 格式化代码
+uv run ruff format .
+
+# 类型检查
+uv run mypy strategy/ utils/ backtest/
+
+# 安装 pre-commit hooks
+uv run pre-commit install
+```
+
+### Acceptable Code Style Issues
+
+以下代码风格问题是可接受的，无需修复：
+
+1. **E402 (module-import-not-at-top-of-file)**: 入口文件需要先修改 `sys.path` 再导入
+   - `main.py`, `backtest/engine_low.py`, `sandbox/engine.py`
+   
+2. **F401 (unused-import) in tests**: 测试文件中用于测试导入功能的导入
+   - `tests/test_engine_low_rewrite.py`
+
+---
+
+## 📊 Optimization Lessons Learned (2026-02-01)
+
+### Memory Management Patterns
+
+**Case Study: OrderedDict vs deque**
+
+**错误的优化建议**: 将 `OrderedDict` 替换为 `deque` 以减少内存占用
+
+**问题分析**:
+```python
+# strategy/keltner_rs_breakout.py:99-100
+self.price_history = OrderedDict()  # {timestamp: price}
+self.btc_price_history = OrderedDict()
+
+# 关键使用场景 (line 353-354)
+symbol_prices = [self.price_history[ts] for ts in recent_ts]
+btc_prices = [self.btc_price_history[ts] for ts in recent_ts]
+```
+
+**为什么不能优化**:
+1. 需要按时间戳索引 - `dict[timestamp]`
+2. 需要计算时间戳交集 - `set(dict.keys())`
+3. deque 只支持位置索引 - `deque[0]`
+
+**结论**: 在评估优化方案前，必须先分析数据结构的实际使用场景。
+
+### File Size Guidelines
+
+**不建议拆分的情况**:
+- 功能高度内聚（如数据加载、引擎核心）
+- 函数间依赖紧密
+- 核心模块被广泛使用
+- 拆分会增加模块间耦合
+
+**已评估的文件**:
+- `backtest/engine_high.py` (1,226 行) - 已添加代码分区注释，不拆分
+- `utils/data_management/data_loader.py` (751 行) - 功能内聚，不拆分
+- `core/schemas.py` (576 行) - 配置类集中管理，不拆分
+
+**原则**: "稳定性 > 理论完美"
+
+---
+
+## 📁 Project Maintenance (2026-02-01)
+
+### Documentation Structure
+
+优化文档组织在 `docs/optimization/` 目录：
+- `P0_critical_issues.md` - 关键问题（已完成）
+- `P1_performance_optimization.md` - 性能优化（部分完成）
+- `P2_long_term_goals.md` - 长期目标（已记录）
+
+避免创建冗余的综合报告文件，保持文档结构简洁。
+
+### Repository Sync
+
+项目支持自动同步到公开仓库：
+- 配置文件: `.sync-config`
+- 同步脚本: `scripts/sync_to_public.sh`
+- 自动移除敏感内容（策略代码、配置文件）
+
+---
+
+## ✅ Completed Optimizations (2026-02-01)
+
+### Code Quality
+- ✅ 统一日志系统（print → logger）
+- ✅ 代码风格修复（143 → 58 个问题）
+- ✅ 添加代码质量工具（ruff, mypy, pre-commit）
+
+### Performance
+- ✅ 数据加载缓存（LRU 缓存机制）
+- ✅ 指标计算优化（NumPy 向量化）
+
+### Testing
+- ✅ 测试覆盖率提升（95 → 103 个测试）
+- ✅ 新增测试文件（8 个）
+
+### Documentation
+- ✅ README 翻译为英文
+- ✅ 优化文档整理
+- ✅ OrderedDict 优化评估记录
