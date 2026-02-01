@@ -216,12 +216,6 @@ class DKAlphaTrendStrategy(BaseStrategy):
                 if oldest_ts in self.common_timestamps:
                     self.common_timestamps.remove(oldest_ts)
 
-            # 主标的驱动：只在主标的bar到达时执行交易逻辑
-            # 检查BTC是否有相同时间戳的数据
-            if bar.ts_event not in self.btc_price_history:
-                return  # BTC数据还没到达，等待
-
-        elif bar.bar_type.instrument_id == self.btc_instrument_id:
             # BTC数据只更新，不触发交易逻辑
             return
         else:
