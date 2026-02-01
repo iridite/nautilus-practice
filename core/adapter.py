@@ -246,16 +246,6 @@ class ConfigAdapter:
         """构建策略参数"""
         params_dict = deepcopy(self.strategy_config.parameters)
 
-        # active.yaml 的配置优先覆盖策略配置
-        if self.active_config.primary_symbol:
-            params_dict["symbol"] = self.active_config.primary_symbol
-        if self.active_config.timeframe:
-            params_dict["timeframe"] = self.active_config.timeframe
-        if self.active_config.price_type:
-            params_dict["price_type"] = self.active_config.price_type
-        if self.active_config.origination:
-            params_dict["origination"] = self.active_config.origination
-
         # 配置还原：从简化字段生成完整字段
         if "symbol" in params_dict and not params_dict.get("instrument_id"):
             params_dict["instrument_id"] = self._restore_instrument_id(params_dict["symbol"])
@@ -288,6 +278,7 @@ class ConfigAdapter:
                 params_dict.get("origination", "EXTERNAL")
             )
 
+        # 应用 active.yaml 的 strategy overrides（仅用于调试）
         if self.active_config.overrides:
             strategy_overrides = self.active_config.overrides.get("strategy", {})
             if strategy_overrides:
@@ -339,18 +330,13 @@ class ConfigAdapter:
         instruments = []
         data_feeds = []
 
-        # 加载 universe 或使用主交易对
-        universe_symbols = self._load_universe_symbols()
+        # 从策略配置读取交易对象列表
+        symbols = self._get_trading_symbols()
 
-        if universe_symbols:
-            for symbol in sorted(universe_symbols):
-                inst_cfg = self.create_instrument_config(symbol)
-                instruments.append(inst_cfg)
-                data_feeds.extend(self._create_data_feeds_for_symbol(symbol, inst_cfg))
-        else:
-            inst_cfg = self.create_instrument_config(self.get_primary_symbol())
+        for symbol in symbols:
+            inst_cfg = self.create_instrument_config(symbol)
             instruments.append(inst_cfg)
-            data_feeds.extend(self._create_data_feeds_for_symbol(self.get_primary_symbol(), inst_cfg))
+            data_feeds.extend(self._create_data_feeds_for_symbol(symbol, inst_cfg))
 
         # 确保 benchmark 标的存在并创建数据流
         btc_inst = self._ensure_benchmark_instrument(instruments)
@@ -379,6 +365,28 @@ class ConfigAdapter:
         )
 
         return self._backtest_config_cache
+
+    def _get_trading_symbols(self) -> List[str]:
+        """从策略配置获取交易对象列表"""
+        params = self.strategy_config.parameters
+
+        # 优先使用 universe
+        universe_symbols = self._load_universe_symbols()
+        if universe_symbols:
+            return sorted(universe_symbols)
+
+        # 其次使用 symbols 列表
+        if "symbols" in params:
+            symbols = params["symbols"]
+            if isinstance(symbols, list):
+                return symbols
+            return [symbols]
+
+        # 最后使用单个 symbol
+        if "symbol" in params:
+            return [params["symbol"]]
+
+        raise ConfigValidationError("策略配置中必须指定 symbols 或 symbol")
 
     def reload(self):
         """重新加载配置"""
