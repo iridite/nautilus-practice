@@ -86,6 +86,7 @@ class DataConfig(BaseModel):
     bar_aggregation: BarAggregation = BarAggregation.HOUR
     bar_period: int = 1
     price_type: PriceType = PriceType.LAST
+    origination: str = "EXTERNAL"
     instrument_id: str | None = None
     label: str = "main"
 
@@ -97,7 +98,7 @@ class DataConfig(BaseModel):
 
     @property
     def bar_type_str(self) -> str:
-        return f"{self.bar_period}-{self.bar_aggregation.name}-{self.price_type.name}-EXTERNAL"
+        return f"{self.bar_period}-{self.bar_aggregation.name}-{self.price_type.name}-{self.origination}"
 
 
 class LegacyStrategyConfig(BaseModel):
@@ -416,6 +417,12 @@ class ActiveConfig(BaseModel):
     environment: str = "dev"
     strategy: str
     primary_symbol: str = "BTCUSDT"
+
+    # 数据加载参数（可选，用于覆盖策略配置）
+    timeframe: Optional[str] = None
+    price_type: Optional[str] = None
+    origination: Optional[str] = None
+
     overrides: Optional[Dict[str, Any]] = None
 
     @validator("environment")
@@ -438,6 +445,40 @@ class ActiveConfig(BaseModel):
         if not v.endswith("USDT"):
             raise ValueError("Primary symbol must end with 'USDT'")
         return v.strip().upper()
+
+    @validator("timeframe")
+    def validate_timeframe(cls, v):
+        if v is None:
+            return v
+        if not v or not isinstance(v, str):
+            raise ValueError("Timeframe must be a non-empty string")
+        if v[-1] not in ["m", "h", "d"]:
+            raise ValueError("Timeframe must end with 'm', 'h', or 'd'")
+        try:
+            period = int(v[:-1]) if len(v) > 1 else 1
+            if period <= 0:
+                raise ValueError("Timeframe period must be positive")
+        except ValueError:
+            raise ValueError("Invalid timeframe format")
+        return v
+
+    @validator("price_type")
+    def validate_price_type(cls, v):
+        if v is None:
+            return v
+        valid_types = ["LAST", "MID", "BID", "ASK"]
+        if v.upper() not in valid_types:
+            raise ValueError(f"Price type must be one of {valid_types}")
+        return v.upper()
+
+    @validator("origination")
+    def validate_origination(cls, v):
+        if v is None:
+            return v
+        valid_types = ["EXTERNAL", "INTERNAL"]
+        if v.upper() not in valid_types:
+            raise ValueError(f"Origination must be one of {valid_types}")
+        return v.upper()
 
 
 

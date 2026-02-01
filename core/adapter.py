@@ -11,7 +11,7 @@ from typing import Any, Dict, List
 
 from nautilus_trader.model import Money
 from nautilus_trader.model.currencies import USDT
-from nautilus_trader.model.enums import BarAggregation
+from nautilus_trader.model.enums import BarAggregation, PriceType
 
 from .exceptions import ConfigValidationError
 from .loader import ConfigLoader
@@ -57,7 +57,8 @@ class ConfigAdapter:
         return [Money(str(balance), USDT)]
 
     def get_main_timeframe(self) -> str:
-        return self.env_config.trading.main_timeframe
+        # active.yaml 的 timeframe 优先覆盖环境配置
+        return self.active_config.timeframe or self.env_config.trading.main_timeframe
 
     def get_trend_timeframe(self) -> str:
         return self.env_config.trading.trend_timeframe
@@ -107,10 +108,22 @@ class ConfigAdapter:
             else BarAggregation.DAY
         )
 
+        # 使用 active.yaml 的 price_type 配置（如果有）
+        price_type = PriceType.LAST
+        if self.active_config.price_type:
+            price_type = PriceType[self.active_config.price_type]
+
+        # 使用 active.yaml 的 origination 配置（如果有）
+        origination = "EXTERNAL"
+        if self.active_config.origination:
+            origination = self.active_config.origination
+
         return DataConfig(
             csv_file_name=f"{safe_symbol}/{filename}",
             bar_aggregation=agg,
             bar_period=period,
+            price_type=price_type,
+            origination=origination,
             label=label,
         )
 
@@ -232,6 +245,16 @@ class ConfigAdapter:
     def _build_strategy_params(self) -> Any:
         """构建策略参数"""
         params_dict = deepcopy(self.strategy_config.parameters)
+
+        # active.yaml 的配置优先覆盖策略配置
+        if self.active_config.primary_symbol:
+            params_dict["symbol"] = self.active_config.primary_symbol
+        if self.active_config.timeframe:
+            params_dict["timeframe"] = self.active_config.timeframe
+        if self.active_config.price_type:
+            params_dict["price_type"] = self.active_config.price_type
+        if self.active_config.origination:
+            params_dict["origination"] = self.active_config.origination
 
         # 配置还原：从简化字段生成完整字段
         if "symbol" in params_dict and not params_dict.get("instrument_id"):
