@@ -9,7 +9,7 @@ This document provides coding guidelines for AI agents working in this repositor
 - **Package Manager**: `uv` (modern Python package manager)
 - **Domain**: Cryptocurrency quantitative trading (perpetual futures)
 - **Main Exchanges**: Binance, OKX
-- **Code Scale**: 12,604 lines (optimized from 19,454 lines, -35.2%)
+- **Code Scale**: ~12,817 lines, 59 Python files (optimized from 19,454 lines, -34.1%)
 - **Test Coverage**: 84 tests, 100% pass rate
 - **Documentation**: Organized in 4 categories (optimization/, analysis/, reviews/, refactoring/)
 
