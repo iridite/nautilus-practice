@@ -365,7 +365,8 @@ def prepare_data_feeds(args, adapter, base_dir, universe_symbols: set):
     end_date = adapter.get_end_date()
     timeframe = adapter.get_main_timeframe()
 
-    symbols_to_check = universe_symbols if universe_symbols else {adapter.get_primary_symbol()}
+    # 从策略配置获取交易对象列表
+    symbols_to_check = universe_symbols if universe_symbols else set(adapter._get_trading_symbols())
 
     missing_symbols = []
     for symbol in symbols_to_check:
@@ -406,7 +407,10 @@ def _check_multi_instrument_alignment(adapter, base_dir: Path, venue: str, timef
             return  # 策略不需要多标的对齐检查
 
         # 提取主标的和BTC标的的symbol
-        primary_symbol = adapter.get_primary_symbol().split(":")[0]
+        symbols = adapter._get_trading_symbols()
+        primary_symbol = symbols[0].split(":")[0] if symbols else None
+        if not primary_symbol:
+            return
         btc_symbol = btc_instrument_id.split(".")[0] if "." in btc_instrument_id else "BTCUSDT-PERP"
 
         # 构建CSV文件路径
