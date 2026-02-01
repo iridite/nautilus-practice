@@ -18,6 +18,7 @@ from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import InstrumentId
 
 from strategy.core.base import BaseStrategy, BaseStrategyConfig
+from utils.custom_data import FundingRateData
 
 
 class KeltnerRSBreakoutConfig(BaseStrategyConfig):
@@ -211,7 +212,7 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
 
         close = float(bar.close)
 
-        # 检查是否有持仓 - 持仓时只执行出场逻辑
+        # 2. 持仓检查 - 持仓时只执行出场逻辑（不受 Funding Rate 影响）
         if self.portfolio.is_net_long(self.instrument.id):
             if self.highest_high is None:
                 self.highest_high = float(bar.high)
@@ -224,22 +225,25 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
         if self._pending_entry_order:
             return
 
-        # 2. Regime 检查：价格必须在 SMA200 上方（上升趋势）
-        # 注意：使用 < 而非 <=，因为浮点数精确相等的概率极低
-        # 当 close == sma 时视为趋势不明确但允许继续（保守但不过度严格）
+        # 3. Funding Rate Guard：资金费率过高时拒绝开仓
+        funding_rate = self._get_funding_rate()
+        if funding_rate is not None and funding_rate > 0.0005:
+            return
+
+        # 4. Regime 检查：价格必须在 SMA200 上方（上升趋势）
         if close < self.sma:
             return
 
-        # 3. RS 检查
+        # 5. RS 检查
         if not self._check_relative_strength():
             return
 
-        # 4. Volume 检查
+        # 6. Volume 检查
         volume = float(bar.volume)
         if self.volume_sma is None or volume < self.volume_sma * self.config.volume_multiplier:
             return
 
-        # 5. Trigger 检查
+        # 7. Trigger 检查
         if self.ema is None or self.atr is None:
             return
 
@@ -247,7 +251,7 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
         if close <= keltner_trigger_upper:
             return
 
-        # 执行入场（is_squeezing 已在前面计算，keltner_trigger_upper 作为参数传递）
+        # 8. 执行入场
         self._handle_entry(bar, is_squeezing, keltner_trigger_upper)
 
     def _update_indicators(self) -> None:
@@ -290,6 +294,16 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
             self.volume_sma = sum(list(self.volumes)[-self.config.volume_period:]) / self.config.volume_period
 
 
+
+    def _get_funding_rate(self) -> float | None:
+        """获取当前 Funding Rate"""
+        try:
+            funding_data = self.cache.get_custom_data(FundingRateData, self.instrument.id)
+            if funding_data:
+                return float(funding_data.funding_rate)
+        except Exception as e:
+            self.log.debug(f"无法获取 Funding Rate 数据: {e}")
+        return None
 
     def _check_squeeze(self) -> bool:
         """检查是否处于 Squeeze 状态"""
