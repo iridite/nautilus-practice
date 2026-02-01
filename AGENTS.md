@@ -826,3 +826,13 @@ btc_prices = [self.btc_price_history[ts] for ts in recent_ts]
 - ✅ README 翻译为英文
 - ✅ 优化文档整理
 - ✅ OrderedDict 优化评估记录
+
+### Backtest Engine Fixes (2026-02-02)
+- ✅ 修复高级回测引擎的 logger 参数错误（sys.stdout.write）
+- ✅ 修复高级回测引擎的时间戳转换问题（毫秒时间戳 → 1970 年）
+- ✅ 移除高级回测引擎的 OI/Funding 数据加载逻辑（避免重复警告）
+- ✅ 移除回测输出中的无意义分割线
+- ✅ 统一低级和高级回测的 JSON 输出位置（output/backtest/result）
+- ✅ 统一低级和高级回测的 JSON 文件命名格式（移除 low_ 前缀）
+- ✅ 高级回测引擎完全修复，回测结果：176.26 USDT（超过 170 USDT 目标）
+
