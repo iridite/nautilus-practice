@@ -4,7 +4,6 @@ Dual Thrust 突破策略
 经典的日内突破策略，基于前N天的价格范围计算动态通道。
 """
 
-from decimal import Decimal
 
 from nautilus_trader.model.data import Bar, BarType
 from nautilus_trader.model.enums import OrderSide

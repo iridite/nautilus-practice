@@ -2,24 +2,20 @@ import gc
 import json
 import logging
 import sys
-from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Dict, Optional
 
-import pandas as pd
 
 logger = logging.getLogger(__name__)
 from nautilus_trader.analysis.tearsheet import create_tearsheet
 from nautilus_trader.backtest.config import BacktestEngineConfig
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.models.fee import MakerTakerFeeModel
-from nautilus_trader.backtest.results import BacktestResult
 from nautilus_trader.common.config import LoggingConfig
 from nautilus_trader.config import RiskEngineConfig
 from nautilus_trader.model import BarType, TraderId
 from nautilus_trader.model.currencies import USDT
-from nautilus_trader.model.data import Bar
 from nautilus_trader.model.enums import (
     AccountType,
     BookType,
@@ -35,7 +31,6 @@ from backtest.exceptions import (
     CustomDataError,
     DataLoadError,
     InstrumentLoadError,
-    ValidationError,
 )
 from core.schemas import BacktestConfig, DataConfig
 from strategy.core.loader import (

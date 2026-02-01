@@ -1,5 +1,4 @@
 import importlib
-from pathlib import Path
 from typing import Any, Dict, Set, Type
 
 from nautilus_trader.config import StrategyConfig

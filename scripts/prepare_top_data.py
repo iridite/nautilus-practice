@@ -1,10 +1,7 @@
-import sys
 import time
 from datetime import datetime
-from pathlib import Path
 
 import ccxt
-import pandas as pd
 
 # 使用统一的工具函数
 from utils import fetch_ohlcv_data, get_ms_timestamp, get_project_root

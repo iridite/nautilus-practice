@@ -11,7 +11,7 @@
 - CCXT 格式与 NautilusTrader 格式转换
 """
 
-from typing import Literal, Tuple
+from typing import Tuple
 
 from nautilus_trader.model.enums import BarAggregation
 

@@ -5,7 +5,6 @@
 """
 
 import unittest
-from pathlib import Path
 
 from core import (
     BacktestConfig,

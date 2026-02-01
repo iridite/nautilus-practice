@@ -8,7 +8,6 @@
 import sys
 import argparse
 from pathlib import Path
-from typing import Optional
 
 # 添加项目根目录到Python路径
 project_root = Path(__file__).parent.parent  # scripts目录的父目录

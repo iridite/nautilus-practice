@@ -7,9 +7,7 @@
 3. CCXT (备用)
 """
 
-import time
-from datetime import datetime
-from typing import List, Optional, Tuple
+from typing import Optional
 
 import pandas as pd
 import requests

@@ -2,8 +2,6 @@
 Tests for Config Loader
 """
 import unittest
-from pathlib import Path
-from unittest.mock import Mock, mock_open, patch
 
 from core.loader import ConfigLoader
 

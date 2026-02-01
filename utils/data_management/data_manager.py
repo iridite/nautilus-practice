@@ -13,7 +13,7 @@
 """
 
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import List, Tuple
 
 from utils.data_file_checker import check_single_data_file
 

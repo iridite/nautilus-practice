@@ -6,7 +6,6 @@
 
 import unittest
 from pathlib import Path
-from unittest.mock import Mock, patch
 
 from core import get_adapter
 
