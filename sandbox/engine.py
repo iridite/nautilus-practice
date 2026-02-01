@@ -16,6 +16,7 @@ from nautilus_trader.adapters.okx.factories import (
     OKXLiveDataClientFactory,
     OKXLiveExecClientFactory,
 )
+from nautilus_trader.common import Environment
 from nautilus_trader.config import (
     CacheConfig,
     InstrumentProviderConfig,
@@ -55,6 +56,23 @@ def load_strategy_instance(strategy_config, instrument_ids):
     else:
         raise ValueError(f"Sandbox currently only supports single instrument, got {len(instrument_ids)}")
 
+    # 处理 btc_instrument_id（如果策略需要）
+    if "btc_symbol" in params and (not params.get("btc_instrument_id") or params.get("btc_instrument_id") == ""):
+        inst_id = params["instrument_id"]
+        parts = inst_id.split(".")
+        venue = parts[-1]
+        symbol_parts = parts[0].split("-")
+        inst_type = symbol_parts[-1] if len(symbol_parts) > 2 else "PERP"
+
+        btc_symbol = params["btc_symbol"]
+        if "USDT" in btc_symbol:
+            base = btc_symbol.replace("USDT", "")
+            formatted_symbol = f"{base}-USDT"
+        else:
+            formatted_symbol = btc_symbol
+
+        params["btc_instrument_id"] = f"{formatted_symbol}-{inst_type}.{venue}"
+
     config = ConfigClass(**params)
     return StrategyClass(config=config)
 
@@ -88,6 +106,9 @@ def build_okx_config(sandbox_cfg: SandboxConfig, instrument_ids):
 
     # 数据客户端配置
     data_config = OKXDataClientConfig(
+        api_key=api_key,
+        api_secret=api_secret,
+        api_passphrase=api_passphrase,
         base_url_ws="wss://wspap.okx.com:8443/ws/v5/public" if sandbox_cfg.is_testnet else None,
         instrument_types=(OKXInstrumentType.SWAP,),
         instrument_provider=InstrumentProviderConfig(
@@ -100,6 +121,9 @@ def build_okx_config(sandbox_cfg: SandboxConfig, instrument_ids):
 
     # 执行客户端配置
     exec_config = OKXExecClientConfig(
+        api_key=api_key,
+        api_secret=api_secret,
+        api_passphrase=api_passphrase,
         instrument_provider=InstrumentProviderConfig(
             load_all=False,
             load_ids=load_ids,
@@ -157,6 +181,7 @@ async def run_sandbox(env_name: Optional[str] = None):
 
     # 构建节点配置
     node_config = TradingNodeConfig(
+        environment=Environment.SANDBOX if sandbox_cfg.is_testnet else Environment.LIVE,
         trader_id=trader_id,
         logging=logging_config,
         exec_engine=LiveExecEngineConfig(

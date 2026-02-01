@@ -56,6 +56,9 @@ class BaseStrategyConfig(StrategyConfig):  # pyright: ignore[reportGeneralTypeIs
     leverage: int = 1
 
     # --- Risk Management ---
+    # Maximum number of concurrent positions allowed
+    max_positions: int = 1
+
     # Stop Loss Percentage (e.g., 0.015 for 1.5%)
     # If set, a Stop Market order is automatically managed to prevent major drawdowns.
     stop_loss_pct: Optional[float] = None  # pct for percent
