@@ -51,7 +51,7 @@ print(f"节省时间: {time_saved*1000:.2f} ms ({time_saved/time1*100:.1f}%)")
 
 # 缓存统计
 stats = cache.get_stats()
-print(f"\n缓存统计:")
+print("\n缓存统计:")
 print(f"  命中: {stats['hits']}")
 print(f"  未命中: {stats['misses']}")
 print(f"  命中率: {stats['hit_rate']}")

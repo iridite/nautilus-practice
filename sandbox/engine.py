@@ -149,7 +149,7 @@ async def run_sandbox(env_name: Optional[str] = None):
         env_config, strategy_config, _ = load_config(active_config.environment)
 
     if not env_config.sandbox:
-        raise ValueError(f"Environment does not have sandbox configuration")
+        raise ValueError("Environment does not have sandbox configuration")
 
     sandbox_cfg = env_config.sandbox
 

@@ -145,7 +145,7 @@ def analyze_results(df: pd.DataFrame):
     df_success['sharpe_ratio'] = pd.to_numeric(df_success['sharpe_ratio'], errors='coerce')
     df_sorted = df_success.sort_values('sharpe_ratio', ascending=False)
 
-    print(f"\nTop 5 参数组合（按Sharpe排序）:")
+    print("\nTop 5 参数组合（按Sharpe排序）:")
     print(df_sorted.head(5)[['oi_decline_threshold', 'funding_rate_threshold_annual',
                               'sharpe_ratio', 'total_trades', 'total_pnl']])
 
@@ -174,7 +174,7 @@ def analyze_results(df: pd.DataFrame):
     with open('output/best_parameters.json', 'w') as f:
         json.dump(best_params, f, indent=2)
 
-    print(f"\n最优参数已保存至: output/best_parameters.json")
+    print("\n最优参数已保存至: output/best_parameters.json")
 
 
 def main():

@@ -471,7 +471,7 @@ if __name__ == "__main__":
         oi_period="1h",
     )
 
-    logger.info(f"\n📊 Custom Data Summary:")
+    logger.info("\n📊 Custom Data Summary:")
     logger.info(f"  OI Data Points: {len(custom_data['oi'])}")
     logger.info(f"  Funding Rate Data Points: {len(custom_data['funding'])}")
 

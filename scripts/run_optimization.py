@@ -71,7 +71,7 @@ def run_optimization(
     print("\n" + "=" * 80)
     print("🚀 策略优化系统启动")
     print("=" * 80)
-    print(f"\n优化目标:")
+    print("\n优化目标:")
     for key, value in target.items():
         if value is not None:
             print(f"  - {key}: {value}")
@@ -103,7 +103,7 @@ def run_optimization(
     if final_state:
         if final_state.get("goal_achieved"):
             best = final_state.get("best_metrics")
-            print(f"\n✅ 成功达成目标！")
+            print("\n✅ 成功达成目标！")
             if best:
                 print(f"  最终 Sharpe: {best['sharpe']:.3f}")
                 print(f"  交易次数: {best['total_trades']}")
@@ -112,7 +112,7 @@ def run_optimization(
                 print(f"  预期值: {best['expectancy']:.4f}")
             print(f"  迭代次数: {final_state.get('iteration')}")
         else:
-            print(f"\n⚠️ 未达成目标")
+            print("\n⚠️ 未达成目标")
             best = final_state.get("best_metrics")
             if best:
                 print(f"  当前最佳 Sharpe: {best['sharpe']:.3f}")

@@ -96,7 +96,7 @@ def main():
         time.sleep(exchange.rateLimit / 1000)
 
     print("\n" + "=" * 30)
-    print(f"Task Completed.")
+    print("Task Completed.")
     print(f"Total Symbols: {total}")
     print(f"Success: {success_count}")
     print(f"Failed: {fail_count}")

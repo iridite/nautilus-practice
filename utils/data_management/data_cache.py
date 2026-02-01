@@ -48,7 +48,7 @@ class DataCache:
         if len(self._cache) >= self.max_size:
             oldest_key = next(iter(self._cache))
             del self._cache[oldest_key]
-            logger.debug(f"缓存已满，淘汰最旧数据")
+            logger.debug("缓存已满，淘汰最旧数据")
 
         self._cache[cache_key] = df.copy()
         logger.debug(f"数据已缓存: {path.name}")

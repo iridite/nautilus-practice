@@ -92,7 +92,7 @@ def test_strategy_config():
         max_positions=1,
     )
 
-    print(f"\n配置参数:")
+    print("\n配置参数:")
     print(f"  交易对: {config.instrument_a_id} vs {config.instrument_b_id}")
     print(f"  预热期: {config.warmup_period} bars")
     print(f"  入场阈值: ±{config.entry_threshold}")
