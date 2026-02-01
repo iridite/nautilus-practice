@@ -1,5 +1,6 @@
 """CLI 命令实现"""
 
+import logging
 from pathlib import Path
 
 from scripts.fetch_instrument import update_instruments
@@ -7,8 +8,6 @@ from strategy.core.dependency_checker import check_strategy_data_dependencies
 from utils.oi_funding_adapter import execute_oi_funding_data_fetch
 from utils.universe import parse_universe_symbols
 
-
-import logging
 logger = logging.getLogger(__name__)
 
 def check_and_fetch_strategy_data(args, adapter, base_dir: Path, universe_symbols: set):
@@ -17,9 +16,7 @@ def check_and_fetch_strategy_data(args, adapter, base_dir: Path, universe_symbol
         logger.info("⏩ Skipping OI/Funding data check")
         return
 
-    logger.info("="*70)
     logger.info("📊 Strategy Data Dependencies Check")
-    logger.info("="*70)
 
     current_config = adapter.build_backtest_config()
     strategy_tasks = check_strategy_data_dependencies(
@@ -44,9 +41,7 @@ def check_and_fetch_strategy_data(args, adapter, base_dir: Path, universe_symbol
         if total_files > 0:
             logger.info(f"✅ Downloaded {total_files} files")
     else:
-        logger.info("✅ All strategy data satisfied")
-
-    logger.info("="*70 + "\n")
+        logger.info("✅ All strategy data satisfied\n")
 
 
 def update_instrument_definitions(adapter, base_dir: Path, universe_symbols: set):

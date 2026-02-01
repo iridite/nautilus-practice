@@ -5,12 +5,11 @@
 适用于 OI、Funding Rate、价格等市场数据的异常检测。
 """
 
+import logging
 from decimal import Decimal
 from pathlib import Path
 from typing import Optional
 
-
-import logging
 logger = logging.getLogger(__name__)
 
 class DataValidator:
@@ -359,9 +358,7 @@ def prepare_data_feeds(args, adapter, base_dir, universe_symbols: set):
         logger.info("⏩ Skipping data validation")
         return
 
-    logger.info("="*70)
     logger.info("📊 Data Validation")
-    logger.info("="*70)
 
     venue = adapter.get_venue().lower()
     start_date = adapter.get_start_date()
@@ -385,12 +382,7 @@ def prepare_data_feeds(args, adapter, base_dir, universe_symbols: set):
             missing_symbols, start_date, end_date, timeframe, venue, base_dir
         )
     else:
-        logger.info("✅ All data files present")
-
-    # 多标的数据对齐检查
-    _check_multi_instrument_alignment(adapter, base_dir, venue, timeframe)
-
-    logger.info("="*70 + "\n")
+        logger.info("✅ All data files present\n")
 
 
 def _check_multi_instrument_alignment(adapter, base_dir: Path, venue: str, timeframe: str):
