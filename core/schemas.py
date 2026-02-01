@@ -20,6 +20,10 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator, validator
 project_root: Path = Path(__file__).parent.parent.resolve()
 
 
+# ============================================================
+# 交易工具配置
+# ============================================================
+
 class InstrumentType(Enum):
     """交易工具类型"""
     SPOT = "SPOT"
@@ -80,6 +84,10 @@ class InstrumentConfig(BaseModel):
         )
 
 
+# ============================================================
+# 数据配置
+# ============================================================
+
 class DataConfig(BaseModel):
     """数据配置"""
     csv_file_name: str
@@ -100,6 +108,10 @@ class DataConfig(BaseModel):
     def bar_type_str(self) -> str:
         return f"{self.bar_period}-{self.bar_aggregation.name}-{self.price_type.name}-{self.origination}"
 
+
+# ============================================================
+# 策略配置
+# ============================================================
 
 class LegacyStrategyConfig(BaseModel):
     """策略配置容器"""
@@ -151,6 +163,10 @@ class LegacyStrategyConfig(BaseModel):
         return p
 
 
+# ============================================================
+# 回测配置
+# ============================================================
+
 class LogConfig(BaseModel):
     """日志配置"""
     log_level: str = "INFO"
@@ -199,6 +215,10 @@ class BacktestConfig(BaseModel):
         if len(self.data_feeds) > 1 and self.aux_data is None:
             self.aux_data = self.data_feeds[1]
 
+
+# ============================================================
+# 交易环境配置
+# ============================================================
 
 class TradingConfig(BaseModel):
     """交易环境配置"""
@@ -278,6 +298,10 @@ class BacktestPeriodConfig(BaseModel):
         return self
 
 
+# ============================================================
+# 日志和文件管理配置
+# ============================================================
+
 class LoggingConfig(BaseModel):
     """日志配置"""
 
@@ -333,7 +357,9 @@ class FileCleanupConfig(BaseModel):
         return v
 
 
-
+# ============================================================
+# 其他配置类
+# ============================================================
 
 class StrategyConfig(BaseModel):
     """策略配置"""
@@ -395,6 +421,10 @@ class SandboxConfig(BaseModel):
             raise ValueError("At least one instrument_id is required")
         return v
 
+
+# ============================================================
+# 环境和路径配置
+# ============================================================
 
 class EnvironmentConfig(BaseModel):
     """环境配置"""

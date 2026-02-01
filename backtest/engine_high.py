@@ -45,6 +45,15 @@ from utils.oi_funding_adapter import OIFundingDataLoader
 logger = logging.getLogger(__name__)
 
 
+
+# ============================================================
+# 数据加载模块
+# ============================================================
+
+# ============================================================
+# 数据加载模块
+# ============================================================
+
 def _load_instruments(cfg: BacktestConfig) -> Dict[str, Instrument]:
     """
     加载交易标的信息
@@ -77,6 +86,11 @@ def _load_instruments(cfg: BacktestConfig) -> Dict[str, Instrument]:
                 f"Failed to load instrument {inst_id}: {e}", inst_id, e
             )
 
+# ============================================================
+# 数据验证模块
+# ============================================================
+
+
     return loaded_instruments
 
 
@@ -99,6 +113,11 @@ def _check_parquet_coverage(
             return False, 0.0
     except Exception:
         return False, 0.0
+
+
+# ============================================================
+# Parquet 数据处理模块
+# ============================================================
 
     # 简化逻辑：如果 Parquet 数据存在则返回 True
     return True, 100.0
@@ -435,6 +454,11 @@ def _verify_data_consistency(
 
         return True
 
+
+# ============================================================
+# 策略配置模块
+# ============================================================
+
     except Exception as e:
         return False
 
@@ -489,6 +513,11 @@ def _create_strategy_configs(
                 config=final_params,
             )
         )
+
+# ============================================================
+# 回测执行模块
+# ============================================================
+
 
     return strategies
 
@@ -627,6 +656,11 @@ def _run_backtest_with_custom_data(
     logger.info("✅ Backtest Complete.")
 
     # 处理结果
+
+# ============================================================
+# 自定义数据加载模块
+# ============================================================
+
     if results:
         _process_backtest_results(cfg, base_dir, results)
 
@@ -731,6 +765,11 @@ def _load_custom_data_to_engine(
     except Exception as e:
         logger.error(f"⚠️ Custom data loading failed: {e}")
         logger.info("Strategy will run without OI/Funding data")
+
+# ============================================================
+# 结果处理模块
+# ============================================================
+
 
 
 
@@ -1119,6 +1158,11 @@ def _print_results(
     # 2. 策略配置可能有几十个参数，会使终端输出过长
     # 3. AI 可以从 JSON 文件中读取完整配置进行分析
     # 4. 人工查看时也更倾向于查看 JSON 文件而非终端滚动输出
+
+# ============================================================
+# 工具函数模块
+# ============================================================
+
 
     logger.info("=" * 65 + "\n")
 
