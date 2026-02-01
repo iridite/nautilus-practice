@@ -1,8 +1,13 @@
 """
-DK_Alpha_Trend 策略 (Dynamic Keltner Alpha Trend)
-
-中低频趋势跟踪策略，结合动态肯特纳通道突破、相对强弱选币和 TTM Squeeze 波动率状态。
-适用于加密货币市场的日线交易。
+Strategy: Keltner RS Breakout (KRB)
+Type: Medium-Frequency Trend Following
+Core Logic:
+  1. Entry: Close > EMA(20) + 2.25*ATR(20)
+  2. Filter A (Macro): Close > SMA(200)
+  3. Filter B (Alpha): Relative Strength (Symbol vs BTC) > 0
+  4. Filter C (Momentum): Volume > 1.5 * SMA(Vol, 20)
+  5. Sizing: Volatility Targeting (Base Risk 1.0%, Squeeze Risk 1.5%)
+Note: This strategy implements the "Breathing Trend" philosophy using Static Keltner Channels and RS filtering.
 """
 
 from collections import OrderedDict, deque
@@ -15,8 +20,8 @@ from nautilus_trader.model.identifiers import InstrumentId
 from strategy.core.base import BaseStrategy, BaseStrategyConfig
 
 
-class DKAlphaTrendConfig(BaseStrategyConfig):
-    """DK_Alpha_Trend 策略配置"""
+class KeltnerRSBreakoutConfig(BaseStrategyConfig):
+    """Keltner RS Breakout 策略配置"""
 
     # 简化配置字段（推荐使用）
     symbol: str = ""
@@ -57,9 +62,9 @@ class DKAlphaTrendConfig(BaseStrategyConfig):
     max_history_size: int = 100  # 历史数据最大保存数量
 
 
-class DKAlphaTrendStrategy(BaseStrategy):
+class KeltnerRSBreakoutStrategy(BaseStrategy):
     """
-    DK_Alpha_Trend 策略
+    Keltner RS Breakout 策略
 
     核心逻辑：
     1. Squeeze 状态判定：布林带收窄进 1.5x ATR 肯特纳通道
@@ -69,7 +74,7 @@ class DKAlphaTrendStrategy(BaseStrategy):
     5. 出场：Chandelier Exit (最高价 - 3x ATR)
     """
 
-    def __init__(self, config: DKAlphaTrendConfig):
+    def __init__(self, config: KeltnerRSBreakoutConfig):
         super().__init__(config)
 
         # BTC 标的 ID
@@ -107,7 +112,7 @@ class DKAlphaTrendStrategy(BaseStrategy):
         super().on_start()
 
         self.log.info(
-            f"DK_Alpha_Trend 启动: "
+            f"Keltner RS Breakout 启动: "
             f"EMA={self.config.ema_period}, ATR={self.config.atr_period}, "
             f"SMA={self.config.sma_period}, BTC={self.config.btc_instrument_id}"
         )
