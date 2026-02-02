@@ -56,6 +56,27 @@ TOP_Ns = [1, 5, 10, 25, 50, 100]  # 选取前 N 个币种
 REBALANCE_FREQ = "M"
 
 
+def validate_config():
+    """
+    验证配置参数的有效性
+    """
+    # 验证 MIN_COUNT_RATIO
+    if not 0 < MIN_COUNT_RATIO <= 1:
+        raise ValueError(f"MIN_COUNT_RATIO 必须在 (0, 1] 范围内，当前值: {MIN_COUNT_RATIO}")
+
+    # 验证 TOP_Ns
+    if not TOP_Ns:
+        raise ValueError("TOP_Ns 不能为空")
+    for n in TOP_Ns:
+        if not isinstance(n, int) or n <= 0:
+            raise ValueError(f"TOP_Ns 必须包含正整数，发现无效值: {n}")
+
+    # 验证 REBALANCE_FREQ
+    valid_freqs = ["M", "W-MON", "2W-MON"]
+    if REBALANCE_FREQ not in valid_freqs:
+        raise ValueError(f"REBALANCE_FREQ 必须是 {valid_freqs} 之一，当前值: {REBALANCE_FREQ}")
+
+
 def is_stablecoin(symbol: str) -> bool:
     """
     判断是否为稳定币
@@ -93,6 +114,9 @@ def generate_universe():
     """
     从 CSV 数据中动态生成交易池，支持月度/周度/双周更新
     """
+    # 验证配置参数
+    validate_config()
+
     if not DATA_DIR.exists():
         print(f"[!] Data directory not found: {DATA_DIR}")
         return {}
@@ -164,6 +188,9 @@ def generate_universe():
 
                 period_stats[period_str].append((symbol, avg_turnover))
 
+            # 显式删除 DataFrame 释放内存
+            del df
+
         except FileNotFoundError:
             print(f"\n[!] File not found: {symbol}")
             continue
@@ -215,8 +242,9 @@ if __name__ == "__main__":
             print(f"\n[*] Sample Universe Top {n} (Latest Period):")
             last_period = sorted(universe.keys())[-1]
             print(f"Period: {last_period}")
+            sample_size = min(10, len(universe[last_period]))
             print(
-                f"Symbols ({len(universe[last_period])}): {universe[last_period][:10]} ..."
+                f"Symbols ({len(universe[last_period])}): {universe[last_period][:sample_size]} ..."
             )
 
             # 保存为 JSON，文件名包含频率信息
