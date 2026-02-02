@@ -1,13 +1,20 @@
 """
 Strategy: Keltner RS Breakout (KRB)
-Type: Medium-Frequency Trend Following
-Core Logic:
+Type: Medium-Frequency Bidirectional Trend Following
+Core Logic (Long):
   1. Entry: Close > EMA(20) + 2.25*ATR(20)
   2. Filter A (Macro): Close > SMA(200)
   3. Filter B (Alpha): Relative Strength (Symbol vs BTC) > 0
   4. Filter C (Momentum): Volume > 1.5 * SMA(Vol, 20)
-  5. Sizing: Volatility Targeting (Base Risk 1.0%, Squeeze Risk 1.5%)
-Note: This strategy implements the "Breathing Trend" philosophy using Static Keltner Channels and RS filtering.
+  5. Exit: Chandelier Exit (Highest - 3*ATR)
+Core Logic (Short):
+  1. Entry: Close < EMA(20) - 2.25*ATR(20)
+  2. Filter A (Macro): Close < SMA(200)
+  3. Filter B (Alpha): Relative Strength (Symbol vs BTC) < 0
+  4. Filter C (Momentum): Volume > 1.5 * SMA(Vol, 20)
+  5. Exit: Chandelier Exit (Lowest + 3*ATR)
+Sizing: Volatility Targeting (Base Risk 1.0%, Squeeze Risk 1.5%)
+Note: HEDGING mode supports multiple long/short positions per symbol.
 """
 
 from collections import OrderedDict, deque
@@ -66,14 +73,14 @@ class KeltnerRSBreakoutConfig(BaseStrategyConfig):
 
 class KeltnerRSBreakoutStrategy(BaseStrategy):
     """
-    Keltner RS Breakout 策略
+    Keltner RS Breakout 策略（双向交易）
 
     核心逻辑：
     1. Squeeze 状态判定：布林带收窄进 1.5x ATR 肯特纳通道
-    2. 过滤器：趋势(>SMA200) + 放量(>1.5x均量) + RS(>BTC)
-    3. 触发：突破 2.25x ATR 上轨
+    2. 做多：趋势(>SMA200) + 放量 + RS>BTC + 突破上轨
+    3. 做空：趋势(<SMA200) + 放量 + RS<BTC + 跌破下轨
     4. 仓位：波动率倒数模型，Squeeze 加成
-    5. 出场：Chandelier Exit (最高价 - 3x ATR)
+    5. 出场：Chandelier Exit（多头用最高价，空头用最低价）
     """
 
     def __init__(self, config: KeltnerRSBreakoutConfig):
@@ -102,8 +109,8 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
         # Squeeze 状态历史
         self.squeeze_history = deque(maxlen=config.squeeze_memory_days)
 
-        # 持仓跟踪（HEDGING 模式：支持多持仓）
-        self.positions_tracker = {}  # {position_id: {entry_price, highest_high, entry_time}}
+        # 持仓跟踪（HEDGING 模式：支持多持仓，多空双向）
+        self.positions_tracker = {}  # {position_id: {side, entry_price, extreme_price, entry_time}}
 
         # 订单状态跟踪
         self._pending_orders = {}  # {order_id: metadata}
@@ -212,23 +219,25 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
 
         close = float(bar.close)
 
-        # 2. 更新所有持仓的最高价并执行出场逻辑
+        # 2. 更新所有持仓的极值价格并执行出场逻辑
         positions = self.cache.positions_open(instrument_id=self.instrument.id)
         for pos in positions:
             pos_id = pos.id
             if pos_id not in self.positions_tracker:
                 # 恢复持仓跟踪（策略重启场景）
                 self.positions_tracker[pos_id] = {
+                    'side': pos.side.name,
                     'entry_price': float(pos.avg_px_open),
-                    'highest_high': float(bar.high),
+                    'extreme_price': float(bar.high if pos.side.name == 'LONG' else bar.low),
                     'entry_time': pos.ts_opened
                 }
             else:
-                # 更新最高价
-                self.positions_tracker[pos_id]['highest_high'] = max(
-                    self.positions_tracker[pos_id]['highest_high'],
-                    float(bar.high)
-                )
+                # 更新极值价格（多头跟踪最高价，空头跟踪最低价）
+                tracker = self.positions_tracker[pos_id]
+                if tracker['side'] == 'LONG':
+                    tracker['extreme_price'] = max(tracker['extreme_price'], float(bar.high))
+                else:  # SHORT
+                    tracker['extreme_price'] = min(tracker['extreme_price'], float(bar.low))
 
         # 执行出场逻辑
         if positions:
@@ -242,32 +251,32 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
 
         # 4. Funding Rate Guard：资金费率过高时拒绝开仓
         funding_rate = self._get_funding_rate()
-        if funding_rate is not None and funding_rate > 0.0005:
+        if funding_rate is not None and abs(funding_rate) > 0.0005:
             return
 
-        # 5. Regime 检查：价格必须在 SMA200 上方（上升趋势）
-        if close < self.sma:
-            return
-
-        # 6. RS 检查
-        if not self._check_relative_strength():
-            return
-
-        # 7. Volume 检查
+        # 5. Volume 检查（多空共用）
         volume = float(bar.volume)
         if self.volume_sma is None or volume < self.volume_sma * self.config.volume_multiplier:
             return
 
-        # 8. Trigger 检查
+        # 6. Trigger 检查
         if self.ema is None or self.atr is None:
             return
 
         keltner_trigger_upper = self.ema + (self.config.keltner_trigger_multiplier * self.atr)
-        if close <= keltner_trigger_upper:
-            return
+        keltner_trigger_lower = self.ema - (self.config.keltner_trigger_multiplier * self.atr)
 
-        # 9. 执行入场
-        self._handle_entry(bar, is_squeezing, keltner_trigger_upper)
+        # 7. 做多信号检查
+        if close > self.sma and close > keltner_trigger_upper:
+            if self._check_relative_strength(bullish=True):
+                self._handle_entry(bar, is_squeezing, OrderSide.BUY, keltner_trigger_upper)
+                return
+
+        # 8. 做空信号检查
+        if close < self.sma and close < keltner_trigger_lower:
+            if self._check_relative_strength(bullish=False):
+                self._handle_entry(bar, is_squeezing, OrderSide.SELL, keltner_trigger_lower)
+                return
 
     def _update_indicators(self) -> None:
         """更新所有指标"""
@@ -331,8 +340,12 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
         # Squeeze: 布林带完全在 Keltner 通道内
         return self.bb_upper < keltner_upper and self.bb_lower > keltner_lower
 
-    def _check_relative_strength(self) -> bool:
-        """检查相对强弱（RS）"""
+    def _check_relative_strength(self, bullish: bool = True) -> bool:
+        """检查相对强弱（RS）
+
+        Args:
+            bullish: True 检查做多条件（RS > BTC），False 检查做空条件（RS < BTC）
+        """
         # 主动从缓存获取 BTC 最新数据
         btc_bar_type_str = self.config.bar_type.replace(
             self.instrument.id.symbol.value,
@@ -375,10 +388,17 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
         symbol_perf = (symbol_prices[-1] / symbol_prices[0]) - 1
         btc_perf = (btc_prices[-1] / btc_prices[0]) - 1
 
-        return symbol_perf > btc_perf
+        return symbol_perf > btc_perf if bullish else symbol_perf < btc_perf
 
-    def _handle_entry(self, bar: Bar, is_squeezing: bool, keltner_trigger_upper: float) -> None:
-        """处理开仓逻辑（过滤器已在 on_bar 中检查）"""
+    def _handle_entry(self, bar: Bar, is_squeezing: bool, order_side: OrderSide, trigger_price: float) -> None:
+        """处理开仓逻辑（过滤器已在 on_bar 中检查）
+
+        Args:
+            bar: 当前 K 线
+            is_squeezing: 是否处于 Squeeze 状态
+            order_side: 订单方向（BUY 或 SELL）
+            trigger_price: 触发价格
+        """
         close = float(bar.close)
 
         # 判断是否为高确信度设置
@@ -392,23 +412,25 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
         # 下单（HEDGING 模式）
         order = self.order_factory.market(
             instrument_id=self.instrument.id,
-            order_side=OrderSide.BUY,
+            order_side=order_side,
             quantity=qty,
         )
         self.submit_order(order)
 
         # 记录订单元数据（等待成交后关联持仓）
         self._pending_orders[order.client_order_id] = {
+            'side': order_side.name,
             'entry_price': close,
-            'highest_high': float(bar.high),
+            'extreme_price': float(bar.high if order_side == OrderSide.BUY else bar.low),
             'entry_time': bar.ts_event,
             'high_conviction': high_conviction
         }
 
+        side_name = "做多" if order_side == OrderSide.BUY else "做空"
         conviction_type = "高确信度" if high_conviction else "普通"
         self.log.info(
-            f"开仓做多 ({conviction_type}): "
-            f"price={close:.2f}, trigger={keltner_trigger_upper:.2f}, "
+            f"{side_name}开仓 ({conviction_type}): "
+            f"price={close:.2f}, trigger={trigger_price:.2f}, "
             f"qty={qty}, squeeze={is_squeezing}"
         )
 
@@ -457,7 +479,7 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
         return self.instrument.make_qty(qty)
 
     def _handle_exit(self, bar: Bar) -> None:
-        """处理出场逻辑（HEDGING 模式：独立管理每个持仓）"""
+        """处理出场逻辑（HEDGING 模式：独立管理每个持仓，多空双向）"""
         close = float(bar.close)
 
         if self.atr is None:
@@ -473,28 +495,36 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
                 continue
 
             tracker = self.positions_tracker[pos_id]
-            highest_high = tracker['highest_high']
+            extreme_price = tracker['extreme_price']
+            side = tracker['side']
 
-            # 计算 Chandelier Exit 止损线
-            trailing_stop = highest_high - (self.config.stop_loss_atr_multiplier * self.atr)
+            # 计算 Chandelier Exit 止损线（多空对称）
+            if side == 'LONG':
+                trailing_stop = extreme_price - (self.config.stop_loss_atr_multiplier * self.atr)
+                should_close = close < trailing_stop
+            else:  # SHORT
+                trailing_stop = extreme_price + (self.config.stop_loss_atr_multiplier * self.atr)
+                should_close = close > trailing_stop
 
             # 检查是否触发止损
-            if close < trailing_stop:
-                positions_to_close.append((pos, trailing_stop, highest_high))
+            if should_close:
+                positions_to_close.append((pos, trailing_stop, extreme_price, side))
 
         # 执行平仓操作（避免在遍历时修改字典）
-        for pos, trailing_stop, highest_high in positions_to_close:
+        for pos, trailing_stop, extreme_price, side in positions_to_close:
             order = self.order_factory.market(
                 instrument_id=self.instrument.id,
-                order_side=OrderSide.SELL,
+                order_side=OrderSide.SELL if side == 'LONG' else OrderSide.BUY,
                 quantity=pos.quantity,
             )
             self.submit_order(order)
 
+            side_name = "多头" if side == 'LONG' else "空头"
+            extreme_name = "最高价" if side == 'LONG' else "最低价"
             self.log.info(
-                f"Chandelier Exit 平仓 (Position {pos.id}): "
+                f"Chandelier Exit 平{side_name} (Position {pos.id}): "
                 f"price={close:.2f}, stop={trailing_stop:.2f}, "
-                f"highest={highest_high:.2f}"
+                f"{extreme_name}={extreme_price:.2f}"
             )
 
             # 清理持仓跟踪
