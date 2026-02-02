@@ -254,7 +254,8 @@ if __name__ == "__main__":
 
             # 保存为 JSON，文件名包含频率信息
             freq_suffix = REBALANCE_FREQ.replace("/", "")
-            output_path = DATA_DIR.parent / f"universe_{n}_{freq_suffix}.json"
+            output_path = DATA_DIR.parent / "universe" / f"universe_{n}_{freq_suffix}.json"
+            output_path.parent.mkdir(parents=True, exist_ok=True)
             with open(output_path, "w") as f:
                 json.dump(universe, f, indent=4)
             print(f"[√] Universe Top {n} saved to: {output_path}")
