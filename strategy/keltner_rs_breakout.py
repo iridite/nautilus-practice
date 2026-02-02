@@ -109,12 +109,6 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
         # Squeeze 状态历史
         self.squeeze_history = deque(maxlen=config.squeeze_memory_days)
 
-        # 持仓跟踪（HEDGING 模式：支持多持仓，多空双向）
-        self.positions_tracker = {}  # {position_id: {side, entry_price, extreme_price, entry_time}}
-
-        # 订单状态跟踪
-        self._pending_orders = {}  # {order_id: metadata}
-
     def on_start(self) -> None:
         """策略启动时初始化"""
         super().on_start()
@@ -219,29 +213,8 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
 
         close = float(bar.close)
 
-        # 2. 更新所有持仓的极值价格并执行出场逻辑
+        # 2. 执行出场逻辑
         positions = self.cache.positions_open(instrument_id=self.instrument.id)
-        for pos in positions:
-            pos_id = pos.id
-            if pos_id not in self.positions_tracker:
-                # 恢复持仓跟踪（策略重启场景）
-                # 注意：pos.side 是 PositionSide 枚举，需要转换为字符串
-                side_str = 'LONG' if pos.side == PositionSide.LONG else 'SHORT'
-                self.positions_tracker[pos_id] = {
-                    'side': side_str,
-                    'entry_price': float(pos.avg_px_open),
-                    'extreme_price': float(bar.high if side_str == 'LONG' else bar.low),
-                    'entry_time': pos.ts_opened
-                }
-            else:
-                # 更新极值价格（多头跟踪最高价，空头跟踪最低价）
-                tracker = self.positions_tracker[pos_id]
-                if tracker['side'] == 'LONG':
-                    tracker['extreme_price'] = max(tracker['extreme_price'], float(bar.high))
-                else:  # SHORT
-                    tracker['extreme_price'] = min(tracker['extreme_price'], float(bar.low))
-
-        # 执行出场逻辑
         if positions:
             self._handle_exit(bar)
 
@@ -427,14 +400,13 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
         )
         self.submit_order(order)
 
-        # 记录订单元数据（等待成交后关联持仓）
-        self._pending_orders[order.client_order_id] = {
-            'side': order_side.name,
-            'entry_price': close,
-            'extreme_price': float(bar.high if order_side == OrderSide.BUY else bar.low),
-            'entry_time': bar.ts_event,
-            'high_conviction': high_conviction
-        }
+        # 使用基类方法记录订单元数据
+        self.track_order_for_position(
+            order.client_order_id,
+            order_side,
+            bar,
+            high_conviction=high_conviction
+        )
 
         side_name = "做多" if order_side == OrderSide.BUY else "做空"
         conviction_type = "高确信度" if high_conviction else "普通"
@@ -501,10 +473,10 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
 
         for pos in positions:
             pos_id = pos.id
-            if pos_id not in self.positions_tracker:
+            if pos_id not in self._positions_tracker:
                 continue
 
-            tracker = self.positions_tracker[pos_id]
+            tracker = self._positions_tracker[pos_id]
             extreme_price = tracker['extreme_price']
             side = tracker['side']
 
@@ -538,35 +510,5 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
             )
 
             # 清理持仓跟踪
-            if pos.id in self.positions_tracker:
-                del self.positions_tracker[pos.id]
-
-    def on_order_filled(self, event) -> None:
-        """订单成交回调（HEDGING 模式：关联订单与持仓）"""
-        super().on_order_filled(event)
-
-        # 检查是否是入场订单
-        order_id = event.client_order_id
-        if order_id in self._pending_orders:
-            # 获取订单元数据
-            metadata = self._pending_orders.pop(order_id)
-
-            # 查找新创建的持仓
-            positions = self.cache.positions_open(instrument_id=self.instrument.id)
-            for pos in positions:
-                if pos.id not in self.positions_tracker:
-                    # 关联持仓与元数据
-                    self.positions_tracker[pos.id] = metadata
-                    self.log.info(f"持仓跟踪已建立: Position {pos.id}")
-                    break
-
-    def on_order_rejected(self, event) -> None:
-        """订单拒绝回调（HEDGING 模式）"""
-        super().on_order_rejected(event)
-
-        # 清理被拒绝的订单
-        order_id = event.client_order_id
-        if order_id in self._pending_orders:
-            del self._pending_orders[order_id]
-
-        self.log.error(f"订单被拒绝: {event.reason}")
+            if pos.id in self._positions_tracker:
+                del self._positions_tracker[pos.id]
