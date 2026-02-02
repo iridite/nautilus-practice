@@ -9,7 +9,7 @@
     1. 避免未来函数: T 期数据生成 T+1 期交易池，无前视偏差
     2. 数据质量控制: 剔除稳定币，过滤数据不完整的新币
     3. 多层级配置: 同时生成 Top 1/5/10/25/50/100 等多个规模的交易池
-    4. 灵活频率: 支持月度(M)、周度(W)、双周(2W)更新
+    4. 灵活频率: 支持月度(M)、周度(W-MON)、双周(2W-MON)更新
 
 使用方法:
     1. 配置参数: 修改 REBALANCE_FREQ、MIN_COUNT_RATIO、TOP_Ns 等常量
@@ -45,16 +45,14 @@ STABLECOINS = [
     "BUSD",
     "DAI",
     "TUSD",
-    "UST",
-    "EURS",
-    "EUR",
-    "GBP",
-    "KNC",
+    "FDUSD",
+    "PYUSD",
+    "USDD",
 ]
 MIN_COUNT_RATIO = 0.9  # 数据完整度阈值
 TOP_Ns = [1, 5, 10, 25, 50, 100]  # 选取前 N 个币种
 
-# 更新频率配置：支持 "M"(月度), "W"(周度), "2W"(双周)
+# 更新频率配置：支持 "M"(月度), "W-MON"(周度), "2W-MON"(双周)
 REBALANCE_FREQ = "M"
 
 
@@ -83,9 +81,9 @@ def get_expected_days(freq: str, period_start) -> int:
     """
     if freq == "M":
         return get_days_in_month(period_start.year, period_start.month)
-    elif freq == "W":
+    elif freq == "W-MON":
         return 7
-    elif freq == "2W":
+    elif freq == "2W-MON":
         return 14
     else:
         raise ValueError(f"不支持的频率: {freq}")
@@ -140,10 +138,12 @@ def generate_universe():
                 # 根据频率生成时间字符串
                 if REBALANCE_FREQ == "M":
                     period_str = period_start.strftime("%Y-%m")
-                elif REBALANCE_FREQ == "W":
-                    period_str = period_start.strftime("%Y-W%U")
-                elif REBALANCE_FREQ == "2W":
-                    period_str = period_start.strftime("%Y-W%U")
+                elif REBALANCE_FREQ == "W-MON":
+                    period_str = period_start.strftime("%Y-W%W")
+                elif REBALANCE_FREQ == "2W-MON":
+                    # 双周使用周数除以2来区分
+                    week_num = int(period_start.strftime("%W"))
+                    period_str = f"{period_start.year}-2W{week_num//2:02d}"
                 else:
                     period_str = period_start.strftime("%Y-%m-%d")
 

@@ -176,6 +176,11 @@ class BaseStrategy(Strategy):
         super().on_position_closed(event)
         if self.instrument and event.instrument_id == self.instrument.id:
             self.cancel_all_orders(event.instrument_id)
+
+            # 清理 HEDGING 模式的持仓跟踪
+            if event.position_id in self._positions_tracker:
+                del self._positions_tracker[event.position_id]
+
             self.log.info(
                 f"BaseStrategy: Position closed for {event.instrument_id}, all orders cancelled."
             )
