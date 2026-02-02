@@ -205,7 +205,103 @@ def _process_backtest_results(
         engine: BacktestEngine 实例
     """
     try:
-        # 简化的结果处理 - 只保存基本统计
+        # 提取策略配置
+        strategy_params = cfg.strategy.params
+        if hasattr(strategy_params, "model_dump"):
+            strategy_config = strategy_params.model_dump()
+        elif hasattr(strategy_params, "dict"):
+            strategy_config = strategy_params.dict()
+        elif isinstance(strategy_params, dict):
+            strategy_config = strategy_params
+        else:
+            strategy_config = {}
+
+        # 获取回测统计数据 - 从 trader 报告中计算
+        venue = Venue(cfg.instrument.venue_name) if cfg.instrument else Venue("BINANCE")
+
+        # 获取订单和持仓统计
+        orders_report = engine.trader.generate_order_fills_report()
+        positions_report = engine.trader.generate_positions_report()
+        total_orders = len(orders_report) if orders_report is not None and hasattr(orders_report, '__len__') else 0
+        total_positions = len(positions_report) if positions_report is not None and hasattr(positions_report, '__len__') else 0
+
+        # 初始化统计字典
+        stats_pnls = {}
+        stats_returns = {}
+
+        # 从持仓报告中计算 PnL 统计
+        try:
+            if positions_report is not None and hasattr(positions_report, 'empty') and not positions_report.empty:
+                # 检查可用的列
+                logger.debug(f"持仓报告列: {positions_report.columns.tolist()}")
+
+                # 尝试多个可能的 PnL 列名
+                pnl_column = None
+                for col in ['realized_pnl', 'pnl', 'realized_return', 'return']:
+                    if col in positions_report.columns:
+                        pnl_column = col
+                        break
+
+                if pnl_column:
+                    realized_pnls = positions_report[pnl_column].dropna()
+
+                    if len(realized_pnls) > 0:
+                        winners = realized_pnls[realized_pnls > 0]
+                        losers = realized_pnls[realized_pnls < 0]
+
+                        total_pnl = float(realized_pnls.sum())
+
+                        stats_pnls['USDT'] = {
+                            'PnL (total)': total_pnl,
+                            'PnL% (total)': total_pnl,
+                            'Max Winner': float(winners.max()) if len(winners) > 0 else None,
+                            'Avg Winner': float(winners.mean()) if len(winners) > 0 else None,
+                            'Min Winner': float(winners.min()) if len(winners) > 0 else None,
+                            'Min Loser': float(losers.min()) if len(losers) > 0 else None,
+                            'Avg Loser': float(losers.mean()) if len(losers) > 0 else None,
+                            'Max Loser': float(losers.max()) if len(losers) > 0 else None,
+                            'Expectancy': float(realized_pnls.mean()) if len(realized_pnls) > 0 else None,
+                            'Win Rate': float(len(winners) / len(realized_pnls)) if len(realized_pnls) > 0 else None,
+                        }
+
+                        # 计算收益率统计
+                        if len(realized_pnls) > 1:
+                            import numpy as np
+                            returns = realized_pnls.values
+
+                            # 计算基本统计
+                            avg_return = float(np.mean(returns))
+                            std_return = float(np.std(returns))
+
+                            # 计算夏普比率
+                            sharpe = float(avg_return / std_return * np.sqrt(252)) if std_return > 0 else 0
+
+                            # 计算索提诺比率
+                            downside_returns = returns[returns < 0]
+                            downside_std = float(np.std(downside_returns)) if len(downside_returns) > 0 else 0
+                            sortino = float(avg_return / downside_std * np.sqrt(252)) if downside_std > 0 else 0
+
+                            # 计算盈亏比
+                            avg_win = float(winners.mean()) if len(winners) > 0 else 0
+                            avg_loss = abs(float(losers.mean())) if len(losers) > 0 else 0
+                            profit_factor = float(avg_win / avg_loss) if avg_loss > 0 else 0
+
+                            stats_returns = {
+                                'Returns Volatility (252 days)': std_return * np.sqrt(252),
+                                'Average (Return)': avg_return,
+                                'Average Loss (Return)': float(losers.mean()) if len(losers) > 0 else None,
+                                'Average Win (Return)': avg_win,
+                                'Sharpe Ratio (252 days)': sharpe,
+                                'Sortino Ratio (252 days)': sortino,
+                                'Profit Factor': profit_factor,
+                                'Risk Return Ratio': float(std_return / abs(avg_return)) if avg_return != 0 else None,
+                            }
+                else:
+                    logger.warning(f"持仓报告中未找到 PnL 列，可用列: {positions_report.columns.tolist()}")
+        except Exception as e:
+            logger.warning(f"计算统计指标时出错: {e}")
+
+        # 构建完整结果字典
         result_dict = {
             "meta": {
                 "strategy_name": cfg.strategy.name,
@@ -216,10 +312,39 @@ def _process_backtest_results(
                 "start_date": cfg.start_date,
                 "end_date": cfg.end_date,
                 "initial_balances": [str(balance) for balance in cfg.initial_balances],
+                "total_orders": total_orders,
+                "total_positions": total_positions,
             },
-            "strategy_config": cfg.strategy.params if hasattr(cfg.strategy.params, "dict")
-                               else cfg.strategy.params,
+            "pnl": {},
+            "returns": {},
+            "strategy_config": strategy_config,
+            "backtest_config": {
+                "start_date": str(cfg.start_date),
+                "end_date": str(cfg.end_date),
+                "initial_balances": [str(b) for b in cfg.initial_balances],
+            },
+            "performance": {
+                "total_orders": total_orders,
+                "total_positions": total_positions,
+            }
         }
+
+        # 处理 PnL 指标
+        if stats_pnls is not None:
+            for currency, metrics in stats_pnls.items():
+                result_dict["pnl"][str(currency)] = {
+                    str(k): v if v == v else None
+                    for k, v in metrics.items()
+                }
+
+        # 处理收益率指标 - 使用 generate_returns_report 获取统计数据
+        try:
+            returns_stats = engine.trader.generate_returns_report()
+            if returns_stats:
+                for key, val in returns_stats.items():
+                    result_dict["returns"][str(key)] = val if val == val else None
+        except Exception:
+            pass
 
         # 保存 JSON 结果
         result_dir = base_dir / "output" / "backtest" / "result"
