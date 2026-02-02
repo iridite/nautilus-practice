@@ -367,6 +367,11 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
         """处理开仓逻辑（过滤器已在 on_bar 中检查）"""
         close = float(bar.close)
 
+        # 检查持仓数量限制
+        total_positions = len(self.cache.positions_open())
+        if total_positions >= self.config.max_positions:
+            return
+
         # 判断是否为高确信度设置
         high_conviction = is_squeezing or any(self.squeeze_history)
 
@@ -397,15 +402,24 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
 
     def _calculate_position_size(self, bar: Bar, high_conviction: bool) -> Decimal:
         """计算仓位大小"""
-        if self.atr is None:
-            return Decimal("0")
-
         # 获取账户权益
         account = self.portfolio.account(self.instrument.id.venue)
         if not account:
             return Decimal("0")
         equity = account.balance_total(self.instrument.quote_currency)
         if not equity or equity.as_decimal() <= 0:
+            return Decimal("0")
+
+        # 如果配置了 qty_percent，使用百分比模式
+        if self.config.qty_percent is not None:
+            qty_pct = Decimal(str(self.config.qty_percent))
+            leverage = Decimal(str(self.config.leverage))
+            price = bar.close.as_decimal()
+            qty = (equity.as_decimal() * qty_pct * leverage) / price
+            return self.instrument.make_qty(qty)
+
+        # 否则使用 ATR 风险模式
+        if self.atr is None:
             return Decimal("0")
 
         # 确定风险百分比
@@ -423,8 +437,8 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
             self.log.warning(f"ATR过小({self.atr:.6f})，使用最小止损距离{min_stop_distance}")
             stop_distance = min_stop_distance
 
-        # 计算仓位：(权益 * 风险%) / 止损距离
-        risk_amount = equity.as_decimal() * Decimal(str(risk_pct))
+        # 计算仓位：(权益 * 风险% * 杠杆) / 止损距离
+        risk_amount = equity.as_decimal() * Decimal(str(risk_pct)) * Decimal(str(self.config.leverage))
         qty = risk_amount / stop_distance
 
         # 使用基类的仓位计算方法进行标准化

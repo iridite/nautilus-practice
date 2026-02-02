@@ -8,7 +8,7 @@ config_class: "KeltnerRSBreakoutConfig"
 # 策略参数
 parameters:
   # 多币种配置（策略负责交易对象）
-  symbols: ["ETHUSDT", "SOLUSDT", "BNBUSDT", "DOGEUSDT", "BTCUSDT"]
+  symbols: ["ETHUSDT", "SOLUSDT", "BNBUSDT", "DOGEUSDT"]
   timeframe: "1d"
   price_type: "LAST"
   origination: "EXTERNAL"
@@ -16,6 +16,9 @@ parameters:
 
   # 时间框架依赖
   timeframes: ["main"]
+
+  # 数据依赖声明
+  data_types: ["funding"]
 
   # 指标参数
   ema_period: 20
@@ -42,4 +45,4 @@ parameters:
   # 仓位管理
   qty_percent: 0.1
   leverage: 1
-  max_positions: 1
+  max_positions: 3
