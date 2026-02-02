@@ -137,8 +137,26 @@ class ConfigAdapter:
     def _load_universe_symbols(self) -> set[str] | None:
         """加载 universe 符号集合"""
         params = self.strategy_config.parameters
-        universe_file = params.get("universe_filename") or params.get("universe_filepath")
 
+        # 优先使用 universe_top_n 参数
+        universe_top_n = params.get("universe_top_n")
+        if universe_top_n:
+            universe_file = project_root / "data" / "universe" / f"universe_{universe_top_n}_ME.json"
+            if universe_file.exists():
+                with open(universe_file, "r") as f:
+                    u_data = json.load(f)
+                    symbols = set()
+                    for month_list in u_data.values():
+                        # 提取币对符号，去除 :USDT 后缀
+                        for symbol in month_list:
+                            if ":" in symbol:
+                                symbols.add(symbol.split(":")[0])
+                            else:
+                                symbols.add(symbol)
+                    return symbols
+
+        # 兼容旧的 universe_filename 参数
+        universe_file = params.get("universe_filename") or params.get("universe_filepath")
         if not universe_file:
             return None
 
@@ -153,7 +171,11 @@ class ConfigAdapter:
             u_data = json.load(f)
             symbols = set()
             for month_list in u_data.values():
-                symbols.update(month_list)
+                for symbol in month_list:
+                    if ":" in symbol:
+                        symbols.add(symbol.split(":")[0])
+                    else:
+                        symbols.add(symbol)
             return symbols
 
     def _create_data_feeds_for_symbol(self, symbol: str, inst_cfg: InstrumentConfig) -> List[DataConfig]:

@@ -10,8 +10,11 @@ Core Logic:
 Note: This strategy implements the "Breathing Trend" philosophy using Static Keltner Channels and RS filtering.
 """
 
+import json
 from collections import OrderedDict, deque
+from datetime import datetime
 from decimal import Decimal
+from pathlib import Path
 
 import numpy as np
 from nautilus_trader.model.data import Bar, BarType
@@ -19,6 +22,7 @@ from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import InstrumentId
 
 from strategy.core.base import BaseStrategy, BaseStrategyConfig
+from utils import get_project_root
 from utils.custom_data import FundingRateData
 
 
@@ -56,8 +60,11 @@ class KeltnerRSBreakoutConfig(BaseStrategyConfig):
 
     # 过滤器参数
     volume_multiplier: float = 1.5
-    rs_lookback_days: int = 5
+    rs_lookback_days: int = 7
     squeeze_memory_days: int = 3
+
+    # Universe 参数
+    universe_top_n: int | None = None  # Universe 规模（1, 5, 10, 25, 50, 100），None 表示不使用
 
     # 其他参数
     min_stop_distance_pct: float = 0.005  # 最小止损距离百分比（0.5%）
@@ -108,6 +115,74 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
 
         # 订单状态跟踪
         self._pending_entry_order = False
+
+        # Universe 动态管理
+        self.universe_data = {}  # {"2020-02": ["BTCUSDT", ...]}
+        self.current_period = None  # 当前周期字符串
+        self.active_symbols = set()  # 当前活跃币种集合（基础符号，如 BTCUSDT）
+        self._load_universe()
+
+    def _load_universe(self) -> None:
+        """加载 Universe JSON 文件"""
+        if self.config.universe_top_n is None:
+            self.log.info("未配置 universe_top_n，不使用 Universe 过滤")
+            return
+
+        universe_file = get_project_root() / "data" / "universe" / f"universe_{self.config.universe_top_n}_ME.json"
+        if not universe_file.exists():
+            self.log.warning(f"Universe 文件不存在: {universe_file}")
+            return
+
+        try:
+            with open(universe_file, "r") as f:
+                raw_data = json.load(f)
+                # 转换符号格式：BTCUSDT:USDT -> BTCUSDT
+                for period, symbols in raw_data.items():
+                    self.universe_data[period] = [s.split(":")[0] if ":" in s else s for s in symbols]
+            self.log.info(f"成功加载 Universe 文件: {universe_file}, 共 {len(self.universe_data)} 个周期")
+        except Exception as e:
+            self.log.error(f"加载 Universe 文件失败: {e}")
+
+    def _update_active_universe(self, timestamp: int) -> None:
+        """根据时间戳更新活跃币种列表"""
+        if not self.universe_data:
+            return
+
+        dt = datetime.fromtimestamp(timestamp / 1e9)
+        period_str = dt.strftime("%Y-%m")
+
+        if period_str != self.current_period:
+            old_period = self.current_period
+            self.current_period = period_str
+
+            if period_str in self.universe_data:
+                old_symbols = self.active_symbols.copy()
+                self.active_symbols = set(self.universe_data[period_str])
+
+                if old_period is not None:
+                    added = self.active_symbols - old_symbols
+                    removed = old_symbols - self.active_symbols
+                    self.log.info(
+                        f"Universe 周期切换: {old_period} -> {period_str}, "
+                        f"活跃币种: {len(self.active_symbols)}, "
+                        f"新增: {len(added)}, 移除: {len(removed)}"
+                    )
+                else:
+                    self.log.info(f"初始化 Universe 周期: {period_str}, 活跃币种: {len(self.active_symbols)}")
+            else:
+                self.log.warning(f"当前周期 {period_str} 不在 Universe 数据中")
+
+    def _is_symbol_active(self) -> bool:
+        """判断当前币种是否活跃"""
+        if not self.universe_data:
+            return True
+
+        # 从 instrument.id 提取基础符号
+        # 例如：BTCUSDT-PERP.BINANCE -> BTCUSDT
+        instrument_str = str(self.instrument.id)
+        base_symbol = instrument_str.split("-")[0].split(".")[0]
+
+        return base_symbol in self.active_symbols
 
     def on_start(self) -> None:
         """策略启动时初始化"""
@@ -192,28 +267,20 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
         else:
             return
 
-        # 1. Warmup 检查
+        # 1. 更新 Universe 活跃状态
+        self._update_active_universe(bar.ts_event)
+
+        # 2. Warmup 检查
         if self.sma is None:
             return
 
-        # 计算并记录 Squeeze 状态（独立于交易过滤器）
-        #
-        # 重要修复说明（2026-02-01）：
-        # 此修复将 Squeeze 计算从过滤器检查后移至 Warmup 检查后立即执行。
-        #
-        # 修复前：Squeeze 只在通过所有过滤器后才计算，导致历史数据不完整
-        # 修复后：每个交易日都记录 Squeeze 状态，确保 any(self.squeeze_history) 判断准确
-        #
-        # 影响：此修复提高了高确信度交易的识别准确性，可能导致：
-        # - 更多交易被识别为高确信度（使用 1.5% 风险 vs 1.0%）
-        # - 仓位增加约 50%，回测收益可能提升约 5%
-        # - 这是符合策略设计意图的正向修复，不是过拟合
+        # 计算并记录 Squeeze 状态
         is_squeezing = self._check_squeeze()
         self.squeeze_history.append(is_squeezing)
 
         close = float(bar.close)
 
-        # 2. 持仓检查 - 持仓时只执行出场逻辑（不受 Funding Rate 影响）
+        # 3. 持仓检查 - 持仓时只执行出场逻辑
         if self.portfolio.is_net_long(self.instrument.id):
             if self.highest_high is None:
                 self.highest_high = float(bar.high)
@@ -226,25 +293,29 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
         if self._pending_entry_order:
             return
 
-        # 3. Funding Rate Guard：资金费率过高时拒绝开仓
+        # 4. Universe 活跃状态检查：非活跃币种不开仓
+        if not self._is_symbol_active():
+            return
+
+        # 5. Funding Rate Guard
         funding_rate = self._get_funding_rate()
         if funding_rate is not None and funding_rate > 0.0005:
             return
 
-        # 4. Regime 检查：价格必须在 SMA200 上方（上升趋势）
+        # 6. Regime 检查
         if close < self.sma:
             return
 
-        # 5. RS 检查
+        # 7. RS 检查
         if not self._check_relative_strength():
             return
 
-        # 6. Volume 检查
+        # 8. Volume 检查
         volume = float(bar.volume)
         if self.volume_sma is None or volume < self.volume_sma * self.config.volume_multiplier:
             return
 
-        # 7. Trigger 检查
+        # 9. Trigger 检查
         if self.ema is None or self.atr is None:
             return
 
@@ -252,7 +323,7 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
         if close <= keltner_trigger_upper:
             return
 
-        # 8. 执行入场
+        # 10. 执行入场
         self._handle_entry(bar, is_squeezing, keltner_trigger_upper)
 
     def _update_indicators(self) -> None:
@@ -317,9 +388,8 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
         # Squeeze: 布林带完全在 Keltner 通道内
         return self.bb_upper < keltner_upper and self.bb_lower > keltner_lower
 
-    def _check_relative_strength(self) -> bool:
-        """检查相对强弱（RS）"""
-        # 主动从缓存获取 BTC 最新数据
+    def _calculate_rs_score(self) -> float | None:
+        """计算 RS 分数（用于多信号竞争排序）"""
         btc_bar_type_str = self.config.bar_type.replace(
             self.instrument.id.symbol.value,
             self.btc_instrument_id.symbol.value
@@ -327,41 +397,38 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
         btc_bar_type = BarType.from_str(btc_bar_type_str)
         btc_bar = self.cache.bar(btc_bar_type)
 
-        # None 检查
         if btc_bar is None:
-            self.log.debug("无法获取 BTC 数据")
-            return False
+            return None
 
-        # 更新 BTC 价格历史（确保最新数据）
         btc_close = float(btc_bar.close)
         if btc_bar.ts_event not in self.btc_price_history:
             self.btc_price_history[btc_bar.ts_event] = btc_close
 
-        # 需要足够的历史数据
         if len(self.price_history) < self.config.rs_lookback_days + 1:
-            return False
+            return None
         if len(self.btc_price_history) < self.config.rs_lookback_days + 1:
-            return False
+            return None
 
-        # 动态计算共同时间戳（替代维护列表）
         common_timestamps = sorted(set(self.price_history.keys()) & set(self.btc_price_history.keys()))
         if len(common_timestamps) < self.config.rs_lookback_days + 1:
-            return False
+            return None
 
-        # 使用最近的对齐数据计算涨幅
         recent_ts = common_timestamps[-(self.config.rs_lookback_days + 1):]
         symbol_prices = [self.price_history[ts] for ts in recent_ts]
         btc_prices = [self.btc_price_history[ts] for ts in recent_ts]
 
-        # 防止除零
         if symbol_prices[0] <= 0 or btc_prices[0] <= 0:
-            self.log.warning(f"RS计算数据异常: symbol[0]={symbol_prices[0]}, btc[0]={btc_prices[0]}")
-            return False
+            return None
 
         symbol_perf = (symbol_prices[-1] / symbol_prices[0]) - 1
         btc_perf = (btc_prices[-1] / btc_prices[0]) - 1
 
-        return symbol_perf > btc_perf
+        return symbol_perf - btc_perf
+
+    def _check_relative_strength(self) -> bool:
+        """检查相对强弱（RS）- 短期强度过滤器"""
+        rs_score = self._calculate_rs_score()
+        return rs_score is not None and rs_score > 0
 
     def _handle_entry(self, bar: Bar, is_squeezing: bool, keltner_trigger_upper: float) -> None:
         """处理开仓逻辑（过滤器已在 on_bar 中检查）"""

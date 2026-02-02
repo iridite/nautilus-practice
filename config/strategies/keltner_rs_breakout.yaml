@@ -39,8 +39,11 @@ parameters:
 
   # 过滤器参数
   volume_multiplier: 1.5
-  rs_lookback_days: 5
+  rs_lookback_days: 7
   squeeze_memory_days: 3
+
+  # Universe 参数
+  universe_top_n: 10
 
   # 仓位管理
   # 推荐使用 ATR 风险模式（注释掉 qty_percent）

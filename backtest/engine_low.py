@@ -17,6 +17,7 @@ from nautilus_trader.model import BarType, TraderId
 from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.enums import (
     AccountType,
+    BarAggregation,
     BookType,
     OmsType,
 )
@@ -37,6 +38,7 @@ from strategy.core.loader import (
     load_strategy_class,
     load_strategy_config_class,
 )
+from utils.data_file_checker import check_single_data_file
 from utils.data_management.data_loader import load_ohlcv_csv
 from utils.instrument_loader import load_instrument
 from utils.oi_funding_adapter import OIFundingDataLoader
@@ -403,7 +405,7 @@ def run_low_level(cfg: BacktestConfig, base_dir: Path):
         venue_name = cfg.instrument.venue_name if cfg.instrument else "BINANCE"
 
         # 从策略配置中读取 oms_type
-        oms_type_str = getattr(cfg.strategy_config, 'oms_type', 'HEDGING')
+        oms_type_str = getattr(cfg.strategy.params if hasattr(cfg.strategy, 'params') else {}, 'oms_type', 'HEDGING')
         oms_type = OmsType.HEDGING if oms_type_str == 'HEDGING' else OmsType.NETTING
 
         engine.add_venue(
@@ -417,11 +419,54 @@ def run_low_level(cfg: BacktestConfig, base_dir: Path):
             fee_model=MakerTakerFeeModel(),
         )
 
-        # 4. 加载标的定义
-        loaded_instruments = {}
-        total_feeds = len(cfg.data_feeds)
+        # 4. 过滤有数据的标的
+        instruments_with_data = []
 
-        for inst_cfg in cfg.instruments:
+        # 检查日期配置
+        if not cfg.start_date or not cfg.end_date:
+            logger.warning("⚠️ start_date 或 end_date 未配置，跳过数据可用性检查")
+            instruments_with_data = list(cfg.instruments)
+        else:
+            for inst_cfg in cfg.instruments:
+                # 提取符号用于数据文件检查
+                symbol = inst_cfg.instrument_id.split("-")[0] if "-" in inst_cfg.instrument_id else inst_cfg.instrument_id.split(".")[0]
+
+                # 构建时间周期字符串
+                if cfg.data_feeds:
+                    first_feed = cfg.data_feeds[0]
+                    unit_map = {
+                        BarAggregation.MINUTE: "m",
+                        BarAggregation.HOUR: "h",
+                        BarAggregation.DAY: "d"
+                    }
+                    timeframe = f"{first_feed.bar_period}{unit_map.get(first_feed.bar_aggregation, 'h')}"
+                else:
+                    timeframe = "1h"
+
+                # 检查主数据文件是否存在
+                has_data, _ = check_single_data_file(
+                    symbol=symbol,
+                    start_date=cfg.start_date,
+                    end_date=cfg.end_date,
+                    timeframe=timeframe,
+                    exchange=inst_cfg.venue_name.lower(),
+                    base_dir=base_dir,
+                )
+
+                if has_data:
+                    instruments_with_data.append(inst_cfg)
+                else:
+                    logger.debug(f"⏭️ Skipping {inst_cfg.instrument_id}: no data file")
+
+        if not instruments_with_data:
+            raise BacktestEngineError("No instruments with available data found")
+
+        logger.info(f"📊 Found {len(instruments_with_data)}/{len(cfg.instruments)} instruments with data")
+
+        # 5. 加载标的定义
+        loaded_instruments = {}
+
+        for inst_cfg in instruments_with_data:
             inst_path = inst_cfg.get_json_path()
             if not inst_path.exists():
                 raise InstrumentLoadError(f"Instrument path not found: {inst_path}", inst_cfg.instrument_id)
@@ -435,8 +480,10 @@ def run_low_level(cfg: BacktestConfig, base_dir: Path):
                 raise InstrumentLoadError(f"Failed to load instrument {inst_cfg.instrument_id}: {e}",
                                         inst_cfg.instrument_id, e)
 
-        # 5. 加载回测数据
+        # 6. 加载回测数据
         all_feeds = {}  # (instrument_id, label) -> bar_type_str
+        total_feeds = len(cfg.data_feeds)
+
         for feed_idx, data_cfg in enumerate(cfg.data_feeds, 1):
             sys.stdout.write(f"\r📖 [{feed_idx}/{total_feeds}] Loading: {data_cfg.csv_file_name}")
             sys.stdout.flush()
@@ -452,13 +499,13 @@ def run_low_level(cfg: BacktestConfig, base_dir: Path):
 
         logger.info(f"\n✅ Loaded {len(all_feeds)} data feeds")
 
-        # 6. 加载自定义数据 (OI, Funding Rate)
+        # 7. 加载自定义数据 (OI, Funding Rate)
         try:
             _load_custom_data_to_engine(cfg, base_dir, engine, loaded_instruments)
         except CustomDataError as e:
             logger.warning(f"⚠️ Custom data loading failed: {e}")
 
-        # 7. 配置与添加策略
+        # 8. 配置与添加策略
         StrategyClass = load_strategy_class(cfg.strategy.module_path, cfg.strategy.name)
         ConfigClass = load_strategy_config_class(
             cfg.strategy.module_path, cfg.strategy.resolve_config_class()
@@ -494,7 +541,7 @@ def run_low_level(cfg: BacktestConfig, base_dir: Path):
             engine.add_strategy(StrategyClass(config=strat_config))
             strategies_count += 1
 
-        # 8. 执行回测
+        # 9. 执行回测
         if strategies_count == 0:
             raise BacktestEngineError("No strategy instances were created. Check config and data paths.")
 
