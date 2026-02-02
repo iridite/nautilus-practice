@@ -8,10 +8,16 @@ trading:
   initial_balance: 100
   currency: "USDT"
 
+  # 持仓模式配置
+  # oms_type: 订单管理系统类型
+  # - NETTING: 净持仓模式，每个币对最多1个仓位（多空会合并）
+  # - HEDGING: 对冲持仓模式，支持同一币对开多个仓位（多空独立）
+  oms_type: "NETTING"
+
 # 时间框架设置
 timeframes:
-  main: "1h"      # 主要时间框架
-  trend: "4h"     # 趋势分析时间框架
+  main: "1h" # 主要时间框架
+  trend: "4h" # 趋势分析时间框架
 
 # 回测默认设置
 backtest:

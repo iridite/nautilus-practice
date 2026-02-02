@@ -18,6 +18,7 @@ overrides:
   # 可以覆盖交易设置
   trading:
     initial_balance: 100
+    # oms_type: "HEDGING"  # 取消注释以覆盖持仓模式
 
   # 可以覆盖策略参数（仅用于调试）
   # strategy:

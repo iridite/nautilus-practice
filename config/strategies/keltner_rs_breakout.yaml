@@ -7,13 +7,6 @@ config_class: "KeltnerRSBreakoutConfig"
 
 # 策略参数
 parameters:
-  # 持仓模式配置
-  # oms_type: 订单管理系统类型
-  # - NETTING: 净持仓模式，每个币对最多1个仓位（多空会合并）
-  # - HEDGING: 对冲持仓模式，支持同一币对开多个仓位（多空独立）
-  # 默认: HEDGING（支持双向交易和多持仓）
-  oms_type: "HEDGING"
-
   # 多币种配置（策略负责交易对象）
   symbols: ["ETHUSDT", "SOLUSDT", "BNBUSDT", "DOGEUSDT"]
   timeframe: "1d"
