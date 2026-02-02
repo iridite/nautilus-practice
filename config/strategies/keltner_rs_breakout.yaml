@@ -48,4 +48,4 @@ parameters:
   # 固定百分比模式（qty_percent: 0.1）收益较低但更保守
   # qty_percent: 0.1
   leverage: 1
-  max_positions: 3
+  max_positions: 5
