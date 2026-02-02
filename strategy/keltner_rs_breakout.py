@@ -22,7 +22,7 @@ from decimal import Decimal
 
 import numpy as np
 from nautilus_trader.model.data import Bar, BarType
-from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import OrderSide, PositionSide
 from nautilus_trader.model.identifiers import InstrumentId
 
 from strategy.core.base import BaseStrategy, BaseStrategyConfig
@@ -225,10 +225,12 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
             pos_id = pos.id
             if pos_id not in self.positions_tracker:
                 # 恢复持仓跟踪（策略重启场景）
+                # 注意：pos.side 是 PositionSide 枚举，需要转换为字符串
+                side_str = 'LONG' if pos.side == PositionSide.LONG else 'SHORT'
                 self.positions_tracker[pos_id] = {
-                    'side': pos.side.name,
+                    'side': side_str,
                     'entry_price': float(pos.avg_px_open),
-                    'extreme_price': float(bar.high if pos.side.name == 'LONG' else bar.low),
+                    'extreme_price': float(bar.high if side_str == 'LONG' else bar.low),
                     'entry_time': pos.ts_opened
                 }
             else:
@@ -267,16 +269,24 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
         keltner_trigger_lower = self.ema - (self.config.keltner_trigger_multiplier * self.atr)
 
         # 7. 做多信号检查
-        if close > self.sma and close > keltner_trigger_upper:
-            if self._check_relative_strength(bullish=True):
-                self._handle_entry(bar, is_squeezing, OrderSide.BUY, keltner_trigger_upper)
-                return
+        long_signal = close > self.sma and close > keltner_trigger_upper and self._check_relative_strength(bullish=True)
 
         # 8. 做空信号检查
-        if close < self.sma and close < keltner_trigger_lower:
-            if self._check_relative_strength(bullish=False):
+        short_signal = close < self.sma and close < keltner_trigger_lower and self._check_relative_strength(bullish=False)
+
+        # 9. 执行入场（支持同时开多空，但需要检查模式）
+        if self.config.oms_type == "HEDGING":
+            # HEDGING 模式：可以同时开多空
+            if long_signal:
+                self._handle_entry(bar, is_squeezing, OrderSide.BUY, keltner_trigger_upper)
+            if short_signal:
                 self._handle_entry(bar, is_squeezing, OrderSide.SELL, keltner_trigger_lower)
-                return
+        else:
+            # NETTING 模式：只能单向持仓，优先做多
+            if long_signal:
+                self._handle_entry(bar, is_squeezing, OrderSide.BUY, keltner_trigger_upper)
+            elif short_signal:
+                self._handle_entry(bar, is_squeezing, OrderSide.SELL, keltner_trigger_lower)
 
     def _update_indicators(self) -> None:
         """更新所有指标"""
