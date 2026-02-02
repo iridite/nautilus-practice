@@ -18,7 +18,7 @@ class BaseStrategyConfig(StrategyConfig):  # pyright: ignore[reportGeneralTypeIs
     Provides unified interface for position sizing, risk management, and data dependencies.
     """
 
-    oms_type: str = "NETTING"
+    oms_type: str = "HEDGING"
 
     # 简化配置字段（推荐使用）
     symbol: str = ""  # 简化标的名称，如 "ETHUSDT"（永续）或 "ETH"（现货）

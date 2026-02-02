@@ -102,12 +102,11 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
         # Squeeze 状态历史
         self.squeeze_history = deque(maxlen=config.squeeze_memory_days)
 
-        # 持仓跟踪
-        self.entry_price = None
-        self.highest_high = None
+        # 持仓跟踪（HEDGING 模式：支持多持仓）
+        self.positions_tracker = {}  # {position_id: {entry_price, highest_high, entry_time}}
 
         # 订单状态跟踪
-        self._pending_entry_order = False
+        self._pending_orders = {}  # {order_id: metadata}
 
     def on_start(self) -> None:
         """策略启动时初始化"""
@@ -213,38 +212,53 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
 
         close = float(bar.close)
 
-        # 2. 持仓检查 - 持仓时只执行出场逻辑（不受 Funding Rate 影响）
-        if self.portfolio.is_net_long(self.instrument.id):
-            if self.highest_high is None:
-                self.highest_high = float(bar.high)
+        # 2. 更新所有持仓的最高价并执行出场逻辑
+        positions = self.cache.positions_open(instrument_id=self.instrument.id)
+        for pos in positions:
+            pos_id = pos.id
+            if pos_id not in self.positions_tracker:
+                # 恢复持仓跟踪（策略重启场景）
+                self.positions_tracker[pos_id] = {
+                    'entry_price': float(pos.avg_px_open),
+                    'highest_high': float(bar.high),
+                    'entry_time': pos.ts_opened
+                }
             else:
-                self.highest_high = max(self.highest_high, float(bar.high))
+                # 更新最高价
+                self.positions_tracker[pos_id]['highest_high'] = max(
+                    self.positions_tracker[pos_id]['highest_high'],
+                    float(bar.high)
+                )
+
+        # 执行出场逻辑
+        if positions:
             self._handle_exit(bar)
+
+        # 3. 入场逻辑检查
+        # 检查持仓数量限制（HEDGING 模式：限制总持仓数）
+        total_positions = len(self.cache.positions_open())
+        if total_positions >= self.config.max_positions:
             return
 
-        # 无持仓时执行入场逻辑检查
-        if self._pending_entry_order:
-            return
-
-        # 3. Funding Rate Guard：资金费率过高时拒绝开仓
+        # 5. Funding Rate Guard：资金费率过高时拒绝开仓
         funding_rate = self._get_funding_rate()
         if funding_rate is not None and funding_rate > 0.0005:
             return
 
-        # 4. Regime 检查：价格必须在 SMA200 上方（上升趋势）
+        # 6. Regime 检查：价格必须在 SMA200 上方（上升趋势）
         if close < self.sma:
             return
 
-        # 5. RS 检查
+        # 7. RS 检查
         if not self._check_relative_strength():
             return
 
-        # 6. Volume 检查
+        # 8. Volume 检查
         volume = float(bar.volume)
         if self.volume_sma is None or volume < self.volume_sma * self.config.volume_multiplier:
             return
 
-        # 7. Trigger 检查
+        # 9. Trigger 检查
         if self.ema is None or self.atr is None:
             return
 
@@ -252,7 +266,7 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
         if close <= keltner_trigger_upper:
             return
 
-        # 8. 执行入场
+        # 10. 执行入场
         self._handle_entry(bar, is_squeezing, keltner_trigger_upper)
 
     def _update_indicators(self) -> None:
@@ -367,11 +381,6 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
         """处理开仓逻辑（过滤器已在 on_bar 中检查）"""
         close = float(bar.close)
 
-        # 检查持仓数量限制
-        total_positions = len(self.cache.positions_open())
-        if total_positions >= self.config.max_positions:
-            return
-
         # 判断是否为高确信度设置
         high_conviction = is_squeezing or any(self.squeeze_history)
 
@@ -380,18 +389,21 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
         if not qty or qty <= 0:
             return
 
-        # 下单
+        # 下单（HEDGING 模式）
         order = self.order_factory.market(
             instrument_id=self.instrument.id,
             order_side=OrderSide.BUY,
             quantity=qty,
         )
         self.submit_order(order)
-        self._pending_entry_order = True
 
-        # 记录持仓信息
-        self.entry_price = close
-        self.highest_high = float(bar.high)
+        # 记录订单元数据（等待成交后关联持仓）
+        self._pending_orders[order.client_order_id] = {
+            'entry_price': close,
+            'highest_high': float(bar.high),
+            'entry_time': bar.ts_event,
+            'high_conviction': high_conviction
+        }
 
         conviction_type = "高确信度" if high_conviction else "普通"
         self.log.info(
@@ -445,35 +457,70 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
         return self.instrument.make_qty(qty)
 
     def _handle_exit(self, bar: Bar) -> None:
-        """处理出场逻辑"""
+        """处理出场逻辑（HEDGING 模式：独立管理每个持仓）"""
         close = float(bar.close)
 
-        # 计算 Chandelier Exit 止损线（highest_high已在on_bar中更新）
         if self.atr is None:
             return
 
-        trailing_stop = self.highest_high - (self.config.stop_loss_atr_multiplier * self.atr)
+        # 遍历所有持仓，独立计算止损
+        positions = self.cache.positions_open(instrument_id=self.instrument.id)
+        for pos in positions:
+            pos_id = pos.id
+            if pos_id not in self.positions_tracker:
+                continue
 
-        # 检查是否触发止损
-        if close < trailing_stop:
-            self.close_all_positions(self.instrument.id)
-            self.log.info(
-                f"Chandelier Exit 平仓: "
-                f"price={close:.2f}, stop={trailing_stop:.2f}, "
-                f"highest={self.highest_high:.2f}"
-            )
+            tracker = self.positions_tracker[pos_id]
+            highest_high = tracker['highest_high']
 
-            # 重置持仓信息
-            self.entry_price = None
-            self.highest_high = None
+            # 计算 Chandelier Exit 止损线
+            trailing_stop = highest_high - (self.config.stop_loss_atr_multiplier * self.atr)
+
+            # 检查是否触发止损
+            if close < trailing_stop:
+                # 平仓单个持仓
+                order = self.order_factory.market(
+                    instrument_id=self.instrument.id,
+                    order_side=OrderSide.SELL,
+                    quantity=pos.quantity,
+                )
+                self.submit_order(order)
+
+                self.log.info(
+                    f"Chandelier Exit 平仓 (Position {pos_id}): "
+                    f"price={close:.2f}, stop={trailing_stop:.2f}, "
+                    f"highest={highest_high:.2f}"
+                )
+
+                # 清理持仓跟踪
+                del self.positions_tracker[pos_id]
 
     def on_order_filled(self, event) -> None:
-        """订单成交回调"""
+        """订单成交回调（HEDGING 模式：关联订单与持仓）"""
         super().on_order_filled(event)
-        self._pending_entry_order = False
+
+        # 检查是否是入场订单
+        order_id = event.client_order_id
+        if order_id in self._pending_orders:
+            # 获取订单元数据
+            metadata = self._pending_orders.pop(order_id)
+
+            # 查找新创建的持仓
+            positions = self.cache.positions_open(instrument_id=self.instrument.id)
+            for pos in positions:
+                if pos.id not in self.positions_tracker:
+                    # 关联持仓与元数据
+                    self.positions_tracker[pos.id] = metadata
+                    self.log.info(f"持仓跟踪已建立: Position {pos.id}")
+                    break
 
     def on_order_rejected(self, event) -> None:
-        """订单拒绝回调"""
+        """订单拒绝回调（HEDGING 模式）"""
         super().on_order_rejected(event)
-        self._pending_entry_order = False
+
+        # 清理被拒绝的订单
+        order_id = event.client_order_id
+        if order_id in self._pending_orders:
+            del self._pending_orders[order_id]
+
         self.log.error(f"订单被拒绝: {event.reason}")
