@@ -4,39 +4,27 @@
 
 set -e
 
-# 配置
+# 默认配置
 PRIVATE_REPO="/home/yixian/Projects/nautilus-practice"
-PUBLIC_REPO="/home/yixian/Projects/Nautilus-Ops-Integrated"
-LOG_FILE="/tmp/nautilus-sync.log"
+CONFIG_FILE="$PRIVATE_REPO/.sync-config"
 
-# 需要排除的文件和目录
-EXCLUDE_PATTERNS=(
-    ".git"
-    ".env"
-    "test.env"
-    "data/"
-    "output/"
-    "log/"
-    ".venv"
-    "__pycache__"
-    "*.pyc"
-    ".idea"
-    ".vscode"
-    ".DS_Store"
-    ".aider*"
-    ".langgraph_api"
-    ".ruff_cache"
-    ".claude"
-    "tmp/"
-)
+# 加载配置文件
+if [ ! -f "$CONFIG_FILE" ]; then
+    echo "错误: 配置文件不存在: $CONFIG_FILE"
+    exit 1
+fi
 
-# 需要删除的敏感文件（即使在源仓库存在）
-SENSITIVE_FILES=(
-    "strategy/keltner_rs_breakout.py"
-    "config/strategies/keltner_rs_breakout.yaml"
-    "tests/test_keltner_rs_breakout.py"
-    "docs/reviews/dk_alpha_trend_audit.md"
-)
+source "$CONFIG_FILE"
+
+# 使用配置文件中的值
+PUBLIC_REPO="${PUBLIC_REPO_PATH}"
+LOG_FILE="${LOG_FILE:-/tmp/nautilus-sync.log}"
+
+# 检查是否启用同步
+if [ "$SYNC_ENABLED" != "true" ]; then
+    echo "同步已禁用 (SYNC_ENABLED=$SYNC_ENABLED)"
+    exit 0
+fi
 
 # 日志函数
 log() {
@@ -71,21 +59,17 @@ for pattern in "${EXCLUDE_PATTERNS[@]}"; do
     RSYNC_EXCLUDE="$RSYNC_EXCLUDE --exclude=$pattern"
 done
 
+# 排除敏感文件
+for file in "${SENSITIVE_FILES[@]}"; do
+    RSYNC_EXCLUDE="$RSYNC_EXCLUDE --exclude=$file"
+done
+
 # 同步文件到公开仓库
 log "正在同步文件..."
 rsync -av --delete $RSYNC_EXCLUDE "$PRIVATE_REPO/" "$PUBLIC_REPO/" >> "$LOG_FILE" 2>&1 || error_exit "rsync 失败"
 
 # 进入公开仓库
 cd "$PUBLIC_REPO" || error_exit "无法进入公开仓库"
-
-# 删除敏感文件
-log "正在删除敏感文件..."
-for file in "${SENSITIVE_FILES[@]}"; do
-    if [ -f "$file" ]; then
-        rm -f "$file"
-        log "已删除: $file"
-    fi
-done
 
 # 检查是否有变更
 if [ -z "$(git status --porcelain)" ]; then
