@@ -87,7 +87,7 @@ uv run ipython  # if available
 
 ### Data Preparation
 ```bash
-# Generate trading pair Universe
+# Generate trading pair Universe (supports M/W-MON/2W-MON frequencies)
 uv run python scripts/generate_universe.py
 
 # Prepare top market cap data
@@ -96,6 +96,12 @@ uv run python scripts/prepare_top_data.py
 # Fetch instrument info
 uv run python scripts/fetch_instrument.py
 ```
+
+**Universe Generator Configuration** (`scripts/generate_universe.py`):
+- Supports multiple rebalance frequencies: Monthly (M), Weekly (W-MON), Bi-weekly (2W-MON)
+- Automatic config validation on startup (MIN_COUNT_RATIO, TOP_Ns, REBALANCE_FREQ)
+- Look-ahead bias prevention: T period data generates T+1 period universe
+- Output format: `data/universe_{N}_{FREQ}.json`
 
 ## 🏗️ Architecture Patterns
 
@@ -835,4 +841,27 @@ btc_prices = [self.btc_price_history[ts] for ts in recent_ts]
 - ✅ 统一低级和高级回测的 JSON 输出位置（output/backtest/result）
 - ✅ 统一低级和高级回测的 JSON 文件命名格式（移除 low_ 前缀）
 - ✅ 高级回测引擎完全修复，回测结果：176.26 USDT（超过 170 USDT 目标）
+
+### Universe Generator Optimization (2026-02-02)
+- ✅ 添加模块级文档注释（功能说明、核心特性、使用方法、注意事项）
+- ✅ 修复双周频率 resample 语法错误（2W → 2W-MON）
+- ✅ 修复周度/双周时间字符串重复问题（独立格式化逻辑）
+- ✅ 优化稳定币列表（移除 UST/EURS/EUR/GBP/KNC，添加 FDUSD/PYUSD/USDD）
+- ✅ 添加配置参数验证函数（validate_config）
+  - MIN_COUNT_RATIO 范围验证：(0, 1]
+  - TOP_Ns 格式验证：非空且包含正整数
+  - REBALANCE_FREQ 有效性验证：M/W-MON/2W-MON
+- ✅ 改进异常处理（细化异常类型：FileNotFoundError、EmptyDataError、KeyError、ValueError）
+- ✅ 改进文件名解析（使用 file_path.stem 并验证格式）
+- ✅ 添加类型注解（period_start: pd.Timestamp）
+- ✅ 添加内存优化（显式删除 DataFrame 释放内存）
+- ✅ 消除魔法数字（sample_size = min(10, len(...))）
+- ✅ 添加边界情况注释（最后周期不生成 universe 的说明）
+
+**Universe Generator 代码审计经验**:
+- 未来函数检查：确认 T 期数据生成 T+1 期 universe，无前视偏差
+- 高优先级问题：语法错误、逻辑错误、数据质量问题
+- 中低优先级问题：参数验证、异常处理、代码质量
+- 可选优化：内存效率、输入验证、数据完整度调整
+- 审计流程：先修复严重问题，再处理中低优先级，最后可选优化
 
