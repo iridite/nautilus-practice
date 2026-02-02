@@ -75,7 +75,7 @@ def get_days_in_month(year: int, month: int) -> int:
     return calendar.monthrange(year, month)[1]
 
 
-def get_expected_days(freq: str, period_start) -> int:
+def get_expected_days(freq: str, period_start: pd.Timestamp) -> int:
     """
     根据频率获取期望的数据天数
     """
@@ -110,7 +110,11 @@ def generate_universe():
     print(f"[*] Rebalance frequency: {REBALANCE_FREQ}")
 
     for file_path in tqdm(all_files, desc="Reading CSVs"):
-        symbol = file_path.name.split("_")[0]
+        # 解析文件名：期望格式为 SYMBOL_1d.csv
+        filename = file_path.stem  # 去除 .csv 后缀
+        if "_" not in filename:
+            continue
+        symbol = filename.split("_")[0]
 
         # 1. 剔除稳定币
         if is_stablecoin(symbol):
@@ -160,12 +164,26 @@ def generate_universe():
 
                 period_stats[period_str].append((symbol, avg_turnover))
 
+        except FileNotFoundError:
+            print(f"\n[!] File not found: {symbol}")
+            continue
+        except pd.errors.EmptyDataError:
+            print(f"\n[!] Empty or invalid CSV: {symbol}")
+            continue
+        except KeyError as e:
+            print(f"\n[!] Missing required column in {symbol}: {e}")
+            continue
+        except ValueError as e:
+            print(f"\n[!] Data conversion error in {symbol}: {e}")
+            continue
         except Exception as e:
-            print(f"\n[!] Error processing {symbol}: {e}")
+            print(f"\n[!] Unexpected error processing {symbol}: {e}")
             continue
 
     # 3. 排序并生成结果
     # 注意：T 期的成交量排名决定 T+1 期的 Universe
+    # 重要：最后一个周期不会生成 universe（因为没有 T+1 期数据）
+    # 实盘使用时，需要确保有上个周期的完整数据才能生成本周期的交易池
 
     sorted_periods = sorted(period_stats.keys())
     universes = {n: {} for n in TOP_Ns}

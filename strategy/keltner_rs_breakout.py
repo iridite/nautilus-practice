@@ -1,20 +1,13 @@
 """
 Strategy: Keltner RS Breakout (KRB)
-Type: Medium-Frequency Bidirectional Trend Following
-Core Logic (Long):
+Type: Medium-Frequency Trend Following
+Core Logic:
   1. Entry: Close > EMA(20) + 2.25*ATR(20)
   2. Filter A (Macro): Close > SMA(200)
   3. Filter B (Alpha): Relative Strength (Symbol vs BTC) > 0
   4. Filter C (Momentum): Volume > 1.5 * SMA(Vol, 20)
-  5. Exit: Chandelier Exit (Highest - 3*ATR)
-Core Logic (Short):
-  1. Entry: Close < EMA(20) - 2.25*ATR(20)
-  2. Filter A (Macro): Close < SMA(200)
-  3. Filter B (Alpha): Relative Strength (Symbol vs BTC) < 0
-  4. Filter C (Momentum): Volume > 1.5 * SMA(Vol, 20)
-  5. Exit: Chandelier Exit (Lowest + 3*ATR)
-Sizing: Volatility Targeting (Base Risk 1.0%, Squeeze Risk 1.5%)
-Note: HEDGING mode supports multiple long/short positions per symbol.
+  5. Sizing: Volatility Targeting (Base Risk 1.0%, Squeeze Risk 1.5%)
+Note: This strategy implements the "Breathing Trend" philosophy using Static Keltner Channels and RS filtering.
 """
 
 from collections import OrderedDict, deque
@@ -22,7 +15,7 @@ from decimal import Decimal
 
 import numpy as np
 from nautilus_trader.model.data import Bar, BarType
-from nautilus_trader.model.enums import OrderSide, PositionSide
+from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import InstrumentId
 
 from strategy.core.base import BaseStrategy, BaseStrategyConfig
@@ -73,14 +66,14 @@ class KeltnerRSBreakoutConfig(BaseStrategyConfig):
 
 class KeltnerRSBreakoutStrategy(BaseStrategy):
     """
-    Keltner RS Breakout 策略（双向交易）
+    Keltner RS Breakout 策略
 
     核心逻辑：
     1. Squeeze 状态判定：布林带收窄进 1.5x ATR 肯特纳通道
-    2. 做多：趋势(>SMA200) + 放量 + RS>BTC + 突破上轨
-    3. 做空：趋势(<SMA200) + 放量 + RS<BTC + 跌破下轨
+    2. 过滤器：趋势(>SMA200) + 放量(>1.5x均量) + RS(>BTC)
+    3. 触发：突破 2.25x ATR 上轨
     4. 仓位：波动率倒数模型，Squeeze 加成
-    5. 出场：Chandelier Exit（多头用最高价，空头用最低价）
+    5. 出场：Chandelier Exit (最高价 - 3x ATR)
     """
 
     def __init__(self, config: KeltnerRSBreakoutConfig):
