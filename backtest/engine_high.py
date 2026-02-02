@@ -39,6 +39,7 @@ from strategy.core.loader import (
     filter_strategy_params,
     load_strategy_config_class,
 )
+from utils.data_file_checker import check_single_data_file
 from utils.filename_parser import FilenameParser
 from utils.instrument_loader import load_instrument
 from utils.oi_funding_adapter import OIFundingDataLoader
@@ -55,12 +56,13 @@ logger = logging.getLogger(__name__)
 # 数据加载模块
 # ============================================================
 
-def _load_instruments(cfg: BacktestConfig) -> Dict[str, Instrument]:
+def _load_instruments(cfg: BacktestConfig, base_dir: Path) -> Dict[str, Instrument]:
     """
-    加载交易标的信息
+    加载交易标的信息（带数据可用性检查）
 
     Args:
         cfg: 回测配置
+        base_dir: 项目根目录
 
     Returns:
         Dict[str, Instrument]: instrument_id -> Instrument 的映射
@@ -71,7 +73,51 @@ def _load_instruments(cfg: BacktestConfig) -> Dict[str, Instrument]:
     loaded_instruments = {}
     inst_cfg_map = {ic.instrument_id: ic for ic in cfg.instruments}
 
-    for inst_id in inst_cfg_map:
+    # 过滤有数据的标的
+    instruments_with_data = []
+
+    if cfg.start_date and cfg.end_date:
+        for inst_id, inst_cfg in inst_cfg_map.items():
+            # 提取符号用于数据文件检查
+            symbol = inst_id.split("-")[0] if "-" in inst_id else inst_id.split(".")[0]
+
+            # 构建时间周期字符串
+            if cfg.data_feeds:
+                first_feed = cfg.data_feeds[0]
+                from nautilus_trader.model.enums import BarAggregation
+                unit_map = {
+                    BarAggregation.MINUTE: "m",
+                    BarAggregation.HOUR: "h",
+                    BarAggregation.DAY: "d"
+                }
+                timeframe = f"{first_feed.bar_period}{unit_map.get(first_feed.bar_aggregation, 'h')}"
+            else:
+                timeframe = "1h"
+
+            # 检查主数据文件是否存在
+            has_data, _ = check_single_data_file(
+                symbol=symbol,
+                start_date=cfg.start_date,
+                end_date=cfg.end_date,
+                timeframe=timeframe,
+                exchange=inst_cfg.venue_name.lower(),
+                base_dir=base_dir,
+            )
+
+            if has_data:
+                instruments_with_data.append(inst_id)
+            else:
+                logger.debug(f"⏭️ Skipping {inst_id}: no data file")
+
+        if not instruments_with_data:
+            raise InstrumentLoadError("No instruments with available data found", "all")
+
+        logger.info(f"📊 Found {len(instruments_with_data)}/{len(inst_cfg_map)} instruments with data")
+    else:
+        instruments_with_data = list(inst_cfg_map.keys())
+        logger.warning("⚠️ start_date 或 end_date 未配置，跳过数据可用性检查")
+
+    for inst_id in instruments_with_data:
         inst_cfg = inst_cfg_map[inst_id]
         inst_path = inst_cfg.get_json_path()
 
@@ -540,8 +586,8 @@ def run_high_level(cfg: BacktestConfig, base_dir: Path):
             cfg.strategy.module_path, cfg.strategy.resolve_config_class()
         )
 
-        # 2. 加载交易标的
-        loaded_instruments = _load_instruments(cfg)
+        # 2. 加载交易标的（带数据可用性检查）
+        loaded_instruments = _load_instruments(cfg, base_dir)
         logger.info(f"✅ Loaded {len(loaded_instruments)} instruments")
 
         # 3. 导入数据到Parquet目录
