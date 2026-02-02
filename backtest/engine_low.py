@@ -403,7 +403,7 @@ def run_low_level(cfg: BacktestConfig, base_dir: Path):
         venue_name = cfg.instrument.venue_name if cfg.instrument else "BINANCE"
         engine.add_venue(
             venue=Venue(venue_name),
-            oms_type=OmsType.NETTING,
+            oms_type=OmsType.HEDGING,
             book_type=BookType.L1_MBP,
             account_type=AccountType.MARGIN,
             base_currency=USDT,

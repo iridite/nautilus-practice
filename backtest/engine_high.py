@@ -607,7 +607,7 @@ def _run_backtest_with_custom_data(
     venue_configs = [
         BacktestVenueConfig(
             name=venue_name,
-            oms_type="NETTING",
+            oms_type="HEDGING",
             account_type="MARGIN",
             base_currency="USDT",
             starting_balances=cfg.initial_balances,

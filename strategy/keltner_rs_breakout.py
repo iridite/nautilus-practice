@@ -240,25 +240,25 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
         if total_positions >= self.config.max_positions:
             return
 
-        # 5. Funding Rate Guard：资金费率过高时拒绝开仓
+        # 4. Funding Rate Guard：资金费率过高时拒绝开仓
         funding_rate = self._get_funding_rate()
         if funding_rate is not None and funding_rate > 0.0005:
             return
 
-        # 6. Regime 检查：价格必须在 SMA200 上方（上升趋势）
+        # 5. Regime 检查：价格必须在 SMA200 上方（上升趋势）
         if close < self.sma:
             return
 
-        # 7. RS 检查
+        # 6. RS 检查
         if not self._check_relative_strength():
             return
 
-        # 8. Volume 检查
+        # 7. Volume 检查
         volume = float(bar.volume)
         if self.volume_sma is None or volume < self.volume_sma * self.config.volume_multiplier:
             return
 
-        # 9. Trigger 检查
+        # 8. Trigger 检查
         if self.ema is None or self.atr is None:
             return
 
@@ -266,7 +266,7 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
         if close <= keltner_trigger_upper:
             return
 
-        # 10. 执行入场
+        # 9. 执行入场
         self._handle_entry(bar, is_squeezing, keltner_trigger_upper)
 
     def _update_indicators(self) -> None:
@@ -465,6 +465,8 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
 
         # 遍历所有持仓，独立计算止损
         positions = self.cache.positions_open(instrument_id=self.instrument.id)
+        positions_to_close = []  # 收集需要平仓的持仓
+
         for pos in positions:
             pos_id = pos.id
             if pos_id not in self.positions_tracker:
@@ -478,22 +480,26 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
 
             # 检查是否触发止损
             if close < trailing_stop:
-                # 平仓单个持仓
-                order = self.order_factory.market(
-                    instrument_id=self.instrument.id,
-                    order_side=OrderSide.SELL,
-                    quantity=pos.quantity,
-                )
-                self.submit_order(order)
+                positions_to_close.append((pos, trailing_stop, highest_high))
 
-                self.log.info(
-                    f"Chandelier Exit 平仓 (Position {pos_id}): "
-                    f"price={close:.2f}, stop={trailing_stop:.2f}, "
-                    f"highest={highest_high:.2f}"
-                )
+        # 执行平仓操作（避免在遍历时修改字典）
+        for pos, trailing_stop, highest_high in positions_to_close:
+            order = self.order_factory.market(
+                instrument_id=self.instrument.id,
+                order_side=OrderSide.SELL,
+                quantity=pos.quantity,
+            )
+            self.submit_order(order)
 
-                # 清理持仓跟踪
-                del self.positions_tracker[pos_id]
+            self.log.info(
+                f"Chandelier Exit 平仓 (Position {pos.id}): "
+                f"price={close:.2f}, stop={trailing_stop:.2f}, "
+                f"highest={highest_high:.2f}"
+            )
+
+            # 清理持仓跟踪
+            if pos.id in self.positions_tracker:
+                del self.positions_tracker[pos.id]
 
     def on_order_filled(self, event) -> None:
         """订单成交回调（HEDGING 模式：关联订单与持仓）"""
