@@ -401,9 +401,14 @@ def run_low_level(cfg: BacktestConfig, base_dir: Path):
 
         # 3. 配置交易所
         venue_name = cfg.instrument.venue_name if cfg.instrument else "BINANCE"
+
+        # 从策略配置中读取 oms_type
+        oms_type_str = getattr(cfg.strategy_config, 'oms_type', 'HEDGING')
+        oms_type = OmsType.HEDGING if oms_type_str == 'HEDGING' else OmsType.NETTING
+
         engine.add_venue(
             venue=Venue(venue_name),
-            oms_type=OmsType.HEDGING,
+            oms_type=oms_type,
             book_type=BookType.L1_MBP,
             account_type=AccountType.MARGIN,
             base_currency=USDT,

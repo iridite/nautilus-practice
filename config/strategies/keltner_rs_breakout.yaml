@@ -7,6 +7,13 @@ config_class: "KeltnerRSBreakoutConfig"
 
 # 策略参数
 parameters:
+  # 持仓模式配置
+  # oms_type: 订单管理系统类型
+  # - NETTING: 净持仓模式，每个币对最多1个仓位（多空会合并）
+  # - HEDGING: 对冲持仓模式，支持同一币对开多个仓位（多空独立）
+  # 默认: HEDGING（支持双向交易和多持仓）
+  oms_type: "HEDGING"
+
   # 多币种配置（策略负责交易对象）
   symbols: ["ETHUSDT", "SOLUSDT", "BNBUSDT", "DOGEUSDT"]
   timeframe: "1d"
@@ -50,11 +57,17 @@ parameters:
   leverage: 1
 
   # max_positions: 最大持仓数量限制
-  # 重要说明（HEDGING 模式）：
-  # 1. 策略使用 HEDGING 模式（对冲持仓），支持对同一币对开多个仓位
-  # 2. max_positions 限制的是所有币对的总持仓数（不区分币对）
-  # 3. 当前配置了 4 个标的 (ETH/SOL/BNB/DOGE)
-  # 4. 设置 max_positions=10 意味着可以同时持有最多 10 个仓位
-  #    例如：ETH 3个 + SOL 2个 + BNB 3个 + DOGE 2个 = 10个总仓位
-  # 5. 每个持仓独立管理止损，使用各自的 Chandelier Exit
+  # 说明（根据 oms_type 不同而不同）：
+  #
+  # HEDGING 模式（当前配置）：
+  # - 支持对同一币对开多个仓位（多空独立）
+  # - max_positions 限制所有币对的总持仓数
+  # - 例如：max_positions=10 可以是 ETH 3个 + SOL 2个 + BNB 3个 + DOGE 2个
+  # - 每个持仓独立管理止损
+  #
+  # NETTING 模式（如需切换）：
+  # - 每个币对最多1个仓位（多空会合并）
+  # - max_positions 限制不同币对的数量
+  # - 例如：4个标的最多持有4个仓位
+  # - 建议设置为 symbols 列表长度
   max_positions: 10

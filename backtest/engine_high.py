@@ -604,10 +604,24 @@ def _run_backtest_with_custom_data(
         else cfg.data_feeds[0].csv_file_name.split("/")[-1].split("-")[0]
     )
 
+    # 从策略配置中读取 oms_type（如果有多个策略，使用第一个策略的配置）
+    oms_type = "HEDGING"  # 默认值
+    if strategies and hasattr(strategies[0], 'config_path'):
+        try:
+            import yaml
+            config_path = base_dir / strategies[0].config_path
+            if config_path.exists():
+                with open(config_path, 'r') as f:
+                    strategy_config = yaml.safe_load(f)
+                    if 'parameters' in strategy_config and 'oms_type' in strategy_config['parameters']:
+                        oms_type = strategy_config['parameters']['oms_type']
+        except Exception:
+            pass  # 使用默认值
+
     venue_configs = [
         BacktestVenueConfig(
             name=venue_name,
-            oms_type="HEDGING",
+            oms_type=oms_type,
             account_type="MARGIN",
             base_currency="USDT",
             starting_balances=cfg.initial_balances,
