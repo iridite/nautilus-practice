@@ -30,9 +30,14 @@
 """
 import calendar
 import json
+import sys
+from pathlib import Path
 
 import pandas as pd
 from tqdm import tqdm
+
+# 添加项目根目录到 Python 路径
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
 # 使用统一的工具函数
 from utils import get_project_root
@@ -52,8 +57,8 @@ STABLECOINS = [
 MIN_COUNT_RATIO = 0.9  # 数据完整度阈值
 TOP_Ns = [1, 5, 10, 25, 50, 100]  # 选取前 N 个币种
 
-# 更新频率配置：支持 "M"(月度), "W-MON"(周度), "2W-MON"(双周)
-REBALANCE_FREQ = "M"
+# 更新频率配置：支持 "ME"(月度), "W-MON"(周度), "2W-MON"(双周)
+REBALANCE_FREQ = "ME"
 
 
 def validate_config():
@@ -72,7 +77,7 @@ def validate_config():
             raise ValueError(f"TOP_Ns 必须包含正整数，发现无效值: {n}")
 
     # 验证 REBALANCE_FREQ
-    valid_freqs = ["M", "W-MON", "2W-MON"]
+    valid_freqs = ["ME", "W-MON", "2W-MON"]
     if REBALANCE_FREQ not in valid_freqs:
         raise ValueError(f"REBALANCE_FREQ 必须是 {valid_freqs} 之一，当前值: {REBALANCE_FREQ}")
 
@@ -100,7 +105,7 @@ def get_expected_days(freq: str, period_start: pd.Timestamp) -> int:
     """
     根据频率获取期望的数据天数
     """
-    if freq == "M":
+    if freq == "ME":
         return get_days_in_month(period_start.year, period_start.month)
     elif freq == "W-MON":
         return 7
@@ -164,7 +169,7 @@ def generate_universe():
                     continue
 
                 # 根据频率生成时间字符串
-                if REBALANCE_FREQ == "M":
+                if REBALANCE_FREQ == "ME":
                     period_str = period_start.strftime("%Y-%m")
                 elif REBALANCE_FREQ == "W-MON":
                     period_str = period_start.strftime("%Y-W%W")
