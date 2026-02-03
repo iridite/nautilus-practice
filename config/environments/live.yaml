@@ -1,0 +1,49 @@
+# Live 实盘交易环境配置
+# 警告: 此配置用于真实资金交易，请谨慎使用
+
+trading:
+  venue: BINANCE
+  instrument_type: SWAP
+  initial_balance: 10000
+  currency: USDT
+  main_timeframe: 1d
+  trend_timeframe: 4h
+
+backtest:
+  start_date: "2024-01-01"
+  end_date: "2024-12-31"
+
+logging:
+  level: INFO
+  file_level: DEBUG
+  components:
+    Portfolio: INFO
+    RiskEngine: INFO
+    ExecutionEngine: INFO
+  components_only: true
+
+file_cleanup:
+  enabled: true
+  max_files_per_dir: 100
+  target_dirs:
+    - log
+    - output
+
+# Live 实盘配置
+live:
+  venue: BINANCE
+  instrument_ids:
+    - ETHUSDT-PERP.BINANCE
+
+  # API 凭证环境变量
+  api_key_env: BINANCE_API_KEY
+  api_secret_env: BINANCE_API_SECRET
+  api_passphrase_env: ""
+
+  # 执行引擎配置
+  reconciliation: true
+  reconciliation_lookback_mins: 1440
+  filter_position_reports: true
+
+  # 缓存配置
+  flush_cache_on_start: false

@@ -9,7 +9,39 @@ Core Logic:
   5. Filter D (Momentum): Volume > 1.5 * SMA(Vol, 20)
   6. Sizing: Volatility Targeting (Base Risk 1.0%, Squeeze Risk 1.5%)
   7. Exit: Chandelier Exit (Highest - 2x ATR) + Time Stop (3 bars)
-Note: This strategy implements the "Breathing Trend" philosophy using Static Keltner Channels and RS filtering.
+
+Two-Layer Filtering Mechanism:
+  Layer 1 - Universe Selection:
+    - Dynamically filters active coins based on trading volume
+    - Updates periodically (Monthly/Weekly/Bi-weekly)
+    - Ensures liquidity and data quality
+
+  Layer 2 - Relative Strength (RS) Filtering:
+    - Operates within the active Universe pool
+    - Calculates weighted RS: 0.4 * RS(5d) + 0.6 * RS(20d)
+    - Only trades coins with RS > 0 (outperforming BTC)
+    - Ensures buying strong momentum coins in active pool
+
+Note: This strategy implements the "Breathing Trend" philosophy using Static Keltner Channels
+and dual-layer filtering (Universe → RS) to ensure trading reasonable targets.
+
+Universe & RS Filtering Mechanism:
+  This strategy implements a TWO-LAYER filtering system to ensure trading only strong assets:
+
+  Layer 1 - Universe Pool Selection:
+    - Dynamically selects active trading pairs based on historical turnover
+    - Updates periodically (Monthly/Weekly/Bi-weekly configurable)
+    - Filters out stablecoins and low-liquidity pairs
+    - Prevents look-ahead bias: T period data generates T+1 period universe
+
+  Layer 2 - Relative Strength (RS) Filtering:
+    - Operates WITHIN the active universe pool
+    - Calculates combined RS score: 0.4 * RS(5d) + 0.6 * RS(20d)
+    - RS = (Symbol% - BTC%) where Symbol% and BTC% are percentage returns
+    - Only enters positions when RS > 0 (symbol outperforms BTC)
+    - Ensures buying the strongest assets within the active pool
+
+  Result: Universe narrows the pool → RS selects the strongest within the pool
 """
 
 import json

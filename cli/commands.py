@@ -1,5 +1,6 @@
 """CLI 命令实现"""
 
+import asyncio
 import logging
 from pathlib import Path
 
@@ -69,6 +70,22 @@ def update_instrument_definitions(adapter, base_dir: Path, universe_symbols: set
             update_instruments(list(instrument_ids), base_dir / "data" / "instrument")
     except Exception as e:
         logger.error(f"⚠️ Error updating instruments: {e}")
+
+
+def run_live(args, env_name=None):
+    """执行实盘交易"""
+    from live.engine import run_live
+
+    logger.info("🚀 Starting live trading...")
+    asyncio.run(run_live(env_name))
+
+
+def run_sandbox(args, env_name=None):
+    """执行沙盒交易"""
+    from sandbox.engine import run_sandbox
+
+    logger.info("🧪 Starting sandbox trading...")
+    asyncio.run(run_sandbox(env_name))
 
 
 def run_backtest(args, adapter, base_dir: Path):

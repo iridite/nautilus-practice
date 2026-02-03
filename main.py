@@ -1,9 +1,9 @@
 import argparse
 import json
+import logging
 import sys
 from pathlib import Path
 
-import logging
 logger = logging.getLogger(__name__)
 
 # Add workspace root to sys.path
@@ -13,6 +13,8 @@ sys.path.insert(0, str(BASE_DIR))
 from cli.commands import (
     check_and_fetch_strategy_data,
     run_backtest,
+    run_live,
+    run_sandbox,
     update_instrument_definitions,
 )
 from core.adapter import get_adapter
@@ -48,7 +50,7 @@ def load_universe_symbols(adapter, base_dir: Path) -> set:
 
 def parse_arguments():
     """解析命令行参数"""
-    parser = argparse.ArgumentParser(description="Nautilus Practice Backtest CLI")
+    parser = argparse.ArgumentParser(description="Nautilus Practice Trading CLI")
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
 
     backtest_parser = subparsers.add_parser("backtest", help="Run backtest")
@@ -58,6 +60,12 @@ def parse_arguments():
     backtest_parser.add_argument("--force-oi-fetch", action="store_true")
     backtest_parser.add_argument("--oi-exchange", choices=["binance", "okx", "auto"], default="auto")
     backtest_parser.add_argument("--max-retries", type=int, default=3)
+
+    sandbox_parser = subparsers.add_parser("sandbox", help="Run sandbox trading")
+    sandbox_parser.add_argument("--env", type=str, help="Environment name (default: from active.yaml)")
+
+    live_parser = subparsers.add_parser("live", help="Run live trading")
+    live_parser.add_argument("--env", type=str, help="Environment name (default: from active.yaml)")
 
     return parser.parse_args()
 
@@ -78,6 +86,10 @@ def main():
         check_and_fetch_strategy_data(args, adapter, BASE_DIR, universe_symbols)
         update_instrument_definitions(adapter, BASE_DIR, universe_symbols)
         run_backtest(args, adapter, BASE_DIR)
+    elif args.command == "sandbox":
+        run_sandbox(args, getattr(args, 'env', None))
+    elif args.command == "live":
+        run_live(args, getattr(args, 'env', None))
 
 
 if __name__ == "__main__":

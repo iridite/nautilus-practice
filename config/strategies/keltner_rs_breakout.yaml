@@ -35,8 +35,8 @@ parameters:
   # 风控参数
   base_risk_pct: 0.01
   high_conviction_risk_pct: 0.015
-  stop_loss_atr_multiplier: 2.0
-  enable_time_stop: true
+  stop_loss_atr_multiplier: 2.5
+  enable_time_stop: false
   time_stop_bars: 3
   time_stop_momentum_threshold: 0.01
 

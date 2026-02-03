@@ -422,6 +422,45 @@ class SandboxConfig(BaseModel):
         return v
 
 
+class LiveConfig(BaseModel):
+    """Live实盘交易配置"""
+
+    # 交易所配置
+    venue: str = "BINANCE"
+
+    # 标的配置
+    instrument_ids: List[str] = Field(default_factory=list)
+
+    # 账户配置
+    initial_balance: Optional[Decimal] = None
+
+    # API配置
+    api_key_env: str = "BINANCE_API_KEY"
+    api_secret_env: str = "BINANCE_API_SECRET"
+    api_passphrase_env: str = ""
+
+    # 执行引擎配置
+    reconciliation: bool = True
+    reconciliation_lookback_mins: int = 1440
+    filter_position_reports: bool = True
+
+    # 缓存配置
+    flush_cache_on_start: bool = False
+
+    @validator("venue")
+    def validate_venue(cls, v):
+        supported = ["OKX", "BINANCE"]
+        if v.upper() not in supported:
+            raise ValueError(f"Venue must be one of {supported}")
+        return v.upper()
+
+    @validator("instrument_ids")
+    def validate_instruments(cls, v):
+        if not v:
+            raise ValueError("At least one instrument_id is required")
+        return v
+
+
 # ============================================================
 # 环境和路径配置
 # ============================================================
@@ -435,6 +474,7 @@ class EnvironmentConfig(BaseModel):
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
     file_cleanup: FileCleanupConfig = Field(default_factory=FileCleanupConfig)
     sandbox: Optional[SandboxConfig] = None
+    live: Optional[LiveConfig] = None
 
     class Config:
         # 允许额外字段，用于扩展配置

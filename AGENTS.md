@@ -228,6 +228,43 @@ class MyStrategy(BaseStrategy):
 - Access configuration via `self.config.parameter_name` or `config.parameter_name`
 - Reference existing strategies (`dual_thrust.py`, `kalman_pairs.py`) for correct patterns
 
+### Universe and RS Filtering Mechanism
+
+**Two-Layer Filtering System** for optimal instrument selection:
+
+**Layer 1: Universe Filtering** (Dynamic Pool)
+- Filters active instruments based on trading volume and liquidity
+- Updates periodically: Monthly (ME), Weekly (W-MON), or Bi-weekly (2W-MON)
+- Prevents trading illiquid or delisted instruments
+- Implementation: `_update_active_universe()` and `_is_symbol_active()`
+
+**Layer 2: RS Filtering** (Relative Strength)
+- Filters strong instruments within the active pool
+- Compares instrument performance vs BTC benchmark
+- Formula: `combined_rs = 0.4 * RS(5d) + 0.6 * RS(20d)`
+- Entry condition: `combined_rs > 0` (outperforming BTC)
+- Implementation: `_calculate_rs_score()` and `_check_relative_strength()`
+
+**Execution Flow**:
+```nautilus-practice/strategy/keltner_rs_breakout.py#L259-385
+def on_bar(self, bar: Bar) -> None:
+    # ... data updates ...
+    
+    # 4. Universe active status check: skip inactive instruments
+    if not self._is_symbol_active():
+        return
+    
+    # 7. RS check: only trade instruments outperforming BTC
+    if not self._check_relative_strength():
+        return
+```
+
+**Key Benefits**:
+- Universe ensures liquidity and data quality
+- RS ensures alpha generation (buying strength, not weakness)
+- Two independent layers provide robust instrument selection
+- Prevents trading inactive or weak instruments
+
 ### Data Dependency Declaration Mechanism
 
 Strategies declare required data types and timeframes through simple lists:
@@ -899,6 +936,42 @@ btc_prices = [self.btc_price_history[ts] for ts in recent_ts]
     - 过滤器顺序：先检查市场环境（BTC），再检查个股条件
   - 位置：`strategy/keltner_rs_breakout.py:62-69, 114-118, 268-285, 393-406, 431-451, 326-329`
 
+- ✅ Universe 和 RS 筛选机制设计（2026-02-03）
+  - **两层独立筛选机制**：
+    1. **Universe 筛选（第一层）**：
+       - 基于历史成交额动态生成活跃币种池
+       - 支持月度（ME）、周度（W-MON）、双周（2W-MON）更新
+       - 避免未来函数：T 期数据生成 T+1 期交易池
+       - 数据质量控制：剔除稳定币，过滤数据不完整的新币
+       - 实现位置：`strategy/keltner_rs_breakout.py:167-219`
+    2. **RS 筛选（第二层）**：
+       - 在活跃币种池内进一步筛选强势币种
+       - RS 计算：加权组合 `0.4 * RS(5d) + 0.6 * RS(20d)`
+       - 筛选条件：`combined_rs > 0`（相对 BTC 表现更强）
+       - 实现位置：`strategy/keltner_rs_breakout.py:485-544`
+  - **执行流程**（`on_bar` 方法）：
+    ```python
+    # 4. Universe 活跃状态检查：非活跃币种不开仓
+    if not self._is_symbol_active():
+        return
+    
+    # 7. RS 检查：活跃池内筛选强势币种
+    if not self._check_relative_strength():
+        return
+    ```
+  - **设计目标**：
+    - Universe 控制交易池规模和流动性
+    - RS 确保买入的是活跃池中的强势标的
+    - 两层筛选独立运行，互不干扰
+  - **配置示例**：
+    ```yaml
+    parameters:
+      universe_top_n: 25        # Universe 池大小
+      universe_freq: W-MON      # 周度更新
+      rs_short_lookback_days: 5 # RS 短期回溯
+      rs_long_lookback_days: 20 # RS 长期回溯
+    ```
+
 **策略开发经验教训**:
 1. **数量精度问题**：
    - 不同标的的 `size_increment` 和 `size_precision` 不同
@@ -909,9 +982,30 @@ btc_prices = [self.btc_price_history[ts] for ts in recent_ts]
    - 过滤器顺序很重要：先市场环境，再个股条件
    - 必须添加配置开关便于 A/B 测试
    - Warmup 检查必须完整，避免使用未就绪的指标
-3. **代码审查流程**：
+3. **Universe 和 RS 筛选机制**：
+   - Universe 先筛选活跃币种池（基于成交额和数据完整性）
+   - RS 在活跃池内进一步筛选强势币种（相对 BTC 表现）
+   - 两层独立筛选确保买入的是活跃池中的强势标的
+   - 避免买入流动性差或弱势的币种
+4. **代码审查流程**：
    - 实施前必须进行逻辑设计检查
    - 确保符合行业规范（ATR 计算方法、过滤器顺序等）
    - 检查边界条件和异常情况
    - 验证配置参数的合理性
+
+### P0 Code Quality Fixes (2026-02-03)
+- ✅ 异常处理优化（13处修复）
+  - 替换 `except Exception: pass` 为具体异常类型
+  - 添加详细错误日志
+  - 位置：`backtest/engine_high.py` (10处)、`backtest/engine_low.py` (1处)、`utils/data_management/` (2处)
+- ✅ 文件资源管理（1处修复）
+  - 使用 `with` 语句避免文件句柄泄漏
+  - 位置：`backtest/engine_high.py:481`
+- ✅ 网络请求超时保护（4处修复）
+  - 添加 `MAX_ITERATIONS = 1000` 常量
+  - 防止 API 故障时无限等待
+  - 位置：`utils/data_management/data_retrieval.py`
+- ✅ 提交记录：`5f6aaa2`
+- ✅ 测试通过率：103/103 (100%)
+- 参考：`docs/optimization/critical_code_review_2026-02-03.md`
 
