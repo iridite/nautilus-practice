@@ -842,6 +842,13 @@ btc_prices = [self.btc_price_history[ts] for ts in recent_ts]
 - ✅ 统一低级和高级回测的 JSON 文件命名格式（移除 low_ 前缀）
 - ✅ 高级回测引擎完全修复，回测结果：176.26 USDT（超过 170 USDT 目标）
 
+### Code Structure Improvements (2026-02-03)
+- ✅ 修复高级回测引擎模块分隔符位置问题（7处）
+  - 问题：模块级分隔符注释被错误地放在函数内部，导致代码可读性下降
+  - 影响函数：`_load_instruments`, `_check_parquet_coverage`, `_verify_data_consistency`, `_create_strategy_configs`, `_run_backtest_with_custom_data`, `_load_custom_data_to_engine`, `_print_results`
+  - 修复：将所有模块分隔符移至函数之间，符合 Python 代码规范
+  - 结果：提升代码可读性，消除 IDE 警告，不影响运行时行为
+
 ### Universe Generator Optimization (2026-02-02)
 - ✅ 添加模块级文档注释（功能说明、核心特性、使用方法、注意事项）
 - ✅ 修复双周频率 resample 语法错误（2W → 2W-MON）

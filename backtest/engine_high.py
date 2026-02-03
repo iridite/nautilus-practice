@@ -133,12 +133,12 @@ def _load_instruments(cfg: BacktestConfig, base_dir: Path) -> Dict[str, Instrume
                 f"Failed to load instrument {inst_id}: {e}", inst_id, e
             )
 
+    return loaded_instruments
+
+
 # ============================================================
 # 数据验证模块
 # ============================================================
-
-
-    return loaded_instruments
 
 
 def _check_parquet_coverage(
@@ -161,13 +161,13 @@ def _check_parquet_coverage(
     except Exception:
         return False, 0.0
 
+    # 简化逻辑：如果 Parquet 数据存在则返回 True
+    return True, 100.0
+
 
 # ============================================================
 # Parquet 数据处理模块
 # ============================================================
-
-    # 简化逻辑：如果 Parquet 数据存在则返回 True
-    return True, 100.0
 
 
 def _handle_parquet_exists(
@@ -502,13 +502,13 @@ def _verify_data_consistency(
 
         return True
 
+    except Exception:
+        return False
+
 
 # ============================================================
 # 策略配置模块
 # ============================================================
-
-    except Exception:
-        return False
 
 
 def _create_strategy_configs(
@@ -562,12 +562,12 @@ def _create_strategy_configs(
             )
         )
 
+    return strategies
+
+
 # ============================================================
 # 回测执行模块
 # ============================================================
-
-
-    return strategies
 
 
 def run_high_level(cfg: BacktestConfig, base_dir: Path):
@@ -718,13 +718,13 @@ def _run_backtest_with_custom_data(
     logger.info("✅ Backtest Complete.")
 
     # 处理结果
+    if results:
+        _process_backtest_results(cfg, base_dir, results)
+
 
 # ============================================================
 # 自定义数据加载模块
 # ============================================================
-
-    if results:
-        _process_backtest_results(cfg, base_dir, results)
 
 
 def _check_if_needs_custom_data(strategies: List[ImportableStrategyConfig]) -> bool:
@@ -761,6 +761,7 @@ def _load_custom_data_to_engine(
     # 这些数据的加载逻辑主要为低级回测引擎设计
     # 如需使用 OI/Funding 数据，请使用低级回测引擎 (--type low)
     logger.debug("📊 Custom data (OI, Funding Rate) loading skipped in high-level engine")
+
 
 # ============================================================
 # 结果处理模块
@@ -1155,12 +1156,12 @@ def _print_results(
     # 3. AI 可以从 JSON 文件中读取完整配置进行分析
     # 4. 人工查看时也更倾向于查看 JSON 文件而非终端滚动输出
 
+    logger.info("=" * 65 + "\n")
+
+
 # ============================================================
 # 工具函数模块
 # ============================================================
-
-
-    logger.info("=" * 65 + "\n")
 
 
 def catalog_loader(
