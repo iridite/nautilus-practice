@@ -151,29 +151,6 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
             return
 
         universe_file = get_project_root() / "data" / "universe" / f"universe_{self.config.universe_top_n}_{self.config.universe_freq}.json"
-</text>
-
-<old_text line=167>
-    def _update_active_universe(self, timestamp: int) -> None:
-        """根据时间戳更新活跃币种列表"""
-        if not self.universe_data:
-            return
-
-        dt = datetime.fromtimestamp(timestamp / 1e9)
-
-        # 根据 universe_freq 生成周期字符串
-        if self.config.universe_freq == "ME":
-            period_str = dt.strftime("%Y-%m")
-        elif self.config.universe_freq == "W-MON":
-            period_str = dt.strftime("%Y-W%U")
-        elif self.config.universe_freq == "2W-MON":
-            # 双周：计算周数并除以2
-            week_num = int(dt.strftime("%U"))
-            biweek_num = (week_num // 2) + 1
-            period_str = f"{dt.year}-W{biweek_num:02d}"
-        else:
-            # 默认使用月度格式
-            period_str = dt.strftime("%Y-%m")
         if not universe_file.exists():
             self.log.warning(f"Universe 文件不存在: {universe_file}")
             return
