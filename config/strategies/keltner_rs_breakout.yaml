@@ -35,15 +35,27 @@ parameters:
   # 风控参数
   base_risk_pct: 0.01
   high_conviction_risk_pct: 0.015
-  stop_loss_atr_multiplier: 3.0
+  stop_loss_atr_multiplier: 2.0
+  enable_time_stop: true
+  time_stop_bars: 3
+  time_stop_momentum_threshold: 0.01
 
   # 过滤器参数
   volume_multiplier: 1.5
-  rs_lookback_days: 7
+  rs_short_lookback_days: 5
+  rs_long_lookback_days: 20
+  rs_short_weight: 0.4
+  rs_long_weight: 0.6
   squeeze_memory_days: 3
 
+  # BTC 市场状态过滤器参数
+  enable_btc_regime_filter: true
+  btc_regime_sma_period: 200
+  btc_regime_atr_period: 14
+  btc_max_atr_pct: 0.03
+
   # Universe 参数
-  universe_top_n: 10
+  universe_top_n: 25
 
   # 仓位管理
   # 推荐使用 ATR 风险模式（注释掉 qty_percent）
