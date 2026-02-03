@@ -872,3 +872,46 @@ btc_prices = [self.btc_price_history[ts] for ts in recent_ts]
 - 可选优化：内存效率、输入验证、数据完整度调整
 - 审计流程：先修复严重问题，再处理中低优先级，最后可选优化
 
+### Strategy Bug Fixes (2026-02-03)
+- ✅ 修复 Keltner RS Breakout 策略数量精度问题
+  - 问题：低级回测引擎报错，ATR 风险模式计算的数量小于标的最小增量时被四舍五入为零
+  - 原因：某些标的（如 AVAXUSDT-PERP）要求整数数量（size_increment=1），但计算出的数量可能为 0.22
+  - 修复：在调用 `make_qty` 前检查数量是否小于 `size_increment`，避免抛出异常
+  - 位置：`strategy/keltner_rs_breakout.py:510-520`
+  - 影响：仓位过小的交易信号会被跳过并记录警告，不影响策略核心逻辑
+  - 测试：低级/高级回测引擎均已验证通过
+
+### Strategy Feature Enhancements (2026-02-03)
+- ✅ 添加 BTC 市场状态过滤器（Market Regime Filter）
+  - 目标：防止在 BTC 弱势或横盘时做多山寨币（80% 假突破）
+  - 实现：
+    - BTC 趋势判定：`BTC > SMA(200)`
+    - BTC 波动率检查：`ATR% < 3%`（防止崩盘期间开仓）
+  - 配置参数：
+    - `enable_btc_regime_filter: bool = True` - 过滤器开关
+    - `btc_regime_sma_period: int = 200` - BTC 趋势判定周期
+    - `btc_regime_atr_period: int = 14` - BTC 波动率计算周期
+    - `btc_max_atr_pct: float = 0.03` - BTC ATR 百分比阈值（3%）
+  - 集成位置：Universe 检查之后、Funding Rate 之前
+  - 核心设计：
+    - 使用 ATR 百分比（ATR/Price）而非绝对值，避免价格变化导致误判
+    - 保守策略：BTC 指标未就绪时返回 False，不开仓
+    - 过滤器顺序：先检查市场环境（BTC），再检查个股条件
+  - 位置：`strategy/keltner_rs_breakout.py:62-69, 114-118, 268-285, 393-406, 431-451, 326-329`
+
+**策略开发经验教训**:
+1. **数量精度问题**：
+   - 不同标的的 `size_increment` 和 `size_precision` 不同
+   - 必须在调用 `make_qty` 前检查数量是否满足最小要求
+   - 对于整数数量标的，ATR 风险模式可能导致数量过小
+2. **市场状态过滤器设计**：
+   - ATR 应使用百分比（ATR/Price）而非绝对值
+   - 过滤器顺序很重要：先市场环境，再个股条件
+   - 必须添加配置开关便于 A/B 测试
+   - Warmup 检查必须完整，避免使用未就绪的指标
+3. **代码审查流程**：
+   - 实施前必须进行逻辑设计检查
+   - 确保符合行业规范（ATR 计算方法、过滤器顺序等）
+   - 检查边界条件和异常情况
+   - 验证配置参数的合理性
+
