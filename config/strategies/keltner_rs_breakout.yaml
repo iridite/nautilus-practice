@@ -55,7 +55,7 @@ parameters:
   btc_max_atr_pct: 0.03
 
   # Universe 参数
-  universe_top_n: 3
+  universe_top_n: 15
   universe_freq: W-MON # Universe 更新周期（ME=月度, W-MON=周度, 2W-MON=双周）
 
   # 仓位管理
@@ -79,4 +79,4 @@ parameters:
   # - max_positions 限制不同币对的数量
   # - 例如：4个标的最多持有4个仓位
   # - 建议设置为 symbols 列表长度
-  max_positions: 10
+  max_positions: 15
