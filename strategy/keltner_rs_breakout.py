@@ -3,10 +3,11 @@ Strategy: Keltner RS Breakout (KRB)
 Type: Medium-Frequency Trend Following
 Core Logic:
   1. Entry: Close > EMA(20) + 2.25*ATR(20)
-  2. Filter A (Macro): Close > SMA(200)
-  3. Filter B (Alpha): Relative Strength (Symbol vs BTC) > 0
-  4. Filter C (Momentum): Volume > 1.5 * SMA(Vol, 20)
-  5. Sizing: Volatility Targeting (Base Risk 1.0%, Squeeze Risk 1.5%)
+  2. Filter A (Market Regime): BTC > SMA(200) and BTC_ATR% < 3%
+  3. Filter B (Macro): Close > SMA(200)
+  4. Filter C (Alpha): Relative Strength (Symbol vs BTC) > 0
+  5. Filter D (Momentum): Volume > 1.5 * SMA(Vol, 20)
+  6. Sizing: Volatility Targeting (Base Risk 1.0%, Squeeze Risk 1.5%)
 Note: This strategy implements the "Breathing Trend" philosophy using Static Keltner Channels and RS filtering.
 """
 
@@ -63,6 +64,12 @@ class KeltnerRSBreakoutConfig(BaseStrategyConfig):
     rs_lookback_days: int = 7
     squeeze_memory_days: int = 3
 
+    # BTC 市场状态过滤器参数
+    enable_btc_regime_filter: bool = True  # 是否启用 BTC 市场状态过滤器
+    btc_regime_sma_period: int = 200  # BTC 趋势判定周期
+    btc_regime_atr_period: int = 14  # BTC 波动率计算周期
+    btc_max_atr_pct: float = 0.03  # BTC ATR 百分比阈值（3%）
+
     # Universe 参数
     universe_top_n: int | None = None  # Universe 规模（1, 5, 10, 25, 50, 100），None 表示不使用
 
@@ -77,7 +84,7 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
 
     核心逻辑：
     1. Squeeze 状态判定：布林带收窄进 1.5x ATR 肯特纳通道
-    2. 过滤器：趋势(>SMA200) + 放量(>1.5x均量) + RS(>BTC)
+    2. 过滤器：BTC市场状态 + 趋势(>SMA200) + 放量(>1.5x均量) + RS(>BTC)
     3. 触发：突破 2.25x ATR 上轨
     4. 仓位：波动率倒数模型，Squeeze 加成
     5. 出场：Chandelier Exit (最高价 - 3x ATR)
@@ -105,6 +112,12 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
         # 价格历史（用于 RS 计算）- 使用 OrderedDict 保持插入顺序，优化清理效率
         self.price_history = OrderedDict()  # {timestamp: price}
         self.btc_price_history = OrderedDict()  # {timestamp: price}
+
+        # BTC 市场状态指标
+        self.btc_closes = deque(maxlen=max(config.btc_regime_sma_period, config.btc_regime_atr_period) + 1)
+        self.btc_trs = deque(maxlen=config.btc_regime_atr_period)
+        self.btc_sma = None
+        self.btc_atr = None
 
         # Squeeze 状态历史
         self.squeeze_history = deque(maxlen=config.squeeze_memory_days)
@@ -256,7 +269,22 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
 
         elif bar.bar_type.instrument_id == self.btc_instrument_id:
             # BTC数据
-            self.btc_price_history[bar.ts_event] = float(bar.close)
+            btc_close = float(bar.close)
+            self.btc_price_history[bar.ts_event] = btc_close
+
+            # 更新 BTC 市场状态指标
+            self.btc_closes.append(btc_close)
+            if len(self.btc_closes) > 1:
+                btc_high = float(bar.high)
+                btc_low = float(bar.low)
+                btc_tr = max(
+                    btc_high - btc_low,
+                    abs(btc_high - self.btc_closes[-2]),
+                    abs(btc_low - self.btc_closes[-2])
+                )
+                self.btc_trs.append(btc_tr)
+
+            self._update_btc_indicators()
 
             # 清理过期数据（OrderedDict 保证 FIFO 顺序，直接删除第一个元素）
             if len(self.btc_price_history) > self.config.max_history_size:
@@ -297,12 +325,17 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
         if not self._is_symbol_active():
             return
 
-        # 5. Funding Rate Guard
+        # 5. BTC Market Regime 检查
+        if self.config.enable_btc_regime_filter:
+            if not self._check_btc_market_regime():
+                return
+
+        # 6. Funding Rate Guard
         funding_rate = self._get_funding_rate()
         if funding_rate is not None and funding_rate > 0.0005:
             return
 
-        # 6. Regime 检查
+        # 7. Regime 检查
         if close < self.sma:
             return
 
@@ -364,6 +397,20 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
         if len(self.volumes) >= self.config.volume_period:
             self.volume_sma = sum(list(self.volumes)[-self.config.volume_period:]) / self.config.volume_period
 
+    def _update_btc_indicators(self) -> None:
+        """更新 BTC 市场状态指标"""
+        # BTC SMA(200)
+        if len(self.btc_closes) >= self.config.btc_regime_sma_period:
+            self.btc_sma = sum(list(self.btc_closes)[-self.config.btc_regime_sma_period:]) / self.config.btc_regime_sma_period
+
+        # BTC ATR(14) - Wilder's Smoothing
+        if len(self.btc_trs) >= self.config.btc_regime_atr_period:
+            if self.btc_atr is None:
+                self.btc_atr = sum(list(self.btc_trs)[-self.config.btc_regime_atr_period:]) / self.config.btc_regime_atr_period
+            else:
+                alpha = 1.0 / self.config.btc_regime_atr_period
+                self.btc_atr = alpha * self.btc_trs[-1] + (1 - alpha) * self.btc_atr
+
 
 
     def _get_funding_rate(self) -> float | None:
@@ -387,6 +434,28 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
 
         # Squeeze: 布林带完全在 Keltner 通道内
         return self.bb_upper < keltner_upper and self.bb_lower > keltner_lower
+
+    def _check_btc_market_regime(self) -> bool:
+        """检查 BTC 市场状态是否适合做多山寨币"""
+        # Warmup 检查
+        if self.btc_sma is None or self.btc_atr is None:
+            return False
+
+        # 获取最新 BTC 价格
+        if not self.btc_closes:
+            return False
+        btc_close = self.btc_closes[-1]
+
+        # 趋势检查：BTC 处于牛市结构
+        if btc_close <= self.btc_sma:
+            return False
+
+        # 波动率检查：ATR 百分比未极端放大
+        btc_atr_pct = self.btc_atr / btc_close
+        if btc_atr_pct > self.config.btc_max_atr_pct:
+            return False
+
+        return True
 
     def _calculate_rs_score(self) -> float | None:
         """计算 RS 分数（用于多信号竞争排序）"""
