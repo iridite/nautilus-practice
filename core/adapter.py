@@ -141,7 +141,8 @@ class ConfigAdapter:
         # 优先使用 universe_top_n 参数
         universe_top_n = params.get("universe_top_n")
         if universe_top_n:
-            universe_file = project_root / "data" / "universe" / f"universe_{universe_top_n}_ME.json"
+            universe_freq = params.get("universe_freq", "ME")
+            universe_file = project_root / "data" / "universe" / f"universe_{universe_top_n}_{universe_freq}.json"
             if universe_file.exists():
                 with open(universe_file, "r") as f:
                     u_data = json.load(f)
@@ -156,13 +157,13 @@ class ConfigAdapter:
                     return symbols
             else:
                 # Universe 文件不存在时抛出严重错误
-                available_files = sorted([f.stem for f in (project_root / "data" / "universe").glob("universe_*_ME.json")])
-                available_ns = [f.replace("universe_", "").replace("_ME", "") for f in available_files]
+                available_files = sorted([f.stem for f in (project_root / "data" / "universe").glob("universe_*.json")])
+                available_configs = [f.replace("universe_", "") for f in available_files]
                 raise ConfigValidationError(
                     f"配置的 Universe 文件不存在: {universe_file}\n"
-                    f"配置参数: universe_top_n={universe_top_n}\n"
-                    f"可用的 Universe 规模: {', '.join(available_ns)}\n"
-                    f"请修改配置文件中的 universe_top_n 参数，或运行以下命令生成缺失的 Universe 文件：\n"
+                    f"配置参数: universe_top_n={universe_top_n}, universe_freq={universe_freq}\n"
+                    f"可用的 Universe 配置: {', '.join(available_configs)}\n"
+                    f"请修改配置文件中的 universe_top_n 或 universe_freq 参数，或运行以下命令生成缺失的 Universe 文件：\n"
                     f"  uv run python scripts/generate_universe.py"
                 )
 
