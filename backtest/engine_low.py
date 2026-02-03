@@ -219,7 +219,7 @@ def _process_backtest_results(
             strategy_config = {}
 
         # 获取回测统计数据 - 从 trader 报告中计算
-        venue = Venue(cfg.instrument.venue_name) if cfg.instrument else Venue("BINANCE")
+        Venue(cfg.instrument.venue_name) if cfg.instrument else Venue("BINANCE")
 
         # 获取订单和持仓统计
         orders_report = engine.trader.generate_order_fills_report()
@@ -229,7 +229,6 @@ def _process_backtest_results(
 
         # 初始化统计字典
         stats_pnls = {}
-        stats_returns = {}
 
         # 从持仓报告中计算 PnL 统计
         try:
@@ -288,7 +287,7 @@ def _process_backtest_results(
                             avg_loss = abs(float(losers.mean())) if len(losers) > 0 else 0
                             profit_factor = float(avg_win / avg_loss) if avg_loss > 0 else 0
 
-                            stats_returns = {
+                            {
                                 'Returns Volatility (252 days)': std_return * np.sqrt(252),
                                 'Average (Return)': avg_return,
                                 'Average Loss (Return)': float(losers.mean()) if len(losers) > 0 else None,
@@ -345,8 +344,8 @@ def _process_backtest_results(
             if returns_stats:
                 for key, val in returns_stats.items():
                     result_dict["returns"][str(key)] = val if val == val else None
-        except Exception:
-            pass
+        except (AttributeError, KeyError, ValueError) as e:
+            logger.warning(f"Failed to generate returns report: {e}")
 
         # 保存 JSON 结果
         result_dir = base_dir / "output" / "backtest" / "result"

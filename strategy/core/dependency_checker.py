@@ -8,7 +8,7 @@ from utils.data_file_checker import check_funding_data_exists, check_oi_data_exi
 logger = logging.getLogger(__name__)
 
 
-def extract_strategy_symbols(strategy_config, universe_symbols: set) -> set:
+def extract_strategy_symbols(strategy_config, universe_symbols: set | None = None) -> set:
     """提取策略相关的符号列表"""
     symbols = set()
 
@@ -36,7 +36,7 @@ def check_strategy_data_dependencies(
     start_date: str,
     end_date: str,
     base_dir: Path,
-    universe_symbols: set = None
+    universe_symbols: set | None = None
 ) -> dict:
     """检查策略数据依赖并返回缺失的数据任务"""
     tasks = {"oi_tasks": {}, "funding_tasks": {}, "missing_count": 0, "warnings": []}

@@ -4,6 +4,7 @@
 统一的数据获取接口，支持 OHLCV、OI 和 Funding Rate 数据。
 """
 
+import logging
 import time
 from pathlib import Path
 from typing import List, Literal
@@ -17,9 +18,10 @@ from utils.network import retry_fetch
 from utils.symbol_parser import parse_timeframe, resolve_symbol_and_type
 from utils.time_helpers import get_ms_timestamp
 
-
-import logging
 logger = logging.getLogger(__name__)
+
+# 网络请求配置
+MAX_ITERATIONS = 1000  # 最大迭代次数，防止无限循环
 
 def fetch_ohlcv_data(exchange, symbol, timeframe, since, limit_ms, source="auto"):
     """
@@ -31,7 +33,8 @@ def fetch_ohlcv_data(exchange, symbol, timeframe, since, limit_ms, source="auto"
     if source == "auto":
         try:
             return _fetch_ohlcv_ccxt(exchange, symbol, timeframe, since, limit_ms)
-        except Exception:
+        except (IOError, ValueError, KeyError, ConnectionError) as e:
+            logger.warning(f"CCXT fetch failed for {symbol}, falling back to DataFetcher: {e}")
             from .data_fetcher import DataFetcher
             fetcher = DataFetcher()
             df = fetcher.fetch_ohlcv(symbol, timeframe, since, limit_ms, source="auto")
@@ -43,7 +46,9 @@ def fetch_ohlcv_data(exchange, symbol, timeframe, since, limit_ms, source="auto"
 def _fetch_ohlcv_ccxt(exchange, symbol, timeframe, since, limit_ms):
     all_ohlcv = []
     current_since = since
-    while current_since < limit_ms:
+    iteration_count = 0
+    while current_since < limit_ms and iteration_count < MAX_ITERATIONS:
+        iteration_count += 1
         limit_param = 100 if exchange.id == "okx" else 1000
         ohlcv = retry_fetch(
             exchange.fetch_ohlcv,
@@ -62,6 +67,9 @@ def _fetch_ohlcv_ccxt(exchange, symbol, timeframe, since, limit_ms):
         if current_since >= limit_ms:
             break
         time.sleep(exchange.rateLimit / 1000)
+
+    if iteration_count >= MAX_ITERATIONS:
+        logger.warning(f"Reached max iterations ({MAX_ITERATIONS}) for {symbol}")
 
     if not all_ohlcv:
         return pd.DataFrame()
@@ -210,9 +218,11 @@ def fetch_okx_oi_history(
     """获取 OKX 永续合约持仓量历史数据"""
     all_data = []
     current_end = end_ms
+    iteration_count = 0
     inst_id = symbol.replace("/", "-")
 
-    while current_end > start_ms:
+    while current_end > start_ms and iteration_count < MAX_ITERATIONS:
+        iteration_count += 1
         try:
             params = {
                 "instId": inst_id,
@@ -254,6 +264,9 @@ def fetch_okx_oi_history(
             logger.error(f"Warning: Error fetching OKX OI data: {e}")
             break
 
+    if iteration_count >= MAX_ITERATIONS:
+        logger.warning(f"Reached max iterations ({MAX_ITERATIONS}) for OKX OI {symbol}")
+
     if not all_data:
         return pd.DataFrame()
 
@@ -269,9 +282,11 @@ def fetch_binance_funding_rate_history(
     """获取 Binance 永续合约资金费率历史数据"""
     all_data = []
     current_start = start_ms
+    iteration_count = 0
     clean_symbol = symbol.replace("/", "").replace(":USDT", "")
 
-    while current_start < end_ms:
+    while current_start < end_ms and iteration_count < MAX_ITERATIONS:
+        iteration_count += 1
         try:
             params = {
                 "symbol": clean_symbol,
@@ -303,6 +318,9 @@ def fetch_binance_funding_rate_history(
             logger.error(f"Warning: Error fetching funding rate data: {e}")
             break
 
+    if iteration_count >= MAX_ITERATIONS:
+        logger.warning(f"Reached max iterations ({MAX_ITERATIONS}) for Binance Funding {symbol}")
+
     if not all_data:
         return pd.DataFrame()
 
@@ -318,9 +336,11 @@ def fetch_okx_funding_rate_history(
     """获取 OKX 永续合约资金费率历史数据"""
     all_data = []
     current_end = end_ms
+    iteration_count = 0
     inst_id = symbol.replace("/", "-")
 
-    while current_end > start_ms:
+    while current_end > start_ms and iteration_count < MAX_ITERATIONS:
+        iteration_count += 1
         try:
             params = {
                 "instId": inst_id,
@@ -359,6 +379,9 @@ def fetch_okx_funding_rate_history(
         except Exception as e:
             logger.error(f"Warning: Error fetching OKX funding rate data: {e}")
             break
+
+    if iteration_count >= MAX_ITERATIONS:
+        logger.warning(f"Reached max iterations ({MAX_ITERATIONS}) for OKX Funding {symbol}")
 
     if not all_data:
         return pd.DataFrame()

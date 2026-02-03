@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import pandas as pd
+import yaml
 from nautilus_trader.backtest.config import (
     BacktestDataConfig,
     BacktestRunConfig,
@@ -24,7 +25,6 @@ from nautilus_trader.config import ImportableStrategyConfig, RiskEngineConfig
 from nautilus_trader.model.data import Bar, BarType
 from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.persistence.catalog import ParquetDataCatalog
-from nautilus_trader.persistence.loaders import CSVBarDataLoader
 from nautilus_trader.persistence.wranglers import BarDataWrangler
 from pandas import DataFrame
 
@@ -42,7 +42,6 @@ from strategy.core.loader import (
 from utils.data_file_checker import check_single_data_file
 from utils.filename_parser import FilenameParser
 from utils.instrument_loader import load_instrument
-from utils.oi_funding_adapter import OIFundingDataLoader
 
 logger = logging.getLogger(__name__)
 
@@ -158,7 +157,8 @@ def _check_parquet_coverage(
         )
         if not existing_intervals:
             return False, 0.0
-    except Exception:
+    except (KeyError, AttributeError) as e:
+        logger.warning(f"Failed to get intervals for {bar_type}: {e}")
         return False, 0.0
 
     # 简化逻辑：如果 Parquet 数据存在则返回 True
@@ -195,7 +195,8 @@ def _handle_parquet_exists(
             try:
                 catalog_loader(catalog, csv_path, inst, bar_type)
                 return f"\r📖 [{feed_idx:3d}/{total_feeds}] Updated: {str(bar_type.instrument_id):<32}"
-            except Exception:
+            except (OSError, ValueError) as e:
+                logger.warning(f"Failed to update Parquet for {bar_type.instrument_id}: {e}")
                 return f"\r⚠️  [{feed_idx:3d}/{total_feeds}] Using Parquet: {str(bar_type.instrument_id):<28}"
         else:
             return f"\r⏩ [{feed_idx:3d}/{total_feeds}] Verified: {str(bar_type.instrument_id):<35}"
@@ -211,7 +212,8 @@ def _handle_parquet_exists(
                 try:
                     catalog_loader(catalog, csv_path, inst, bar_type)
                     return f"\r📖 [{feed_idx:3d}/{total_feeds}] Completed: {str(bar_type.instrument_id):<32}"
-                except Exception:
+                except (OSError, ValueError) as e:
+                    logger.warning(f"Failed to complete Parquet for {bar_type.instrument_id}: {e}")
                     return f"\r⚠️  [{feed_idx:3d}/{total_feeds}] Partial Parquet: {str(bar_type.instrument_id):<25} ({coverage_pct:.1f}%)"
             else:
                 return f"\r⚠️  [{feed_idx:3d}/{total_feeds}] Partial Parquet: {str(bar_type.instrument_id):<25} ({coverage_pct:.1f}%)"
@@ -223,7 +225,8 @@ def _handle_parquet_exists(
                 try:
                     catalog_loader(catalog, csv_path, inst, bar_type)
                     return f"\r📖 [{feed_idx:3d}/{total_feeds}] Imported: {str(bar_type.instrument_id):<32}"
-                except Exception:
+                except (OSError, ValueError) as e:
+                    logger.warning(f"Failed to import Parquet for {bar_type.instrument_id}: {e}")
                     return f"\r⚠️  [{feed_idx:3d}/{total_feeds}] Using Parquet: {str(bar_type.instrument_id):<28}"
             else:
                 return f"\r⚠️  [{feed_idx:3d}/{total_feeds}] Partial Parquet: {str(bar_type.instrument_id):<25}"
@@ -265,8 +268,8 @@ def _handle_parquet_missing(
             try:
                 catalog_loader(catalog, csv_path, inst, bar_type)
                 return f"\r📖 [{feed_idx:3d}/{total_feeds}] Imported: {str(bar_type.instrument_id):<32}"
-            except Exception:
-                pass
+            except (OSError, ValueError, KeyError) as e:
+                logger.warning(f"Failed to import {bar_type.instrument_id}: {e}")
 
         # 数据完全缺失
         raise DataLoadError(
@@ -306,7 +309,8 @@ def _auto_download_data(data_cfg, cfg: BacktestConfig) -> bool:
             return csv_path.exists() and csv_path.stat().st_size > 1024
 
         return False
-    except Exception:
+    except (IOError, ImportError) as e:
+        logger.error(f"Failed to auto-download data: {e}")
         return False
 
 
@@ -413,8 +417,9 @@ def _clear_parquet_data(catalog: ParquetDataCatalog, bar_type: BarType) -> None:
                 break
         else:
             # 如果没有找到标准目录，尝试查找包含instrument_id的任何目录
-            for root, dirs, files in catalog_root.rglob("*"):
-                if instrument_id in str(root) and any(
+            import os
+            for root, dirs, files in os.walk(catalog_root):
+                if instrument_id in root and any(
                     f.endswith(".parquet") for f in files
                 ):
                     logger.info(f"   🗑️ Clearing found Parquet data: {root}")
@@ -457,7 +462,8 @@ def _verify_data_consistency(
             )
             if not existing_intervals:
                 return False
-        except Exception:
+        except (KeyError, AttributeError) as e:
+            logger.warning(f"Failed to get intervals in verification: {e}")
             return False
 
         # 3. 比较文件修改时间（如果CSV比Parquet新，认为不一致）
@@ -479,7 +485,8 @@ def _verify_data_consistency(
 
         # 4. 快速比较数据量（只读取CSV行数，不加载全部数据）
         try:
-            csv_line_count = sum(1 for _ in open(csv_path)) - 1  # 减去header
+            with open(csv_path) as f:
+                csv_line_count = sum(1 for _ in f) - 1  # 减去header
 
             # 估算Parquet数据量（通过时间间隔）
             if existing_intervals:
@@ -496,13 +503,14 @@ def _verify_data_consistency(
                     > 0.2
                 ):
                     return False
-        except Exception:
+        except (IOError, ValueError) as e:
             # 如果快速检查失败，默认认为一致（避免阻塞）
-            pass
+            logger.debug(f"Quick check failed, assuming consistent: {e}")
 
         return True
 
-    except Exception:
+    except (IOError, OSError) as e:
+        logger.warning(f"Data consistency verification failed: {e}")
         return False
 
 
@@ -654,15 +662,14 @@ def _run_backtest_with_custom_data(
     oms_type = "HEDGING"  # 默认值
     if strategies and hasattr(strategies[0], 'config_path'):
         try:
-            import yaml
             config_path = base_dir / strategies[0].config_path
             if config_path.exists():
                 with open(config_path, 'r') as f:
                     strategy_config = yaml.safe_load(f)
                     if 'parameters' in strategy_config and 'oms_type' in strategy_config['parameters']:
                         oms_type = strategy_config['parameters']['oms_type']
-        except Exception:
-            pass  # 使用默认值
+        except (IOError, yaml.YAMLError) as e:
+            logger.debug(f"Failed to load OMS type from config, using default: {e}")
 
     venue_configs = [
         BacktestVenueConfig(
@@ -780,14 +787,14 @@ def _process_backtest_results(
     trade_metrics = None
 
     try:
-        from strategy.rs_squeeze import RSSqueezeStrategy
+        from strategy.keltner_rs_breakout import KeltnerRSBreakoutStrategy
 
-        filter_stats = RSSqueezeStrategy.get_filter_stats_summary()
-        trade_metrics = RSSqueezeStrategy.get_trade_metrics()
-        RSSqueezeStrategy.print_filter_stats_report()
-        RSSqueezeStrategy.reset_class_stats()
+        filter_stats = KeltnerRSBreakoutStrategy.get_filter_stats_summary()
+        trade_metrics = KeltnerRSBreakoutStrategy.get_trade_metrics()
+        KeltnerRSBreakoutStrategy.print_filter_stats_report()
+        KeltnerRSBreakoutStrategy.reset_class_stats()
     except (ImportError, AttributeError):
-        pass  # 非RS Squeeze策略时跳过
+        pass  # 非Keltner RS Breakout策略时跳过
 
     # 提取策略配置参数
     strategy_params = cfg.strategy.params
@@ -1183,9 +1190,9 @@ def catalog_loader(
 
     # 确定时间列名（优先使用 timestamp，兼容 datetime）
     if "timestamp" in sample_df.columns:
-        time_col = "timestamp"
+        pass
     elif "datetime" in sample_df.columns:
-        time_col = "datetime"
+        pass
     else:
         raise ValueError(
             f"No valid time column found in {csv_path}. "

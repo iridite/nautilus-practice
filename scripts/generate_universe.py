@@ -164,23 +164,23 @@ def generate_universe():
             df.set_index("datetime", inplace=True)
             period_resample = df.resample(REBALANCE_FREQ)
 
-            for period_start, group in period_resample:
+            for period_start, group in period_resample:  # type: ignore
                 if group.empty:
                     continue
 
                 # 根据频率生成时间字符串
                 if REBALANCE_FREQ == "ME":
-                    period_str = period_start.strftime("%Y-%m")
+                    period_str = period_start.strftime("%Y-%m")  # type: ignore
                 elif REBALANCE_FREQ == "W-MON":
-                    period_str = period_start.strftime("%Y-W%W")
+                    period_str = period_start.strftime("%Y-W%W")  # type: ignore
                 elif REBALANCE_FREQ == "2W-MON":
                     # 双周使用周数除以2来区分
-                    week_num = int(period_start.strftime("%W"))
-                    period_str = f"{period_start.year}-2W{week_num//2:02d}"
+                    week_num = int(period_start.strftime("%W"))  # type: ignore
+                    period_str = f"{period_start.year}-2W{week_num//2:02d}"  # type: ignore
                 else:
-                    period_str = period_start.strftime("%Y-%m-%d")
+                    period_str = period_start.strftime("%Y-%m-%d")  # type: ignore
 
-                expected_days = get_expected_days(REBALANCE_FREQ, period_start)
+                expected_days = get_expected_days(REBALANCE_FREQ, period_start)  # type: ignore
 
                 # 2. 处理新币入场：检查数据行数是否达标
                 if len(group) < expected_days * MIN_COUNT_RATIO:

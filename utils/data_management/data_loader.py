@@ -120,7 +120,8 @@ def _validate_time_column(series: pd.Series) -> bool:
             return True
         else:
             return False
-    except Exception:
+    except (ValueError, TypeError) as e:
+        logger.debug(f"Failed to validate time column: {e}")
         return False
 
 

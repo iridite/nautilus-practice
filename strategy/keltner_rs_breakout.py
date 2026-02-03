@@ -16,7 +16,6 @@ import json
 from collections import OrderedDict, deque
 from datetime import datetime
 from decimal import Decimal
-from pathlib import Path
 
 import numpy as np
 from nautilus_trader.model.data import Bar, BarType

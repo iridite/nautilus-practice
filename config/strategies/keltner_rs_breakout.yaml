@@ -55,8 +55,8 @@ parameters:
   btc_max_atr_pct: 0.03
 
   # Universe 参数
-  universe_top_n: 25
-  universe_freq: ME # Universe 更新周期（ME=月度, W-MON=周度, 2W-MON=双周）
+  universe_top_n: 3
+  universe_freq: W-MON # Universe 更新周期（ME=月度, W-MON=周度, 2W-MON=双周）
 
   # 仓位管理
   # 推荐使用 ATR 风险模式（注释掉 qty_percent）
