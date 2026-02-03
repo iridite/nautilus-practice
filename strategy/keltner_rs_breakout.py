@@ -508,6 +508,15 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
         risk_amount = equity.as_decimal() * Decimal(str(risk_pct)) * Decimal(str(self.config.leverage))
         qty = risk_amount / stop_distance
 
+        # 检查数量是否小于最小要求（避免 make_qty 抛出异常）
+        min_qty = Decimal(str(self.instrument.size_increment))
+        if qty < min_qty:
+            self.log.warning(
+                f"计算的仓位数量过小: raw_qty={qty}, min_qty={min_qty}, "
+                f"size_increment={self.instrument.size_increment}, size_precision={self.instrument.size_precision}"
+            )
+            return Decimal("0")
+
         # 使用基类的仓位计算方法进行标准化
         return self.instrument.make_qty(qty)
 
