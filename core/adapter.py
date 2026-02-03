@@ -154,6 +154,17 @@ class ConfigAdapter:
                             else:
                                 symbols.add(symbol)
                     return symbols
+            else:
+                # Universe 文件不存在时抛出严重错误
+                available_files = sorted([f.stem for f in (project_root / "data" / "universe").glob("universe_*_ME.json")])
+                available_ns = [f.replace("universe_", "").replace("_ME", "") for f in available_files]
+                raise ConfigValidationError(
+                    f"配置的 Universe 文件不存在: {universe_file}\n"
+                    f"配置参数: universe_top_n={universe_top_n}\n"
+                    f"可用的 Universe 规模: {', '.join(available_ns)}\n"
+                    f"请修改配置文件中的 universe_top_n 参数，或运行以下命令生成缺失的 Universe 文件：\n"
+                    f"  uv run python scripts/generate_universe.py"
+                )
 
         # 兼容旧的 universe_filename 参数
         universe_file = params.get("universe_filename") or params.get("universe_filepath")
@@ -165,7 +176,10 @@ class ConfigAdapter:
             u_path = project_root / "data" / u_path.name
 
         if not u_path.exists():
-            return None
+            raise ConfigValidationError(
+                f"配置的 Universe 文件不存在: {u_path}\n"
+                f"请检查配置文件中的 universe_filename 或 universe_filepath 参数"
+            )
 
         with open(u_path, "r") as f:
             u_data = json.load(f)
