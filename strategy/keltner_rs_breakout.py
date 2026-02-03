@@ -8,6 +8,7 @@ Core Logic:
   4. Filter C (Alpha): Relative Strength (Symbol vs BTC) > 0
   5. Filter D (Momentum): Volume > 1.5 * SMA(Vol, 20)
   6. Sizing: Volatility Targeting (Base Risk 1.0%, Squeeze Risk 1.5%)
+  7. Exit: Chandelier Exit (Highest - 2x ATR) + Time Stop (3 bars)
 Note: This strategy implements the "Breathing Trend" philosophy using Static Keltner Channels and RS filtering.
 """
 
@@ -57,7 +58,10 @@ class KeltnerRSBreakoutConfig(BaseStrategyConfig):
     # 风控参数
     base_risk_pct: float = 0.01
     high_conviction_risk_pct: float = 0.015
-    stop_loss_atr_multiplier: float = 3.0
+    stop_loss_atr_multiplier: float = 2.0  # 从 3.0 降至 2.0
+    enable_time_stop: bool = True  # 启用时间止损
+    time_stop_bars: int = 3  # 时间止损 K 线数
+    time_stop_momentum_threshold: float = 0.01  # 动能确认阈值（1%）
 
     # 过滤器参数
     volume_multiplier: float = 1.5
@@ -87,7 +91,7 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
     2. 过滤器：BTC市场状态 + 趋势(>SMA200) + 放量(>1.5x均量) + RS(>BTC)
     3. 触发：突破 2.25x ATR 上轨
     4. 仓位：波动率倒数模型，Squeeze 加成
-    5. 出场：Chandelier Exit (最高价 - 3x ATR)
+    5. 出场：Chandelier Exit (最高价 - 2x ATR) + 时间止损 (3根K线)
     """
 
     def __init__(self, config: KeltnerRSBreakoutConfig):
@@ -124,6 +128,7 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
 
         # 持仓跟踪
         self.entry_price = None
+        self.entry_timestamp = None  # 开仓时间戳
         self.highest_high = None
 
         # 订单状态跟踪
@@ -527,6 +532,7 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
 
         # 记录持仓信息
         self.entry_price = close
+        self.entry_timestamp = bar.ts_event
         self.highest_high = float(bar.high)
 
         conviction_type = "高确信度" if high_conviction else "普通"
@@ -593,13 +599,28 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
         """处理出场逻辑"""
         close = float(bar.close)
 
-        # 计算 Chandelier Exit 止损线（highest_high已在on_bar中更新）
+        # 1. 时间止损检查（优先）
+        if self.config.enable_time_stop and self.entry_timestamp is not None:
+            # 计算经过的 K 线数（假设 1h K 线）
+            bars_since_entry = (bar.ts_event - self.entry_timestamp) / 3600_000_000_000
+
+            if bars_since_entry >= self.config.time_stop_bars:
+                # 检查动能：最高价是否突破成本区
+                momentum_threshold = 1 + self.config.time_stop_momentum_threshold
+                if self.highest_high < self.entry_price * momentum_threshold:
+                    self.close_all_positions(self.instrument.id)
+                    self.log.info(
+                        f"时间止损平仓: bars={bars_since_entry:.1f}, "
+                        f"highest={self.highest_high:.2f}, entry={self.entry_price:.2f}"
+                    )
+                    self._reset_position_tracking()
+                    return
+
+        # 2. 跟踪止损检查
         if self.atr is None:
             return
 
         trailing_stop = self.highest_high - (self.config.stop_loss_atr_multiplier * self.atr)
-
-        # 检查是否触发止损
         if close < trailing_stop:
             self.close_all_positions(self.instrument.id)
             self.log.info(
@@ -607,10 +628,13 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
                 f"price={close:.2f}, stop={trailing_stop:.2f}, "
                 f"highest={self.highest_high:.2f}"
             )
+            self._reset_position_tracking()
 
-            # 重置持仓信息
-            self.entry_price = None
-            self.highest_high = None
+    def _reset_position_tracking(self) -> None:
+        """重置持仓跟踪变量"""
+        self.entry_price = None
+        self.entry_timestamp = None
+        self.highest_high = None
 
     def on_order_filled(self, event) -> None:
         """订单成交回调"""
