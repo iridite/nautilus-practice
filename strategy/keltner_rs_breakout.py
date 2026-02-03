@@ -65,7 +65,10 @@ class KeltnerRSBreakoutConfig(BaseStrategyConfig):
 
     # 过滤器参数
     volume_multiplier: float = 1.5
-    rs_lookback_days: int = 7
+    rs_short_lookback_days: int = 5  # RS 短期回溯天数
+    rs_long_lookback_days: int = 20  # RS 长期回溯天数
+    rs_short_weight: float = 0.4  # RS 短期权重
+    rs_long_weight: float = 0.6  # RS 长期权重
     squeeze_memory_days: int = 3
 
     # BTC 市场状态过滤器参数
@@ -463,7 +466,7 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
         return True
 
     def _calculate_rs_score(self) -> float | None:
-        """计算 RS 分数（用于多信号竞争排序）"""
+        """计算 RS 分数（长短结合）"""
         btc_bar_type_str = self.config.bar_type.replace(
             self.instrument.id.symbol.value,
             self.btc_instrument_id.symbol.value
@@ -478,26 +481,45 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
         if btc_bar.ts_event not in self.btc_price_history:
             self.btc_price_history[btc_bar.ts_event] = btc_close
 
-        if len(self.price_history) < self.config.rs_lookback_days + 1:
+        # 需要足够的历史数据（长期回溯天数 + 1）
+        max_lookback = max(self.config.rs_short_lookback_days, self.config.rs_long_lookback_days)
+        if len(self.price_history) < max_lookback + 1:
             return None
-        if len(self.btc_price_history) < self.config.rs_lookback_days + 1:
+        if len(self.btc_price_history) < max_lookback + 1:
             return None
 
         common_timestamps = sorted(set(self.price_history.keys()) & set(self.btc_price_history.keys()))
-        if len(common_timestamps) < self.config.rs_lookback_days + 1:
+        if len(common_timestamps) < max_lookback + 1:
             return None
 
-        recent_ts = common_timestamps[-(self.config.rs_lookback_days + 1):]
-        symbol_prices = [self.price_history[ts] for ts in recent_ts]
-        btc_prices = [self.btc_price_history[ts] for ts in recent_ts]
+        # 计算短期 RS
+        short_ts = common_timestamps[-(self.config.rs_short_lookback_days + 1):]
+        short_symbol_prices = [self.price_history[ts] for ts in short_ts]
+        short_btc_prices = [self.btc_price_history[ts] for ts in short_ts]
 
-        if symbol_prices[0] <= 0 or btc_prices[0] <= 0:
+        if short_symbol_prices[0] <= 0 or short_btc_prices[0] <= 0:
             return None
 
-        symbol_perf = (symbol_prices[-1] / symbol_prices[0]) - 1
-        btc_perf = (btc_prices[-1] / btc_prices[0]) - 1
+        short_symbol_perf = (short_symbol_prices[-1] / short_symbol_prices[0]) - 1
+        short_btc_perf = (short_btc_prices[-1] / short_btc_prices[0]) - 1
+        short_rs = short_symbol_perf - short_btc_perf
 
-        return symbol_perf - btc_perf
+        # 计算长期 RS
+        long_ts = common_timestamps[-(self.config.rs_long_lookback_days + 1):]
+        long_symbol_prices = [self.price_history[ts] for ts in long_ts]
+        long_btc_prices = [self.btc_price_history[ts] for ts in long_ts]
+
+        if long_symbol_prices[0] <= 0 or long_btc_prices[0] <= 0:
+            return None
+
+        long_symbol_perf = (long_symbol_prices[-1] / long_symbol_prices[0]) - 1
+        long_btc_perf = (long_btc_prices[-1] / long_btc_prices[0]) - 1
+        long_rs = long_symbol_perf - long_btc_perf
+
+        # 加权组合：0.4 * RS(5d) + 0.6 * RS(20d)
+        combined_rs = self.config.rs_short_weight * short_rs + self.config.rs_long_weight * long_rs
+
+        return combined_rs
 
     def _check_relative_strength(self) -> bool:
         """检查相对强弱（RS）- 短期强度过滤器"""
