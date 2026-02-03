@@ -131,7 +131,7 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
 
         # 持仓跟踪
         self.entry_price = None
-        self.entry_timestamp = None  # 开仓时间戳
+        self.entry_bar_count = 0  # 开仓后经过的 K 线数
         self.highest_high = None
 
         # 订单状态跟踪
@@ -322,6 +322,10 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
                 self.highest_high = float(bar.high)
             else:
                 self.highest_high = max(self.highest_high, float(bar.high))
+
+            # 增加 K 线计数
+            self.entry_bar_count += 1
+
             self._handle_exit(bar)
             return
 
@@ -554,7 +558,7 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
 
         # 记录持仓信息
         self.entry_price = close
-        self.entry_timestamp = bar.ts_event
+        self.entry_bar_count = 0  # 重置 K 线计数
         self.highest_high = float(bar.high)
 
         conviction_type = "高确信度" if high_conviction else "普通"
@@ -622,21 +626,17 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
         close = float(bar.close)
 
         # 1. 时间止损检查（优先）
-        if self.config.enable_time_stop and self.entry_timestamp is not None:
-            # 计算经过的 K 线数（假设 1h K 线）
-            bars_since_entry = (bar.ts_event - self.entry_timestamp) / 3600_000_000_000
-
-            if bars_since_entry >= self.config.time_stop_bars:
-                # 检查动能：最高价是否突破成本区
-                momentum_threshold = 1 + self.config.time_stop_momentum_threshold
-                if self.highest_high < self.entry_price * momentum_threshold:
-                    self.close_all_positions(self.instrument.id)
-                    self.log.info(
-                        f"时间止损平仓: bars={bars_since_entry:.1f}, "
-                        f"highest={self.highest_high:.2f}, entry={self.entry_price:.2f}"
-                    )
-                    self._reset_position_tracking()
-                    return
+        if self.config.enable_time_stop and self.entry_bar_count >= self.config.time_stop_bars:
+            # 检查动能：最高价是否突破成本区
+            momentum_threshold = 1 + self.config.time_stop_momentum_threshold
+            if self.highest_high < self.entry_price * momentum_threshold:
+                self.close_all_positions(self.instrument.id)
+                self.log.info(
+                    f"时间止损平仓: bars={self.entry_bar_count}, "
+                    f"highest={self.highest_high:.2f}, entry={self.entry_price:.2f}"
+                )
+                self._reset_position_tracking()
+                return
 
         # 2. 跟踪止损检查
         if self.atr is None:
@@ -655,7 +655,7 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
     def _reset_position_tracking(self) -> None:
         """重置持仓跟踪变量"""
         self.entry_price = None
-        self.entry_timestamp = None
+        self.entry_bar_count = 0
         self.highest_high = None
 
     def on_order_filled(self, event) -> None:
