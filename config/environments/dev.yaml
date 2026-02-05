@@ -5,8 +5,8 @@ extends: "base.yaml"
 
 # 开发环境使用更短的回测周期进行快速测试
 backtest:
-  start_date: "2025-12-01"
-  end_date: "2025-12-07" # 仅7天，快速测试
+  start_date: "2022-01-01"
+  end_date: "2026-01-01"
 
 # 开发环境使用更详细的日志
 logging:
@@ -17,11 +17,12 @@ logging:
     DataFeed: "DEBUG"
     RSSqueezeStrategy: "DEBUG"
     OIDivergenceStrategy: "DEBUG"
-  components_only: true
+    OrderMatchingEngine: "WARNING"
+  # components_only: false
 
 # 开发环境可以使用更小的初始资金进行测试
 trading:
-  initial_balance: 50
+  initial_balance: 100
 
 # 文件清理配置 - 自动清理旧的日志和输出文件
 file_cleanup:

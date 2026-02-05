@@ -4,9 +4,9 @@
 extends: "base.yaml"
 
 # 生产环境使用完整的回测周期
-backtest:
-  start_date: "2022-01-01"
-  end_date: "2026-01-01"
+# backtest:
+#   start_date: "2022-01-01"
+#   end_date: "2026-01-01"
 
 # 生产环境使用优化的日志级别，减少I/O开销
 logging:
@@ -17,6 +17,7 @@ logging:
     DataFeed: "WARNING"
     RSSqueezeStrategy: "INFO"
     OIDivergenceStrategy: "INFO"
+    KeltnerRSBreakoutStrategy: "INFO"
   components_only: true
 
 # 生产环境使用标准资金配置
