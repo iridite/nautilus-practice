@@ -50,6 +50,7 @@ from datetime import datetime
 from decimal import ROUND_HALF_UP, Decimal
 
 import numpy as np
+from nautilus_trader.indicators import RelativeStrengthIndex
 from nautilus_trader.model import Price, Quantity
 from nautilus_trader.model.data import Bar, BarType
 from nautilus_trader.model.enums import OrderSide
@@ -81,6 +82,7 @@ class KeltnerRSBreakoutConfig(BaseStrategyConfig):
     ema_period: int = 20
     atr_period: int = 20
     sma_period: int = 200
+    rsi_period: int = 14
     bb_period: int = 20
     bb_std: float = 2.0
     volume_period: int = 20
@@ -98,6 +100,8 @@ class KeltnerRSBreakoutConfig(BaseStrategyConfig):
     time_stop_momentum_threshold: float = 0.01  # 动能确认阈值（1%）
     breakeven_multiplier: float = 1.0 #保本触发 atr 倍率
     deviation_threshold: float = 0.40  # 抛物线止盈乖离阈值（40%）
+    enable_rsi_stop_loss: bool = False # 启用 RSI 超买止损
+    # 暂且不启用，由于抛物线止盈和 RSI 止盈功能上有重复倾向
 
     # 过滤器参数
     volume_multiplier: float = 1.5
@@ -142,7 +146,8 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
         # BTC 标的 ID
         self.btc_instrument_id = InstrumentId.from_str(config.btc_instrument_id)
 
-        # 指标数据存储
+        # Technical Analysis Indicators
+        ## 指标数据存储
         self.closes = deque(maxlen=max(config.ema_period, config.bb_period, config.sma_period) + 1)
         self.volumes = deque(maxlen=config.volume_period + 1)
         self.trs = deque(maxlen=config.atr_period)
@@ -154,6 +159,10 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
         self.bb_upper = None
         self.bb_lower = None
         self.volume_sma = None
+        self.rsi: float | None = None
+
+        ## TA instances
+        self.rsi_indicator = RelativeStrengthIndex(period=config.rsi_period)
 
         # 价格历史（用于 RS 计算）- 使用 OrderedDict 保持插入顺序，优化清理效率
         self.price_history = OrderedDict()  # {timestamp: price}
@@ -174,7 +183,9 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
         self.entry_bar_count = 0  # 开仓后经过的 K 线数
         self.highest_high = None
         # 风险控制
+        ## status variables
         self.breakeven_active = False # 默认情况下为否，直到代码满足条件并调整为正
+        self.rsi_watcher = False # RSI 超买观察者，在 rsi 大于阈值之后开始监控价格
 
         # 订单状态跟踪
         self._pending_entry_order = False
@@ -270,6 +281,9 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
             f"SMA={self.config.sma_period}, BTC={self.config.btc_instrument_id}"
         )
 
+        # indicators initialization can be done here if needed
+        self.rsi_indicator.update_raw(0.0)  # 初始化 RSI 指标
+
         # 订阅 Bar 数据
         bar_type = BarType.from_str(self.config.bar_type)
         self.subscribe_bars(bar_type)
@@ -319,6 +333,11 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
                     abs(low - self.closes[-2])
                 )
                 self.trs.append(tr)
+
+            # 计算 RSI
+            if self.config.enable_rsi_stop_loss:
+                self.rsi_indicator.handle_bar(bar) # 不知道这个 self 能不能访问到 bar
+                self.rsi = self.rsi_indicator.value
 
             # 更新指标
             self._update_indicators()
@@ -725,6 +744,21 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
                 self._reset_position_tracking()
                 return
 
+        # 极端情绪指标
+        # RSI 超买指标
+        if self.rsi is not None and self.config.enable_rsi_stop_loss:
+            # TODO: 该部分的实现还是 WIP 状态，应该每一个币种都拥有独立的 rsi_watcher 参数
+            if self.rsi > 85 and self.rsi_watcher is False:
+                self.rsi_watcher = True
+            elif self.rsi_watcher and self.rsi <= 85:
+                self.close_all_positions(self.instrument.id) #TODO 尝试只止盈一半的仓位
+
+                self.log.info(
+                    f"RSI 超买右侧平仓: price={close:.2f}, rsi={self.rsi:.2f}"
+                )
+                self._reset_position_tracking()
+                self.rsi_watcher = False
+                return
 
 
         # 3. 保本止损机制（Breakeven Stop）

@@ -25,31 +25,32 @@ parameters:
   atr_period: 20
   sma_period: 200
   bb_period: 20
-  bb_std: 2.0
+  bb_std: 1.5
   volume_period: 20
 
   # 通道参数
   keltner_base_multiplier: 1.5
-  keltner_trigger_multiplier: 2.25
+  keltner_trigger_multiplier: 2.8
 
   # 风控参数
   base_risk_pct: 0.01
   high_conviction_risk_pct: 0.015
-  stop_loss_atr_multiplier: 2.5
+  stop_loss_atr_multiplier: 2.6
   enable_time_stop: false
   time_stop_bars: 3
   time_stop_momentum_threshold: 0.01
   breakeven_multiplier: 2.0
   # 只有当浮盈已经很厚（比如赚了 5% - 8%）时，才把 breakeven 止损激活。这时候价格通常已经脱离了成本区，回踩也很难踩到你的开仓价了。
   deviation_threshold: 0.45 # 30%
+  enable_rsi_stop_loss: false # RSI 止损
 
   # 过滤器参数
-  volume_multiplier: 1.5
+  volume_multiplier: 2
   rs_short_lookback_days: 5
   rs_long_lookback_days: 20
-  rs_short_weight: 0.4
-  rs_long_weight: 0.6
-  squeeze_memory_days: 3
+  rs_short_weight: 0.7
+  rs_long_weight: 0.3
+  squeeze_memory_days: 1
 
   # BTC 市场状态过滤器参数
   enable_btc_regime_filter: true
@@ -61,14 +62,7 @@ parameters:
   universe_top_n: 15
   universe_freq: W-MON # Universe 更新周期（ME=月度, W-MON=周度, 2W-MON=双周）
 
-  # 仓位管理
-  # 推荐使用 ATR 风险模式（注释掉 qty_percent）
-  # ATR 模式根据波动率动态调整仓位，回测收益提升约 5 倍（+61.78% vs +10.34%）
-  # 固定百分比模式（qty_percent: 0.1）收益较低但更保守
-  # qty_percent: 0.1
-  leverage: 1
-
-  # max_positions: 最大持仓数量限制
+  # 最大持仓数量限制
   # 说明（根据 oms_type 不同而不同）：
   #
   # HEDGING 模式（当前配置）：
@@ -82,4 +76,15 @@ parameters:
   # - max_positions 限制不同币对的数量
   # - 例如：4个标的最多持有4个仓位
   # - 建议设置为 symbols 列表长度
-  max_positions: 15
+  #
+  # 我们采用的是 Hold until stop 模式，理论上拥有一个无限大的缓冲区，只要 inactive 的币对不触发任何的止损机制那么策略就不会主动发起平仓
+  max_positions: 5
+
+  # 仓位管理
+  # 推荐使用 ATR 风险模式（注释掉 qty_percent）
+  # TODO: ATR 风险模式怎么缺少了对应的参数？
+  #
+  # ATR 模式根据波动率动态调整仓位，回测收益提升约 5 倍（+61.78% vs +10.34%）
+  # 固定百分比模式（qty_percent: 0.1）收益较低但更保守
+  # qty_percent: 0.1
+  leverage: 1
