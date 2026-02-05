@@ -133,6 +133,8 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
     5. 出场：Chandelier Exit (最高价 - 2x ATR) + 时间止损 (3根K线)
     """
 
+    #TODO 设置一个全局的 Decimal 精度配置
+
     def __init__(self, config: KeltnerRSBreakoutConfig):
         super().__init__(config)
 
@@ -697,18 +699,17 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
                 return
 
         # 2. 跟踪止损检查
-        if self.atr is None:
-            return
-
-        trailing_stop = self.highest_high - (self.config.stop_loss_atr_multiplier * self.atr)
-        if close < trailing_stop:
-            self.close_all_positions(self.instrument.id)
-            self.log.info(
-                f"Chandelier Exit 平仓: "
-                f"price={close:.2f}, stop={trailing_stop:.2f}, "
-                f"highest={self.highest_high:.2f}"
-            )
-            self._reset_position_tracking()
+        if self.atr is not None:
+            trailing_stop = self.highest_high - (self.config.stop_loss_atr_multiplier * self.atr)
+            if close < trailing_stop:
+                self.close_all_positions(self.instrument.id)
+                self.log.info(
+                    f"Chandelier Exit 平仓: "
+                    f"price={close:.2f}, stop={trailing_stop:.2f}, "
+                    f"highest={self.highest_high:.2f}"
+                )
+                self._reset_position_tracking()
+                return
 
         # 3. 保本止损机制（Breakeven Stop）
         # 目标：当浮盈达到 1.0 * ATR 时，将止损位移动到开仓价 + 0.2%（覆盖手续费）
@@ -717,14 +718,15 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
             return
 
         # 3.1 激活保本模式：当价格突破 entry_price + 1.0 * ATR
-        breakeven_trigger_price = self.entry_price + Decimal(self.config.breakeven_multiplier * self.atr)
-        if close > breakeven_trigger_price and not self.breakeven_active:
-            self.breakeven_active = True
-            self.log.info(
-                f"✅ 保本模式激活: price={close:.2f}, "
-                f"trigger={breakeven_trigger_price:.2f}, "
-                f"breakeven_stop={self.entry_price * Decimal("1.002"):.2f}"
-            )
+        if self.atr is not None:
+            breakeven_trigger_price = self.entry_price + Decimal(self.config.breakeven_multiplier * self.atr)
+            if close > breakeven_trigger_price and not self.breakeven_active:
+                self.breakeven_active = True
+                self.log.info(
+                    f"✅ 保本模式激活: price={close:.2f}, "
+                    f"trigger={breakeven_trigger_price:.2f}, "
+                    f"breakeven_stop={self.entry_price * Decimal("1.002"):.2f}"
+                )
 
         # 3.2 执行保本止损：如果已激活且价格跌破保本价，立即市价平仓
         if self.breakeven_active:
