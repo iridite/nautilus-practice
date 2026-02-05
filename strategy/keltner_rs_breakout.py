@@ -710,31 +710,42 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
             )
             self._reset_position_tracking()
 
-        # 3. 自动保本机制，达到一定收益之后自动移动止损点到 breakeven 位置
-        # 与前面两个即刻止损的机制不一样，我们这个要依赖市场挂单成交来进行基于限价单的止损
-
-        if self.entry_price is None or self.quantity is None: # 启动保本前的必要检测，放置在任意币种未开任何仓位之前就进行 breakeven 的设定
+        # 3. 保本止损机制（Breakeven Stop）
+        # 目标：当浮盈达到 1.0 * ATR 时，将止损位移动到开仓价 + 0.2%（覆盖手续费）
+        # 这会将许多"小亏单"变成"平手单"，减少回撤，改善胜率和心态
+        if self.entry_price is None:
             return
 
-        breakeven_trigger_price = Decimal(self.atr * 1.0) + self.entry_price
+        # 3.1 激活保本模式：当价格突破 entry_price + 1.0 * ATR
+        breakeven_trigger_price = self.entry_price + Decimal(self.config.breakeven_multiplier * self.atr)
         if close > breakeven_trigger_price and not self.breakeven_active:
-            breakeven_limit = (self.entry_price * Decimal('1.002')).quantize(TARGET_PRECISION, ROUND_HALF_UP) # 0.2% 的缓冲区间
-            self.log.info(f"Reached x{self.config.breakeven_multiplier} position, now stops loss @ {breakeven_limit:.2f}")
-            self.breakeven_active = not self.breakeven_active # 切换状态
-
-            order = self.order_factory.limit(
-                instrument_id=self.instrument.id,
-                order_side=OrderSide.SELL,
-                quantity=Quantity.from_decimal(self.quantity), # 不知道从哪里来的
-                price=Price.from_decimal(breakeven_limit) # 0.2% 的缓冲区间
+            self.breakeven_active = True
+            self.log.info(
+                f"✅ 保本模式激活: price={close:.2f}, "
+                f"trigger={breakeven_trigger_price:.2f}, "
+                f"breakeven_stop={self.entry_price * Decimal("1.002"):.2f}"
             )
-            self.submit_order(order)
+
+        # 3.2 执行保本止损：如果已激活且价格跌破保本价，立即市价平仓
+        if self.breakeven_active:
+            breakeven_stop_price = self.entry_price * Decimal("1.002")  # 开仓价 + 0.2% 缓冲（覆盖手续费）
+            if close < breakeven_stop_price:
+                self.close_all_positions(self.instrument.id)
+                self.log.info(
+                    f"🛡️ 保本止损平仓: price={close:.2f}, "
+                    f"breakeven_stop={breakeven_stop_price:.2f}, "
+                    f"entry={self.entry_price:.2f}"
+                )
+                self._reset_position_tracking()
+                return
 
     def _reset_position_tracking(self) -> None:
         """重置持仓跟踪变量"""
         self.entry_price = None
+        self.quantity = None
         self.entry_bar_count = 0
         self.highest_high = None
+        self.breakeven_active = False
 
     def on_order_filled(self, event) -> None:
         """订单成交回调"""
