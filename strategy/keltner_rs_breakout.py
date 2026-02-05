@@ -47,9 +47,10 @@ Universe & RS Filtering Mechanism:
 import json
 from collections import OrderedDict, deque
 from datetime import datetime
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 
 import numpy as np
+from nautilus_trader.model import Price, Quantity
 from nautilus_trader.model.data import Bar, BarType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import InstrumentId
@@ -57,6 +58,8 @@ from nautilus_trader.model.identifiers import InstrumentId
 from strategy.core.base import BaseStrategy, BaseStrategyConfig
 from utils import get_project_root
 from utils.custom_data import FundingRateData
+
+TARGET_PRECISION = Decimal("0." + "0" * 16)
 
 
 class KeltnerRSBreakoutConfig(BaseStrategyConfig):
@@ -93,6 +96,7 @@ class KeltnerRSBreakoutConfig(BaseStrategyConfig):
     enable_time_stop: bool = True  # 启用时间止损
     time_stop_bars: int = 3  # 时间止损 K 线数
     time_stop_momentum_threshold: float = 0.01  # 动能确认阈值（1%）
+    breakeven_multiplier: float = 1.0 #保本触发 atr 倍率
 
     # 过滤器参数
     volume_multiplier: float = 1.5
@@ -162,9 +166,12 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
         self.squeeze_history = deque(maxlen=config.squeeze_memory_days)
 
         # 持仓跟踪
-        self.entry_price = None
+        self.entry_price: Decimal | None = None
+        self.quantity: Decimal | None = None
         self.entry_bar_count = 0  # 开仓后经过的 K 线数
         self.highest_high = None
+        # 风险控制
+        self.breakeven_active = False # 默认情况下为否，直到代码满足条件并调整为正
 
         # 订单状态跟踪
         self._pending_entry_order = False
@@ -178,7 +185,7 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
     def _load_universe(self) -> None:
         """加载 Universe JSON 文件"""
         if self.config.universe_top_n is None:
-            self.log.info("未配置 universe_top_n，不使用 Universe 过滤")
+            self.log.warning("未配置 universe_top_n，不使用 Universe 过滤")
             return
 
         universe_file = get_project_root() / "data" / "universe" / f"universe_{self.config.universe_top_n}_{self.config.universe_freq}.json"
@@ -593,16 +600,21 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
             return
 
         # 下单
-        order = self.order_factory.market(
+        order = self.order_factory.market( # 市价下单
             instrument_id=self.instrument.id,
             order_side=OrderSide.BUY,
-            quantity=qty,
+            # 使用基类的仓位计算方法进行标准化
+            quantity=self.instrument.make_qty(qty),
         )
         self.submit_order(order)
         self._pending_entry_order = True
 
         # 记录持仓信息
-        self.entry_price = close
+        self.entry_price = Decimal(close).quantize(TARGET_PRECISION, ROUND_HALF_UP)
+        # 这里实际上应该是在确定 tick 的那一瞬间进行记录，
+        # 但是我们这里既然做的是是中低频趋势跟踪策略，那么这个小差距也是可以接受的（1D bar timeframe）
+        self.quantity = qty.quantize(TARGET_PRECISION, ROUND_HALF_UP)  # 记录仓位数量（转换为 Decimal）
+
         self.entry_bar_count = 0  # 重置 K 线计数
         self.highest_high = float(bar.high)
 
@@ -614,6 +626,8 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
         )
 
     def _calculate_position_size(self, bar: Bar, high_conviction: bool) -> Decimal:
+        # AI 代码生成的这里返回 decimal，
+        # 但是实际上返回的是 Quantity 类型，而且静态检查并不能发现这个问题
         """计算仓位大小"""
         # 获取账户权益
         account = self.portfolio.account(self.instrument.id.venue)
@@ -652,7 +666,8 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
 
         # 计算仓位：(权益 * 风险% * 杠杆) / 止损距离
         risk_amount = equity.as_decimal() * Decimal(str(risk_pct)) * Decimal(str(self.config.leverage))
-        qty = risk_amount / stop_distance
+        # risk_amount 可以存起来方便 breakeven 的计算
+        qty: Decimal  = risk_amount / stop_distance
 
         # 检查数量是否小于最小要求（避免 make_qty 抛出异常）
         min_qty = Decimal(str(self.instrument.size_increment))
@@ -662,13 +677,11 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
                 f"size_increment={self.instrument.size_increment}, size_precision={self.instrument.size_precision}"
             )
             return Decimal("0")
-
-        # 使用基类的仓位计算方法进行标准化
-        return self.instrument.make_qty(qty)
+        return qty
 
     def _handle_exit(self, bar: Bar) -> None:
         """处理出场逻辑"""
-        close = float(bar.close)
+        close = float(bar.close) # 当前 bar 的收盘价，可用于参考和指导下一步行动
 
         # 1. 时间止损检查（优先）
         if self.config.enable_time_stop and self.entry_bar_count >= self.config.time_stop_bars:
@@ -696,6 +709,26 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
                 f"highest={self.highest_high:.2f}"
             )
             self._reset_position_tracking()
+
+        # 3. 自动保本机制，达到一定收益之后自动移动止损点到 breakeven 位置
+        # 与前面两个即刻止损的机制不一样，我们这个要依赖市场挂单成交来进行基于限价单的止损
+
+        if self.entry_price is None or self.quantity is None: # 启动保本前的必要检测，放置在任意币种未开任何仓位之前就进行 breakeven 的设定
+            return
+
+        breakeven_trigger_price = Decimal(self.atr * 1.0) + self.entry_price
+        if close > breakeven_trigger_price and not self.breakeven_active:
+            breakeven_limit = (self.entry_price * Decimal('1.002')).quantize(TARGET_PRECISION, ROUND_HALF_UP) # 0.2% 的缓冲区间
+            self.log.info(f"Reached x{self.config.breakeven_multiplier} position, now stops loss @ {breakeven_limit:.2f}")
+            self.breakeven_active = not self.breakeven_active # 切换状态
+
+            order = self.order_factory.limit(
+                instrument_id=self.instrument.id,
+                order_side=OrderSide.SELL,
+                quantity=Quantity.from_decimal(self.quantity), # 不知道从哪里来的
+                price=Price.from_decimal(breakeven_limit) # 0.2% 的缓冲区间
+            )
+            self.submit_order(order)
 
     def _reset_position_tracking(self) -> None:
         """重置持仓跟踪变量"""
