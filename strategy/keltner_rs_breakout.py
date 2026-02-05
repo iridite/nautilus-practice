@@ -97,6 +97,7 @@ class KeltnerRSBreakoutConfig(BaseStrategyConfig):
     time_stop_bars: int = 3  # 时间止损 K 线数
     time_stop_momentum_threshold: float = 0.01  # 动能确认阈值（1%）
     breakeven_multiplier: float = 1.0 #保本触发 atr 倍率
+    deviation_threshold: float = 0.40  # 抛物线止盈乖离阈值（40%）
 
     # 过滤器参数
     volume_multiplier: float = 1.5
@@ -146,8 +147,8 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
         self.volumes = deque(maxlen=config.volume_period + 1)
         self.trs = deque(maxlen=config.atr_period)
 
-        # 指标值
-        self.ema = None
+        ## 指标值
+        self.ema: float | None = None
         self.atr = None
         self.sma = None
         self.bb_upper = None
@@ -698,7 +699,7 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
                 self._reset_position_tracking()
                 return
 
-        # 2. 跟踪止损检查
+        # 2. 跟踪止损检查 （Chandelier Exit）
         if self.atr is not None:
             trailing_stop = self.highest_high - (self.config.stop_loss_atr_multiplier * self.atr)
             if close < trailing_stop:
@@ -711,13 +712,31 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
                 self._reset_position_tracking()
                 return
 
+        # 抛物线止盈
+        # 乖离阈值计算
+        if self.ema is not None:
+            deviation_pct = (close - self.ema) / self.ema
+            if deviation_pct >= self.config.deviation_threshold:  # 配置乖离阈值
+                # 关于这个 “乖离” 阈值的设置，ai 针对不同的币种有着不同的推荐数值，后期可能需要进一步调研和优化
+                self.close_all_positions(self.instrument.id)
+                self.log.info(
+                    f"抛物线止盈平仓: price={close:.2f}, ema={self.ema:.2f}, deviation={deviation_pct:.4f}"
+                )
+                self._reset_position_tracking()
+                return
+
+
+
         # 3. 保本止损机制（Breakeven Stop）
         # 目标：当浮盈达到 1.0 * ATR 时，将止损位移动到开仓价 + 0.2%（覆盖手续费）
         # 这会将许多"小亏单"变成"平手单"，减少回撤，改善胜率和心态
         if self.entry_price is None:
             return
+        # 注意在此之后的代码块都受到 self.entry_price 非 None 的保证和影响
 
-        # 3.1 激活保本模式：当价格突破 entry_price + 1.0 * ATR
+        # 3.1 激活保本模式：
+        # 当价格突破 entry_price + breakeven_multiplier * ATR
+        # TODO: 还存在一种基于 initial_risk + risk 的计算方式，但这里我们使用 ATR 方式
         if self.atr is not None:
             breakeven_trigger_price = self.entry_price + Decimal(self.config.breakeven_multiplier * self.atr)
             if close > breakeven_trigger_price and not self.breakeven_active:
@@ -738,7 +757,7 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
                     f"breakeven_stop={breakeven_stop_price:.2f}, "
                     f"entry={self.entry_price:.2f}"
                 )
-                self._reset_position_tracking()
+                self._reset_position_tracking() # 所有执行了即可清仓命令之后都需要重置持仓跟踪变量
                 return
 
     def _reset_position_tracking(self) -> None:

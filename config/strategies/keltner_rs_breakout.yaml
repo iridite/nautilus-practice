@@ -39,6 +39,9 @@ parameters:
   enable_time_stop: false
   time_stop_bars: 3
   time_stop_momentum_threshold: 0.01
+  breakeven_multiplier: 2.0
+  # 只有当浮盈已经很厚（比如赚了 5% - 8%）时，才把 breakeven 止损激活。这时候价格通常已经脱离了成本区，回踩也很难踩到你的开仓价了。
+  deviation_threshold: 0.45 # 30%
 
   # 过滤器参数
   volume_multiplier: 1.5
