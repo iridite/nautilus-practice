@@ -102,6 +102,7 @@ class KeltnerRSBreakoutConfig(BaseStrategyConfig):
     deviation_threshold: float = 0.40  # 抛物线止盈乖离阈值（40%）
     enable_rsi_stop_loss: bool = False # 启用 RSI 超买止损
     # 暂且不启用，由于抛物线止盈和 RSI 止盈功能上有重复倾向
+    max_upper_wick_ratio: float = 0.3  # K 线最大上影线比例（30%）
 
     # 过滤器参数
     volume_multiplier: float = 1.5
@@ -441,6 +442,12 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
         keltner_trigger_upper = self.ema + (self.config.keltner_trigger_multiplier * self.atr)
         if close <= keltner_trigger_upper:
             return
+
+        # 10. K bar 形态学检查
+        _ratio = float(bar.high) - float(bar.low) / float(bar.high) - float(bar.close)
+        if _ratio > self.config.max_upper_wick_ratio:
+            return
+
 
         # 10. 执行入场
         self._handle_entry(bar, is_squeezing, keltner_trigger_upper)
