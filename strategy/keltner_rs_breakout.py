@@ -51,7 +51,6 @@ from decimal import ROUND_HALF_UP, Decimal
 
 import numpy as np
 from nautilus_trader.indicators import RelativeStrengthIndex
-from nautilus_trader.model import Price, Quantity
 from nautilus_trader.model.data import Bar, BarType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import InstrumentId

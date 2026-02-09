@@ -100,9 +100,9 @@ class TestNetwork(unittest.TestCase):
         mock_func = Mock(return_value="success")
 
         result = retry_fetch(
-            mock_func, 
-            "positional_arg", 
-            retries=2, 
+            mock_func,
+            "positional_arg",
+            retries=2,
             delay=0.1,
             keyword_arg="test",
             another_kwarg=42
@@ -169,7 +169,7 @@ class TestNetwork(unittest.TestCase):
         mock_func = Mock()
         mock_func.side_effect = [
             ccxt.NetworkError("网络错误"),
-            ccxt.ExchangeError("交易所错误"), 
+            ccxt.ExchangeError("交易所错误"),
             "success"
         ]
 

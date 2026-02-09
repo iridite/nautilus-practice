@@ -199,7 +199,7 @@ class TestSymbolParser(unittest.TestCase):
         test_cases = [
             # (输入, 期望输出符号, 期望市场类型)
             ("BTC/USDT", "BTC/USDT", "spot"),
-            ("ETH/BTC", "ETH/BTC", "spot"), 
+            ("ETH/BTC", "ETH/BTC", "spot"),
             ("BTCUSDT", "BTC/USDT:USDT", "swap"),
             ("ETHUSDT", "ETH/USDT:USDT", "swap"),
             ("BTCUSD", "BTC/USD:BTC", "swap"),
