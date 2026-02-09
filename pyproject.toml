@@ -16,6 +16,7 @@ dependencies = [
     "pydantic>=2.12.5",
     "python-dotenv>=1.2.1",
     "pyyaml>=6.0.3",
+    "ruff>=0.15.0",
     "scikit-learn>=1.8.0",
     "ta>=0.11.0",
     "tqdm>=4.66.0",
@@ -31,3 +32,12 @@ url = "https://packages.nautechsystems.io/simple"
 
 [tool.uv.sources]
 nautilus-trader = { index = "nautilus" }
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W"]
+ignore = ["E501", "E402", "N803", "N805", "N806", "I001"]
+per-file-ignores = { "tests/**" = ["F401"] }

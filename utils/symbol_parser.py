@@ -223,7 +223,7 @@ def normalize_symbol(symbol: str, exchange: str = "binance") -> str:
     >>> normalized = normalize_symbol("BTC/USDT:USDT", "binance")
     >>> print(normalized)  # BTCUSDT
 
-    >>> normalized = normalize_symbol("BTCUSDT", "okx") 
+    >>> normalized = normalize_symbol("BTCUSDT", "okx")
     >>> print(normalized)  # BTC-USDT-SWAP
     """
     ccxt_symbol, market_type = resolve_symbol_and_type(symbol)
@@ -387,7 +387,7 @@ def convert_nautilus_to_ccxt_timeframe(aggregation: BarAggregation, period: int)
     unit_mapping = {
         BarAggregation.MINUTE: "m",
         BarAggregation.HOUR: "h",
-        BarAggregation.DAY: "d", 
+        BarAggregation.DAY: "d",
         BarAggregation.WEEK: "w",
         BarAggregation.MONTH: "M",
     }
