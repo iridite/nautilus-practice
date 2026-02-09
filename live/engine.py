@@ -250,7 +250,7 @@ async def run_live(env_name: Optional[str] = None):
 
         if inst_file.exists():
             inst = load_instrument(inst_file)
-            node.trader.add_instrument(inst)
+            node.cache.add_instrument(inst)
 
     try:
         await node.run_async()

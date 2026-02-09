@@ -36,8 +36,8 @@ from core.schemas import SandboxConfig
 from utils.instrument_loader import load_instrument
 
 
-def load_strategy_instance(strategy_config, instrument_ids):
-    """动态加载策略实例"""
+def load_strategy_instances(strategy_config, instrument_ids):
+    """动态加载策略实例列表 (支持多标的)"""
     module_path = strategy_config.module_path
     strategy_name = strategy_config.name
     config_class_name = strategy_config.config_class or f"{strategy_name}Config"
@@ -47,34 +47,65 @@ def load_strategy_instance(strategy_config, instrument_ids):
     StrategyClass = getattr(module, strategy_name)
     ConfigClass = getattr(module, config_class_name)
 
-    # 构建策略配置
-    params = strategy_config.parameters.copy()
+    strategies = []
+    for inst_id in instrument_ids:
+        # 构建策略配置
+        params = strategy_config.parameters.copy()
+        params["instrument_id"] = inst_id
 
-    # 注入必要参数
-    if len(instrument_ids) == 1:
-        params["instrument_id"] = instrument_ids[0]
-    else:
-        raise ValueError(f"Sandbox currently only supports single instrument, got {len(instrument_ids)}")
+        # 构建 bar_type (必须提供给策略，否则 on_start 会失败)
+        if not params.get("bar_type"):
+            timeframe = params.get("timeframe", "1d").lower()
+            # 转换 1d -> 1-DAY, 1h -> 1-HOUR, 15m -> 15-MINUTE
+            if timeframe.endswith("d"):
+                period = timeframe[:-1]
+                unit = "DAY"
+            elif timeframe.endswith("h"):
+                period = timeframe[:-1]
+                unit = "HOUR"
+            elif timeframe.endswith("m"):
+                period = timeframe[:-1]
+                unit = "MINUTE"
+            else:
+                period = "1"
+                unit = "DAY"
+            
+            p_type = params.get("price_type", "LAST")
+            orig = params.get("origination", "EXTERNAL")
+            params["bar_type"] = f"{inst_id}-{period}-{unit}-{p_type}-{orig}"
 
-    # 处理 btc_instrument_id（如果策略需要）
-    if "btc_symbol" in params and (not params.get("btc_instrument_id") or params.get("btc_instrument_id") == ""):
-        inst_id = params["instrument_id"]
-        parts = inst_id.split(".")
-        venue = parts[-1]
-        symbol_parts = parts[0].split("-")
-        inst_type = symbol_parts[-1] if len(symbol_parts) > 2 else "PERP"
+        # 生成唯一的 StrategyId
+        symbol_part = inst_id.split(".")[0]
+        params["strategy_id"] = f"{strategy_name}-{symbol_part}"
 
-        btc_symbol = params["btc_symbol"]
-        if "USDT" in btc_symbol:
-            base = btc_symbol.replace("USDT", "")
-            formatted_symbol = f"{base}-USDT"
-        else:
-            formatted_symbol = btc_symbol
+        # 处理 btc_instrument_id（如果策略需要）
+        if "btc_symbol" in params and (not params.get("btc_instrument_id") or params.get("btc_instrument_id") == ""):
+            parts = inst_id.split(".")
+            venue = parts[-1]
+            symbol_parts = parts[0].split("-")
+            # 保持相同的合约类型（PERP/SWAP/CASH）
+            inst_type = symbol_parts[-1] if len(symbol_parts) > 2 else "PERP"
 
-        params["btc_instrument_id"] = f"{formatted_symbol}-{inst_type}.{venue}"
+            btc_symbol = params["btc_symbol"]
+            # 统一符号格式
+            if "USDT" in btc_symbol and "-" not in btc_symbol:
+                base = btc_symbol.replace("USDT", "")
+                formatted_symbol = f"{base}-USDT"
+            else:
+                formatted_symbol = btc_symbol
 
-    config = ConfigClass(**params)
-    return StrategyClass(config=config)
+            params["btc_instrument_id"] = f"{formatted_symbol}-{inst_type}.{venue}"
+
+        # 过滤掉配置类中不存在的参数（如 YAML 中的 symbols）
+        valid_fields = set()
+        for cls_ in ConfigClass.__mro__:
+            valid_fields.update(getattr(cls_, "__annotations__", {}).keys())
+        
+        valid_params = {k: v for k, v in params.items() if k in valid_fields}
+        config = ConfigClass(**valid_params)
+        strategies.append(StrategyClass(config=config))
+
+    return strategies
 
 
 def build_okx_config(sandbox_cfg: SandboxConfig, instrument_ids):
@@ -153,7 +184,7 @@ async def run_sandbox(env_name: Optional[str] = None):
 
     sandbox_cfg = env_config.sandbox
 
-    # 构建trader_id
+    # 构建针对特定标的的结算环境
     trader_name = f"{sandbox_cfg.venue}_{active_config.primary_symbol}_{'TESTNET' if sandbox_cfg.is_testnet else 'LIVE'}"
     trader_id = TraderId(trader_name.replace("_", "-"))
 
@@ -170,8 +201,27 @@ async def run_sandbox(env_name: Optional[str] = None):
     # 构建交易所配置
     instrument_ids = sandbox_cfg.instrument_ids
 
+    # 自动探测策略需要的辅助标的（如 BTC）并加入 load_ids
+    all_needed_ids = set(instrument_ids)
+    if "btc_symbol" in strategy_config.parameters:
+        venue = sandbox_cfg.venue
+        btc_symbol = strategy_config.parameters["btc_symbol"]
+        # 取第一个标的来推导合约类型
+        if instrument_ids:
+            inst_id = instrument_ids[0]
+            symbol_parts = inst_id.split(".")[0].split("-")
+            inst_type = symbol_parts[-1] if len(symbol_parts) > 2 else "PERP"
+
+            if "USDT" in btc_symbol and "-" not in btc_symbol:
+                base = btc_symbol.replace("USDT", "")
+                formatted_symbol = f"{base}-USDT"
+            else:
+                formatted_symbol = btc_symbol
+
+            all_needed_ids.add(f"{formatted_symbol}-{inst_type}.{venue}")
+
     if sandbox_cfg.venue == "OKX":
-        data_config, exec_config = build_okx_config(sandbox_cfg, instrument_ids)
+        data_config, exec_config = build_okx_config(sandbox_cfg, list(all_needed_ids))
         data_clients = {OKX: data_config}
         exec_clients = {OKX: exec_config}
         data_factory = {OKX: OKXLiveDataClientFactory}
@@ -205,10 +255,6 @@ async def run_sandbox(env_name: Optional[str] = None):
     # 创建节点
     node = TradingNode(config=node_config)
 
-    # 加载策略
-    strategy = load_strategy_instance(strategy_config, instrument_ids)
-    node.trader.add_strategy(strategy)
-
     # 注册客户端工厂
     for venue, factory in data_factory.items():
         node.add_data_client_factory(venue, factory)
@@ -217,14 +263,19 @@ async def run_sandbox(env_name: Optional[str] = None):
 
     node.build()
 
-    # 加载本地标的文件
-    for inst_id_str in instrument_ids:
+    # 加载本地标的文件 (包含辅助标地)
+    for inst_id_str in all_needed_ids:
         venue_str = inst_id_str.split(".")[-1]
         inst_file = BASE_DIR / "data" / "instrument" / venue_str / f"{inst_id_str.split('.')[0]}.json"
 
         if inst_file.exists():
             inst = load_instrument(inst_file)
-            node.trader.add_instrument(inst)
+            node.cache.add_instrument(inst)
+
+    # 加载策略实例
+    strategies = load_strategy_instances(strategy_config, instrument_ids)
+    for strategy in strategies:
+        node.trader.add_strategy(strategy)
 
     # 运行
     try:
