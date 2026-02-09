@@ -5,6 +5,7 @@ OI 和 Funding Rate 数据适配器
 将 CSV 格式的原始数据转换为 NautilusTrader 自定义数据类型。
 """
 
+import logging
 from decimal import Decimal
 from pathlib import Path
 from typing import List
@@ -15,8 +16,6 @@ from nautilus_trader.model.identifiers import InstrumentId
 
 from utils.custom_data import FundingRateData, OpenInterestData
 
-
-import logging
 logger = logging.getLogger(__name__)
 
 class OIFundingDataLoader:

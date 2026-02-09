@@ -88,4 +88,4 @@ parameters:
   # ATR 模式根据波动率动态调整仓位，回测收益提升约 5 倍（+61.78% vs +10.34%）
   # 固定百分比模式（qty_percent: 0.1）收益较低但更保守
   # qty_percent: 0.1
-  leverage: 1
+  leverage: 2

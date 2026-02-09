@@ -5,8 +5,8 @@
 提供命令行界面来管理配置系统，包括验证、切换、查看等功能。
 """
 
-import sys
 import argparse
+import sys
 from pathlib import Path
 
 # 添加项目根目录到Python路径

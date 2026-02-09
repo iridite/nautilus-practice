@@ -1,12 +1,11 @@
 import json
+import logging
 from pathlib import Path
 from typing import Union
 
 import nautilus_trader.model.instruments as instruments_module
 from nautilus_trader.model.instruments import Instrument
 
-
-import logging
 logger = logging.getLogger(__name__)
 
 def load_instrument(

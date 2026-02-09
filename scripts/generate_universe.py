@@ -55,7 +55,7 @@ STABLECOINS = [
     "USDD",
 ]
 MIN_COUNT_RATIO = 1.0  # 数据完整度阈值
-TOP_Ns = [15]  # 选取前 N 个币种
+TOP_Ns = [15, 100]  # 选取前 N 个币种
 
 # 更新频率配置：支持 "ME"(月度), "W-MON"(周度), "2W-MON"(双周)
 REBALANCE_FREQ = "W-MON"

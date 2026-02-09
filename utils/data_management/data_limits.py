@@ -7,7 +7,6 @@
 from datetime import datetime, timedelta
 from typing import Dict, Tuple
 
-
 # 交易所数据限制配置
 EXCHANGE_DATA_LIMITS: Dict[str, Dict[str, int]] = {
     "binance": {

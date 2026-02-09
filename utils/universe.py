@@ -5,14 +5,13 @@ Universe 配置解析模块
 """
 
 import json
+import logging
 from pathlib import Path
 from typing import Dict, List, Set, Union
 
 from core.exceptions import UniverseParseError
 from core.schemas import InstrumentConfig, InstrumentType
 
-
-import logging
 logger = logging.getLogger(__name__)
 
 def load_universe_file(universe_path: Union[str, Path]) -> Dict[str, List[str]]:

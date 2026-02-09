@@ -12,6 +12,7 @@
 - 带重试的数据获取
 """
 
+import logging
 from pathlib import Path
 from typing import List, Tuple
 
@@ -19,8 +20,6 @@ from utils.data_file_checker import check_single_data_file
 
 from .data_retrieval import batch_fetch_ohlcv, batch_fetch_oi_and_funding
 
-
-import logging
 logger = logging.getLogger(__name__)
 
 class DataManager:

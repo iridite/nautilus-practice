@@ -1,8 +1,0 @@
-
-line-length = 100
-target-version = "py312"
-select = ["E", "F", "I", "N", "W"]
-ignore = ["E501", "E402", "N803", "N805", "N806", "I001"]
-
-[per-file-ignores]
-"tests/**" = ["F401"]
