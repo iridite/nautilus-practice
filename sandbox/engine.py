@@ -69,7 +69,7 @@ def load_strategy_instances(strategy_config, instrument_ids):
             else:
                 period = "1"
                 unit = "DAY"
-            
+
             p_type = params.get("price_type", "LAST")
             orig = params.get("origination", "EXTERNAL")
             params["bar_type"] = f"{inst_id}-{period}-{unit}-{p_type}-{orig}"
@@ -100,7 +100,7 @@ def load_strategy_instances(strategy_config, instrument_ids):
         valid_fields = set()
         for cls_ in ConfigClass.__mro__:
             valid_fields.update(getattr(cls_, "__annotations__", {}).keys())
-        
+
         valid_params = {k: v for k, v in params.items() if k in valid_fields}
         config = ConfigClass(**valid_params)
         strategies.append(StrategyClass(config=config))
