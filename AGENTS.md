@@ -275,6 +275,27 @@ class MyStrategyConfig(BaseStrategyConfig):
     timeframes: List[str] = ["main", "trend"]  # Declare required timeframes
 ```
 
+#### Example Usage
+
+1. **Single Timeframe Strategy**:
+   ```yaml
+   # dual_thrust.yaml
+   parameters:
+     timeframes: ["main"]
+   ```
+
+2. **Multi-Timeframe Strategy**:
+   ```yaml
+   # oi_divergence.yaml
+   parameters:
+     timeframes: ["main", "trend"]
+   ```
+
+#### Benefits
+- **Validation**: Ensures all required data is available before backtesting.
+- **Efficiency**: Loads only the declared timeframes, reducing memory usage.
+- **Flexibility**: Supports multi-exchange fallback and smart retry mechanisms.
+
 **Data Types Declaration** (`data_types`):
 - System automatically checks strategy's `data_types` list before backtest
 - Validates data file existence

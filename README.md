@@ -55,16 +55,24 @@ uv run python main.py backtest
 
 ### 🚀 Quick Start Guide
 
-```bash
-# 1. Basic backtest (automatically fetches all required data)
-uv run python main.py backtest
+1. **Clone the Repository**:
+   ```bash
+   git clone https://github.com/your-repo/nautilus-practice.git
+   cd nautilus-practice
+   ```
 
-# 2. View OI strategy example
-uv run python examples/oi_strategy_example.py
+2. **Set Up the Environment**:
+   ```bash
+   uv sync
+   source .venv/bin/activate
+   ```
 
-# 3. Test OI data integration functionality
-uv run python test_oi_integration.py
-```
+3. **Run Tests**:
+   ```bash
+   uv run python -m unittest discover -s tests -p "test_*.py" -v
+   ```
+
+---
 
 **First Run**: The system will automatically detect strategy data requirements and download necessary OI and Funding Rate data from exchanges. This process may take a few minutes depending on data volume and network conditions.
 
