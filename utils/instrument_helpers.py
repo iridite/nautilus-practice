@@ -1,8 +1,11 @@
-nautilus-practice/utils/instrument_helpers.py
-# Utility helpers for instrument id and bar_type formatting and parsing.
-# Designed to centralize common logic used across sandbox/live engines and other modules.
-
 from __future__ import annotations
+
+"""Utility helpers for constructing instrument ids and bar_type strings.
+
+Centralizes logic for formatting auxiliary instrument ids (e.g. deriving BTC instrument
+id from a simplified `btc_symbol` and a template instrument id) and for building
+bar_type strings from timeframe specifications.
+"""
 
 import logging
 from typing import Optional, Tuple
