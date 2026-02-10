@@ -109,26 +109,39 @@ def format_aux_instrument_id(
     aux_symbol: str,
     template_inst_id: Optional[str] = None,
     venue: Optional[str] = None,
+    inst_type: Optional[str] = None,
 ) -> str:
     """
     Format an auxiliary symbol (like BTCUSDT, BTC-USDT, BTC) into a full instrument_id.
 
-    If `template_inst_id` is provided, the returned instrument will inherit the contract
-    type (e.g. PERP/SWAP) and, if present in the template, the venue. If the template
-    does not include a venue, the `venue` argument is required (or an exception is raised).
+    Behavior / precedence:
+      1. If `inst_type` is provided, it is used (uppercased) as the contract type.
+      2. Else if `template_inst_id` is provided, the contract type is parsed from it.
+      3. Otherwise the default contract type is "PERP".
+
+    Venue resolution:
+      - If `template_inst_id` contains a venue (e.g. '.OKX'), it takes precedence.
+      - Otherwise the `venue` argument must be provided when no template venue exists.
 
     Examples:
       - format_aux_instrument_id("BTCUSDT", "AVAX-USDT-PERP.OKX") -> "BTC-USDT-PERP.OKX"
       - format_aux_instrument_id("btc", None, venue="OKX") -> "BTC-USDT-PERP.OKX"
+      - format_aux_instrument_id("BTCUSDT", inst_type="SWAP", venue="BINANCE") -> "BTC-USDT-SWAP.BINANCE"
 
     Returns: instrument_id string like 'BTC-USDT-PERP.OKX'
     """
     formatted_symbol = _normalize_aux_symbol(aux_symbol)
 
-    inst_type = "PERP"
+    # Determine instrument type: explicit param > template-derived > default
+    if inst_type:
+        resolved_inst_type = inst_type.strip().upper()
+    else:
+        resolved_inst_type = "PERP"
+        if template_inst_id:
+            resolved_inst_type = _parse_inst_type_from_template(template_inst_id)
+
     tmpl_venue = None
     if template_inst_id:
-        inst_type = _parse_inst_type_from_template(template_inst_id)
         tmpl_venue = _parse_venue_from_template(template_inst_id)
 
     # Decide venue: template venue takes precedence over explicit venue argument
@@ -138,7 +151,7 @@ def format_aux_instrument_id(
             "venue is required when template_inst_id does not specify a venue"
         )
 
-    instrument_id = f"{formatted_symbol}-{inst_type}.{resolved_venue}"
+    instrument_id = f"{formatted_symbol}-{resolved_inst_type}.{resolved_venue}"
     return instrument_id
 
 
