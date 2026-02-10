@@ -60,24 +60,12 @@ def load_strategy_instances(strategy_config, instrument_ids):
 
         # 构建 bar_type (必须提供给策略，否则 on_start 会失败)
         if not params.get("bar_type"):
-            timeframe = params.get("timeframe", "1d").lower()
-            # 转换 1d -> 1-DAY, 1h -> 1-HOUR, 15m -> 15-MINUTE
-            if timeframe.endswith("d"):
-                period = timeframe[:-1]
-                unit = "DAY"
-            elif timeframe.endswith("h"):
-                period = timeframe[:-1]
-                unit = "HOUR"
-            elif timeframe.endswith("m"):
-                period = timeframe[:-1]
-                unit = "MINUTE"
-            else:
-                period = "1"
-                unit = "DAY"
-
-            p_type = params.get("price_type", "LAST")
-            orig = params.get("origination", "EXTERNAL")
-            params["bar_type"] = f"{inst_id}-{period}-{unit}-{p_type}-{orig}"
+            params["bar_type"] = build_bar_type_from_timeframe(
+                instrument_id=inst_id,
+                timeframe=params.get("timeframe", "1d"),
+                price_type=params.get("price_type", "LAST"),
+                origination=params.get("origination", "EXTERNAL"),
+            )
 
         # 生成唯一的 StrategyId
         symbol_part = inst_id.split(".")[0]
