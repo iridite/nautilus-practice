@@ -31,8 +31,13 @@ from nautilus_trader.model.identifiers import TraderId
 BASE_DIR = Path(__file__).resolve().parent.parent
 sys.path.append(str(BASE_DIR))
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 from core.loader import load_config
 from core.schemas import SandboxConfig
+from utils.instrument_helpers import build_bar_type_from_timeframe, format_aux_instrument_id
 from utils.instrument_loader import load_instrument
 
 
@@ -80,21 +85,12 @@ def load_strategy_instances(strategy_config, instrument_ids):
 
         # 处理 btc_instrument_id（如果策略需要）
         if "btc_symbol" in params and (not params.get("btc_instrument_id") or params.get("btc_instrument_id") == ""):
-            parts = inst_id.split(".")
-            venue = parts[-1]
-            symbol_parts = parts[0].split("-")
-            # 保持相同的合约类型（PERP/SWAP/CASH）
-            inst_type = symbol_parts[-1] if len(symbol_parts) > 2 else "PERP"
-
-            btc_symbol = params["btc_symbol"]
-            # 统一符号格式
-            if "USDT" in btc_symbol and "-" not in btc_symbol:
-                base = btc_symbol.replace("USDT", "")
-                formatted_symbol = f"{base}-USDT"
-            else:
-                formatted_symbol = btc_symbol
-
-            params["btc_instrument_id"] = f"{formatted_symbol}-{inst_type}.{venue}"
+            try:
+                # Prefer deriving the BTC instrument by inheriting contract type and venue
+                params["btc_instrument_id"] = format_aux_instrument_id(params["btc_symbol"], template_inst_id=inst_id)
+            except Exception as e:
+                logger.exception("Failed to format btc_instrument_id for template %s, btc_symbol=%s: %s", inst_id, params.get("btc_symbol"), e)
+                raise
 
         # 过滤掉配置类中不存在的参数（如 YAML 中的 symbols）
         valid_fields = set()
@@ -114,6 +110,7 @@ def build_okx_config(sandbox_cfg: SandboxConfig, instrument_ids):
     if sandbox_cfg.is_testnet:
         env_file = BASE_DIR / "test.env"
         if not env_file.exists():
+            logger.error("Testnet environment file not found: %s", env_file)
             raise FileNotFoundError(
                 f"Testnet environment file not found: {env_file}\n"
                 f"Please create test.env with OKX testnet API credentials"
@@ -121,6 +118,7 @@ def build_okx_config(sandbox_cfg: SandboxConfig, instrument_ids):
     else:
         env_file = BASE_DIR / ".env"
         if not env_file.exists():
+            logger.error("Environment file not found: %s", env_file)
             raise FileNotFoundError(f"Environment file not found: {env_file}")
 
     load_dotenv(env_file)
@@ -130,6 +128,12 @@ def build_okx_config(sandbox_cfg: SandboxConfig, instrument_ids):
     api_passphrase = os.getenv(sandbox_cfg.api_passphrase_env)
 
     if not all([api_key, api_secret, api_passphrase]):
+        logger.error(
+            "Missing API credentials in environment. Needed env vars: %s, %s, %s",
+            sandbox_cfg.api_key_env,
+            sandbox_cfg.api_secret_env,
+            sandbox_cfg.api_passphrase_env,
+        )
         raise ValueError("Missing API credentials in environment")
 
     # 转换instrument_ids为frozenset
@@ -204,21 +208,16 @@ async def run_sandbox(env_name: Optional[str] = None):
     # 自动探测策略需要的辅助标的（如 BTC）并加入 load_ids
     all_needed_ids = set(instrument_ids)
     if "btc_symbol" in strategy_config.parameters:
-        venue = sandbox_cfg.venue
         btc_symbol = strategy_config.parameters["btc_symbol"]
-        # 取第一个标的来推导合约类型
+        # Use the first instrument as a template to inherit contract type and venue
         if instrument_ids:
             inst_id = instrument_ids[0]
-            symbol_parts = inst_id.split(".")[0].split("-")
-            inst_type = symbol_parts[-1] if len(symbol_parts) > 2 else "PERP"
-
-            if "USDT" in btc_symbol and "-" not in btc_symbol:
-                base = btc_symbol.replace("USDT", "")
-                formatted_symbol = f"{base}-USDT"
-            else:
-                formatted_symbol = btc_symbol
-
-            all_needed_ids.add(f"{formatted_symbol}-{inst_type}.{venue}")
+            try:
+                aux_id = format_aux_instrument_id(btc_symbol, template_inst_id=inst_id)
+                all_needed_ids.add(aux_id)
+            except Exception:
+                logger.exception("Failed to derive auxiliary instrument id for btc_symbol=%s from template=%s", btc_symbol, inst_id)
+                # fallback: continue without auxiliary id
 
     if sandbox_cfg.venue == "OKX":
         data_config, exec_config = build_okx_config(sandbox_cfg, list(all_needed_ids))
@@ -271,11 +270,20 @@ async def run_sandbox(env_name: Optional[str] = None):
         if inst_file.exists():
             inst = load_instrument(inst_file)
             node.cache.add_instrument(inst)
+        else:
+            logger.warning(
+                "Instrument file not found: %s (instrument id: %s). This instrument will be skipped.",
+                inst_file,
+                inst_id_str,
+            )
 
     # 加载策略实例
     strategies = load_strategy_instances(strategy_config, instrument_ids)
+    logger.info("Loaded %d strategy instance(s) from config %s", len(strategies), getattr(strategy_config, "name", "unknown"))
     for strategy in strategies:
         node.trader.add_strategy(strategy)
+        sid = getattr(getattr(strategy, "config", None), "strategy_id", None)
+        logger.info("Registered strategy instance: %s", sid or repr(strategy))
 
     # 运行
     try:
