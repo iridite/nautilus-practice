@@ -13,12 +13,9 @@ from nautilus_trader.model import Money
 from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.enums import BarAggregation, PriceType
 
-# Delegate instrument / bar formatting to centralized helpers
-from utils.instrument_helpers import (
-    build_bar_type_from_timeframe,
-    format_aux_instrument_id,
-)
-
+# Instrument helper imports are performed inside functions to avoid circular imports
+# (importing them at module level caused a circular import when other utils modules
+# import core.adapter). Local imports keep semantics identical while breaking the cycle.
 from .exceptions import ConfigValidationError
 from .loader import ConfigLoader
 from .schemas import (

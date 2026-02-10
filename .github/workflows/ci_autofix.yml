@@ -1,0 +1,155 @@
+name: CI (lint → tests → optional auto-fix)
+
+on:
+  push:
+    branches:
+      - "**"
+  pull_request:
+    branches:
+      - "**"
+  workflow_dispatch:
+
+permissions:
+  contents: write  # required for creating branches / PRs from the workflow (auto-fix job)
+  checks: write
+  actions: read
+
+jobs:
+  lint:
+    name: Lint (ruff)
+    runs-on: ubuntu-latest
+    outputs:
+      lint_failed: ${{ steps.lint_check.outputs.lint_failed }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.12
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.12"
+
+      - name: Install uv and dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install uv || true
+          # sync project dependencies (uv may be a project-local tool)
+          uv sync || true
+
+      - name: Run ruff (check only)
+        id: lint_check
+        run: |
+          # Run ruff via uv (project convention). Capture exit code and export a job output
+          set -o pipefail
+          LINT_EXIT=0
+          uv run ruff check . || LINT_EXIT=$?
+          if [ "$LINT_EXIT" -ne 0 ]; then
+            echo "lint_failed=true" >> "$GITHUB_OUTPUT"
+            # Do not fail the lint job - we want subsequent jobs to run and let auto-fix act later
+          else
+            echo "lint_failed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Optional: run additional linters (disabled by default)
+        if: false
+        run: |
+          uv run mypy || true
+
+  tests:
+    name: Tests
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.12
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.12"
+
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install uv || true
+          uv sync || true
+
+      - name: Run unit & integration tests
+        id: run_tests
+        run: |
+          # Run test discovery the same way developers run locally
+          set -o pipefail
+          uv run python -m unittest discover -s tests -p "test_*.py" -v
+
+      - name: Upload test logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-output
+          path: |
+            .  # upload workspace so maintainers can inspect logs; adjust if too large
+            # Alternatively you may pipe the test output to a file and upload that file only.
+
+  auto-fix:
+    name: Auto-fix lint & open PR (ruff --fix)
+    runs-on: ubuntu-latest
+    needs: [lint, tests]
+    if: needs.tests.result == 'success' && needs.lint.outputs.lint_failed == 'true'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python 3.12
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.12"
+
+      - name: Install uv and tooling
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install uv || true
+          uv sync || true
+          # Ensure ruff is available in the environment created by uv
+          uv run ruff --version || true
+
+      - name: Run ruff --fix
+        id: ruff_fix
+        run: |
+          # Apply auto-fixes. This mutates files in the working tree.
+          uv run ruff check . --fix || true
+
+      - name: Show git status (debug)
+        run: |
+          git status --porcelain=2 --untracked-files=all || true
+          git --no-pager diff --name-only || true
+
+      - name: Create PR if fixes were made
+        # This action will commit any unstaged changes and create a pull request from them.
+        # It only creates a PR if there are changes to commit.
+        uses: peter-evans/create-pull-request@v5
+        with:
+          # Branch name pattern
+          branch: auto/ruff-fixes-${{ github.run_id }}
+          title: "chore: auto apply ruff fixes"
+          body: |
+            This PR was automatically created by CI to apply ruff auto-fixes.
+            - If the changes are acceptable, please review & merge.
+            - If not, please close the PR and apply manual fixes as needed.
+
+            Notes:
+            - Only style/formatting fixes are applied automatically.
+            - No behavioral or logic fixes are performed by this workflow.
+          commit-message: "chore: auto apply ruff fixes"
+          labels: automated, autofix
+          committer: github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>
+          author: github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: No-op when no fixes
+        if: steps.ruff_fix.outcome == 'success' && steps.ruff_fix.conclusion == 'success'
+        run: |
+          # The create-pull-request step will not create a PR if there are no changes;
+          # this step is here as a friendly log message.
+          echo "Ruff ran and no autofixes were applied (or the fixes were committed by the action)."
