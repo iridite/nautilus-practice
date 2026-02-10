@@ -433,11 +433,9 @@ def batch_fetch_oi_and_funding(
         for raw_symbol in pbar:
             pbar.set_postfix_str(f"{raw_symbol}", refresh=True)
 
-            if raw_symbol.upper().endswith("USDT"):
-                base = raw_symbol.upper().replace("USDT", "")
-                ccxt_symbol = f"{base}/USDT:USDT"
-            else:
-                ccxt_symbol = raw_symbol
+            # Use shared symbol resolver to get a ccxt-compatible symbol and market type
+            # resolve_symbol_and_type returns (ccxt_symbol, market_type)
+            ccxt_symbol, market_type = resolve_symbol_and_type(raw_symbol)
 
             if ccxt_symbol not in exchange.markets:
                 logger.warning(f"\n[WARNING] {raw_symbol} not found in {exchange_id.upper()}, skipping")

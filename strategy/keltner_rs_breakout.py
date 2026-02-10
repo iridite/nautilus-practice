@@ -264,10 +264,17 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
         if not self.universe_data:
             return True
 
-        # 从 instrument.id 提取基础符号
-        # 例如：BTCUSDT-PERP.BINANCE -> BTCUSDT
-        instrument_str = str(self.instrument.id)
-        base_symbol = instrument_str.split("-")[0].split(".")[0]
+        # 从 instrument.id 提取基础符号，优先使用工具函数以覆盖多种格式。
+        # parse_instrument_id 返回的 symbol 形式为 'BASE-USDT'，需要去掉连字符以匹配 Universe 中的 'BASEUSDT' 格式。
+        try:
+            from utils.instrument_helpers import parse_instrument_id
+
+            symbol, _, _ = parse_instrument_id(str(self.instrument.id))
+            base_symbol = symbol.replace("-", "") if symbol else ""
+        except Exception:
+            # 兼容回退：保留原有简单解析逻辑
+            instrument_str = str(self.instrument.id)
+            base_symbol = instrument_str.split("-")[0].split(".")[0]
 
         return base_symbol in self.active_symbols
 

@@ -41,6 +41,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 sys.path.append(str(BASE_DIR))
 
 from core.loader import load_config
+from utils.instrument_helpers import build_bar_type_from_timeframe, format_aux_instrument_id
 from utils.instrument_loader import load_instrument
 
 
@@ -63,19 +64,11 @@ def load_strategy_instance(strategy_config, instrument_ids):
 
     if "btc_symbol" in params and (not params.get("btc_instrument_id") or params.get("btc_instrument_id") == ""):
         inst_id = params["instrument_id"]
-        parts = inst_id.split(".")
-        venue = parts[-1]
-        symbol_parts = parts[0].split("-")
-        inst_type = symbol_parts[-1] if len(symbol_parts) > 2 else "PERP"
-
-        btc_symbol = params["btc_symbol"]
-        if "USDT" in btc_symbol:
-            base = btc_symbol.replace("USDT", "")
-            formatted_symbol = f"{base}-USDT"
-        else:
-            formatted_symbol = btc_symbol
-
-        params["btc_instrument_id"] = f"{formatted_symbol}-{inst_type}.{venue}"
+        try:
+            # Derive btc_instrument_id by inheriting contract type and venue from the template inst_id
+            params["btc_instrument_id"] = format_aux_instrument_id(params["btc_symbol"], template_inst_id=inst_id)
+        except Exception as e:
+            raise ValueError(f"Failed to format btc_instrument_id for template {inst_id}, btc_symbol={params.get('btc_symbol')}: {e}")
 
     config = ConfigClass(**params)
     return StrategyClass(config=config)
