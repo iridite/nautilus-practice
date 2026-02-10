@@ -13,6 +13,12 @@ from nautilus_trader.model import Money
 from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.enums import BarAggregation, PriceType
 
+# Delegate instrument / bar formatting to centralized helpers
+from utils.instrument_helpers import (
+    build_bar_type_from_timeframe,
+    format_aux_instrument_id,
+)
+
 from .exceptions import ConfigValidationError
 from .loader import ConfigLoader
 from .schemas import (
@@ -245,39 +251,70 @@ class ConfigAdapter:
         return feeds
 
     def _restore_instrument_id(self, symbol: str) -> str:
-        """从简化标的名称还原完整 instrument_id"""
+        """从简化标的名称还原完整 instrument_id
+
+        Delegate to `utils.instrument_helpers.format_aux_instrument_id`, while preserving
+        the adapter's environment-driven semantics by passing venue and instrument type
+        from the environment configuration.
+
+        Falls back to original heuristic if helper fails for any reason.
+        """
         venue = self.get_venue()
         inst_type = self.env_config.trading.instrument_type
 
-        # 判断是现货还是永续
-        if symbol.endswith("USDT"):
-            # ETHUSDT -> 永续合约
-            if inst_type == "SWAP":
-                return f"{symbol}-PERP.{venue}"
-            elif inst_type == "SPOT":
-                return f"{symbol}.{venue}"
-        else:
-            # ETH -> 现货
-            return f"{symbol}USDT.{venue}"
+        try:
+            # Use the helper which normalizes various aux symbol formats and composes
+            # a canonical instrument_id. We explicitly pass env-driven inst_type and venue
+            # to preserve adapter semantics.
+            return format_aux_instrument_id(
+                symbol,
+                template_inst_id=None,
+                venue=venue,
+                inst_type=inst_type,
+            )
+        except Exception:
+            # Fallback: preserve previous behavior in case of unexpected helper failure
+            # 保持原有逻辑，确保在任何情况下都能返回有效的 instrument_id 字符串
+            if symbol.endswith("USDT"):
+                # ETHUSDT -> 永续合约 or spot
+                if inst_type == "SWAP":
+                    return f"{symbol}-PERP.{venue}"
+                elif inst_type == "SPOT":
+                    return f"{symbol}.{venue}"
+            else:
+                # ETH -> 现货
+                return f"{symbol}USDT.{venue}"
 
-        return f"{symbol}-PERP.{venue}"
+            return f"{symbol}-PERP.{venue}"
 
     def _restore_bar_type(self, symbol: str, timeframe: str, price_type: str = "LAST", origination: str = "EXTERNAL") -> str:
-        """从简化字段还原完整 bar_type"""
+        """从简化字段还原完整 bar_type
+
+        Delegate to `utils.instrument_helpers.build_bar_type_from_timeframe`.
+        """
+        # First restore instrument_id using adapter semantics
         instrument_id = self._restore_instrument_id(symbol)
 
-        # 转换 timeframe 格式: "1d" -> "1-DAY"
-        unit = timeframe[-1].lower()
-        period = timeframe[:-1] if len(timeframe) > 1 else "1"
+        try:
+            return build_bar_type_from_timeframe(
+                instrument_id,
+                timeframe,
+                price_type=price_type,
+                origination=origination,
+            )
+        except Exception:
+            # Fallback: preserve previous timeframe -> unit mapping logic
+            unit = timeframe[-1].lower()
+            period = timeframe[:-1] if len(timeframe) > 1 else "1"
 
-        unit_map = {
-            "m": "MINUTE",
-            "h": "HOUR",
-            "d": "DAY"
-        }
+            unit_map = {
+                "m": "MINUTE",
+                "h": "HOUR",
+                "d": "DAY"
+            }
 
-        bar_unit = unit_map.get(unit, "DAY")
-        return f"{instrument_id}-{period}-{bar_unit}-{price_type.upper()}-{origination.upper()}"
+            bar_unit = unit_map.get(unit, "DAY")
+            return f"{instrument_id}-{period}-{bar_unit}-{price_type.upper()}-{origination.upper()}"
 
     def _build_strategy_params(self) -> Any:
         """构建策略参数"""
