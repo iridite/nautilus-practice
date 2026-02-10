@@ -41,7 +41,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 sys.path.append(str(BASE_DIR))
 
 from core.loader import load_config
-from utils.instrument_helpers import build_bar_type_from_timeframe, format_aux_instrument_id
+from utils.instrument_helpers import format_aux_instrument_id
 from utils.instrument_loader import load_instrument
 
 

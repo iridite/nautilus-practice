@@ -37,7 +37,7 @@ logger = logging.getLogger(__name__)
 
 from core.loader import load_config
 from core.schemas import SandboxConfig
-from utils.instrument_helpers import build_bar_type_from_timeframe, format_aux_instrument_id
+from utils.instrument_helpers import format_aux_instrument_id
 from utils.instrument_loader import load_instrument
 
 
