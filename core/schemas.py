@@ -408,6 +408,12 @@ class SandboxConfig(BaseModel):
     # 缓存配置
     flush_cache_on_start: bool = False
 
+    # When True, allow missing instrument json files during sandbox preflight.
+    # Missing instrument files will be treated as warnings rather than blocking
+    # errors. This is convenient for local development where the data/instrument
+    # directory may not be populated. Default is False (strict validation).
+    allow_missing_instruments: bool = False
+
     @validator("venue")
     def validate_venue(cls, v):
         supported = ["OKX", "BINANCE"]

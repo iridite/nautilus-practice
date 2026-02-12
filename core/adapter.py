@@ -256,6 +256,9 @@ class ConfigAdapter:
 
         Falls back to original heuristic if helper fails for any reason.
         """
+        # Local import to avoid circular dependency
+        from utils.instrument_helpers import format_aux_instrument_id
+
         venue = self.get_venue()
         inst_type = self.env_config.trading.instrument_type
 
@@ -289,6 +292,9 @@ class ConfigAdapter:
 
         Delegate to `utils.instrument_helpers.build_bar_type_from_timeframe`.
         """
+        # Local import to avoid circular dependency
+        from utils.instrument_helpers import build_bar_type_from_timeframe
+
         # First restore instrument_id using adapter semantics
         instrument_id = self._restore_instrument_id(symbol)
 

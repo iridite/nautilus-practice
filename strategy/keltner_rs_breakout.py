@@ -453,9 +453,12 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
         # 场景：某币种虽然收出了长上影线（骗线形态），但第二天主力突然发疯又把它拉上去了。
         # 解读：这种钱叫**“混乱的钱”**。它的上涨不符合逻辑，纯属随机波动或强庄控盘。
         # 结论：实体过滤器让你踏空了这些“混乱的钱”，但这完全是可以接受的。因为长期来看，去赚这种钱的期望值是负的。我们只赚逻辑闭环内的钱。
-        _ratio = float(bar.high) - float(bar.low) / float(bar.high) - float(bar.close)
-        if _ratio > self.config.max_upper_wick_ratio:
-            return
+        body_size = float(bar.high) - float(bar.low)
+        upper_wick = float(bar.high) - float(bar.close)
+        if body_size > 0:
+            upper_wick_ratio = upper_wick / body_size
+            if upper_wick_ratio > self.config.max_upper_wick_ratio:
+                return
 
 
         # 10. 执行入场

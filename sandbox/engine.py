@@ -37,7 +37,8 @@ logger = logging.getLogger(__name__)
 
 from core.loader import load_config
 from core.schemas import SandboxConfig
-from utils.instrument_helpers import format_aux_instrument_id
+from sandbox.preflight import run_preflight
+from utils.instrument_helpers import build_bar_type_from_timeframe, format_aux_instrument_id
 from utils.instrument_loader import load_instrument
 
 
@@ -176,6 +177,27 @@ async def run_sandbox(env_name: Optional[str] = None):
 
     sandbox_cfg = env_config.sandbox
 
+    # Run preflight checks to catch common startup issues early.
+    try:
+        # Allow sandbox config to opt-in to treating missing instrument json files
+        # as non-blocking warnings by setting `allow_missing_instruments: true`.
+        warn_missing = bool(getattr(sandbox_cfg, "allow_missing_instruments", False))
+        problems = run_preflight(
+            BASE_DIR,
+            sandbox_cfg,
+            strategy_config,
+            warn_on_missing_instruments=warn_missing,
+        )
+    except Exception as e:
+        logger.exception("Preflight execution failed with an unexpected error: %s", e)
+        raise
+
+    if problems:
+        for p in problems:
+            logger.error("Preflight problem: %s", p)
+        # Fail fast: do not attempt to start sandbox when preflight detects issues.
+        raise RuntimeError("Preflight checks failed; see logs for details.")
+
     # 构建针对特定标的的结算环境
     trader_name = f"{sandbox_cfg.venue}_{active_config.primary_symbol}_{'TESTNET' if sandbox_cfg.is_testnet else 'LIVE'}"
     trader_id = TraderId(trader_name.replace("_", "-"))
@@ -230,8 +252,8 @@ async def run_sandbox(env_name: Optional[str] = None):
             timestamps_as_iso8601=True,
             flush_on_start=sandbox_cfg.flush_cache_on_start,
         ),
-        data_clients=data_clients,
-        exec_clients=exec_clients,
+        data_clients=data_clients,  # type: ignore[arg-type]
+        exec_clients=exec_clients,  # type: ignore[arg-type]
         timeout_connection=10.0,
         timeout_reconciliation=10.0,
         timeout_portfolio=10.0,
