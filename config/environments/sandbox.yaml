@@ -1,15 +1,22 @@
 # Sandbox实时交易环境配置
 
-extends: "base.yaml"
+extends: "prod.yaml"
 
 # Sandbox特定配置
 sandbox:
   venue: "OKX"
   is_testnet: true
 
-  # 交易标的列表
+  # 交易标的列表（基于 active 策略 keltner_rs_breakout 的 symbols）
   instrument_ids:
-    - "BTC-USDT-SWAP.OKX"
+    - "ETHUSDT.OKX"
+    - "SOLUSDT.OKX"
+    - "BNBUSDT.OKX"
+    - "DOGEUSDT.OKX"
+    - "BTCUSDT.OKX"
+
+  # 允许本地缺失 instrument json 仅作为警告（便于开发/快速迭代）
+  allow_missing_instruments: true
 
   # API环境变量名称
   api_key_env: "OKX_API_KEY"
