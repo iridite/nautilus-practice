@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write  # required for creating branches / PRs from the workflow (auto-fix job)
+  contents: write # required for creating branches / PRs from the workflow (auto-fix job)
   checks: write
   actions: read
 
@@ -49,11 +49,6 @@ jobs:
           else
             echo "lint_failed=false" >> "$GITHUB_OUTPUT"
           fi
-
-      - name: Optional: run additional linters (disabled by default)
-        if: ${{ false }}
-        run: |
-          uv run mypy || true
 
   tests:
     name: Tests
