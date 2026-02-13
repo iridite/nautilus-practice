@@ -26,6 +26,7 @@ jobs:
           # 排除的文件模式
           EXCLUDE_PATTERNS=(
             ".git"
+            ".github/workflows/sync_to_public.yml"
             ".env"
             "test.env"
             "data/"
