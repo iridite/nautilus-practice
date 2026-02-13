@@ -55,15 +55,25 @@ jobs:
           # 构建 rsync 排除参数
           RSYNC_EXCLUDE=""
           for pattern in "${EXCLUDE_PATTERNS[@]}"; do
-            RSYNC_EXCLUDE="$RSYNC_EXCLUDE --exclude=$pattern"
+            RSYNC_EXCLUDE="$RSYNC_EXCLUDE --exclude=\"$pattern\""
           done
 
           for file in "${SENSITIVE_FILES[@]}"; do
-            RSYNC_EXCLUDE="$RSYNC_EXCLUDE --exclude=$file"
+            RSYNC_EXCLUDE="$RSYNC_EXCLUDE --exclude=\"$file\""
           done
 
           # 同步文件
-          rsync -av --delete $RSYNC_EXCLUDE ./ public-repo/
+          eval rsync -av --delete $RSYNC_EXCLUDE ./ public-repo/
+
+          # 确保删除公开仓库中的敏感文件（如果存在）
+          cd public-repo
+          for file in "${SENSITIVE_FILES[@]}"; do
+            if [ -f "$file" ]; then
+              echo "Removing sensitive file: $file"
+              rm -f "$file"
+            fi
+          done
+          cd ..
 
       - name: Commit and push to public repo
         working-directory: public-repo
@@ -77,9 +87,14 @@ jobs:
             exit 0
           fi
 
-          # 获取原始提交信息
-          COMMIT_MSG=$(cd .. && git log -1 --pretty=%B)
-          COMMIT_HASH=$(cd .. && git rev-parse --short HEAD)
+          # 获取原始提交信息（从环境变量或 git）
+          if [ -n "$GITHUB_SHA" ]; then
+            COMMIT_HASH="${GITHUB_SHA:0:7}"
+            COMMIT_MSG=$(git -C .. log -1 --pretty=%B "$GITHUB_SHA")
+          else
+            COMMIT_MSG=$(git -C .. log -1 --pretty=%B)
+            COMMIT_HASH=$(git -C .. rev-parse --short HEAD)
+          fi
 
           # 提交变更
           git add -A
