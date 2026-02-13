@@ -47,7 +47,7 @@ Universe & RS Filtering Mechanism:
 import json
 from collections import OrderedDict, deque
 from datetime import datetime
-from decimal import ROUND_HALF_UP, Decimal
+from decimal import ROUND_DOWN, ROUND_HALF_UP, Decimal
 
 import numpy as np
 from nautilus_trader.indicators import RelativeStrengthIndex
@@ -354,7 +354,7 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
         self.current_funding_rate = float(data.funding_rate)
         self.funding_rate_annual = float(data.funding_rate_annual)
 
-        # 更新市场狂热度等级
+        # 更新市场狂热度等级（只监控正资金费率，负费率表示空头支付多头，不是狂热信号）
         old_level = self.market_euphoria_level
         if self.funding_rate_annual >= self.config.funding_rate_danger_annual:
             self.market_euphoria_level = "DANGER"
@@ -791,8 +791,10 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
         if self.quantity is None or self.entry_price is None:
             return
 
-        # 计算减仓数量（保留配置比例的仓位）
-        reduce_quantity = self.quantity * Decimal(str(self.config.euphoria_reduce_position_pct))
+        # 计算减仓数量（减仓配置比例的仓位）
+        reduce_quantity = (self.quantity * Decimal(str(self.config.euphoria_reduce_position_pct))).quantize(
+            TARGET_PRECISION, ROUND_DOWN
+        )
 
         if reduce_quantity <= 0:
             return
