@@ -98,10 +98,7 @@ jobs:
 
           # 提交变更
           git add -A
-          git commit -m "sync: $COMMIT_MSG
-
-Synced from private repo: $COMMIT_HASH
-Auto-generated commit - sensitive content removed"
+          git commit -m "sync: $COMMIT_MSG" -m "Synced from private repo: $COMMIT_HASH" -m "Auto-generated commit - sensitive content removed"
 
           # 推送（带自动 rebase 处理）
           if ! git push origin main; then
