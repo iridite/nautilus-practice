@@ -62,8 +62,17 @@ jobs:
             RSYNC_EXCLUDE="$RSYNC_EXCLUDE --exclude=\"$file\""
           done
 
-          # 同步文件
+          # 同步文件（忽略 code 24 - 文件在传输中消失，通常是临时文件）
+          set +e
           eval rsync -av --delete $RSYNC_EXCLUDE ./ public-repo/
+          RSYNC_EXIT=$?
+          set -e
+
+          # rsync exit codes: 0=success, 24=partial transfer (vanished files, not critical)
+          if [ $RSYNC_EXIT -ne 0 ] && [ $RSYNC_EXIT -ne 24 ]; then
+            echo "rsync failed with exit code $RSYNC_EXIT"
+            exit $RSYNC_EXIT
+          fi
 
           # 确保删除公开仓库中的敏感文件（如果存在）
           cd public-repo
