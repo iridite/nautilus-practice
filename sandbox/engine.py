@@ -5,6 +5,7 @@
 """
 
 import asyncio
+import copy
 import os
 import sys
 from pathlib import Path
@@ -44,6 +45,20 @@ from utils.instrument_loader import load_instrument
 
 def load_strategy_instances(strategy_config, instrument_ids):
     """动态加载策略实例列表 (支持多标的)"""
+    # 硬限制：防止创建过多策略实例导致性能问题
+    MAX_STRATEGY_INSTANCES = 20
+
+    if len(instrument_ids) > MAX_STRATEGY_INSTANCES:
+        raise ValueError(
+            f"Too many instrument_ids ({len(instrument_ids)}). "
+            f"Maximum allowed: {MAX_STRATEGY_INSTANCES}.\n"
+            f"This limit prevents performance issues from excessive strategy instances.\n"
+            f"Consider:\n"
+            f"  1. Using a smaller universe (reduce universe_top_n)\n"
+            f"  2. Filtering symbols in strategy config\n"
+            f"  3. Running multiple sandbox instances with different symbol groups"
+        )
+
     module_path = strategy_config.module_path
     strategy_name = strategy_config.name
     config_class_name = strategy_config.config_class or f"{strategy_name}Config"
@@ -55,8 +70,8 @@ def load_strategy_instances(strategy_config, instrument_ids):
 
     strategies = []
     for inst_id in instrument_ids:
-        # 构建策略配置
-        params = strategy_config.parameters.copy()
+        # 构建策略配置 - 使用深拷贝避免多个策略实例共享可变对象
+        params = copy.deepcopy(strategy_config.parameters)
         params["instrument_id"] = inst_id
 
         # 构建 bar_type (必须提供给策略，否则 on_start 会失败)
@@ -68,9 +83,10 @@ def load_strategy_instances(strategy_config, instrument_ids):
                 origination=params.get("origination", "EXTERNAL"),
             )
 
-        # 生成唯一的 StrategyId
+        # 生成唯一的 StrategyId - 包含venue避免冲突
+        venue_part = inst_id.split(".")[-1]
         symbol_part = inst_id.split(".")[0]
-        params["strategy_id"] = f"{strategy_name}-{symbol_part}"
+        params["strategy_id"] = f"{strategy_name}-{symbol_part}-{venue_part}"
 
         # 处理 btc_instrument_id（如果策略需要）
         if "btc_symbol" in params and (not params.get("btc_instrument_id") or params.get("btc_instrument_id") == ""):
@@ -82,11 +98,30 @@ def load_strategy_instances(strategy_config, instrument_ids):
                 raise
 
         # 过滤掉配置类中不存在的参数（如 YAML 中的 symbols）
+        # 优先使用 Pydantic 的 model_fields（如果是 Pydantic 模型）
         valid_fields = set()
-        for cls_ in ConfigClass.__mro__:
-            valid_fields.update(getattr(cls_, "__annotations__", {}).keys())
+        if hasattr(ConfigClass, 'model_fields'):
+            # Pydantic v2 模型
+            valid_fields = set(ConfigClass.model_fields.keys())
+        elif hasattr(ConfigClass, '__fields__'):
+            # Pydantic v1 模型
+            valid_fields = set(ConfigClass.__fields__.keys())
+        else:
+            # 回退到 __annotations__（dataclass 或普通类）
+            for cls_ in ConfigClass.__mro__:
+                valid_fields.update(getattr(cls_, "__annotations__", {}).keys())
 
+        # 过滤参数并记录被过滤的参数
         valid_params = {k: v for k, v in params.items() if k in valid_fields}
+        filtered_params = {k: v for k, v in params.items() if k not in valid_fields}
+
+        if filtered_params:
+            logger.debug(
+                "Filtered out unknown parameters for %s: %s",
+                ConfigClass.__name__,
+                list(filtered_params.keys())
+            )
+
         config = ConfigClass(**valid_params)
         strategies.append(StrategyClass(config=config))
 
@@ -124,6 +159,28 @@ def build_okx_config(sandbox_cfg: SandboxConfig, instrument_ids):
             sandbox_cfg.api_passphrase_env,
         )
         raise ValueError("Missing API credentials in environment")
+
+    # 验证API凭证格式和长度
+    if len(api_key) < 10:
+        raise ValueError(
+            f"API key appears to be invalid (too short: {len(api_key)} chars). "
+            f"Expected at least 10 characters."
+        )
+
+    if len(api_secret) < 10:
+        raise ValueError(
+            f"API secret appears to be invalid (too short: {len(api_secret)} chars). "
+            f"Expected at least 10 characters."
+        )
+
+    if len(api_passphrase) < 1:
+        raise ValueError("API passphrase cannot be empty")
+
+    logger.info(
+        "API credentials loaded: key=%s..., secret=%s..., passphrase=***",
+        api_key[:8] if len(api_key) >= 8 else "***",
+        api_secret[:8] if len(api_secret) >= 8 else "***"
+    )
 
     # 转换instrument_ids为frozenset
     load_ids = frozenset(instrument_ids)
@@ -177,6 +234,17 @@ async def run_sandbox(env_name: Optional[str] = None):
 
     sandbox_cfg = env_config.sandbox
 
+    # 生产环境安全检查：禁止在生产模式下使用 allow_missing_instruments
+    if not sandbox_cfg.is_testnet and sandbox_cfg.allow_missing_instruments:
+        raise ValueError(
+            "Security violation: allow_missing_instruments=True is not allowed in production mode.\n"
+            "This setting bypasses critical safety checks and could lead to runtime failures.\n"
+            "Please either:\n"
+            "  1. Set is_testnet=true (for sandbox/testing)\n"
+            "  2. Set allow_missing_instruments=false (for production)\n"
+            "  3. Ensure all instrument files are present before starting"
+        )
+
     # Run preflight checks to catch common startup issues early.
     try:
         # Allow sandbox config to opt-in to treating missing instrument json files
@@ -198,8 +266,12 @@ async def run_sandbox(env_name: Optional[str] = None):
         # Fail fast: do not attempt to start sandbox when preflight detects issues.
         raise RuntimeError("Preflight checks failed; see logs for details.")
 
-    # 构建针对特定标的的结算环境
-    trader_name = f"{sandbox_cfg.venue}_{active_config.primary_symbol}_{'TESTNET' if sandbox_cfg.is_testnet else 'LIVE'}"
+    # 构建交易者名称和日志目录
+    # 使用时间戳确保唯一性，避免多标的场景下的命名混淆
+    from datetime import datetime
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    mode = 'TESTNET' if sandbox_cfg.is_testnet else 'LIVE'
+    trader_name = f"{sandbox_cfg.venue}_{mode}_{timestamp}"
     trader_id = TraderId(trader_name.replace("_", "-"))
 
     # 日志配置
@@ -219,15 +291,33 @@ async def run_sandbox(env_name: Optional[str] = None):
     all_needed_ids = set(instrument_ids)
     if "btc_symbol" in strategy_config.parameters:
         btc_symbol = strategy_config.parameters["btc_symbol"]
+
+        # 验证是否有模板标的
+        if not instrument_ids:
+            raise ValueError(
+                f"Cannot derive BTC instrument_id: no template instrument_ids provided. "
+                f"Please add at least one instrument_id to sandbox.yaml"
+            )
+
         # Use the first instrument as a template to inherit contract type and venue
-        if instrument_ids:
-            inst_id = instrument_ids[0]
-            try:
-                aux_id = format_aux_instrument_id(btc_symbol, template_inst_id=inst_id)
-                all_needed_ids.add(aux_id)
-            except Exception:
-                logger.exception("Failed to derive auxiliary instrument id for btc_symbol=%s from template=%s", btc_symbol, inst_id)
-                # fallback: continue without auxiliary id
+        inst_id = instrument_ids[0]
+        try:
+            aux_id = format_aux_instrument_id(btc_symbol, template_inst_id=inst_id)
+            all_needed_ids.add(aux_id)
+            logger.info(
+                "Derived auxiliary instrument id: %s (from template: %s, btc_symbol: %s)",
+                aux_id, inst_id, btc_symbol
+            )
+        except Exception as e:
+            # BTC标的对于策略至关重要，必须抛出异常
+            raise RuntimeError(
+                f"Failed to derive BTC instrument_id from template {inst_id}: {e}\n"
+                f"btc_symbol: {btc_symbol}\n"
+                f"Please either:\n"
+                f"  1. Fix the btc_symbol format in strategy config\n"
+                f"  2. Manually add BTC instrument_id to sandbox.yaml\n"
+                f"  3. Disable BTC market regime filter in strategy config"
+            ) from e
 
     if sandbox_cfg.venue == "OKX":
         data_config, exec_config = build_okx_config(sandbox_cfg, list(all_needed_ids))
@@ -254,54 +344,102 @@ async def run_sandbox(env_name: Optional[str] = None):
         ),
         data_clients=data_clients,  # type: ignore[arg-type]
         exec_clients=exec_clients,  # type: ignore[arg-type]
-        timeout_connection=10.0,
-        timeout_reconciliation=10.0,
-        timeout_portfolio=10.0,
-        timeout_disconnection=10.0,
-        timeout_post_stop=5.0,
+        # 使用配置化的超时参数
+        timeout_connection=sandbox_cfg.timeout_connection,
+        timeout_reconciliation=sandbox_cfg.timeout_reconciliation,
+        timeout_portfolio=sandbox_cfg.timeout_portfolio,
+        timeout_disconnection=sandbox_cfg.timeout_disconnection,
+        timeout_post_stop=sandbox_cfg.timeout_post_stop,
     )
 
-    # 创建节点
-    node = TradingNode(config=node_config)
+    # 创建节点 - 使用try-finally确保资源清理
+    node = None
+    try:
+        node = TradingNode(config=node_config)
 
-    # 注册客户端工厂
-    for venue, factory in data_factory.items():
-        node.add_data_client_factory(venue, factory)
-    for venue, factory in exec_factory.items():
-        node.add_exec_client_factory(venue, factory)
+        # 注册客户端工厂
+        for venue, factory in data_factory.items():
+            node.add_data_client_factory(venue, factory)
+        for venue, factory in exec_factory.items():
+            node.add_exec_client_factory(venue, factory)
 
-    node.build()
+        node.build()
 
-    # 加载本地标的文件 (包含辅助标地)
-    for inst_id_str in all_needed_ids:
-        venue_str = inst_id_str.split(".")[-1]
-        inst_file = BASE_DIR / "data" / "instrument" / venue_str / f"{inst_id_str.split('.')[0]}.json"
+        # 加载本地标的文件 (包含辅助标地)
+        missing_instruments = []
+        loaded_instruments = []
 
-        if inst_file.exists():
-            inst = load_instrument(inst_file)
-            node.cache.add_instrument(inst)
-        else:
-            logger.warning(
-                "Instrument file not found: %s (instrument id: %s). This instrument will be skipped.",
-                inst_file,
-                inst_id_str,
+        for inst_id_str in all_needed_ids:
+            venue_str = inst_id_str.split(".")[-1]
+            inst_file = BASE_DIR / "data" / "instrument" / venue_str / f"{inst_id_str.split('.')[0]}.json"
+
+            if inst_file.exists():
+                inst = load_instrument(inst_file)
+                node.cache.add_instrument(inst)
+                loaded_instruments.append(inst_id_str)
+            else:
+                missing_instruments.append((inst_id_str, inst_file))
+                logger.warning(
+                    "Instrument file not found: %s (instrument id: %s)",
+                    inst_file,
+                    inst_id_str,
+                )
+
+        # 检查缺失的标的文件
+        if missing_instruments:
+            if not sandbox_cfg.allow_missing_instruments:
+                missing_list = "\n".join([f"  - {inst_id} (expected: {path})" for inst_id, path in missing_instruments])
+                raise FileNotFoundError(
+                    f"Missing instrument files for {len(missing_instruments)} instrument(s):\n{missing_list}\n\n"
+                    f"Solutions:\n"
+                    f"  1. Run: uv run python scripts/fetch_instrument.py\n"
+                    f"  2. Or set 'allow_missing_instruments: true' in sandbox.yaml (not recommended for production)"
+                )
+            else:
+                logger.warning(
+                    "Continuing with %d missing instrument(s) (allow_missing_instruments=true)",
+                    len(missing_instruments)
+                )
+
+        # 只为已加载标的创建策略实例
+        valid_instrument_ids = [inst_id for inst_id in instrument_ids if inst_id in loaded_instruments]
+
+        if not valid_instrument_ids:
+            raise RuntimeError(
+                "No valid instruments available to create strategies. "
+                "All instrument files are missing."
             )
 
-    # 加载策略实例
-    strategies = load_strategy_instances(strategy_config, instrument_ids)
-    logger.info("Loaded %d strategy instance(s) from config %s", len(strategies), getattr(strategy_config, "name", "unknown"))
-    for strategy in strategies:
-        node.trader.add_strategy(strategy)
-        sid = getattr(getattr(strategy, "config", None), "strategy_id", None)
-        logger.info("Registered strategy instance: %s", sid or repr(strategy))
+        if len(valid_instrument_ids) < len(instrument_ids):
+            skipped = set(instrument_ids) - set(valid_instrument_ids)
+            logger.warning(
+                "Skipping %d instrument(s) due to missing files: %s",
+                len(skipped),
+                ", ".join(skipped)
+            )
 
-    # 运行
-    try:
+        # 加载策略实例（仅为有效标的）
+        strategies = load_strategy_instances(strategy_config, valid_instrument_ids)
+        logger.info("Loaded %d strategy instance(s) from config %s", len(strategies), getattr(strategy_config, "name", "unknown"))
+        for strategy in strategies:
+            node.trader.add_strategy(strategy)
+            sid = getattr(getattr(strategy, "config", None), "strategy_id", None)
+            logger.info("Registered strategy instance: %s", sid or repr(strategy))
+
+        # 运行节点
         await node.run_async()
+
     finally:
-        await node.stop_async()
-        await asyncio.sleep(1)
-        node.dispose()
+        # 确保节点资源被正确清理
+        if node is not None:
+            try:
+                logger.info("Stopping trading node...")
+                await node.stop_async()
+                await asyncio.sleep(1)
+                node.dispose()
+                logger.info("Trading node stopped and disposed successfully")
+            except Exception as cleanup_error:
+                logger.error(f"Error during node cleanup: {cleanup_error}", exc_info=True)
 
 
 if __name__ == "__main__":
