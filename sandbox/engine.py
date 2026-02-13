@@ -295,8 +295,8 @@ async def run_sandbox(env_name: Optional[str] = None):
         # 验证是否有模板标的
         if not instrument_ids:
             raise ValueError(
-                f"Cannot derive BTC instrument_id: no template instrument_ids provided. "
-                f"Please add at least one instrument_id to sandbox.yaml"
+                "Cannot derive BTC instrument_id: no template instrument_ids provided. "
+                "Please add at least one instrument_id to sandbox.yaml"
             )
 
         # Use the first instrument as a template to inherit contract type and venue
