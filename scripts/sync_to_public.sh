@@ -86,8 +86,24 @@ git commit -m "sync: $COMMIT_MSG
 Synced from private repo: $COMMIT_HASH
 Auto-generated commit - sensitive content removed" >> "$LOG_FILE" 2>&1 || error_exit "提交失败"
 
-# 推送到远程
+# 推送到远程（带自动 rebase 处理）
 log "正在推送到远程仓库..."
-git push origin main >> "$LOG_FILE" 2>&1 || error_exit "推送失败"
+if ! git push origin main >> "$LOG_FILE" 2>&1; then
+    log "推送失败，尝试 pull --rebase 后重新推送..."
+
+    # 先 fetch 远程更新
+    git fetch origin >> "$LOG_FILE" 2>&1 || error_exit "fetch 失败"
+
+    # 尝试 rebase
+    if git rebase origin/main >> "$LOG_FILE" 2>&1; then
+        log "rebase 成功，重新推送..."
+        git push origin main >> "$LOG_FILE" 2>&1 || error_exit "rebase 后推送仍然失败"
+    else
+        # rebase 失败（可能有冲突），使用 force-with-lease
+        log "rebase 失败，使用 force-with-lease 强制推送..."
+        git rebase --abort >> "$LOG_FILE" 2>&1
+        git push --force-with-lease origin main >> "$LOG_FILE" 2>&1 || error_exit "强制推送失败"
+    fi
+fi
 
 log "========== 同步完成 =========="
