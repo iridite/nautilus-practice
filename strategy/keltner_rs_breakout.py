@@ -187,6 +187,7 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
         self.current_funding_rate: float | None = None  # 当前资金费率
         self.funding_rate_annual: float | None = None  # 年化资金费率
         self.market_euphoria_level: str = "NORMAL"  # 市场狂热度等级：NORMAL, WARNING, DANGER
+        self.euphoria_reduced: bool = False  # 是否已执行狂热减仓（防止重复触发）
         self.btc_dominance_history = deque(maxlen=config.btc_dominance_lookback_days)  # BTC 市占率历史
 
         # Squeeze 状态历史
@@ -361,6 +362,8 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
             self.market_euphoria_level = "WARNING"
         else:
             self.market_euphoria_level = "NORMAL"
+            # 恢复正常状态时重置减仓标志
+            self.euphoria_reduced = False
 
         # 记录等级变化
         if old_level != self.market_euphoria_level:
@@ -370,8 +373,10 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
                 f"年化: {self.funding_rate_annual:.2f}%"
             )
 
-        # 如果进入危险状态且有持仓，触发减仓逻辑
-        if self.market_euphoria_level == "DANGER" and self.quantity is not None:
+        # 如果进入危险状态且有持仓，且尚未减仓，触发减仓逻辑
+        if (self.market_euphoria_level == "DANGER" and
+            self.quantity is not None and
+            not self.euphoria_reduced):
             self._handle_euphoria_reduce_position()
 
 
@@ -718,6 +723,7 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
 
         self.entry_bar_count = 0  # 重置 K 线计数
         self.highest_high = float(bar.high)
+        self.euphoria_reduced = False  # 重置狂热减仓标志
 
         conviction_type = "高确信度" if high_conviction else "普通"
         self.log.info(
@@ -786,9 +792,7 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
             return
 
         # 计算减仓数量（保留配置比例的仓位）
-        reduce_ratio = 1.0 - self.config.euphoria_reduce_position_pct
-        target_quantity = self.quantity * Decimal(str(reduce_ratio))
-        reduce_quantity = self.quantity - target_quantity
+        reduce_quantity = self.quantity * Decimal(str(self.config.euphoria_reduce_position_pct))
 
         if reduce_quantity <= 0:
             return
@@ -796,11 +800,11 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
         # 执行减仓
         self.log.warning(
             f"🔥 市场狂热减仓: 当前仓位={self.quantity}, "
-            f"减仓数量={reduce_quantity}, 保留比例={self.config.euphoria_reduce_position_pct:.0%}, "
+            f"减仓数量={reduce_quantity}, 减仓比例={self.config.euphoria_reduce_position_pct:.0%}, "
             f"Funding Rate 年化={self.funding_rate_annual:.2f}%"
         )
 
-        # 提交市价卖单
+        # 提交市价卖单（NautilusTrader 会自动更新持仓状态）
         order = self.order_factory.market(
             instrument_id=self.instrument.id,
             order_side=OrderSide.SELL,
@@ -808,12 +812,8 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
         )
         self.submit_order(order)
 
-        # 更新持仓数量
-        self.quantity = target_quantity
-
-        # 如果减仓后仓位为0，重置跟踪
-        if self.quantity <= 0:
-            self._reset_position_tracking()
+        # 标记已执行减仓，防止重复触发
+        self.euphoria_reduced = True
 
     def _handle_exit(self, bar: Bar) -> None:
         """处理出场逻辑"""

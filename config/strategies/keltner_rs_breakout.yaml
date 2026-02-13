@@ -63,7 +63,7 @@ parameters:
   enable_euphoria_filter: true
   funding_rate_warning_annual: 100.0 # 年化资金费率警告阈值（%）
   funding_rate_danger_annual: 200.0 # 年化资金费率危险阈值（%）
-  euphoria_reduce_position_pct: 0.5 # 危险状态下的减仓比例（保留50%仓位）
+  euphoria_reduce_position_pct: 0.5 # 危险状态下的减仓比例（减仓50%，保留50%）
 
   # Universe 参数
   universe_top_n: 15
