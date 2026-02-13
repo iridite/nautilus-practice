@@ -117,6 +117,15 @@ class KeltnerRSBreakoutConfig(BaseStrategyConfig):
     btc_regime_atr_period: int = 14  # BTC 波动率计算周期
     btc_max_atr_pct: float = 0.03  # BTC ATR 百分比阈值（3%）
 
+    # 市场狂热度过滤器参数（基于 Funding Rate 和 BTC Dominance）
+    enable_euphoria_filter: bool = True  # 是否启用市场狂热度过滤器
+    funding_rate_warning_annual: float = 100.0  # 资金费率警告阈值（年化%，停止开仓）
+    funding_rate_danger_annual: float = 200.0  # 资金费率危险阈值（年化%，开始清仓）
+    enable_btc_dominance_filter: bool = False  # 是否启用 BTC Dominance 过滤器（需要额外数据源）
+    btc_dominance_change_threshold: float = 5.0  # BTC Dominance 变化阈值（%）
+    btc_dominance_lookback_days: int = 7  # BTC Dominance 回溯天数
+    euphoria_reduce_position_pct: float = 0.5  # 狂热状态下减仓比例（50%）
+
     # Universe 参数
     universe_top_n: int | None = None  # Universe 规模（1, 5, 10, 25, 50, 100），None 表示不使用
     universe_freq: str = "ME"  # Universe 更新周期（ME=月度, W-MON=周度, 2W-MON=双周）
@@ -173,6 +182,12 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
         self.btc_trs = deque(maxlen=config.btc_regime_atr_period)
         self.btc_sma = None
         self.btc_atr = None
+
+        # 市场狂热度监控
+        self.current_funding_rate: float | None = None  # 当前资金费率
+        self.funding_rate_annual: float | None = None  # 年化资金费率
+        self.market_euphoria_level: str = "NORMAL"  # 市场狂热度等级：NORMAL, WARNING, DANGER
+        self.btc_dominance_history = deque(maxlen=config.btc_dominance_lookback_days)  # BTC 市占率历史
 
         # Squeeze 状态历史
         self.squeeze_history = deque(maxlen=config.squeeze_memory_days)
@@ -304,6 +319,11 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
             btc_bar_type = BarType.from_str(btc_bar_type_str)
             self.subscribe_bars(btc_bar_type)
 
+        # 订阅 Funding Rate 数据（如果启用市场狂热度过滤器）
+        if self.config.enable_euphoria_filter:
+            self.subscribe_data(FundingRateData, self.instrument.id)
+            self.log.info(f"已订阅 Funding Rate 数据: {self.instrument.id}")
+
     def on_stop(self) -> None:
         """策略停止时清理资源"""
         # 取消订阅 Bar 数据
@@ -318,6 +338,42 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
             )
             btc_bar_type = BarType.from_str(btc_bar_type_str)
             self.unsubscribe_bars(btc_bar_type)
+
+        # 取消订阅 Funding Rate 数据
+        if self.config.enable_euphoria_filter:
+            self.unsubscribe_data(FundingRateData, self.instrument.id)
+
+    def on_data(self, data: Data) -> None:
+        """处理自定义数据（如 Funding Rate）"""
+        if isinstance(data, FundingRateData):
+            self._handle_funding_rate(data)
+
+    def _handle_funding_rate(self, data: FundingRateData) -> None:
+        """处理 Funding Rate 数据并更新市场狂热度等级"""
+        self.current_funding_rate = float(data.funding_rate)
+        self.funding_rate_annual = float(data.funding_rate_annual)
+
+        # 更新市场狂热度等级
+        old_level = self.market_euphoria_level
+        if self.funding_rate_annual >= self.config.funding_rate_danger_annual:
+            self.market_euphoria_level = "DANGER"
+        elif self.funding_rate_annual >= self.config.funding_rate_warning_annual:
+            self.market_euphoria_level = "WARNING"
+        else:
+            self.market_euphoria_level = "NORMAL"
+
+        # 记录等级变化
+        if old_level != self.market_euphoria_level:
+            self.log.warning(
+                f"市场狂热度等级变化: {old_level} -> {self.market_euphoria_level}, "
+                f"Funding Rate: {self.current_funding_rate:.4%}, "
+                f"年化: {self.funding_rate_annual:.2f}%"
+            )
+
+        # 如果进入危险状态且有持仓，触发减仓逻辑
+        if self.market_euphoria_level == "DANGER" and self.quantity is not None:
+            self._handle_euphoria_reduce_position()
+
 
     def on_bar(self, bar: Bar) -> None:
         """处理 Bar 数据"""
@@ -423,10 +479,14 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
             if not self._check_btc_market_regime():
                 return
 
-        # 6. Funding Rate Guard
-        funding_rate = self._get_funding_rate()
-        if funding_rate is not None and funding_rate > 0.0005:
-            return
+        # 6. 市场狂热度检查（基于 Funding Rate）
+        if self.config.enable_euphoria_filter:
+            if self.market_euphoria_level == "DANGER":
+                # 危险状态：完全禁止开仓
+                return
+            elif self.market_euphoria_level == "WARNING":
+                # 警告状态：停止开新仓
+                return
 
         # 7. Regime 检查
         if close < self.sma:
@@ -719,6 +779,41 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
             )
             return Decimal("0")
         return qty
+
+    def _handle_euphoria_reduce_position(self) -> None:
+        """处理市场狂热状态下的减仓逻辑"""
+        if self.quantity is None or self.entry_price is None:
+            return
+
+        # 计算减仓数量（保留配置比例的仓位）
+        reduce_ratio = 1.0 - self.config.euphoria_reduce_position_pct
+        target_quantity = self.quantity * Decimal(str(reduce_ratio))
+        reduce_quantity = self.quantity - target_quantity
+
+        if reduce_quantity <= 0:
+            return
+
+        # 执行减仓
+        self.log.warning(
+            f"🔥 市场狂热减仓: 当前仓位={self.quantity}, "
+            f"减仓数量={reduce_quantity}, 保留比例={self.config.euphoria_reduce_position_pct:.0%}, "
+            f"Funding Rate 年化={self.funding_rate_annual:.2f}%"
+        )
+
+        # 提交市价卖单
+        order = self.order_factory.market(
+            instrument_id=self.instrument.id,
+            order_side=OrderSide.SELL,
+            quantity=reduce_quantity,
+        )
+        self.submit_order(order)
+
+        # 更新持仓数量
+        self.quantity = target_quantity
+
+        # 如果减仓后仓位为0，重置跟踪
+        if self.quantity <= 0:
+            self._reset_position_tracking()
 
     def _handle_exit(self, bar: Bar) -> None:
         """处理出场逻辑"""
