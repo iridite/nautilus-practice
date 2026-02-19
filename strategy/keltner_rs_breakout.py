@@ -51,15 +51,17 @@ from decimal import ROUND_DOWN, ROUND_HALF_UP, Decimal
 
 import numpy as np
 from nautilus_trader.indicators import RelativeStrengthIndex
-from nautilus_trader.model.data import Bar, BarType
+from nautilus_trader.model.data import Bar, BarType, CustomData, DataType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import InstrumentId
 
 from strategy.core.base import BaseStrategy, BaseStrategyConfig
 from utils import get_project_root
 from utils.custom_data import FundingRateData
+from config.constants import DEFAULT_ATR_PERIOD, DEFAULT_RISK_PER_TRADE, DEFAULT_STOP_LOSS, DEFAULT_EMA_PERIOD, DEFAULT_SMA_PERIOD
+from config.constants import DEFAULT_KELTNER_MULTIPLIER, DEFAULT_VOLUME_MULTIPLIER, DEFAULT_LOOKBACK_PERIOD, TARGET_PRECISION_DECIMALS
 
-TARGET_PRECISION = Decimal("0." + "0" * 16)
+TARGET_PRECISION = Decimal("0." + "0" * TARGET_PRECISION_DECIMALS)
 
 
 class KeltnerRSBreakoutConfig(BaseStrategyConfig):
@@ -78,9 +80,9 @@ class KeltnerRSBreakoutConfig(BaseStrategyConfig):
     btc_instrument_id: str = ""
 
     # 指标参数
-    ema_period: int = 20
+    ema_period: int = DEFAULT_EMA_PERIOD
     atr_period: int = 20
-    sma_period: int = 200
+    sma_period: int = DEFAULT_SMA_PERIOD
     rsi_period: int = 14
     bb_period: int = 20
     bb_std: float = 2.0
@@ -104,7 +106,7 @@ class KeltnerRSBreakoutConfig(BaseStrategyConfig):
     max_upper_wick_ratio: float = 0.3  # K 线最大上影线比例（30%）
 
     # 过滤器参数
-    volume_multiplier: float = 1.5
+    volume_multiplier: float = DEFAULT_VOLUME_MULTIPLIER
     rs_short_lookback_days: int = 5  # RS 短期回溯天数
     rs_long_lookback_days: int = 20  # RS 长期回溯天数
     rs_short_weight: float = 0.4  # RS 短期权重
@@ -322,7 +324,8 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
 
         # 订阅 Funding Rate 数据（如果启用市场狂热度过滤器）
         if self.config.enable_euphoria_filter:
-            self.subscribe_data(FundingRateData, self.instrument.id)
+            funding_data_type = DataType(FundingRateData, metadata={"instrument_id": self.instrument.id})
+            self.subscribe_data(funding_data_type)
             self.log.info(f"已订阅 Funding Rate 数据: {self.instrument.id}")
 
     def on_stop(self) -> None:
@@ -342,9 +345,10 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
 
         # 取消订阅 Funding Rate 数据
         if self.config.enable_euphoria_filter:
-            self.unsubscribe_data(FundingRateData, self.instrument.id)
+            funding_data_type = DataType(FundingRateData, metadata={"instrument_id": self.instrument.id})
+            self.unsubscribe_data(funding_data_type)
 
-    def on_data(self, data: Data) -> None:
+    def on_data(self, data: CustomData) -> None:
         """处理自定义数据（如 Funding Rate）"""
         if isinstance(data, FundingRateData):
             self._handle_funding_rate(data)

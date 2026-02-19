@@ -9,6 +9,7 @@ from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orders import Order
 from nautilus_trader.trading.strategy import Strategy
+from config.constants import DEFAULT_ATR_PERIOD, DEFAULT_RISK_PER_TRADE, DEFAULT_STOP_LOSS, DEFAULT_EMA_PERIOD, DEFAULT_SMA_PERIOD
 
 
 class BaseStrategyConfig(StrategyConfig):  # pyright: ignore[reportGeneralTypeIssues]
@@ -68,9 +69,9 @@ class BaseStrategyConfig(StrategyConfig):  # pyright: ignore[reportGeneralTypeIs
 
     # --- ATR-Based Risk Management ---
     # ATR参数（用于模式3：ATR风险仓位计算）
-    atr_period: int = 14  # ATR计算周期
+    atr_period: int = DEFAULT_ATR_PERIOD  # ATR计算周期
     atr_stop_multiplier: float = 2.0  # ATR止损倍数 (2.0 = 2× ATR)
-    max_position_risk_pct: float = 0.02  # 单笔交易最大风险百分比 (2% of account equity)
+    max_position_risk_pct: float = DEFAULT_RISK_PER_TRADE  # 单笔交易最大风险百分比 (2% of account equity)
 
 
 class BaseStrategy(Strategy):
