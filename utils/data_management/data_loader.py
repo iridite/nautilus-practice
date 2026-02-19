@@ -538,8 +538,8 @@ def get_data_summary(df: pd.DataFrame) -> Dict[str, Any]:
     Dict[str, Any]
         数据摘要信息
     """
+    # 性能优化：移除 len(df) 调用，避免触发大型 CSV 完整加载
     summary = {
-        "rows": len(df),
         "columns": list(df.columns),
         "start_time": df.index.min() if len(df) > 0 else None,
         "end_time": df.index.max() if len(df) > 0 else None,
@@ -750,3 +750,175 @@ def load_csv_with_time_detection(
     except Exception as e:
         logger.error(f"Warning: Error loading CSV from {csv_path}: {e}")
         return pd.DataFrame()
+
+
+def load_ohlcv_parquet(
+    parquet_path: Union[str, Path],
+    start_date: str | None = None,
+    end_date: str | None = None,
+    use_cache: bool = True
+) -> pd.DataFrame:
+    """
+    加载 OHLCV Parquet 数据，支持元数据缓存和时间范围过滤
+    
+    相比 CSV，Parquet 提供：
+    - 更快的读取速度（列式存储）
+    - 更小的文件大小（压缩）
+    - 内置数据类型信息
+    
+    Parameters
+    ----------
+    parquet_path : Union[str, Path]
+        Parquet 文件路径
+    start_date : str | None, optional
+        开始日期（YYYY-MM-DD格式）
+    end_date : str | None, optional
+        结束日期（YYYY-MM-DD格式）
+    use_cache : bool, optional
+        是否使用缓存，默认 True
+        
+    Returns
+    -------
+    pd.DataFrame
+        加载并处理后的 OHLCV 数据，以时间为索引
+        
+    Raises
+    ------
+    DataLoadError
+        当数据加载或处理失败时
+    """
+    import logging
+    
+    logger = logging.getLogger(__name__)
+    parquet_path = Path(parquet_path)
+    
+    if not parquet_path.exists():
+        raise DataLoadError(f"Parquet file not found: {parquet_path}")
+    
+    # 尝试从缓存获取
+    cache = get_cache()
+    if use_cache:
+        cached_df = cache.get(parquet_path, start_date or "", end_date or "")
+        if cached_df is not None:
+            logger.debug(f"从缓存加载 Parquet: {parquet_path.name}")
+            return cached_df
+    
+    try:
+        # 先尝试获取元数据缓存
+        metadata = None
+        if use_cache:
+            metadata = cache.get_parquet_metadata(parquet_path)
+        
+        # 如果没有元数据缓存，读取并缓存
+        if metadata is None:
+            import pyarrow.parquet as pq
+            parquet_file = pq.ParquetFile(parquet_path)
+            metadata = {
+                "num_rows": parquet_file.metadata.num_rows,
+                "num_row_groups": parquet_file.metadata.num_row_groups,
+                "columns": [col for col in parquet_file.schema.names],
+                "schema": str(parquet_file.schema)
+            }
+            if use_cache:
+                cache.put_parquet_metadata(parquet_path, metadata)
+            logger.debug(f"Parquet 元数据: {metadata['num_rows']} 行, {metadata['num_row_groups']} 行组")
+        
+        # 读取 Parquet 文件
+        df = pd.read_parquet(parquet_path)
+        
+        if df.empty:
+            raise DataLoadError(f"Parquet file is empty: {parquet_path}")
+        
+        # 检测并设置时间索引
+        time_col = None
+        for col in ["timestamp", "datetime", "time"]:
+            if col in df.columns:
+                time_col = col
+                break
+        
+        if time_col:
+            if time_col == "timestamp":
+                df.index = pd.to_datetime(df[time_col], unit="ms")
+            else:
+                df.index = pd.to_datetime(df[time_col])
+            df.index.name = "timestamp"
+            df = df.drop(columns=[time_col])
+        
+        # 按时间范围过滤
+        df = _filter_by_date_range(df, start_date, end_date)
+        
+        if len(df) == 0:
+            raise DataLoadError(
+                f"No data in date range [{start_date} to {end_date}] for {parquet_path.name}"
+            )
+        
+        # 缓存结果
+        if use_cache:
+            cache.put(parquet_path, start_date or "", end_date or "", df)
+        
+        logger.info(f"✅ 加载 Parquet: {parquet_path.name} ({len(df)} 行)")
+        return df
+        
+    except Exception as e:
+        raise DataLoadError(f"Error loading Parquet file {parquet_path}: {e}")
+
+
+def load_ohlcv_auto(
+    file_path: Union[str, Path],
+    start_date: str | None = None,
+    end_date: str | None = None,
+    use_cache: bool = True,
+    **kwargs
+) -> pd.DataFrame:
+    """
+    自动检测文件格式并加载 OHLCV 数据（CSV 或 Parquet）
+    
+    优先使用 Parquet 格式以获得更好的性能。
+    
+    Parameters
+    ----------
+    file_path : Union[str, Path]
+        数据文件路径（.csv 或 .parquet）
+    start_date : str | None, optional
+        开始日期（YYYY-MM-DD格式）
+    end_date : str | None, optional
+        结束日期（YYYY-MM-DD格式）
+    use_cache : bool, optional
+        是否使用缓存，默认 True
+    **kwargs
+        传递给具体加载函数的额外参数
+        
+    Returns
+    -------
+    pd.DataFrame
+        加载的 OHLCV 数据
+        
+    Raises
+    ------
+    DataLoadError
+        当文件格式不支持或加载失败时
+    """
+    file_path = Path(file_path)
+    
+    if not file_path.exists():
+        raise DataLoadError(f"File not found: {file_path}")
+    
+    suffix = file_path.suffix.lower()
+    
+    if suffix == ".parquet":
+        return load_ohlcv_parquet(
+            file_path,
+            start_date=start_date,
+            end_date=end_date,
+            use_cache=use_cache
+        )
+    elif suffix == ".csv":
+        return load_ohlcv_csv(
+            file_path,
+            start_date=start_date,
+            end_date=end_date,
+            use_cache=use_cache,
+            **kwargs
+        )
+    else:
+        raise DataLoadError(f"Unsupported file format: {suffix}. Expected .csv or .parquet")

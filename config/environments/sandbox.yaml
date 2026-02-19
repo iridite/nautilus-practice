@@ -10,10 +10,10 @@ sandbox:
   # 交易标的列表（基于 active 策略 keltner_rs_breakout 的 symbols）
   # 注意：BTCUSDT 会由代码自动添加（如果策略需要），无需手动配置
   instrument_ids:
-    - "ETHUSDT.OKX"
-    - "SOLUSDT.OKX"
-    - "BNBUSDT.OKX"
-    - "DOGEUSDT.OKX"
+    - "ETH-USDT-SWAP.OKX"
+    - "SOL-USDT-SWAP.OKX"
+    - "BNB-USDT-SWAP.OKX"
+    - "DOGE-USDT-SWAP.OKX"
 
   # 允许本地缺失 instrument json 仅作为警告（便于开发/快速迭代）
   allow_missing_instruments: true

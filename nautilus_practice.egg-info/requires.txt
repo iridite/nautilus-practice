@@ -1,0 +1,14 @@
+ccxt>=4.5.28
+joblib>=1.5.3
+jupyterlab>=4.5.1
+lightgbm>=4.6.0
+nautilus-trader
+pandas-stubs~=2.3.3
+plotly>=6.5.0
+pydantic>=2.12.5
+python-dotenv>=1.2.1
+pyyaml>=6.0.3
+ruff>=0.15.0
+scikit-learn>=1.8.0
+ta>=0.11.0
+tqdm>=4.66.0

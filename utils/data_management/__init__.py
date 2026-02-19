@@ -24,6 +24,8 @@ from .data_loader import (
     load_csv_with_time_detection,
     load_custom_csv_data,
     load_ohlcv_csv,
+    load_ohlcv_parquet,
+    load_ohlcv_auto,
 )
 from .data_manager import DataManager, fetch_data_with_retry, run_batch_data_retrieval
 from .data_retrieval import (
@@ -54,6 +56,8 @@ __all__ = [
     # Data loader
     "DataLoader",
     "load_ohlcv_csv",
+    "load_ohlcv_parquet",
+    "load_ohlcv_auto",
     "load_csv_with_time_detection",
     "load_custom_csv_data",
     "create_nautilus_bars",

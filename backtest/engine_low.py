@@ -39,7 +39,7 @@ from strategy.core.loader import (
     load_strategy_config_class,
 )
 from utils.data_file_checker import check_single_data_file
-from utils.data_management.data_loader import load_ohlcv_csv
+from utils.data_management.data_loader import load_ohlcv_csv, load_ohlcv_auto
 from utils.instrument_loader import load_instrument
 from utils.oi_funding_adapter import OIFundingDataLoader
 
@@ -76,27 +76,28 @@ def _load_data_for_feed(
     feed_bar_type_str = f"{inst.id}-{data_cfg.bar_type_str}"
     feed_bar_type = BarType.from_str(feed_bar_type_str)
 
-    csv_path = data_cfg.full_path
-    if not csv_path.exists():
-        raise DataLoadError(f"CSV file not found: {csv_path}", str(csv_path))
+    data_path = data_cfg.full_path
+    if not data_path.exists():
+        raise DataLoadError(f"Data file not found: {data_path}", str(data_path))
 
     try:
-        # 使用统一的数据加载器 (智能时间列检测 + 优化加载)
-        df: DataFrame = load_ohlcv_csv(
-            csv_path=csv_path,
+        # 使用自动格式检测加载器（支持 CSV 和 Parquet）
+        df: DataFrame = load_ohlcv_auto(
+            file_path=data_path,
             start_date=cfg.start_date,
             end_date=cfg.end_date,
         )
 
         if len(df) == 0:
-            raise DataLoadError(f"No data available in range for {data_cfg.csv_file_name}", str(csv_path))
+            raise DataLoadError(f"No data available in range for {data_cfg.csv_file_name}", str(data_path))
 
         # 使用 Wrangler 转换并注入引擎
         wrangler = BarDataWrangler(feed_bar_type, inst)
         bars = wrangler.process(df)
         engine.add_data(bars)
 
-        logger.info(f"✅ Loaded {len(bars)} bars for {inst.id} ({data_cfg.label})")
+        file_format = data_path.suffix.upper()[1:]  # .csv -> CSV, .parquet -> PARQUET
+        logger.info(f"✅ Loaded {len(bars)} bars for {inst.id} ({data_cfg.label}) [{file_format}]")
         return feed_bar_type
 
     except Exception as e:
