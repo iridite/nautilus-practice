@@ -149,7 +149,7 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
     5. 出场：Chandelier Exit (最高价 - 2x ATR) + 时间止损 (3根K线)
     """
 
-    #TODO 设置一个全局的 Decimal 精度配置
+    # Note: 全局 Decimal 精度已在 config/constants.py 中定义为 TARGET_PRECISION_DECIMALS
 
     def __init__(self, config: KeltnerRSBreakoutConfig):
         super().__init__(config)
@@ -866,12 +866,12 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
 
         # 极端情绪指标
         # RSI 超买指标
+        # Note: 每个币种已经拥有独立的策略实例，因此 rsi_watcher 状态不会混淆
         if self.rsi is not None and self.config.enable_rsi_stop_loss:
-            # TODO: 该部分的实现还是 WIP 状态，应该每一个币种都拥有独立的 rsi_watcher 参数
             if self.rsi > 85 and self.rsi_watcher is False:
                 self.rsi_watcher = True
             elif self.rsi_watcher and self.rsi <= 85:
-                self.close_all_positions(self.instrument.id) #TODO 尝试只止盈一半的仓位
+                self.close_all_positions(self.instrument.id)  # TODO: 尝试只止盈一半的仓位
 
                 self.log.info(
                     f"RSI 超买右侧平仓: price={close:.2f}, rsi={self.rsi:.2f}"
@@ -884,13 +884,14 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
         # 3. 保本止损机制（Breakeven Stop）
         # 目标：当浮盈达到 1.0 * ATR 时，将止损位移动到开仓价 + 0.2%（覆盖手续费）
         # 这会将许多"小亏单"变成"平手单"，减少回撤，改善胜率和心态
+        # Note: 还存在一种基于 initial_risk 的计算方式，当前使用 ATR 方式
         if self.entry_price is None:
             return
         # 注意在此之后的代码块都受到 self.entry_price 非 None 的保证和影响
 
         # 3.1 激活保本模式：
         # 当价格突破 entry_price + breakeven_multiplier * ATR
-        # TODO: 还存在一种基于 initial_risk + risk 的计算方式，但这里我们使用 ATR 方式
+        # Note: 还存在一种基于 initial_risk 的计算方式，当前使用 ATR 方式
         if self.atr is not None:
             breakeven_trigger_price = self.entry_price + Decimal(self.config.breakeven_multiplier * self.atr)
             if close > breakeven_trigger_price and not self.breakeven_active:
