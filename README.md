@@ -1,6 +1,8 @@
 # Nautilus Practice - Quantitative Trading Strategy Development Platform
 
 [![Sync to Public Repo](https://github.com/iridite/nautilus-practice/actions/workflows/sync_to_public.yml/badge.svg)](https://github.com/iridite/nautilus-practice/actions/workflows/sync_to_public.yml)
+[![Test Coverage](https://github.com/iridite/nautilus-practice/actions/workflows/test-coverage.yml/badge.svg)](https://github.com/iridite/nautilus-practice/actions/workflows/test-coverage.yml)
+![Coverage](https://img.shields.io/badge/coverage-28.69%25-red)
 
 A cryptocurrency quantitative trading strategy development and backtesting platform based on the NautilusTrader framework.
 

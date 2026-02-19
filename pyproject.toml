@@ -22,6 +22,13 @@ dependencies = [
     "tqdm>=4.66.0",
 ]
 
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["core*", "strategy*", "utils*", "backtest*", "live*", "cli*", "config*", "data*"]
+
 [tool.uv]
 # 必须保留，允许安装 alpha/dev 版本
 prerelease = "allow"
@@ -41,3 +48,47 @@ target-version = "py312"
 select = ["E", "F", "I", "N", "W"]
 ignore = ["E501", "E402", "N803", "N805", "N806", "I001"]
 per-file-ignores = { "tests/**" = ["F401"] }
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = [
+    "--cov=.",
+    "--cov-report=html",
+    "--cov-report=term-missing",
+    "--cov-report=json",
+    "--cov-fail-under=70",
+]
+
+[tool.coverage.run]
+source = ["."]
+omit = [
+    "*/tests/*",
+    "*/test_*.py",
+    "*/__pycache__/*",
+    "*/.venv/*",
+    "*/site-packages/*",
+    "setup.py",
+    "*/sandbox/*",
+    "*/scripts/*",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+    "class .*\\bProtocol\\):",
+    "@(abc\\.)?abstractmethod",
+]
+precision = 2
+show_missing = true
+skip_covered = false
+
+[tool.coverage.html]
+directory = "htmlcov"
