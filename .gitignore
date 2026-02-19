@@ -26,4 +26,19 @@ htmlcov/
 .coverage
 coverage.json
 coverage.xml
+*.cover
 .pytest_cache/
+
+# 日志文件
+log/**/*.log
+log/archive/
+
+# 临时文件
+*.tmp
+*.temp
+*.swp
+*.swo
+
+# Mypy cache
+.mypy_cache/
+.ruff_cache/
