@@ -55,6 +55,92 @@ logger = logging.getLogger(__name__)
 # 数据加载模块
 # ============================================================
 
+def _extract_symbol_from_instrument_id(inst_id: str) -> str:
+    """从instrument_id提取符号"""
+    return inst_id.split("-")[0] if "-" in inst_id else inst_id.split(".")[0]
+
+
+def _build_timeframe_string(cfg: BacktestConfig) -> str:
+    """构建时间周期字符串"""
+    if not cfg.data_feeds:
+        return "1h"
+    
+    first_feed = cfg.data_feeds[0]
+    from nautilus_trader.model.enums import BarAggregation
+    unit_map = {
+        BarAggregation.MINUTE: "m",
+        BarAggregation.HOUR: "h",
+        BarAggregation.DAY: "d"
+    }
+    return f"{first_feed.bar_period}{unit_map.get(first_feed.bar_aggregation, 'h')}"
+
+
+def _check_instrument_data_availability(
+    inst_id: str,
+    inst_cfg,
+    cfg: BacktestConfig,
+    base_dir: Path,
+    timeframe: str
+) -> bool:
+    """检查单个标的的数据可用性"""
+    symbol = _extract_symbol_from_instrument_id(inst_id)
+    
+    has_data, _ = check_single_data_file(
+        symbol=symbol,
+        start_date=cfg.start_date,
+        end_date=cfg.end_date,
+        timeframe=timeframe,
+        exchange=inst_cfg.venue_name.lower(),
+        base_dir=base_dir,
+    )
+    
+    if not has_data:
+        logger.debug(f"⏭️ Skipping {inst_id}: no data file")
+    
+    return has_data
+
+
+def _filter_instruments_with_data(
+    cfg: BacktestConfig,
+    inst_cfg_map: Dict[str, any],
+    base_dir: Path
+) -> list[str]:
+    """过滤有数据的标的"""
+    if not cfg.start_date or not cfg.end_date:
+        logger.warning("⚠️ start_date 或 end_date 未配置，跳过数据可用性检查")
+        return list(inst_cfg_map.keys())
+    
+    timeframe = _build_timeframe_string(cfg)
+    instruments_with_data = []
+    
+    for inst_id, inst_cfg in inst_cfg_map.items():
+        if _check_instrument_data_availability(inst_id, inst_cfg, cfg, base_dir, timeframe):
+            instruments_with_data.append(inst_id)
+    
+    if not instruments_with_data:
+        raise InstrumentLoadError("No instruments with available data found", "all")
+    
+    logger.info(f"📊 Found {len(instruments_with_data)}/{len(inst_cfg_map)} instruments with data")
+    return instruments_with_data
+
+
+def _load_single_instrument(inst_id: str, inst_cfg) -> Instrument:
+    """加载单个标的"""
+    inst_path = inst_cfg.get_json_path()
+    
+    if not inst_path.exists():
+        raise InstrumentLoadError(
+            f"Instrument path not found: {inst_path}", inst_id
+        )
+    
+    try:
+        return load_instrument(inst_path)
+    except Exception as e:
+        raise InstrumentLoadError(
+            f"Failed to load instrument {inst_id}: {e}", inst_id, e
+        )
+
+
 def _load_instruments(cfg: BacktestConfig, base_dir: Path) -> Dict[str, Instrument]:
     """
     加载交易标的信息（带数据可用性检查）
@@ -69,69 +155,17 @@ def _load_instruments(cfg: BacktestConfig, base_dir: Path) -> Dict[str, Instrume
     Raises:
         InstrumentLoadError: 当标的加载失败时
     """
-    loaded_instruments = {}
     inst_cfg_map = {ic.instrument_id: ic for ic in cfg.instruments}
-
+    
     # 过滤有数据的标的
-    instruments_with_data = []
-
-    if cfg.start_date and cfg.end_date:
-        for inst_id, inst_cfg in inst_cfg_map.items():
-            # 提取符号用于数据文件检查
-            symbol = inst_id.split("-")[0] if "-" in inst_id else inst_id.split(".")[0]
-
-            # 构建时间周期字符串
-            if cfg.data_feeds:
-                first_feed = cfg.data_feeds[0]
-                from nautilus_trader.model.enums import BarAggregation
-                unit_map = {
-                    BarAggregation.MINUTE: "m",
-                    BarAggregation.HOUR: "h",
-                    BarAggregation.DAY: "d"
-                }
-                timeframe = f"{first_feed.bar_period}{unit_map.get(first_feed.bar_aggregation, 'h')}"
-            else:
-                timeframe = "1h"
-
-            # 检查主数据文件是否存在
-            has_data, _ = check_single_data_file(
-                symbol=symbol,
-                start_date=cfg.start_date,
-                end_date=cfg.end_date,
-                timeframe=timeframe,
-                exchange=inst_cfg.venue_name.lower(),
-                base_dir=base_dir,
-            )
-
-            if has_data:
-                instruments_with_data.append(inst_id)
-            else:
-                logger.debug(f"⏭️ Skipping {inst_id}: no data file")
-
-        if not instruments_with_data:
-            raise InstrumentLoadError("No instruments with available data found", "all")
-
-        logger.info(f"📊 Found {len(instruments_with_data)}/{len(inst_cfg_map)} instruments with data")
-    else:
-        instruments_with_data = list(inst_cfg_map.keys())
-        logger.warning("⚠️ start_date 或 end_date 未配置，跳过数据可用性检查")
-
+    instruments_with_data = _filter_instruments_with_data(cfg, inst_cfg_map, base_dir)
+    
+    # 加载标的
+    loaded_instruments = {}
     for inst_id in instruments_with_data:
         inst_cfg = inst_cfg_map[inst_id]
-        inst_path = inst_cfg.get_json_path()
-
-        if not inst_path.exists():
-            raise InstrumentLoadError(
-                f"Instrument path not found: {inst_path}", inst_id
-            )
-
-        try:
-            loaded_instruments[inst_id] = load_instrument(inst_path)
-        except Exception as e:
-            raise InstrumentLoadError(
-                f"Failed to load instrument {inst_id}: {e}", inst_id, e
-            )
-
+        loaded_instruments[inst_id] = _load_single_instrument(inst_id, inst_cfg)
+    
     return loaded_instruments
 
 
@@ -170,6 +204,94 @@ def _check_parquet_coverage(
 # ============================================================
 
 
+def _format_status_message(feed_idx: int, total_feeds: int, status: str, inst_id: str, extra: str = "") -> str:
+    """格式化状态消息"""
+    return f"\r{status} [{feed_idx:3d}/{total_feeds}] {extra}: {str(inst_id):<32}"
+
+
+def _update_parquet_from_csv(
+    catalog: ParquetDataCatalog,
+    csv_path: Path,
+    inst: Instrument,
+    bar_type: BarType,
+    feed_idx: int,
+    total_feeds: int,
+    action: str
+) -> str:
+    """从CSV更新Parquet数据"""
+    try:
+        catalog_loader(catalog, csv_path, inst, bar_type)
+        return _format_status_message(feed_idx, total_feeds, "📖", bar_type.instrument_id, action)
+    except (OSError, ValueError) as e:
+        logger.warning(f"Failed to {action.lower()} Parquet for {bar_type.instrument_id}: {e}")
+        return _format_status_message(feed_idx, total_feeds, "⚠️ ", bar_type.instrument_id, "Using Parquet")
+
+
+def _handle_csv_exists(
+    catalog: ParquetDataCatalog,
+    csv_path: Path,
+    inst: Instrument,
+    bar_type: BarType,
+    feed_idx: int,
+    total_feeds: int
+) -> str:
+    """处理CSV文件存在的情况"""
+    is_consistent = _verify_data_consistency(csv_path, catalog, bar_type)
+    
+    if not is_consistent:
+        return _update_parquet_from_csv(catalog, csv_path, inst, bar_type, feed_idx, total_feeds, "Updated")
+    else:
+        return _format_status_message(feed_idx, total_feeds, "⏩", bar_type.instrument_id, "Verified")
+
+
+def _handle_incomplete_parquet(
+    catalog: ParquetDataCatalog,
+    csv_path: Path,
+    inst: Instrument,
+    bar_type: BarType,
+    data_cfg,
+    cfg: BacktestConfig,
+    feed_idx: int,
+    total_feeds: int,
+    coverage_pct: float
+) -> str:
+    """处理Parquet数据不完整的情况"""
+    download_success = _auto_download_missing_data(data_cfg, cfg)
+    
+    if download_success and csv_path.exists():
+        return _update_parquet_from_csv(catalog, csv_path, inst, bar_type, feed_idx, total_feeds, "Completed")
+    else:
+        return f"\r⚠️  [{feed_idx:3d}/{total_feeds}] Partial Parquet: {str(bar_type.instrument_id):<25} ({coverage_pct:.1f}%)"
+
+
+def _handle_csv_missing(
+    catalog: ParquetDataCatalog,
+    csv_path: Path,
+    inst: Instrument,
+    bar_type: BarType,
+    data_cfg,
+    cfg: BacktestConfig,
+    feed_idx: int,
+    total_feeds: int
+) -> str:
+    """处理CSV文件不存在的情况"""
+    # 检查Parquet覆盖率
+    parquet_exists, coverage_pct = _check_parquet_coverage(catalog, bar_type, cfg)
+    
+    if parquet_exists and coverage_pct < 95.0:
+        return _handle_incomplete_parquet(
+            catalog, csv_path, inst, bar_type, data_cfg, cfg, feed_idx, total_feeds, coverage_pct
+        )
+    else:
+        # 尝试常规下载
+        download_success = _auto_download_missing_data(data_cfg, cfg)
+        
+        if download_success and csv_path.exists():
+            return _update_parquet_from_csv(catalog, csv_path, inst, bar_type, feed_idx, total_feeds, "Imported")
+        else:
+            return f"\r⚠️  [{feed_idx:3d}/{total_feeds}] Partial Parquet: {str(bar_type.instrument_id):<25}"
+
+
 def _handle_parquet_exists(
     catalog: ParquetDataCatalog,
     csv_path: Path,
@@ -187,49 +309,70 @@ def _handle_parquet_exists(
         str: 状态消息（用于日志）
     """
     csv_exists = csv_path.exists()
-
+    
     if csv_exists:
-        is_consistent = _verify_data_consistency(csv_path, catalog, bar_type)
-
-        if not is_consistent:
-            try:
-                catalog_loader(catalog, csv_path, inst, bar_type)
-                return f"\r📖 [{feed_idx:3d}/{total_feeds}] Updated: {str(bar_type.instrument_id):<32}"
-            except (OSError, ValueError) as e:
-                logger.warning(f"Failed to update Parquet for {bar_type.instrument_id}: {e}")
-                return f"\r⚠️  [{feed_idx:3d}/{total_feeds}] Using Parquet: {str(bar_type.instrument_id):<28}"
-        else:
-            return f"\r⏩ [{feed_idx:3d}/{total_feeds}] Verified: {str(bar_type.instrument_id):<35}"
+        return _handle_csv_exists(catalog, csv_path, inst, bar_type, feed_idx, total_feeds)
     else:
-        # 检查Parquet覆盖率
-        parquet_exists, coverage_pct = _check_parquet_coverage(catalog, bar_type, cfg)
+        return _handle_csv_missing(catalog, csv_path, inst, bar_type, data_cfg, cfg, feed_idx, total_feeds)
 
-        if parquet_exists and coverage_pct < 95.0:
-            # 数据不完整，触发自动下载
-            download_success = _auto_download_missing_data(data_cfg, cfg)
 
-            if download_success and csv_path.exists():
-                try:
-                    catalog_loader(catalog, csv_path, inst, bar_type)
-                    return f"\r📖 [{feed_idx:3d}/{total_feeds}] Completed: {str(bar_type.instrument_id):<32}"
-                except (OSError, ValueError) as e:
-                    logger.warning(f"Failed to complete Parquet for {bar_type.instrument_id}: {e}")
-                    return f"\r⚠️  [{feed_idx:3d}/{total_feeds}] Partial Parquet: {str(bar_type.instrument_id):<25} ({coverage_pct:.1f}%)"
-            else:
-                return f"\r⚠️  [{feed_idx:3d}/{total_feeds}] Partial Parquet: {str(bar_type.instrument_id):<25} ({coverage_pct:.1f}%)"
-        else:
-            # 尝试常规下载
-            download_success = _auto_download_missing_data(data_cfg, cfg)
+def _import_csv_to_parquet(
+    catalog: ParquetDataCatalog,
+    csv_path: Path,
+    inst: Instrument,
+    bar_type: BarType,
+    feed_idx: int,
+    total_feeds: int
+) -> str:
+    """导入CSV到Parquet"""
+    catalog_loader(catalog, csv_path, inst, bar_type)
+    return f"\r📖 [{feed_idx:3d}/{total_feeds}] Imported: {str(bar_type.instrument_id):<32}"
 
-            if download_success and csv_path.exists():
-                try:
-                    catalog_loader(catalog, csv_path, inst, bar_type)
-                    return f"\r📖 [{feed_idx:3d}/{total_feeds}] Imported: {str(bar_type.instrument_id):<32}"
-                except (OSError, ValueError) as e:
-                    logger.warning(f"Failed to import Parquet for {bar_type.instrument_id}: {e}")
-                    return f"\r⚠️  [{feed_idx:3d}/{total_feeds}] Using Parquet: {str(bar_type.instrument_id):<28}"
-            else:
-                return f"\r⚠️  [{feed_idx:3d}/{total_feeds}] Partial Parquet: {str(bar_type.instrument_id):<25}"
+
+def _handle_csv_exists_for_missing_parquet(
+    catalog: ParquetDataCatalog,
+    csv_path: Path,
+    inst: Instrument,
+    bar_type: BarType,
+    data_cfg,
+    feed_idx: int,
+    total_feeds: int
+) -> str:
+    """处理CSV存在但Parquet缺失的情况"""
+    try:
+        return _import_csv_to_parquet(catalog, csv_path, inst, bar_type, feed_idx, total_feeds)
+    except Exception as e:
+        raise DataLoadError(
+            f"Error loading {data_cfg.csv_file_name}: {e}", str(csv_path), e
+        )
+
+
+def _handle_csv_missing_for_missing_parquet(
+    catalog: ParquetDataCatalog,
+    csv_path: Path,
+    inst: Instrument,
+    bar_type: BarType,
+    data_cfg,
+    cfg: BacktestConfig,
+    feed_idx: int,
+    total_feeds: int
+) -> str:
+    """处理CSV和Parquet都缺失的情况"""
+    download_success = _auto_download_missing_data(data_cfg, cfg)
+    
+    if download_success and csv_path.exists():
+        try:
+            return _import_csv_to_parquet(catalog, csv_path, inst, bar_type, feed_idx, total_feeds)
+        except (OSError, ValueError, KeyError) as e:
+            logger.warning(f"Failed to import {bar_type.instrument_id}: {e}")
+    
+    # 数据完全缺失
+    raise DataLoadError(
+        f"Critical data missing for {bar_type.instrument_id}. "
+        f"CSV file not found: {csv_path}, Parquet data not available, "
+        f"and auto-download failed.",
+        str(csv_path),
+    )
 
 
 def _handle_parquet_missing(
@@ -252,31 +395,14 @@ def _handle_parquet_missing(
         DataLoadError: 当数据完全缺失时
     """
     csv_exists = csv_path.exists()
-
+    
     if csv_exists:
-        try:
-            catalog_loader(catalog, csv_path, inst, bar_type)
-            return f"\r📖 [{feed_idx:3d}/{total_feeds}] Imported: {str(bar_type.instrument_id):<32}"
-        except Exception as e:
-            raise DataLoadError(
-                f"Error loading {data_cfg.csv_file_name}: {e}", str(csv_path), e
-            )
+        return _handle_csv_exists_for_missing_parquet(
+            catalog, csv_path, inst, bar_type, data_cfg, feed_idx, total_feeds
+        )
     else:
-        download_success = _auto_download_missing_data(data_cfg, cfg)
-
-        if download_success and csv_path.exists():
-            try:
-                catalog_loader(catalog, csv_path, inst, bar_type)
-                return f"\r📖 [{feed_idx:3d}/{total_feeds}] Imported: {str(bar_type.instrument_id):<32}"
-            except (OSError, ValueError, KeyError) as e:
-                logger.warning(f"Failed to import {bar_type.instrument_id}: {e}")
-
-        # 数据完全缺失
-        raise DataLoadError(
-            f"Critical data missing for {bar_type.instrument_id}. "
-            f"CSV file not found: {csv_path}, Parquet data not available, "
-            f"and auto-download failed.",
-            str(csv_path),
+        return _handle_csv_missing_for_missing_parquet(
+            catalog, csv_path, inst, bar_type, data_cfg, cfg, feed_idx, total_feeds
         )
 
 
@@ -314,6 +440,82 @@ def _auto_download_data(data_cfg, cfg: BacktestConfig) -> bool:
         return False
 
 
+def _process_data_feed(
+    feed_idx: int,
+    total_feeds: int,
+    data_cfg,
+    cfg: BacktestConfig,
+    loaded_instruments: Dict[str, Instrument],
+    _catalog,
+) -> Tuple[Optional[str], Optional[str], Optional[str], str]:
+    """
+    处理单个数据流的导入
+    
+    Returns
+    -------
+    Tuple[Optional[str], Optional[str], Optional[str], str]
+        (inst_id, feed_bar_type_str, bar_type_str, status_msg)
+    """
+    inst_id = data_cfg.instrument_id or (cfg.instrument.instrument_id if cfg.instrument else None)
+    if inst_id not in loaded_instruments:
+        return None, None, None, ""
+
+    inst = loaded_instruments[inst_id]
+    csv_path = data_cfg.full_path
+    feed_bar_type_str = f"{inst.id}-{data_cfg.bar_type_str}"
+    bar_type = BarType.from_str(feed_bar_type_str)
+
+    # 检查Parquet数据覆盖率
+    parquet_exists, coverage_pct = _check_parquet_coverage(_catalog, bar_type, cfg)
+
+    # 处理数据导入
+    if parquet_exists and coverage_pct >= 80:
+        status_msg = f"\r✅ [{feed_idx:3d}/{total_feeds}] Ready: {str(bar_type.instrument_id):<35}"
+    elif parquet_exists:
+        status_msg = _handle_parquet_exists(
+            _catalog, csv_path, inst, bar_type, data_cfg, cfg, feed_idx, total_feeds
+        )
+    else:
+        status_msg = _handle_parquet_missing(
+            _catalog, csv_path, inst, bar_type, data_cfg, cfg, feed_idx, total_feeds
+        )
+
+    return inst_id, feed_bar_type_str, str(bar_type), status_msg
+
+
+def _categorize_data_feed(
+    inst_id: str,
+    feed_bar_type_str: str,
+    data_cfg,
+    global_feeds: Dict,
+    feeds_by_inst: Dict,
+):
+    """将数据流归类到全局或按instrument分类"""
+    if data_cfg.label == "benchmark":
+        global_feeds[data_cfg.label] = feed_bar_type_str
+    else:
+        feeds_by_inst[inst_id][data_cfg.label] = feed_bar_type_str
+
+
+def _update_data_config(
+    inst_id_str: str,
+    inst,
+    bar_type_str: str,
+    catalog_path: Path,
+    data_config_by_inst: Dict,
+):
+    """更新instrument的数据配置"""
+    if inst_id_str not in data_config_by_inst:
+        data_config_by_inst[inst_id_str] = {
+            "instrument_id": inst.id,
+            "bar_types": [],
+            "catalog_path": str(catalog_path),
+        }
+
+    if bar_type_str not in data_config_by_inst[inst_id_str]["bar_types"]:
+        data_config_by_inst[inst_id_str]["bar_types"].append(bar_type_str)
+
+
 def _import_data_to_catalog(
     cfg: BacktestConfig,
     loaded_instruments: Dict[str, Instrument],
@@ -331,51 +533,22 @@ def _import_data_to_catalog(
     total_feeds = len(cfg.data_feeds)
 
     for feed_idx, data_cfg in enumerate(cfg.data_feeds, 1):
-        inst_id = data_cfg.instrument_id or (cfg.instrument.instrument_id if cfg.instrument else None)
-        if inst_id not in loaded_instruments:
+        inst_id, feed_bar_type_str, bar_type_str, status_msg = _process_data_feed(
+            feed_idx, total_feeds, data_cfg, cfg, loaded_instruments, _catalog
+        )
+        
+        if inst_id is None:
             continue
-
-        inst = loaded_instruments[inst_id]
-        csv_path = data_cfg.full_path
-        feed_bar_type_str = f"{inst.id}-{data_cfg.bar_type_str}"
-        bar_type = BarType.from_str(feed_bar_type_str)
-
-        # 检查Parquet数据覆盖率
-        parquet_exists, coverage_pct = _check_parquet_coverage(_catalog, bar_type, cfg)
-
-        # 处理数据导入
-        if parquet_exists and coverage_pct >= 80:
-            status_msg = f"\r✅ [{feed_idx:3d}/{total_feeds}] Ready: {str(bar_type.instrument_id):<35}"
-        elif parquet_exists:
-            status_msg = _handle_parquet_exists(
-                _catalog, csv_path, inst, bar_type, data_cfg, cfg, feed_idx, total_feeds
-            )
-        else:
-            status_msg = _handle_parquet_missing(
-                _catalog, csv_path, inst, bar_type, data_cfg, cfg, feed_idx, total_feeds
-            )
 
         sys.stdout.write(status_msg)
         sys.stdout.flush()
 
         # 归类数据流
-        if data_cfg.label == "benchmark":
-            global_feeds[data_cfg.label] = feed_bar_type_str
-        else:
-            feeds_by_inst[inst_id][data_cfg.label] = feed_bar_type_str
+        _categorize_data_feed(inst_id, feed_bar_type_str, data_cfg, global_feeds, feeds_by_inst)
 
-        # 合并bar_types
-        inst_id_str = str(inst.id)
-        if inst_id_str not in data_config_by_inst:
-            data_config_by_inst[inst_id_str] = {
-                "instrument_id": inst.id,
-                "bar_types": [],
-                "catalog_path": str(catalog_path),
-            }
-
-        bar_type_str = str(bar_type)
-        if bar_type_str not in data_config_by_inst[inst_id_str]["bar_types"]:
-            data_config_by_inst[inst_id_str]["bar_types"].append(bar_type_str)
+        # 更新数据配置
+        inst = loaded_instruments[inst_id]
+        _update_data_config(str(inst.id), inst, bar_type_str, catalog_path, data_config_by_inst)
 
     logger.info(f"\n✅ Data import complete. Created {len(data_config_by_inst)} data configs.")
     return data_config_by_inst, global_feeds, feeds_by_inst
@@ -431,6 +604,70 @@ def _clear_parquet_data(catalog: ParquetDataCatalog, bar_type: BarType) -> None:
         # 不抛出异常，因为这不是致命错误
 
 
+def _check_csv_file_validity(csv_path: Path) -> bool:
+    """检查CSV文件基本有效性"""
+    return csv_path.exists() and csv_path.stat().st_size >= 1024
+
+
+def _get_parquet_intervals(catalog: ParquetDataCatalog, bar_type: BarType) -> list:
+    """获取Parquet数据时间间隔"""
+    try:
+        existing_intervals = catalog.get_intervals(
+            data_cls=Bar, identifier=str(bar_type)
+        )
+        return existing_intervals if existing_intervals else []
+    except (KeyError, AttributeError) as e:
+        logger.warning(f"Failed to get intervals in verification: {e}")
+        return []
+
+
+def _get_parquet_mtime(catalog: ParquetDataCatalog, bar_type: BarType) -> float | None:
+    """获取Parquet文件的最新修改时间"""
+    catalog_root = Path(catalog.path)
+    instrument_id = str(bar_type.instrument_id)
+    parquet_dir = catalog_root / "data" / "crypto_perpetual" / instrument_id
+
+    if parquet_dir.exists():
+        parquet_files = list(parquet_dir.glob("*.parquet"))
+        if parquet_files:
+            return max(f.stat().st_mtime for f in parquet_files)
+    return None
+
+
+def _check_file_freshness(csv_mtime: float, parquet_mtime: float | None) -> bool:
+    """检查文件新鲜度（CSV是否比Parquet新太多）"""
+    if parquet_mtime is None:
+        return True
+    # 如果CSV文件比Parquet文件新超过1小时，认为不一致
+    return csv_mtime - parquet_mtime <= 3600
+
+
+def _count_csv_lines(csv_path: Path) -> int:
+    """快速统计CSV行数"""
+    try:
+        with open(csv_path) as f:
+            return sum(1 for _ in f) - 1  # 减去header
+    except (IOError, ValueError):
+        return 0
+
+
+def _estimate_parquet_count(existing_intervals: list) -> int:
+    """估算Parquet数据量"""
+    if not existing_intervals:
+        return 0
+    interval = existing_intervals[0]
+    # 假设1小时数据，估算数据点数量
+    return (interval[1] - interval[0]) // (3600 * 1_000_000_000)  # 纳秒转小时
+
+
+def _check_data_count_consistency(csv_line_count: int, estimated_parquet_count: int) -> bool:
+    """检查数据量一致性（允许20%差异）"""
+    if csv_line_count == 0:
+        return False
+    diff_ratio = abs(csv_line_count - estimated_parquet_count) / max(csv_line_count, 1)
+    return diff_ratio <= 0.2
+
+
 def _verify_data_consistency(
     csv_path: Path, catalog: ParquetDataCatalog, bar_type: BarType
 ) -> bool:
@@ -452,57 +689,28 @@ def _verify_data_consistency(
     """
     try:
         # 1. 检查CSV文件基本信息
-        if not csv_path.exists() or csv_path.stat().st_size < 1024:
+        if not _check_csv_file_validity(csv_path):
             return False
 
         # 2. 快速检查Parquet数据是否存在
-        try:
-            existing_intervals = catalog.get_intervals(
-                data_cls=Bar, identifier=str(bar_type)
-            )
-            if not existing_intervals:
-                return False
-        except (KeyError, AttributeError) as e:
-            logger.warning(f"Failed to get intervals in verification: {e}")
+        existing_intervals = _get_parquet_intervals(catalog, bar_type)
+        if not existing_intervals:
             return False
 
-        # 3. 比较文件修改时间（如果CSV比Parquet新，认为不一致）
+        # 3. 比较文件修改时间
         csv_mtime = csv_path.stat().st_mtime
+        parquet_mtime = _get_parquet_mtime(catalog, bar_type)
+        
+        if not _check_file_freshness(csv_mtime, parquet_mtime):
+            return False
 
-        # 查找Parquet文件的修改时间
-        catalog_root = Path(catalog.path)
-        instrument_id = str(bar_type.instrument_id)
-        parquet_dir = catalog_root / "data" / "crypto_perpetual" / instrument_id
-
-        if parquet_dir.exists():
-            parquet_files = list(parquet_dir.glob("*.parquet"))
-            if parquet_files:
-                parquet_mtime = max(f.stat().st_mtime for f in parquet_files)
-
-                # 如果CSV文件比Parquet文件新超过1小时，认为不一致
-                if csv_mtime - parquet_mtime > 3600:  # 1小时
-                    return False
-
-        # 4. 快速比较数据量（只读取CSV行数，不加载全部数据）
+        # 4. 快速比较数据量
         try:
-            with open(csv_path) as f:
-                csv_line_count = sum(1 for _ in f) - 1  # 减去header
-
-            # 估算Parquet数据量（通过时间间隔）
-            if existing_intervals:
-                interval = existing_intervals[0]
-                # 假设1小时数据，估算数据点数量
-                estimated_parquet_count = (interval[1] - interval[0]) // (
-                    3600 * 1_000_000_000
-                )  # 纳秒转小时
-
-                # 允许20%的差异（比较宽松的检查）
-                if (
-                    abs(csv_line_count - estimated_parquet_count)
-                    / max(csv_line_count, 1)
-                    > 0.2
-                ):
-                    return False
+            csv_line_count = _count_csv_lines(csv_path)
+            estimated_parquet_count = _estimate_parquet_count(existing_intervals)
+            
+            if not _check_data_count_consistency(csv_line_count, estimated_parquet_count):
+                return False
         except (IOError, ValueError) as e:
             # 如果快速检查失败，默认认为一致（避免阻塞）
             logger.debug(f"Quick check failed, assuming consistent: {e}")
@@ -638,40 +846,34 @@ def run_high_level(cfg: BacktestConfig, base_dir: Path):
         raise BacktestEngineError(f"Unexpected error during backtest: {e}", e)
 
 
-def _run_backtest_with_custom_data(
-    cfg: BacktestConfig,
-    base_dir: Path,
-    strategies: List[ImportableStrategyConfig],
-    backtest_data_configs: List[BacktestDataConfig],
-    loaded_instruments: Dict[str, Instrument],
-):
-    """运行BacktestNode并处理自定义数据"""
-    if not strategies:
-        raise BacktestEngineError(
-            "No strategy instances were created. Check config and data paths."
-        )
+def _get_venue_name(cfg: BacktestConfig) -> str:
+    """获取交易所名称"""
+    if cfg.instrument:
+        return cfg.instrument.venue_name
+    return cfg.data_feeds[0].csv_file_name.split("/")[-1].split("-")[0]
 
-    # 配置交易所
-    venue_name = (
-        cfg.instrument.venue_name
-        if cfg.instrument
-        else cfg.data_feeds[0].csv_file_name.split("/")[-1].split("-")[0]
-    )
 
-    # 从策略配置中读取 oms_type（如果有多个策略，使用第一个策略的配置）
-    oms_type = "HEDGING"  # 默认值
-    if strategies and hasattr(strategies[0], 'config_path'):
-        try:
-            config_path = base_dir / strategies[0].config_path
-            if config_path.exists():
-                with open(config_path, 'r') as f:
-                    strategy_config = yaml.safe_load(f)
-                    if 'parameters' in strategy_config and 'oms_type' in strategy_config['parameters']:
-                        oms_type = strategy_config['parameters']['oms_type']
-        except (IOError, yaml.YAMLError) as e:
-            logger.debug(f"Failed to load OMS type from config, using default: {e}")
+def _load_oms_type_from_config(strategies: List, base_dir: Path) -> str:
+    """从策略配置文件加载OMS类型"""
+    if not strategies or not hasattr(strategies[0], 'config_path'):
+        return "HEDGING"
+    
+    try:
+        config_path = base_dir / strategies[0].config_path
+        if config_path.exists():
+            with open(config_path, 'r') as f:
+                strategy_config = yaml.safe_load(f)
+                if 'parameters' in strategy_config and 'oms_type' in strategy_config['parameters']:
+                    return strategy_config['parameters']['oms_type']
+    except (IOError, yaml.YAMLError) as e:
+        logger.debug(f"Failed to load OMS type from config, using default: {e}")
+    
+    return "HEDGING"
 
-    venue_configs = [
+
+def _create_venue_configs(cfg: BacktestConfig, venue_name: str, oms_type: str) -> List:
+    """创建交易所配置"""
+    return [
         BacktestVenueConfig(
             name=venue_name,
             oms_type=oms_type,
@@ -687,16 +889,41 @@ def _run_backtest_with_custom_data(
         )
     ]
 
-    # 配置日志
-    logging_config = None
-    if cfg.logging:
-        logging_config = LoggingConfig(
-            log_level=cfg.logging.log_level,
-            log_level_file=cfg.logging.log_level_file,
-            log_component_levels=cfg.logging.log_component_levels,
-            log_components_only=cfg.logging.log_components_only,
-            log_directory=str(base_dir / "log" / "backtest" / "high_level"),
+
+def _create_logging_config(cfg: BacktestConfig, base_dir: Path) -> Optional[LoggingConfig]:
+    """创建日志配置"""
+    if not cfg.logging:
+        return None
+    
+    return LoggingConfig(
+        log_level=cfg.logging.log_level,
+        log_level_file=cfg.logging.log_level_file,
+        log_component_levels=cfg.logging.log_component_levels,
+        log_components_only=cfg.logging.log_components_only,
+        log_directory=str(base_dir / "log" / "backtest" / "high_level"),
+    )
+
+
+def _run_backtest_with_custom_data(
+    cfg: BacktestConfig,
+    base_dir: Path,
+    strategies: List[ImportableStrategyConfig],
+    backtest_data_configs: List[BacktestDataConfig],
+    loaded_instruments: Dict[str, Instrument],
+):
+    """运行BacktestNode并处理自定义数据"""
+    if not strategies:
+        raise BacktestEngineError(
+            "No strategy instances were created. Check config and data paths."
         )
+
+    # 配置交易所
+    venue_name = _get_venue_name(cfg)
+    oms_type = _load_oms_type_from_config(strategies, base_dir)
+    venue_configs = _create_venue_configs(cfg, venue_name, oms_type)
+
+    # 配置日志
+    logging_config = _create_logging_config(cfg, base_dir)
 
     # 构建BacktestNode配置
     eng_cfg = BacktestEngineConfig(
@@ -734,22 +961,46 @@ def _run_backtest_with_custom_data(
 # ============================================================
 
 
+def _is_custom_data_type(data_type: str) -> bool:
+    """检查是否为自定义数据类型"""
+    return data_type in ['oi', 'funding']
+
+
+def _check_dict_dependency(dep: dict) -> bool:
+    """检查字典类型的依赖"""
+    data_type = dep.get('data_type', '')
+    return _is_custom_data_type(data_type)
+
+
+def _check_object_dependency(dep) -> bool:
+    """检查对象类型的依赖"""
+    if hasattr(dep, 'data_type'):
+        return _is_custom_data_type(dep.data_type)
+    return False
+
+
+def _check_strategy_dependencies(strategy: ImportableStrategyConfig) -> bool:
+    """检查单个策略的数据依赖"""
+    if not (hasattr(strategy, 'config') and isinstance(strategy.config, dict)):
+        return False
+    
+    data_deps = strategy.config.get('data_dependencies', [])
+    if not data_deps:
+        return False
+    
+    for dep in data_deps:
+        if isinstance(dep, dict):
+            if _check_dict_dependency(dep):
+                return True
+        elif _check_object_dependency(dep):
+            return True
+    
+    return False
+
+
 def _check_if_needs_custom_data(strategies: List[ImportableStrategyConfig]) -> bool:
     """检查策略是否需要自定义数据（OI/Funding）"""
-    for strategy in strategies:
-        # 检查策略配置中的 data_dependencies
-        if hasattr(strategy, 'config') and isinstance(strategy.config, dict):
-            data_deps = strategy.config.get('data_dependencies', [])
-            if data_deps:
-                for dep in data_deps:
-                    if isinstance(dep, dict):
-                        data_type = dep.get('data_type', '')
-                        if data_type in ['oi', 'funding']:
-                            return True
-                    elif hasattr(dep, 'data_type'):
-                        if dep.data_type in ['oi', 'funding']:
-                            return True
-    return False
+    return any(_check_strategy_dependencies(strategy) for strategy in strategies)
 
 
 def _load_custom_data_to_engine(
@@ -835,6 +1086,245 @@ def _process_backtest_results(
         logger.info(f"📁 Complete results saved to: {json_path}")
 
 
+def _build_pnl_metrics(result: BacktestResult) -> Dict[str, Any]:
+    """构建PnL指标"""
+    pnl_dict = {}
+    if result.stats_pnls:
+        for currency, metrics in result.stats_pnls.items():
+            pnl_dict[str(currency)] = {
+                k: v if v == v else None
+                for k, v in metrics.items()
+            }
+    return pnl_dict
+
+
+def _build_returns_metrics(result: BacktestResult) -> Dict[str, Any]:
+    """构建收益率指标"""
+    returns_dict = {}
+    if result.stats_returns:
+        for currency, val in result.stats_returns.items():
+            returns_dict[str(currency)] = val if val == val else None
+    return returns_dict
+
+
+def _build_filter_stats(filter_stats: Optional[Dict[str, Dict[str, int]]]) -> Dict[str, Any]:
+    """构建过滤器统计"""
+    if not filter_stats:
+        return {}
+    
+    total_stats = {}
+    for inst_id, stats in filter_stats.items():
+        for key, value in stats.items():
+            total_stats[key] = total_stats.get(key, 0) + value
+    
+    signal_checks = total_stats.get("signal_checks", 0)
+    all_passed = total_stats.get("all_passed", 0)
+    
+    filter_rates = {}
+    if signal_checks > 0:
+        filter_rates = {
+            "pass_rate": (all_passed / signal_checks * 100),
+            "filter_rate": ((signal_checks - all_passed) / signal_checks * 100),
+        }
+        for key in [
+            "fail_trend", "fail_squeeze", "fail_squeeze_maturity",
+            "fail_rs", "fail_extension", "fail_btc_bear",
+            "fail_breakout", "fail_volume",
+        ]:
+            if key in total_stats:
+                filter_rates[f"{key}_rate"] = total_stats[key] / signal_checks * 100
+    
+    return {
+        "by_instrument": filter_stats,
+        "total": total_stats,
+        "rates": filter_rates,
+        "instrument_count": len(filter_stats),
+    }
+
+
+def _calculate_basic_stats(trade_metrics: List[Dict], winners: List[Dict], losers: List[Dict]) -> Dict[str, Any]:
+    """计算基础统计数据"""
+    return {
+        "total_trades": len(trade_metrics),
+        "winning_trades": len(winners),
+        "losing_trades": len(losers),
+        "win_rate": len(winners) / len(trade_metrics) if trade_metrics else 0,
+    }
+
+
+def _calculate_pnl_stats(trade_metrics: List[Dict]) -> Dict[str, Any]:
+    """计算PnL统计数据"""
+    all_pnls = [t.get("pnl_pct", 0) for t in trade_metrics]
+    return {
+        "total_pnl_pct": sum(all_pnls),
+        "avg_pnl_pct": sum(all_pnls) / len(all_pnls) if all_pnls else 0,
+        "max_winning_trade": max(all_pnls) if all_pnls else 0,
+        "max_losing_trade": min(all_pnls) if all_pnls else 0,
+    }
+
+
+def _calculate_winner_stats(winners: List[Dict]) -> Dict[str, Any]:
+    """计算盈利交易统计"""
+    if not winners:
+        return {}
+    
+    winner_pnls = [t.get("pnl_pct", 0) for t in winners]
+    return {
+        "avg_winning_trade": sum(winner_pnls) / len(winners),
+        "avg_winner_rs_score": sum(t.get("entry_rs_score", 0) for t in winners) / len(winners),
+        "avg_winner_bb_width_pct": sum(t.get("entry_bb_width_pct", 0) for t in winners) / len(winners),
+        "avg_winner_volume_mult": sum(t.get("entry_volume_mult", 0) for t in winners) / len(winners),
+    }
+
+
+def _calculate_loser_stats(losers: List[Dict]) -> Dict[str, Any]:
+    """计算亏损交易统计"""
+    if not losers:
+        return {}
+    
+    loser_pnls = [t.get("pnl_pct", 0) for t in losers]
+    return {
+        "avg_losing_trade": sum(loser_pnls) / len(losers),
+        "avg_loser_rs_score": sum(t.get("entry_rs_score", 0) for t in losers) / len(losers),
+        "avg_loser_bb_width_pct": sum(t.get("entry_bb_width_pct", 0) for t in losers) / len(losers),
+        "avg_loser_volume_mult": sum(t.get("entry_volume_mult", 0) for t in losers) / len(losers),
+    }
+
+
+def _calculate_profit_ratios(winners: List[Dict], losers: List[Dict], analysis: Dict[str, Any]) -> Dict[str, Any]:
+    """计算盈亏比和盈利因子"""
+    if not winners or not losers or analysis.get("avg_losing_trade", 0) == 0:
+        return {}
+    
+    ratios = {
+        "profit_loss_ratio": abs(analysis["avg_winning_trade"] / analysis["avg_losing_trade"])
+    }
+    
+    total_wins = sum([t.get("pnl_pct", 0) for t in winners])
+    total_losses = abs(sum([t.get("pnl_pct", 0) for t in losers]))
+    if total_losses > 0:
+        ratios["profit_factor"] = total_wins / total_losses
+    
+    return ratios
+
+
+def _calculate_trade_analysis(trade_metrics: List[Dict]) -> Dict[str, Any]:
+    """计算交易基础分析"""
+    winners = [t for t in trade_metrics if t.get("result") == "WINNER"]
+    losers = [t for t in trade_metrics if t.get("result") == "LOSER"]
+    
+    # 合并所有统计数据
+    analysis = {}
+    analysis.update(_calculate_basic_stats(trade_metrics, winners, losers))
+    analysis.update(_calculate_pnl_stats(trade_metrics))
+    analysis.update(_calculate_winner_stats(winners))
+    analysis.update(_calculate_loser_stats(losers))
+    analysis.update(_calculate_profit_ratios(winners, losers, analysis))
+    
+    return analysis
+
+
+def _build_detailed_analysis(trade_metrics: List[Dict], analysis: Dict[str, Any]) -> Dict[str, Any]:
+    """构建详细交易分析"""
+    winners = [t for t in trade_metrics if t.get("result") == "WINNER"]
+    losers = [t for t in trade_metrics if t.get("result") == "LOSER"]
+    
+    if not (winners and losers):
+        return {}
+    
+    return {
+        "winners": {
+            "count": len(winners),
+            "avg_pnl_pct": analysis.get("avg_winning_trade", 0),
+            "avg_rs_score": analysis.get("avg_winner_rs_score", 0),
+            "avg_bb_width_pct": analysis.get("avg_winner_bb_width_pct", 0),
+            "avg_volume_mult": analysis.get("avg_winner_volume_mult", 0),
+        },
+        "losers": {
+            "count": len(losers),
+            "avg_pnl_pct": analysis.get("avg_losing_trade", 0),
+            "avg_rs_score": analysis.get("avg_loser_rs_score", 0),
+            "avg_bb_width_pct": analysis.get("avg_loser_bb_width_pct", 0),
+            "avg_volume_mult": analysis.get("avg_loser_volume_mult", 0),
+        }
+    }
+
+
+def _extract_returns_metrics(result: BacktestResult) -> Dict[str, Any]:
+    """从stats_returns提取关键指标"""
+    metrics = {}
+    
+    if not result.stats_returns:
+        return metrics
+    
+    for key, val in result.stats_returns.items():
+        key_str = str(key)
+        # 处理NaN值
+        clean_val = val if val == val else None
+        
+        if "Sharpe Ratio" in key_str:
+            metrics["sharpe_ratio"] = clean_val
+        elif "Max Drawdown" in key_str:
+            metrics["max_drawdown"] = clean_val
+        elif "Total Return" in key_str:
+            metrics["total_return"] = clean_val
+    
+    return metrics
+
+
+def _extract_trade_analysis(result_dict: Dict[str, Any]) -> Dict[str, Any]:
+    """从trade_metrics提取交易分析数据"""
+    analysis = result_dict["trade_metrics"]["analysis"]
+    return {
+        "win_rate": analysis.get("win_rate", 0),
+        "profit_loss_ratio": analysis.get("profit_loss_ratio", 0),
+        "avg_winning_trade": analysis.get("avg_winning_trade", 0),
+        "avg_losing_trade": analysis.get("avg_losing_trade", 0),
+        "total_pnl_pct": analysis.get("total_pnl_pct", 0),
+    }
+
+
+def _extract_filter_statistics(result_dict: Dict[str, Any]) -> Dict[str, Any]:
+    """从filter_stats提取过滤器统计数据"""
+    filter_data = result_dict["filter_stats"]
+    stats = {
+        "total_signals": filter_data["total"].get("signal_checks", 0),
+        "signals_passed": filter_data["total"].get("all_passed", 0),
+    }
+    
+    if "rates" in filter_data:
+        stats["signal_pass_rate"] = filter_data["rates"].get("pass_rate", 0)
+    
+    return stats
+
+
+def _build_performance_summary(
+    result: BacktestResult,
+    result_dict: Dict[str, Any],
+    trade_metrics: Optional[List[Dict]],
+    filter_stats: Optional[Dict[str, Dict[str, int]]],
+) -> Dict[str, Any]:
+    """构建性能摘要"""
+    performance_summary = {
+        "total_trades": result.total_positions,
+        "total_orders": result.total_orders,
+        "elapsed_time_seconds": result.elapsed_time,
+    }
+    
+    # 添加收益率指标
+    performance_summary.update(_extract_returns_metrics(result))
+    
+    # 添加交易分析指标
+    if trade_metrics:
+        performance_summary.update(_extract_trade_analysis(result_dict))
+    
+    # 添加过滤器统计
+    if filter_stats:
+        performance_summary.update(_extract_filter_statistics(result_dict))
+    
+    return performance_summary
+
+
 def _build_result_dict(
     result: BacktestResult,
     strategy_name: str,
@@ -859,14 +1349,7 @@ def _build_result_dict(
     - strategy_config: 完整的策略配置参数（供 AI 分析优化）
     - backtest_config: 回测配置信息（时间范围、标的数量等）
     - filter_stats: 信号过滤统计
-        - by_instrument: 按标的分组的详细统计
-        - total: 汇总统计
-        - rates: 各种过滤率（通过率、各过滤器占比）
-        - instrument_count: 标的数量
     - trade_metrics: 交易数据
-        - trades: 所有交易的明细列表
-        - analysis: 基础分析（胜率、盈亏比、均值等）
-        - detailed_analysis: 详细分析（胜者 vs 败者对比）
     - performance: 性能摘要（整合关键指标，便于快速查看）
 
     Args:
@@ -890,201 +1373,26 @@ def _build_result_dict(
             "total_orders": result.total_orders,
             "total_positions": result.total_positions,
         },
-        "pnl": {},
-        "returns": {},
+        "pnl": _build_pnl_metrics(result),
+        "returns": _build_returns_metrics(result),
         "strategy_config": strategy_config or {},
         "backtest_config": backtest_config or {},
-        "filter_stats": {},
+        "filter_stats": _build_filter_stats(filter_stats),
         "trade_metrics": {
             "trades": trade_metrics or [],
             "analysis": {},
-            "detailed_analysis": {},  # 新增：更详细的交易分析
+            "detailed_analysis": {},
         },
-        "performance": {},  # 新增：性能摘要
+        "performance": {},
     }
-
-    # 处理 PnL 指标
-    if result.stats_pnls:
-        for currency, metrics in result.stats_pnls.items():
-            result_dict["pnl"][str(currency)] = {
-                k: v if v == v else None
-                for k, v in metrics.items()  # NaN -> None
-            }
-
-    # 处理收益率指标
-    if result.stats_returns:
-        for currency, val in result.stats_returns.items():
-            result_dict["returns"][str(currency)] = val if val == val else None
-
-    # ===== 处理过滤器统计（完整保存所有过滤器细节） =====
-    if filter_stats:
-        # 汇总所有实例的统计
-        total_stats = {}
-        for inst_id, stats in filter_stats.items():
-            for key, value in stats.items():
-                total_stats[key] = total_stats.get(key, 0) + value
-
-        # 计算过滤率
-        signal_checks = total_stats.get("signal_checks", 0)
-        all_passed = total_stats.get("all_passed", 0)
-
-        filter_rates = {}
-        if signal_checks > 0:
-            filter_rates = {
-                "pass_rate": (all_passed / signal_checks * 100)
-                if signal_checks > 0
-                else 0,
-                "filter_rate": ((signal_checks - all_passed) / signal_checks * 100)
-                if signal_checks > 0
-                else 0,
-            }
-            # 计算各个过滤器的占比
-            for key in [
-                "fail_trend",
-                "fail_squeeze",
-                "fail_squeeze_maturity",
-                "fail_rs",
-                "fail_extension",
-                "fail_btc_bear",
-                "fail_breakout",
-                "fail_volume",
-            ]:
-                if key in total_stats:
-                    filter_rates[f"{key}_rate"] = total_stats[key] / signal_checks * 100
-
-        result_dict["filter_stats"] = {
-            "by_instrument": filter_stats,
-            "total": total_stats,
-            "rates": filter_rates,  # 新增：各种过滤率
-            "instrument_count": len(filter_stats),
-        }
-
-    # ===== 处理交易指标分析（完整保存所有交易统计） =====
+    
     if trade_metrics:
-        winners = [t for t in trade_metrics if t.get("result") == "WINNER"]
-        losers = [t for t in trade_metrics if t.get("result") == "LOSER"]
-
-        # 基础统计
-        analysis = {
-            "total_trades": len(trade_metrics),
-            "winning_trades": len(winners),
-            "losing_trades": len(losers),
-            "win_rate": len(winners) / len(trade_metrics) if trade_metrics else 0,
-        }
-
-        # 盈亏统计
-        all_pnls = [t.get("pnl_pct", 0) for t in trade_metrics]
-        analysis["total_pnl_pct"] = sum(all_pnls)
-        analysis["avg_pnl_pct"] = sum(all_pnls) / len(all_pnls) if all_pnls else 0
-        analysis["max_winning_trade"] = max(all_pnls) if all_pnls else 0
-        analysis["max_losing_trade"] = min(all_pnls) if all_pnls else 0
-
-        # 胜者统计
-        if winners:
-            winner_pnls = [t.get("pnl_pct", 0) for t in winners]
-            analysis["avg_winning_trade"] = sum(winner_pnls) / len(winners)
-            analysis["avg_winner_rs_score"] = sum(
-                t.get("entry_rs_score", 0) for t in winners
-            ) / len(winners)
-            analysis["avg_winner_bb_width_pct"] = sum(
-                t.get("entry_bb_width_pct", 0) for t in winners
-            ) / len(winners)
-            analysis["avg_winner_volume_mult"] = sum(
-                t.get("entry_volume_mult", 0) for t in winners
-            ) / len(winners)
-
-        # 败者统计
-        if losers:
-            loser_pnls = [t.get("pnl_pct", 0) for t in losers]
-            analysis["avg_losing_trade"] = sum(loser_pnls) / len(losers)
-            analysis["avg_loser_rs_score"] = sum(
-                t.get("entry_rs_score", 0) for t in losers
-            ) / len(losers)
-            analysis["avg_loser_bb_width_pct"] = sum(
-                t.get("entry_bb_width_pct", 0) for t in losers
-            ) / len(losers)
-            analysis["avg_loser_volume_mult"] = sum(
-                t.get("entry_volume_mult", 0) for t in losers
-            ) / len(losers)
-
-        # 盈亏比和利润因子
-        if winners and losers and analysis.get("avg_losing_trade", 0) != 0:
-            analysis["profit_loss_ratio"] = abs(
-                analysis["avg_winning_trade"] / analysis["avg_losing_trade"]
-            )
-
-            total_wins = sum([t.get("pnl_pct", 0) for t in winners])
-            total_losses = abs(sum([t.get("pnl_pct", 0) for t in losers]))
-            if total_losses > 0:
-                analysis["profit_factor"] = total_wins / total_losses
-
-        # 详细分析（胜者 vs 败者对比）
-        detailed_analysis = {}
-        if winners and losers:
-            detailed_analysis["winners"] = {
-                "count": len(winners),
-                "avg_pnl_pct": analysis.get("avg_winning_trade", 0),
-                "avg_rs_score": analysis.get("avg_winner_rs_score", 0),
-                "avg_bb_width_pct": analysis.get("avg_winner_bb_width_pct", 0),
-                "avg_volume_mult": analysis.get("avg_winner_volume_mult", 0),
-            }
-            detailed_analysis["losers"] = {
-                "count": len(losers),
-                "avg_pnl_pct": analysis.get("avg_losing_trade", 0),
-                "avg_rs_score": analysis.get("avg_loser_rs_score", 0),
-                "avg_bb_width_pct": analysis.get("avg_loser_bb_width_pct", 0),
-                "avg_volume_mult": analysis.get("avg_loser_volume_mult", 0),
-            }
-
+        analysis = _calculate_trade_analysis(trade_metrics)
         result_dict["trade_metrics"]["analysis"] = analysis
-        result_dict["trade_metrics"]["detailed_analysis"] = detailed_analysis
-
-    # ===== 添加性能摘要（整合关键指标，方便快速查看） =====
-    # 这个部分从各个详细数据中提取关键指标，便于：
-    # 1. AI 快速评估回测结果
-    # 2. 人工快速浏览 JSON 时了解整体表现
-    # 3. 与 current_backtest_result 对应，用于 LangGraph State
-    performance_summary = {
-        "total_trades": result.total_positions,
-        "total_orders": result.total_orders,
-        "elapsed_time_seconds": result.elapsed_time,
-    }
-
-    # 从 returns 中提取关键指标
-    if result.stats_returns:
-        for key, val in result.stats_returns.items():
-            if "Sharpe Ratio" in str(key):
-                performance_summary["sharpe_ratio"] = val if val == val else None
-            elif "Max Drawdown" in str(key):
-                performance_summary["max_drawdown"] = val if val == val else None
-            elif "Total Return" in str(key):
-                performance_summary["total_return"] = val if val == val else None
-
-    # 从交易分析中提取关键指标
-    if trade_metrics:
-        analysis = result_dict["trade_metrics"]["analysis"]
-        performance_summary["win_rate"] = analysis.get("win_rate", 0)
-        performance_summary["profit_loss_ratio"] = analysis.get("profit_loss_ratio", 0)
-        performance_summary["avg_winning_trade"] = analysis.get("avg_winning_trade", 0)
-        performance_summary["avg_losing_trade"] = analysis.get("avg_losing_trade", 0)
-        performance_summary["total_pnl_pct"] = analysis.get("total_pnl_pct", 0)
-
-    # 从过滤统计中提取信息
-    if filter_stats:
-        filter_data = result_dict["filter_stats"]
-        performance_summary["total_signals"] = filter_data["total"].get(
-            "signal_checks", 0
-        )
-        performance_summary["signals_passed"] = filter_data["total"].get(
-            "all_passed", 0
-        )
-        if "rates" in filter_data:
-            performance_summary["signal_pass_rate"] = filter_data["rates"].get(
-                "pass_rate", 0
-            )
-
-    result_dict["performance"] = performance_summary
-
+        result_dict["trade_metrics"]["detailed_analysis"] = _build_detailed_analysis(trade_metrics, analysis)
+    
+    result_dict["performance"] = _build_performance_summary(result, result_dict, trade_metrics, filter_stats)
+    
     return result_dict
 
 
