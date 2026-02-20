@@ -187,9 +187,7 @@ class ConfigLoader:
                 f"Failed to read config file {file_path}: {str(e)}", field="file_access"
             )
 
-    def _deep_merge(
-        self, base: Dict[str, Any], override: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    def _deep_merge(self, base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any]:
         """
         深度合并两个字典
 
@@ -203,11 +201,7 @@ class ConfigLoader:
         result = deepcopy(base)
 
         for key, value in override.items():
-            if (
-                key in result
-                and isinstance(result[key], dict)
-                and isinstance(value, dict)
-            ):
+            if key in result and isinstance(result[key], dict) and isinstance(value, dict):
                 # 递归合并嵌套字典
                 result[key] = self._deep_merge(result[key], value)
             else:
@@ -231,9 +225,7 @@ class ConfigLoader:
             Any: 替换后的配置数据
         """
         if isinstance(data, dict):
-            return {
-                key: self._substitute_env_vars(value) for key, value in data.items()
-            }
+            return {key: self._substitute_env_vars(value) for key, value in data.items()}
         elif isinstance(data, list):
             return [self._substitute_env_vars(item) for item in data]
         elif isinstance(data, str):
@@ -303,7 +295,7 @@ class ConfigLoader:
             report["warnings"].append(
                 f"Active config references unknown environment: {active_config.environment}"
             )
-        
+
         if active_config.strategy not in report["strategies"]:
             report["warnings"].append(
                 f"Active config references unknown strategy: {active_config.strategy}"
@@ -341,8 +333,6 @@ class ConfigLoader:
         self._validate_active_config(report)
 
         return report
-
-
 
 
 # 便利函数

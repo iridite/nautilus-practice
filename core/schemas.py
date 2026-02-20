@@ -627,10 +627,11 @@ class ActiveConfig(BaseModel):
         """验证主交易标的格式（必须以 USDT 结尾）"""
         if not v or not v.strip():
             raise ValueError("Primary symbol cannot be empty")
-        # 基础格式验证
-        if not v.endswith("USDT"):
+        # 先转换为大写再验证
+        v_upper = v.strip().upper()
+        if not v_upper.endswith("USDT"):
             raise ValueError("Primary symbol must end with 'USDT'")
-        return v.strip().upper()
+        return v_upper
 
     @field_validator("timeframe", mode="before")
     @classmethod
