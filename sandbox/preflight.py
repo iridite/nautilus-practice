@@ -309,7 +309,7 @@ def _check_venue_support(sandbox_cfg) -> List[str]:
     if not venue:
         problems.append("sandbox_cfg.venue is not set")
     else:
-        supported = {"OKX"}
+        supported = {"OKX", "BINANCE"}
         if venue not in supported:
             problems.append(f"Unsupported sandbox venue: {venue!r}. Supported: {', '.join(sorted(supported))}")
     

@@ -1,0 +1,50 @@
+# Binance Sandbox 实时交易环境配置
+# 用于 Binance Testnet 测试环境
+
+extends: "prod.yaml"
+
+# Sandbox 特定配置
+sandbox:
+  venue: "BINANCE"
+  is_testnet: true
+
+  # 交易标的列表
+  # 注意：BTCUSDT 会由代码自动添加（如果策略需要），无需手动配置
+  instrument_ids:
+    - "ETHUSDT-PERP.BINANCE"
+    - "SOLUSDT-PERP.BINANCE"
+    - "BNBUSDT-PERP.BINANCE"
+    - "DOGEUSDT-PERP.BINANCE"
+
+  # 允许本地缺失 instrument json 仅作为警告（便于开发/快速迭代）
+  allow_missing_instruments: true
+
+  # API 环境变量名称
+  api_key_env: "BINANCE_TESTNET_API_KEY"
+  api_secret_env: "BINANCE_TESTNET_API_SECRET"
+  api_passphrase_env: ""  # Binance 不需要 passphrase
+
+  # 执行引擎配置
+  reconciliation: true
+  reconciliation_lookback_mins: 1440
+  filter_position_reports: true
+
+  # 缓存配置
+  flush_cache_on_start: false
+
+# 日志配置
+logging:
+  level: "INFO"
+  file_level: "DEBUG"
+  components:
+    TradingNode: "INFO"
+    LiveExecEngine: "INFO"
+    Strategy: "DEBUG"
+  components_only: true
+
+# 交易配置
+trading:
+  venue: "BINANCE"
+  instrument_type: "SWAP"
+  initial_balance: 10000
+  currency: "USDT"
