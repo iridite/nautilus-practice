@@ -14,7 +14,7 @@ from typing import Any, Dict, List, Optional
 from nautilus_trader.model import Money
 from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.enums import BarAggregation, PriceType
-from pydantic import BaseModel, ConfigDict, Field, model_validator, validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 # 项目根目录
 project_root: Path = Path(__file__).parent.parent.resolve()
@@ -265,27 +265,31 @@ class TradingConfig(BaseModel):
     main_timeframe: str = "1h"
     trend_timeframe: str = "4h"
 
-    @validator("venue")
+    @field_validator("venue", mode="before")
+    @classmethod
     def validate_venue(cls, v):
         supported_venues = ["BINANCE", "OKX"]
         if v.upper() not in supported_venues:
             raise ValueError(f"Venue must be one of {supported_venues}")
         return v.upper()
 
-    @validator("instrument_type")
+    @field_validator("instrument_type", mode="before")
+    @classmethod
     def validate_instrument_type(cls, v):
         valid_types = ["SPOT", "FUTURES", "SWAP", "OPTION"]
         if v.upper() not in valid_types:
             raise ValueError(f"Instrument type must be one of {valid_types}")
         return v.upper()
 
-    @validator("initial_balance")
+    @field_validator("initial_balance", mode="before")
+    @classmethod
     def validate_initial_balance(cls, v):
         if v <= 0:
             raise ValueError("Initial balance must be positive")
         return v
 
-    @validator("main_timeframe", "trend_timeframe")
+    @field_validator("main_timeframe", "trend_timeframe", mode="before")
+    @classmethod
     def validate_timeframe(cls, v):
         if not v or not isinstance(v, str):
             raise ValueError("Timeframe must be a non-empty string")
@@ -308,7 +312,8 @@ class BacktestPeriodConfig(BaseModel):
     start_date: str
     end_date: str
 
-    @validator("start_date", "end_date")
+    @field_validator("start_date", "end_date", mode="before")
+    @classmethod
     def validate_date_format(cls, v):
         try:
             datetime.strptime(v, "%Y-%m-%d")
@@ -343,7 +348,8 @@ class LoggingConfig(BaseModel):
     components: Dict[str, str] = Field(default_factory=dict)
     components_only: bool = True
 
-    @validator("level", "file_level")
+    @field_validator("level", "file_level", mode="before")
+    @classmethod
     def validate_log_level(cls, v):
         valid_levels = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
         if v.upper() not in valid_levels:
@@ -363,29 +369,34 @@ class FileCleanupConfig(BaseModel):
     keep_days: int = 7
     delete_days: int = 30
 
-    @validator("max_files_per_dir")
+    @field_validator("max_files_per_dir", mode="before")
+    @classmethod
     def validate_max_files(cls, v):
         if v < 1:
             raise ValueError("max_files_per_dir must be at least 1")
         return v
 
-    @validator("target_dirs")
+    @field_validator("target_dirs", mode="before")
+    @classmethod
     def validate_target_dirs(cls, v):
         if not v:
             raise ValueError("target_dirs cannot be empty")
         return v
 
-    @validator("keep_days")
+    @field_validator("keep_days", mode="before")
+    @classmethod
     def validate_keep_days(cls, v):
         if v < 1:
             raise ValueError("keep_days must be at least 1")
         return v
 
-    @validator("delete_days")
-    def validate_delete_days(cls, v, values):
+    @field_validator("delete_days", mode="before")
+    @classmethod
+    def validate_delete_days(cls, v, info):
         if v < 1:
             raise ValueError("delete_days must be at least 1")
-        if "keep_days" in values and v < values["keep_days"]:
+        # Pydantic V2: 使用 info.data 访问其他字段
+        if info.data and "keep_days" in info.data and v < info.data["keep_days"]:
             raise ValueError("delete_days must be >= keep_days")
         return v
 
@@ -402,13 +413,15 @@ class StrategyConfig(BaseModel):
     config_class: Optional[str] = None
     parameters: Dict[str, Any] = Field(default_factory=dict)
 
-    @validator("name")
+    @field_validator("name", mode="before")
+    @classmethod
     def validate_name(cls, v):
         if not v or not v.strip():
             raise ValueError("Strategy name cannot be empty")
         return v.strip()
 
-    @validator("module_path")
+    @field_validator("module_path", mode="before")
+    @classmethod
     def validate_module_path(cls, v):
         if not v or not v.strip():
             raise ValueError("Module path cannot be empty")
@@ -454,14 +467,16 @@ class SandboxConfig(BaseModel):
     # directory may not be populated. Default is False (strict validation).
     allow_missing_instruments: bool = False
 
-    @validator("venue")
+    @field_validator("venue", mode="before")
+    @classmethod
     def validate_venue(cls, v):
         supported = ["OKX", "BINANCE"]
         if v.upper() not in supported:
             raise ValueError(f"Venue must be one of {supported}")
         return v.upper()
 
-    @validator("instrument_ids")
+    @field_validator("instrument_ids", mode="before")
+    @classmethod
     def validate_instruments(cls, v):
         if not v:
             raise ValueError("At least one instrument_id is required")
@@ -493,14 +508,16 @@ class LiveConfig(BaseModel):
     # 缓存配置
     flush_cache_on_start: bool = False
 
-    @validator("venue")
+    @field_validator("venue", mode="before")
+    @classmethod
     def validate_venue(cls, v):
         supported = ["OKX", "BINANCE"]
         if v.upper() not in supported:
             raise ValueError(f"Venue must be one of {supported}")
         return v.upper()
 
-    @validator("instrument_ids")
+    @field_validator("instrument_ids", mode="before")
+    @classmethod
     def validate_instruments(cls, v):
         if not v:
             raise ValueError("At least one instrument_id is required")
@@ -514,6 +531,8 @@ class LiveConfig(BaseModel):
 class EnvironmentConfig(BaseModel):
     """环境配置"""
 
+    model_config = ConfigDict(extra='allow')
+
     extends: Optional[str] = None  # 继承的父配置文件
     trading: TradingConfig = Field(default_factory=TradingConfig)
     backtest: BacktestPeriodConfig
@@ -521,10 +540,6 @@ class EnvironmentConfig(BaseModel):
     file_cleanup: FileCleanupConfig = Field(default_factory=FileCleanupConfig)
     sandbox: Optional[SandboxConfig] = None
     live: Optional[LiveConfig] = None
-
-    class Config:
-        # 允许额外字段，用于扩展配置
-        extra = "allow"
 
 
 class ActiveConfig(BaseModel):
@@ -541,19 +556,22 @@ class ActiveConfig(BaseModel):
 
     overrides: Optional[Dict[str, Any]] = None
 
-    @validator("environment")
+    @field_validator("environment", mode="before")
+    @classmethod
     def validate_environment(cls, v):
         if not v or not v.strip():
             raise ValueError("Environment cannot be empty")
         return v.strip()
 
-    @validator("strategy")
+    @field_validator("strategy", mode="before")
+    @classmethod
     def validate_strategy(cls, v):
         if not v or not v.strip():
             raise ValueError("Strategy cannot be empty")
         return v.strip()
 
-    @validator("primary_symbol")
+    @field_validator("primary_symbol", mode="before")
+    @classmethod
     def validate_primary_symbol(cls, v):
         if not v or not v.strip():
             raise ValueError("Primary symbol cannot be empty")
@@ -562,7 +580,8 @@ class ActiveConfig(BaseModel):
             raise ValueError("Primary symbol must end with 'USDT'")
         return v.strip().upper()
 
-    @validator("timeframe")
+    @field_validator("timeframe", mode="before")
+    @classmethod
     def validate_timeframe(cls, v):
         if v is None:
             return v
@@ -586,7 +605,8 @@ class ActiveConfig(BaseModel):
         except ValueError:
             raise ValueError("Invalid timeframe format")
 
-    @validator("price_type")
+    @field_validator("price_type", mode="before")
+    @classmethod
     def validate_price_type(cls, v):
         if v is None:
             return v
@@ -595,7 +615,8 @@ class ActiveConfig(BaseModel):
             raise ValueError(f"Price type must be one of {valid_types}")
         return v.upper()
 
-    @validator("origination")
+    @field_validator("origination", mode="before")
+    @classmethod
     def validate_origination(cls, v):
         if v is None:
             return v
