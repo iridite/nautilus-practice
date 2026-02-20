@@ -35,7 +35,7 @@ class DataCache:
 
     def get(self, path: Path, start_date: str, end_date: str) -> pd.DataFrame | None:
         """从缓存获取数据
-        
+
         性能优化：返回原始 DataFrame，依赖 pandas 2.0+ 的写时复制（CoW）机制
         避免不必要的内存拷贝，提升性能
         """
@@ -53,7 +53,7 @@ class DataCache:
 
     def put(self, path: Path, start_date: str, end_date: str, df: pd.DataFrame):
         """将数据放入缓存
-        
+
         性能优化：直接存储 DataFrame，不进行拷贝
         依赖 pandas 2.0+ 的写时复制（CoW）机制保证数据安全
         """
@@ -81,37 +81,37 @@ class DataCache:
 
     def get_parquet_metadata(self, path: Path) -> Dict[str, Any] | None:
         """获取 Parquet 文件元数据缓存
-        
+
         Args:
             path: Parquet 文件路径
-            
+
         Returns:
             元数据字典，包含 num_rows, columns, schema 等信息
         """
         if not path.exists():
             return None
-            
+
         mtime = path.stat().st_mtime
         cache_key = f"{path}_{mtime}"
-        
+
         if cache_key in self._metadata_cache:
             self.metadata_hits += 1
             logger.debug(f"Parquet 元数据缓存命中: {path.name}")
             return self._metadata_cache[cache_key]
-        
+
         self.metadata_misses += 1
         return None
-    
+
     def put_parquet_metadata(self, path: Path, metadata: Dict[str, Any]):
         """缓存 Parquet 文件元数据
-        
+
         Args:
             path: Parquet 文件路径
             metadata: 元数据字典
         """
         mtime = path.stat().st_mtime if path.exists() else 0
         cache_key = f"{path}_{mtime}"
-        
+
         # 元数据缓存不受 max_size 限制（元数据很小）
         self._metadata_cache[cache_key] = metadata
         logger.debug(f"Parquet 元数据已缓存: {path.name}")
@@ -120,10 +120,10 @@ class DataCache:
         """获取缓存统计"""
         total = self.hits + self.misses
         hit_rate = self.hits / total if total > 0 else 0
-        
+
         metadata_total = self.metadata_hits + self.metadata_misses
         metadata_hit_rate = self.metadata_hits / metadata_total if metadata_total > 0 else 0
-        
+
         return {
             "hits": self.hits,
             "misses": self.misses,

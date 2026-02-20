@@ -15,7 +15,7 @@
 import logging
 from decimal import Decimal
 from pathlib import Path
-from typing import Any, Dict, List, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import pandas as pd
 from nautilus_trader.core.nautilus_pyo3 import millis_to_nanos
@@ -137,6 +137,53 @@ def _looks_like_time_column(series: pd.Series) -> bool:
     return any(keyword in col_name for keyword in time_keywords)
 
 
+def _check_data_range_mismatch(df: pd.DataFrame, start_date: str, end_date: str) -> tuple[bool, pd.Timestamp, pd.Timestamp, pd.Timestamp, pd.Timestamp]:
+    """检查数据范围是否匹配"""
+    actual_start = df.index.min()
+    actual_end = df.index.max()
+    config_start = pd.Timestamp(start_date)
+    config_end = pd.Timestamp(end_date)
+    
+    has_mismatch = actual_end > config_end
+    return has_mismatch, actual_start, actual_end, config_start, config_end
+
+
+def _log_range_mismatch(csv_path: Path, actual_start, actual_end, config_start, config_end, logger):
+    """记录范围不匹配警告"""
+    logger.warning(
+        f"⚠️ Data range mismatch detected in {csv_path.name}:\n"
+        f"   CSV data: {actual_start.date()} to {actual_end.date()}\n"
+        f"   Config range: {config_start.date()} to {config_end.date()}\n"
+        f"   Data exceeds config by {(actual_end - config_end).days} days"
+    )
+
+
+def _cleanup_csv_file(csv_path: Path, logger):
+    """清理CSV文件"""
+    logger.warning(f"🧹 Auto-cleanup enabled: removing {csv_path.name}")
+    csv_path.unlink()
+
+
+def _cleanup_parquet_files(csv_path: Path, logger):
+    """清理相关的Parquet文件"""
+    import shutil
+    
+    symbol = csv_path.stem.split('-')[1] if '-' in csv_path.stem else None
+    if not symbol:
+        return
+    
+    parquet_base = csv_path.parent.parent / "parquet"
+    if not parquet_base.exists():
+        return
+    
+    for strategy_dir in parquet_base.iterdir():
+        if strategy_dir.is_dir():
+            for symbol_dir in strategy_dir.rglob(f"*{symbol}*"):
+                if symbol_dir.is_dir():
+                    logger.warning(f"   Removing Parquet: {symbol_dir}")
+                    shutil.rmtree(symbol_dir)
+
+
 def _check_and_cleanup_data_range(
     df: pd.DataFrame,
     csv_path: Path,
@@ -146,40 +193,21 @@ def _check_and_cleanup_data_range(
     logger
 ) -> None:
     """检查数据范围并执行清理"""
-    import shutil
-
-    actual_start = df.index.min()
-    actual_end = df.index.max()
-    config_start = pd.Timestamp(start_date)
-    config_end = pd.Timestamp(end_date)
-
-    if actual_end <= config_end:
-        return
-
-    logger.warning(
-        f"⚠️ Data range mismatch detected in {csv_path.name}:\n"
-        f"   CSV data: {actual_start.date()} to {actual_end.date()}\n"
-        f"   Config range: {config_start.date()} to {config_end.date()}\n"
-        f"   Data exceeds config by {(actual_end - config_end).days} days"
+    has_mismatch, actual_start, actual_end, config_start, config_end = _check_data_range_mismatch(
+        df, start_date, end_date
     )
-
+    
+    if not has_mismatch:
+        return
+    
+    _log_range_mismatch(csv_path, actual_start, actual_end, config_start, config_end, logger)
+    
     if not auto_cleanup:
         return
-
-    logger.warning(f"🧹 Auto-cleanup enabled: removing {csv_path.name}")
-    csv_path.unlink()
-
-    symbol = csv_path.stem.split('-')[1] if '-' in csv_path.stem else None
-    if symbol:
-        parquet_base = csv_path.parent.parent / "parquet"
-        if parquet_base.exists():
-            for strategy_dir in parquet_base.iterdir():
-                if strategy_dir.is_dir():
-                    for symbol_dir in strategy_dir.rglob(f"*{symbol}*"):
-                        if symbol_dir.is_dir():
-                            logger.warning(f"   Removing Parquet: {symbol_dir}")
-                            shutil.rmtree(symbol_dir)
-
+    
+    _cleanup_csv_file(csv_path, logger)
+    _cleanup_parquet_files(csv_path, logger)
+    
     raise DataLoadError(
         "Data file removed due to range mismatch. "
         "Please re-run to download correct data range."
@@ -197,6 +225,65 @@ def _filter_by_date_range(df: pd.DataFrame, start_date: str | None, end_date: st
         df = df[df.index <= end_ts]
 
     return df
+
+
+def _try_get_cached_csv_data(csv_path: Path, start_date: str, end_date: str, use_cache: bool) -> Optional[pd.DataFrame]:
+    """尝试从缓存获取CSV数据"""
+    if use_cache and start_date and end_date:
+        cache = get_cache()
+        cached_df = cache.get(csv_path, start_date, end_date)
+        if cached_df is not None:
+            return cached_df
+    return None
+
+
+def _load_csv_with_time_column(csv_path: Path, time_column: Optional[str]) -> tuple[pd.DataFrame, str]:
+    """加载CSV数据并检测时间列"""
+    if time_column is None:
+        time_column = detect_time_column(csv_path)
+    
+    required_columns = [time_column, "open", "high", "low", "close", "volume"]
+    
+    df_full = CSVBarDataLoader.load(
+        file_path=csv_path,
+        index_col=time_column,
+        usecols=required_columns,
+        parse_dates=True,
+    )
+    
+    df_full.sort_index(inplace=True)
+    return df_full, time_column
+
+
+def _process_and_validate_csv_data(
+    df_full: pd.DataFrame,
+    csv_path: Path,
+    start_date: Optional[str],
+    end_date: Optional[str],
+    validate_data: bool,
+    auto_cleanup: bool,
+    logger
+) -> pd.DataFrame:
+    """处理和验证CSV数据"""
+    if start_date and end_date and len(df_full) > 0:
+        _check_and_cleanup_data_range(df_full, csv_path, start_date, end_date, auto_cleanup, logger)
+    
+    df = _filter_by_date_range(df_full, start_date, end_date)
+    
+    if validate_data:
+        _validate_ohlcv_data(df)
+    
+    if len(df) == 0:
+        raise DataLoadError(f"No data available in specified range for {csv_path}")
+    
+    return df
+
+
+def _cache_csv_data(csv_path: Path, start_date: Optional[str], end_date: Optional[str], df: pd.DataFrame, use_cache: bool):
+    """缓存CSV数据"""
+    if use_cache and start_date and end_date:
+        cache = get_cache()
+        cache.put(csv_path, start_date, end_date, df)
 
 
 def load_ohlcv_csv(
@@ -247,42 +334,21 @@ def load_ohlcv_csv(
         raise DataLoadError(f"CSV file not found: {csv_path}")
 
     # 尝试从缓存获取
-    if use_cache and start_date and end_date:
-        cache = get_cache()
-        cached_df = cache.get(csv_path, start_date, end_date)
-        if cached_df is not None:
-            return cached_df
+    cached_df = _try_get_cached_csv_data(csv_path, start_date, end_date, use_cache)
+    if cached_df is not None:
+        return cached_df
 
     try:
-        if time_column is None:
-            time_column = detect_time_column(csv_path)
+        # 加载CSV数据
+        df_full, time_column = _load_csv_with_time_column(csv_path, time_column)
 
-        required_columns = [time_column, "open", "high", "low", "close", "volume"]
-
-        df_full = CSVBarDataLoader.load(
-            file_path=csv_path,
-            index_col=time_column,
-            usecols=required_columns,
-            parse_dates=True,
+        # 处理和验证数据
+        df = _process_and_validate_csv_data(
+            df_full, csv_path, start_date, end_date, validate_data, auto_cleanup, logger
         )
 
-        df_full.sort_index(inplace=True)
-
-        if start_date and end_date and len(df_full) > 0:
-            _check_and_cleanup_data_range(df_full, csv_path, start_date, end_date, auto_cleanup, logger)
-
-        df = _filter_by_date_range(df_full, start_date, end_date)
-
-        if validate_data:
-            _validate_ohlcv_data(df)
-
-        if len(df) == 0:
-            raise DataLoadError(f"No data available in specified range for {csv_path}")
-
         # 放入缓存
-        if use_cache and start_date and end_date:
-            cache = get_cache()
-            cache.put(csv_path, start_date, end_date, df)
+        _cache_csv_data(csv_path, start_date, end_date, df, use_cache)
 
         return df
 
@@ -290,6 +356,7 @@ def load_ohlcv_csv(
         if isinstance(e, DataLoadError):
             raise
         raise DataLoadError(f"Error loading OHLCV data from {csv_path}: {e}")
+
 
 
 def _validate_ohlcv_data(df: pd.DataFrame) -> None:
@@ -350,6 +417,69 @@ def create_nautilus_bars(
         raise DataLoadError(f"Error creating Nautilus bars: {e}")
 
 
+def _validate_custom_csv_columns(df: pd.DataFrame, time_column: str, data_type: str, csv_path: Path):
+    """验证CSV列是否存在"""
+    if time_column not in df.columns:
+        raise DataLoadError(f"Time column '{time_column}' not found in {csv_path}")
+    
+    if data_type.lower() == "oi":
+        if "open_interest" not in df.columns:
+            raise DataLoadError(f"'open_interest' column not found in {csv_path}")
+    elif data_type.lower() == "funding":
+        if "funding_rate" not in df.columns:
+            raise DataLoadError(f"'funding_rate' column not found in {csv_path}")
+    else:
+        raise DataLoadError(f"Unsupported data type: {data_type}")
+
+
+def _create_oi_data(row, time_column: str, instrument_id: InstrumentId) -> OpenInterestData:
+    """创建OI数据对象"""
+    ts_ms = int(row[time_column])
+    ts_event = millis_to_nanos(ts_ms)
+    ts_init = ts_event
+    
+    return OpenInterestData(
+        instrument_id=instrument_id,
+        open_interest=Decimal(str(row["open_interest"])),
+        ts_event=ts_event,
+        ts_init=ts_init,
+    )
+
+
+def _create_funding_data(row, time_column: str, instrument_id: InstrumentId, df: pd.DataFrame) -> FundingRateData:
+    """创建Funding Rate数据对象"""
+    ts_ms = int(row[time_column])
+    ts_event = millis_to_nanos(ts_ms)
+    ts_init = ts_event
+    
+    # 可选的下次资金费率时间
+    next_funding_time = None
+    if "next_funding_time" in df.columns and pd.notna(row["next_funding_time"]):
+        next_funding_time = millis_to_nanos(int(row["next_funding_time"]))
+    
+    return FundingRateData(
+        instrument_id=instrument_id,
+        funding_rate=Decimal(str(row["funding_rate"])),
+        next_funding_time=next_funding_time,
+        ts_event=ts_event,
+        ts_init=ts_init,
+    )
+
+
+def _parse_custom_data(df: pd.DataFrame, data_type: str, time_column: str, instrument_id: InstrumentId) -> List:
+    """解析自定义数据"""
+    data_list = []
+    
+    if data_type.lower() == "oi":
+        for _, row in df.iterrows():
+            data_list.append(_create_oi_data(row, time_column, instrument_id))
+    elif data_type.lower() == "funding":
+        for _, row in df.iterrows():
+            data_list.append(_create_funding_data(row, time_column, instrument_id, df))
+    
+    return data_list
+
+
 def load_custom_csv_data(
     csv_path: Union[str, Path],
     data_type: str,
@@ -387,59 +517,17 @@ def load_custom_csv_data(
 
         df = pd.read_csv(csv_path)
 
-        if time_column not in df.columns:
-            raise DataLoadError(f"Time column '{time_column}' not found in {csv_path}")
+        # 验证列
+        _validate_custom_csv_columns(df, time_column, data_type, csv_path)
 
-        data_list = []
-
-        if data_type.lower() == "oi":
-            if "open_interest" not in df.columns:
-                raise DataLoadError(f"'open_interest' column not found in {csv_path}")
-
-            for _, row in df.iterrows():
-                ts_ms = int(row[time_column])
-                ts_event = millis_to_nanos(ts_ms)
-                ts_init = ts_event
-
-                oi_data = OpenInterestData(
-                    instrument_id=instrument_id,
-                    open_interest=Decimal(str(row["open_interest"])),
-                    ts_event=ts_event,
-                    ts_init=ts_init,
-                )
-                data_list.append(oi_data)
-
-        elif data_type.lower() == "funding":
-            if "funding_rate" not in df.columns:
-                raise DataLoadError(f"'funding_rate' column not found in {csv_path}")
-
-            for _, row in df.iterrows():
-                ts_ms = int(row[time_column])
-                ts_event = millis_to_nanos(ts_ms)
-                ts_init = ts_event
-
-                # 可选的下次资金费率时间
-                next_funding_time = None
-                if "next_funding_time" in df.columns and pd.notna(row["next_funding_time"]):
-                    next_funding_time = millis_to_nanos(int(row["next_funding_time"]))
-
-                funding_data = FundingRateData(
-                    instrument_id=instrument_id,
-                    funding_rate=Decimal(str(row["funding_rate"])),
-                    next_funding_time=next_funding_time,
-                    ts_event=ts_event,
-                    ts_init=ts_init,
-                )
-                data_list.append(funding_data)
-        else:
-            raise DataLoadError(f"Unsupported data type: {data_type}")
-
-        return data_list
+        # 解析数据
+        return _parse_custom_data(df, data_type, time_column, instrument_id)
 
     except Exception as e:
         if isinstance(e, DataLoadError):
             raise
         raise DataLoadError(f"Error loading custom data from {csv_path}: {e}")
+
 
 
 def batch_load_custom_data(
@@ -752,6 +840,94 @@ def load_csv_with_time_detection(
         return pd.DataFrame()
 
 
+def _try_get_cached_data(cache, parquet_path: Path, start_date: str, end_date: str, logger) -> Optional[pd.DataFrame]:
+    """尝试从缓存获取数据"""
+    cached_df = cache.get(parquet_path, start_date, end_date)
+    if cached_df is not None:
+        logger.debug(f"从缓存加载 Parquet: {parquet_path.name}")
+    return cached_df
+
+
+def _get_or_create_metadata(cache, parquet_path: Path, use_cache: bool, logger) -> dict:
+    """获取或创建Parquet元数据"""
+    metadata = None
+    if use_cache:
+        metadata = cache.get_parquet_metadata(parquet_path)
+    
+    if metadata is None:
+        import pyarrow.parquet as pq
+        parquet_file = pq.ParquetFile(parquet_path)
+        metadata = {
+            "num_rows": parquet_file.metadata.num_rows,
+            "num_row_groups": parquet_file.metadata.num_row_groups,
+            "columns": [col for col in parquet_file.schema.names],
+            "schema": str(parquet_file.schema)
+        }
+        if use_cache:
+            cache.put_parquet_metadata(parquet_path, metadata)
+        logger.debug(f"Parquet 元数据: {metadata['num_rows']} 行, {metadata['num_row_groups']} 行组")
+    
+    return metadata
+
+
+def _detect_and_set_time_index(df: pd.DataFrame) -> pd.DataFrame:
+    """检测并设置时间索引"""
+    time_col = None
+    for col in ["timestamp", "datetime", "time"]:
+        if col in df.columns:
+            time_col = col
+            break
+    
+    if time_col:
+        if time_col == "timestamp":
+            df.index = pd.to_datetime(df[time_col], unit="ms")
+        else:
+            df.index = pd.to_datetime(df[time_col])
+        df.index.name = "timestamp"
+        df = df.drop(columns=[time_col])
+    
+    return df
+
+
+def _cache_result(cache, parquet_path: Path, start_date: str, end_date: str, df: pd.DataFrame) -> None:
+    """缓存结果数据"""
+    cache.put(parquet_path, start_date, end_date, df)
+
+
+def _try_get_cached_parquet(cache, parquet_path: Path, start_date: str, end_date: str, logger) -> pd.DataFrame | None:
+    """尝试从缓存获取Parquet数据"""
+    cached_df = _try_get_cached_data(cache, parquet_path, start_date, end_date, logger)
+    if cached_df is not None:
+        return cached_df
+    return None
+
+
+def _read_and_validate_parquet(parquet_path: Path) -> pd.DataFrame:
+    """读取并验证Parquet文件"""
+    df = pd.read_parquet(parquet_path)
+    
+    if df.empty:
+        raise DataLoadError(f"Parquet file is empty: {parquet_path}")
+    
+    return df
+
+
+def _process_parquet_data(df: pd.DataFrame, parquet_path: Path, start_date: str | None, end_date: str | None) -> pd.DataFrame:
+    """处理Parquet数据（设置索引、过滤范围）"""
+    # 检测并设置时间索引
+    df = _detect_and_set_time_index(df)
+    
+    # 按时间范围过滤
+    df = _filter_by_date_range(df, start_date, end_date)
+    
+    if len(df) == 0:
+        raise DataLoadError(
+            f"No data in date range [{start_date} to {end_date}] for {parquet_path.name}"
+        )
+    
+    return df
+
+
 def load_ohlcv_parquet(
     parquet_path: Union[str, Path],
     start_date: str | None = None,
@@ -760,12 +936,12 @@ def load_ohlcv_parquet(
 ) -> pd.DataFrame:
     """
     加载 OHLCV Parquet 数据，支持元数据缓存和时间范围过滤
-    
+
     相比 CSV，Parquet 提供：
     - 更快的读取速度（列式存储）
     - 更小的文件大小（压缩）
     - 内置数据类型信息
-    
+
     Parameters
     ----------
     parquet_path : Union[str, Path]
@@ -776,91 +952,52 @@ def load_ohlcv_parquet(
         结束日期（YYYY-MM-DD格式）
     use_cache : bool, optional
         是否使用缓存，默认 True
-        
+
     Returns
     -------
     pd.DataFrame
         加载并处理后的 OHLCV 数据，以时间为索引
-        
+
     Raises
     ------
     DataLoadError
         当数据加载或处理失败时
     """
     import logging
-    
+
     logger = logging.getLogger(__name__)
     parquet_path = Path(parquet_path)
-    
+
     if not parquet_path.exists():
         raise DataLoadError(f"Parquet file not found: {parquet_path}")
-    
+
     # 尝试从缓存获取
     cache = get_cache()
     if use_cache:
-        cached_df = cache.get(parquet_path, start_date or "", end_date or "")
+        cached_df = _try_get_cached_parquet(cache, parquet_path, start_date or "", end_date or "", logger)
         if cached_df is not None:
-            logger.debug(f"从缓存加载 Parquet: {parquet_path.name}")
             return cached_df
-    
+
     try:
-        # 先尝试获取元数据缓存
-        metadata = None
-        if use_cache:
-            metadata = cache.get_parquet_metadata(parquet_path)
+        # 获取或创建元数据
+        _get_or_create_metadata(cache, parquet_path, use_cache, logger)
         
-        # 如果没有元数据缓存，读取并缓存
-        if metadata is None:
-            import pyarrow.parquet as pq
-            parquet_file = pq.ParquetFile(parquet_path)
-            metadata = {
-                "num_rows": parquet_file.metadata.num_rows,
-                "num_row_groups": parquet_file.metadata.num_row_groups,
-                "columns": [col for col in parquet_file.schema.names],
-                "schema": str(parquet_file.schema)
-            }
-            if use_cache:
-                cache.put_parquet_metadata(parquet_path, metadata)
-            logger.debug(f"Parquet 元数据: {metadata['num_rows']} 行, {metadata['num_row_groups']} 行组")
+        # 读取并验证
+        df = _read_and_validate_parquet(parquet_path)
         
-        # 读取 Parquet 文件
-        df = pd.read_parquet(parquet_path)
-        
-        if df.empty:
-            raise DataLoadError(f"Parquet file is empty: {parquet_path}")
-        
-        # 检测并设置时间索引
-        time_col = None
-        for col in ["timestamp", "datetime", "time"]:
-            if col in df.columns:
-                time_col = col
-                break
-        
-        if time_col:
-            if time_col == "timestamp":
-                df.index = pd.to_datetime(df[time_col], unit="ms")
-            else:
-                df.index = pd.to_datetime(df[time_col])
-            df.index.name = "timestamp"
-            df = df.drop(columns=[time_col])
-        
-        # 按时间范围过滤
-        df = _filter_by_date_range(df, start_date, end_date)
-        
-        if len(df) == 0:
-            raise DataLoadError(
-                f"No data in date range [{start_date} to {end_date}] for {parquet_path.name}"
-            )
+        # 处理数据
+        df = _process_parquet_data(df, parquet_path, start_date, end_date)
         
         # 缓存结果
         if use_cache:
-            cache.put(parquet_path, start_date or "", end_date or "", df)
+            _cache_result(cache, parquet_path, start_date or "", end_date or "", df)
         
         logger.info(f"✅ 加载 Parquet: {parquet_path.name} ({len(df)} 行)")
         return df
-        
+
     except Exception as e:
         raise DataLoadError(f"Error loading Parquet file {parquet_path}: {e}")
+
 
 
 def load_ohlcv_auto(
@@ -872,9 +1009,9 @@ def load_ohlcv_auto(
 ) -> pd.DataFrame:
     """
     自动检测文件格式并加载 OHLCV 数据（CSV 或 Parquet）
-    
+
     优先使用 Parquet 格式以获得更好的性能。
-    
+
     Parameters
     ----------
     file_path : Union[str, Path]
@@ -887,24 +1024,24 @@ def load_ohlcv_auto(
         是否使用缓存，默认 True
     **kwargs
         传递给具体加载函数的额外参数
-        
+
     Returns
     -------
     pd.DataFrame
         加载的 OHLCV 数据
-        
+
     Raises
     ------
     DataLoadError
         当文件格式不支持或加载失败时
     """
     file_path = Path(file_path)
-    
+
     if not file_path.exists():
         raise DataLoadError(f"File not found: {file_path}")
-    
+
     suffix = file_path.suffix.lower()
-    
+
     if suffix == ".parquet":
         return load_ohlcv_parquet(
             file_path,

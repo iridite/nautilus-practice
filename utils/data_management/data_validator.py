@@ -10,6 +10,8 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Optional
 
+import pandas as pd
+
 logger = logging.getLogger(__name__)
 
 class DataValidator:
@@ -42,6 +44,32 @@ class DataValidator:
         self.enable_logging = enable_logging
         self._last_valid_value: Optional[Decimal] = None
 
+    def _check_oi_validity(self, oi_value: Optional[Decimal], logger) -> tuple[bool, Optional[str]]:
+        """检查OI数据有效性"""
+        if oi_value is None or oi_value <= 0:
+            error_msg = f"Invalid OI data: {oi_value}"
+            if logger and self.enable_logging:
+                logger.warning(f"⚠️  {error_msg}")
+            return False, error_msg
+        return True, None
+
+    def _check_oi_spike(self, oi_value: Decimal, logger) -> tuple[bool, Optional[str]]:
+        """检查OI剧烈变化"""
+        if self._last_valid_value is None or self._last_valid_value <= 0:
+            return True, None
+        
+        change_pct = abs(float((oi_value - self._last_valid_value) / self._last_valid_value))
+        if change_pct > self.spike_threshold:
+            error_msg = (
+                f"OI spike detected: {change_pct:.1%} change "
+                f"(from {self._last_valid_value:.0f} to {oi_value:.0f}). "
+                f"Possible contract roll or data error."
+            )
+            if logger and self.enable_logging:
+                logger.warning(f"⚠️  {error_msg}")
+            return False, error_msg
+        return True, None
+
     def validate_oi(
         self, oi_value: Optional[Decimal], logger=None
     ) -> tuple[bool, Optional[str]]:
@@ -60,28 +88,55 @@ class DataValidator:
         tuple[bool, Optional[str]]
             (是否有效, 错误信息)
         """
-        # 检查 1: 数据有效性
-        if oi_value is None or oi_value <= 0:
-            error_msg = f"Invalid OI data: {oi_value}"
+        is_valid, error_msg = self._check_oi_validity(oi_value, logger)
+        if not is_valid:
+            return False, error_msg
+
+        is_valid, error_msg = self._check_oi_spike(oi_value, logger)
+        if not is_valid:
+            return False, error_msg
+
+        self._last_valid_value = oi_value
+        return True, None
+
+    def _check_funding_none(self, funding_annual: Optional[Decimal], logger) -> tuple[bool, Optional[str]]:
+        """检查资金费率是否为None"""
+        if funding_annual is None:
+            error_msg = "Invalid Funding Rate data: None"
             if logger and self.enable_logging:
                 logger.warning(f"⚠️  {error_msg}")
             return False, error_msg
+        return True, None
 
-        # 检查 2: 剧烈变化检测（换月、数据错误）
-        if self._last_valid_value is not None and self._last_valid_value > 0:
-            change_pct = abs(float((oi_value - self._last_valid_value) / self._last_valid_value))
-            if change_pct > self.spike_threshold:
+    def _check_funding_abnormal(
+        self, funding_annual: Decimal, max_abs_value: float, logger
+    ) -> tuple[bool, Optional[str]]:
+        """检查资金费率是否超出正常范围"""
+        if abs(float(funding_annual)) > max_abs_value:
+            error_msg = (
+                f"Abnormal Funding Rate: {funding_annual:.2f}% (annual), "
+                f"exceeds ±{max_abs_value}% threshold. Possible data error."
+            )
+            if logger and self.enable_logging:
+                logger.warning(f"⚠️  {error_msg}")
+            return False, error_msg
+        return True, None
+
+    def _check_funding_spike(
+        self, funding_annual: Decimal, spike_threshold: float, logger
+    ) -> tuple[bool, Optional[str]]:
+        """检查资金费率是否有剧烈变化"""
+        if self._last_valid_value is not None:
+            change = abs(float(funding_annual - self._last_valid_value))
+            if change > spike_threshold:
                 error_msg = (
-                    f"OI spike detected: {change_pct:.1%} change "
-                    f"(from {self._last_valid_value:.0f} to {oi_value:.0f}). "
-                    f"Possible contract roll or data error."
+                    f"Funding Rate spike detected: {change:.1f}% change "
+                    f"(from {self._last_valid_value:.2f}% to {funding_annual:.2f}%). "
+                    f"Possible data error."
                 )
                 if logger and self.enable_logging:
                     logger.warning(f"⚠️  {error_msg}")
                 return False, error_msg
-
-        # 数据通过验证
-        self._last_valid_value = oi_value
         return True, None
 
     def validate_funding_rate(
@@ -111,37 +166,64 @@ class DataValidator:
             (是否有效, 错误信息)
         """
         # 检查 1: 数据有效性
-        if funding_annual is None:
-            error_msg = "Invalid Funding Rate data: None"
-            if logger and self.enable_logging:
-                logger.warning(f"⚠️  {error_msg}")
+        is_valid, error_msg = self._check_funding_none(funding_annual, logger)
+        if not is_valid:
             return False, error_msg
 
         # 检查 2: 异常值检测
-        if abs(float(funding_annual)) > max_abs_value:
-            error_msg = (
-                f"Abnormal Funding Rate: {funding_annual:.2f}% (annual), "
-                f"exceeds ±{max_abs_value}% threshold. Possible data error."
-            )
-            if logger and self.enable_logging:
-                logger.warning(f"⚠️  {error_msg}")
+        is_valid, error_msg = self._check_funding_abnormal(funding_annual, max_abs_value, logger)
+        if not is_valid:
             return False, error_msg
 
         # 检查 3: 剧烈变化检测
-        if self._last_valid_value is not None:
-            change = abs(float(funding_annual - self._last_valid_value))
-            if change > spike_threshold:
+        is_valid, error_msg = self._check_funding_spike(funding_annual, spike_threshold, logger)
+        if not is_valid:
+            return False, error_msg
+
+        # 数据通过验证
+        self._last_valid_value = funding_annual
+        return True, None
+
+    def _check_price_validity(self, price: Optional[Decimal], logger) -> tuple[bool, Optional[str]]:
+        """检查价格有效性"""
+        if price is None or price <= 0:
+            error_msg = f"Invalid price data: {price}"
+            if logger and self.enable_logging:
+                logger.warning(f"⚠️  {error_msg}")
+            return False, error_msg
+        return True, None
+
+    def _check_price_min_range(self, price: Decimal, min_price: Optional[Decimal], logger) -> tuple[bool, Optional[str]]:
+        """检查价格最小范围"""
+        if min_price is not None and price < min_price:
+            error_msg = f"Price {price} below minimum {min_price}"
+            if logger and self.enable_logging:
+                logger.warning(f"⚠️  {error_msg}")
+            return False, error_msg
+        return True, None
+
+    def _check_price_max_range(self, price: Decimal, max_price: Optional[Decimal], logger) -> tuple[bool, Optional[str]]:
+        """检查价格最大范围"""
+        if max_price is not None and price > max_price:
+            error_msg = f"Price {price} above maximum {max_price}"
+            if logger and self.enable_logging:
+                logger.warning(f"⚠️  {error_msg}")
+            return False, error_msg
+        return True, None
+
+    def _check_price_spike(self, price: Decimal, logger) -> tuple[bool, Optional[str]]:
+        """检查价格剧烈变化"""
+        if self._last_valid_value is not None and self._last_valid_value > 0:
+            change_pct = abs(float((price - self._last_valid_value) / self._last_valid_value))
+            if change_pct > self.spike_threshold:
                 error_msg = (
-                    f"Funding Rate spike detected: {change:.1f}% change "
-                    f"(from {self._last_valid_value:.2f}% to {funding_annual:.2f}%). "
-                    f"Possible data error."
+                    f"Price spike detected: {change_pct:.1%} change "
+                    f"(from {self._last_valid_value:.2f} to {price:.2f}). "
+                    f"Possible data error or circuit breaker."
                 )
                 if logger and self.enable_logging:
                     logger.warning(f"⚠️  {error_msg}")
                 return False, error_msg
-
-        # 数据通过验证
-        self._last_valid_value = funding_annual
         return True, None
 
     def validate_price(
@@ -171,45 +253,106 @@ class DataValidator:
             (是否有效, 错误信息)
         """
         # 检查 1: 数据有效性
-        if price is None or price <= 0:
-            error_msg = f"Invalid price data: {price}"
-            if logger and self.enable_logging:
-                logger.warning(f"⚠️  {error_msg}")
-            return False, error_msg
+        is_valid, error = self._check_price_validity(price, logger)
+        if not is_valid:
+            return False, error
 
-        # 检查 2: 价格范围
-        if min_price is not None and price < min_price:
-            error_msg = f"Price {price} below minimum {min_price}"
-            if logger and self.enable_logging:
-                logger.warning(f"⚠️  {error_msg}")
-            return False, error_msg
+        # 检查 2: 价格最小范围
+        is_valid, error = self._check_price_min_range(price, min_price, logger)
+        if not is_valid:
+            return False, error
 
-        if max_price is not None and price > max_price:
-            error_msg = f"Price {price} above maximum {max_price}"
-            if logger and self.enable_logging:
-                logger.warning(f"⚠️  {error_msg}")
-            return False, error_msg
+        # 检查 3: 价格最大范围
+        is_valid, error = self._check_price_max_range(price, max_price, logger)
+        if not is_valid:
+            return False, error
 
-        # 检查 3: 剧烈变化检测
-        if self._last_valid_value is not None and self._last_valid_value > 0:
-            change_pct = abs(float((price - self._last_valid_value) / self._last_valid_value))
-            if change_pct > self.spike_threshold:
-                error_msg = (
-                    f"Price spike detected: {change_pct:.1%} change "
-                    f"(from {self._last_valid_value:.2f} to {price:.2f}). "
-                    f"Possible data error or circuit breaker."
-                )
-                if logger and self.enable_logging:
-                    logger.warning(f"⚠️  {error_msg}")
-                return False, error_msg
+        # 检查 4: 剧烈变化检测
+        is_valid, error = self._check_price_spike(price, logger)
+        if not is_valid:
+            return False, error
 
         # 数据通过验证
         self._last_valid_value = price
         return True, None
 
+
     def reset(self):
         """重置验证器状态"""
         self._last_valid_value = None
+
+
+def _check_file_exists(file_path: Path, file_type: str, logger) -> tuple[bool, Optional[str]]:
+    """检查文件是否存在"""
+    if not file_path.exists():
+        error_msg = f"{file_type}数据文件不存在: {file_path}"
+        if logger:
+            logger.error(error_msg)
+        return False, error_msg
+    return True, None
+
+
+def _detect_time_column(df: pd.DataFrame, file_path: Path, file_type: str, logger) -> tuple[Optional[str], Optional[str]]:
+    """检测数据框中的时间列"""
+    time_cols = ['timestamp', 'datetime', 'time', 'date']
+    for col in time_cols:
+        if col in df.columns:
+            return col, None
+    
+    error_msg = f"{file_type}数据缺少时间列: {file_path}"
+    if logger:
+        logger.error(error_msg)
+    return None, error_msg
+
+
+def _calculate_alignment_stats(primary_timestamps: set, secondary_timestamps: set) -> tuple[int, int, int, float]:
+    """计算对齐统计信息"""
+    common_timestamps = primary_timestamps & secondary_timestamps
+    primary_count = len(primary_timestamps)
+    secondary_count = len(secondary_timestamps)
+    common_count = len(common_timestamps)
+    alignment_rate = common_count / primary_count if primary_count > 0 else 0.0
+    return primary_count, secondary_count, common_count, alignment_rate
+
+
+def _log_alignment_info(logger, primary_count: int, secondary_count: int, common_count: int, alignment_rate: float) -> None:
+    """记录对齐信息"""
+    if logger:
+        logger.info(
+            f"数据对齐检查: "
+            f"主标的={primary_count}条, "
+            f"辅助标的={secondary_count}条, "
+            f"共同={common_count}条, "
+            f"对齐率={alignment_rate:.1%}"
+        )
+
+
+def _check_alignment_threshold(
+    alignment_rate: float,
+    min_alignment_rate: float,
+    primary_csv: Path,
+    secondary_csv: Path,
+    primary_count: int,
+    secondary_count: int,
+    common_count: int,
+    logger
+) -> tuple[bool, Optional[str]]:
+    """检查对齐率是否达到阈值"""
+    if alignment_rate < min_alignment_rate:
+        error_msg = (
+            f"数据对齐率过低: {alignment_rate:.1%} < {min_alignment_rate:.1%}\n"
+            f"主标的: {primary_csv.name} ({primary_count}条)\n"
+            f"辅助标的: {secondary_csv.name} ({secondary_count}条)\n"
+            f"共同时间戳: {common_count}条\n"
+            f"建议: 检查数据源或重新下载数据"
+        )
+        if logger:
+            logger.warning(f"⚠️  {error_msg}")
+        return False, error_msg
+    
+    if logger:
+        logger.info(f"✅ 数据对齐验证通过: {alignment_rate:.1%}")
+    return True, None
 
 
 def validate_multi_instrument_alignment(
@@ -249,100 +392,55 @@ def validate_multi_instrument_alignment(
     >>> if not is_aligned:
     ...     print(f"数据对齐问题: {error}")
     """
-    import pandas as pd
-
     try:
         # 检查文件存在性
-        if not primary_csv.exists():
-            error_msg = f"主标的数据文件不存在: {primary_csv}"
-            if logger:
-                logger.error(error_msg)
-            return False, error_msg
+        exists, error = _check_file_exists(primary_csv, "主标的", logger)
+        if not exists:
+            return False, error
+        
+        exists, error = _check_file_exists(secondary_csv, "辅助标的", logger)
+        if not exists:
+            return False, error
 
-        if not secondary_csv.exists():
-            error_msg = f"辅助标的数据文件不存在: {secondary_csv}"
-            if logger:
-                logger.error(error_msg)
-            return False, error_msg
-
-        # 加载时间戳列（自动检测列名）
+        # 加载数据
         primary_df = pd.read_csv(primary_csv)
         secondary_df = pd.read_csv(secondary_csv)
 
-        # 检测时间列名
-        time_cols = ['timestamp', 'datetime', 'time', 'date']
-        primary_time_col = None
-        secondary_time_col = None
-
-        for col in time_cols:
-            if col in primary_df.columns:
-                primary_time_col = col
-                break
-
-        for col in time_cols:
-            if col in secondary_df.columns:
-                secondary_time_col = col
-                break
-
-        if not primary_time_col:
-            error_msg = f"主标的数据缺少时间列: {primary_csv}"
-            if logger:
-                logger.error(error_msg)
-            return False, error_msg
-
-        if not secondary_time_col:
-            error_msg = f"辅助标的数据缺少时间列: {secondary_csv}"
-            if logger:
-                logger.error(error_msg)
-            return False, error_msg
+        # 检测时间列
+        primary_time_col, error = _detect_time_column(primary_df, primary_csv, "主标的", logger)
+        if error:
+            return False, error
+        
+        secondary_time_col, error = _detect_time_column(secondary_df, secondary_csv, "辅助标的", logger)
+        if error:
+            return False, error
 
         # 提取时间戳集合
         primary_timestamps = set(primary_df[primary_time_col])
         secondary_timestamps = set(secondary_df[secondary_time_col])
 
-        # 计算对齐情况
-        common_timestamps = primary_timestamps & secondary_timestamps
-        primary_count = len(primary_timestamps)
-        secondary_count = len(secondary_timestamps)
-        common_count = len(common_timestamps)
+        # 计算对齐统计
+        primary_count, secondary_count, common_count, alignment_rate = _calculate_alignment_stats(
+            primary_timestamps, secondary_timestamps
+        )
 
-        # 计算对齐率（基于主标的）
-        alignment_rate = common_count / primary_count if primary_count > 0 else 0.0
+        # 记录对齐信息
+        _log_alignment_info(logger, primary_count, secondary_count, common_count, alignment_rate)
 
-        # 记录详细信息
-        if logger:
-            logger.info(
-                f"数据对齐检查: "
-                f"主标的={primary_count}条, "
-                f"辅助标的={secondary_count}条, "
-                f"共同={common_count}条, "
-                f"对齐率={alignment_rate:.1%}"
-            )
-
-        # 检查对齐率
-        if alignment_rate < min_alignment_rate:
-            error_msg = (
-                f"数据对齐率过低: {alignment_rate:.1%} < {min_alignment_rate:.1%}\n"
-                f"主标的: {primary_csv.name} ({primary_count}条)\n"
-                f"辅助标的: {secondary_csv.name} ({secondary_count}条)\n"
-                f"共同时间戳: {common_count}条\n"
-                f"建议: 检查数据源或重新下载数据"
-            )
-            if logger:
-                logger.warning(f"⚠️  {error_msg}")
-            return False, error_msg
-
-        # 对齐率合格
-        if logger:
-            logger.info(f"✅ 数据对齐验证通过: {alignment_rate:.1%}")
-
-        return True, None
+        # 检查对齐率阈值
+        return _check_alignment_threshold(
+            alignment_rate, min_alignment_rate,
+            primary_csv, secondary_csv,
+            primary_count, secondary_count, common_count,
+            logger
+        )
 
     except Exception as e:
         error_msg = f"数据对齐验证失败: {e}"
         if logger:
             logger.error(error_msg)
         return False, error_msg
+
 
 
 

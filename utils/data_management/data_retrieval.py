@@ -43,13 +43,34 @@ def fetch_ohlcv_data(exchange, symbol, timeframe, since, limit_ms, source="auto"
         return _fetch_ohlcv_ccxt(exchange, symbol, timeframe, since, limit_ms)
 
 
+def _get_exchange_limit_param(exchange) -> int:
+    """获取交易所特定的数据限制参数"""
+    return 100 if exchange.id == "okx" else 1000
+
+
+def _filter_new_ohlcv_data(ohlcv: list, current_since: int) -> list:
+    """过滤出新的OHLCV数据（时间戳>=current_since）"""
+    return [x for x in ohlcv if x[0] >= current_since]
+
+
+def _convert_ohlcv_to_dataframe(all_ohlcv: list, limit_ms: int) -> pd.DataFrame:
+    """将OHLCV数据列表转换为DataFrame并过滤时间范围"""
+    if not all_ohlcv:
+        return pd.DataFrame()
+    df = pd.DataFrame(
+        all_ohlcv, columns=["timestamp", "open", "high", "low", "close", "volume"]
+    )
+    return df[df["timestamp"] < limit_ms]
+
+
 def _fetch_ohlcv_ccxt(exchange, symbol, timeframe, since, limit_ms):
     all_ohlcv = []
     current_since = since
     iteration_count = 0
+    
     while current_since < limit_ms and iteration_count < MAX_ITERATIONS:
         iteration_count += 1
-        limit_param = 100 if exchange.id == "okx" else 1000
+        limit_param = _get_exchange_limit_param(exchange)
         ohlcv = retry_fetch(
             exchange.fetch_ohlcv,
             symbol,
@@ -57,26 +78,26 @@ def _fetch_ohlcv_ccxt(exchange, symbol, timeframe, since, limit_ms):
             since=current_since,
             limit=limit_param,
         )
+        
         if not ohlcv:
             break
-        new_data = [x for x in ohlcv if x[0] >= current_since]
+        
+        new_data = _filter_new_ohlcv_data(ohlcv, current_since)
         if not new_data:
             break
+        
         all_ohlcv.extend(new_data)
         current_since = all_ohlcv[-1][0] + 1
+        
         if current_since >= limit_ms:
             break
+        
         time.sleep(exchange.rateLimit / 1000)
 
     if iteration_count >= MAX_ITERATIONS:
         logger.warning(f"Reached max iterations ({MAX_ITERATIONS}) for {symbol}")
 
-    if not all_ohlcv:
-        return pd.DataFrame()
-    df = pd.DataFrame(
-        all_ohlcv, columns=["timestamp", "open", "high", "low", "close", "volume"]
-    )
-    return df[df["timestamp"] < limit_ms]
+    return _convert_ohlcv_to_dataframe(all_ohlcv, limit_ms)
 
 
 def batch_fetch_ohlcv(
@@ -155,6 +176,57 @@ def batch_fetch_ohlcv(
     return configs
 
 
+def _build_binance_oi_params(symbol: str, period: str) -> dict:
+    """构建Binance OI API请求参数"""
+    return {
+        "symbol": symbol.replace("/", "").replace(":USDT", ""),
+        "period": period,
+        "limit": 500,
+    }
+
+
+def _parse_binance_oi_item(item: dict, start_ms: int, end_ms: int) -> dict:
+    """解析单个Binance OI数据项"""
+    ts = int(item["timestamp"])
+    if start_ms <= ts <= end_ms:
+        return {
+            "timestamp": ts,
+            "open_interest": float(item["sumOpenInterest"]),
+            "open_interest_value": float(item["sumOpenInterestValue"]),
+        }
+    return None
+
+
+def _log_binance_oi_data_range(all_data: list, start_ms: int):
+    """记录Binance OI数据范围信息"""
+    from datetime import datetime
+    
+    oldest_ts = min(item["timestamp"] for item in all_data)
+    newest_ts = max(item["timestamp"] for item in all_data)
+    
+    logger.info(
+        f"ℹ️  Binance OI: Got {len(all_data)} records from "
+        f"{datetime.fromtimestamp(oldest_ts/1000).date()} to "
+        f"{datetime.fromtimestamp(newest_ts/1000).date()}"
+    )
+    
+    if oldest_ts > start_ms:
+        logger.warning(
+            f"⚠️  Warning: Requested data from {datetime.fromtimestamp(start_ms/1000).date()}, "
+            f"but API only provides recent ~21 days"
+        )
+
+
+def _finalize_binance_oi_dataframe(all_data: list) -> pd.DataFrame:
+    """将Binance OI数据列表转换为DataFrame"""
+    if not all_data:
+        return pd.DataFrame()
+    
+    df = pd.DataFrame(all_data)
+    df["datetime"] = pd.to_datetime(df["timestamp"], unit="ms")
+    return df
+
+
 def fetch_binance_oi_history(
     exchange: ccxt.binance,
     symbol: str,
@@ -166,12 +238,7 @@ def fetch_binance_oi_history(
     all_data = []
 
     try:
-        params = {
-            "symbol": symbol.replace("/", "").replace(":USDT", ""),
-            "period": period,
-            "limit": 500,
-        }
-
+        params = _build_binance_oi_params(symbol, period)
         response = retry_fetch(
             exchange.fapiDataGetOpenInterestHist,
             params=params,
@@ -182,32 +249,75 @@ def fetch_binance_oi_history(
             return pd.DataFrame()
 
         for item in response:
-            ts = int(item["timestamp"])
-            if start_ms <= ts <= end_ms:
-                all_data.append(
-                    {
-                        "timestamp": ts,
-                        "open_interest": float(item["sumOpenInterest"]),
-                        "open_interest_value": float(item["sumOpenInterestValue"]),
-                    }
-                )
+            parsed_item = _parse_binance_oi_item(item, start_ms, end_ms)
+            if parsed_item:
+                all_data.append(parsed_item)
 
         if all_data:
-            oldest_ts = min(item["timestamp"] for item in all_data)
-            newest_ts = max(item["timestamp"] for item in all_data)
-            from datetime import datetime
-            logger.info(f"ℹ️  Binance OI: Got {len(all_data)} records from {datetime.fromtimestamp(oldest_ts/1000).date()} to {datetime.fromtimestamp(newest_ts/1000).date()}")
-            if oldest_ts > start_ms:
-                logger.warning(f"⚠️  Warning: Requested data from {datetime.fromtimestamp(start_ms/1000).date()}, but API only provides recent ~21 days")
+            _log_binance_oi_data_range(all_data, start_ms)
 
     except Exception as e:
         logger.error(f"❌ Error fetching Binance OI data: {e}")
         return pd.DataFrame()
 
+    return _finalize_binance_oi_dataframe(all_data)
+
+
+def _build_okx_oi_params(inst_id: str, period: str, current_end: int) -> dict:
+    """构建OKX OI API请求参数"""
+    return {
+        "instId": inst_id,
+        "period": period,
+        "end": str(current_end),
+        "limit": "100",
+    }
+
+
+def _parse_okx_oi_item(item: dict, start_ms: int) -> dict:
+    """解析单个OKX OI数据项"""
+    ts = int(item["ts"])
+    if ts >= start_ms:
+        return {
+            "timestamp": ts,
+            "open_interest": float(item["oi"]),
+            "open_interest_value": float(item["oiVol"]),
+        }
+    return None
+
+
+def _process_okx_oi_response(response: dict, start_ms: int) -> tuple[list, bool, int]:
+    """
+    处理OKX OI API响应
+    
+    Returns:
+        tuple: (数据列表, 是否继续, 下一个结束时间戳)
+    """
+    if not response or "data" not in response:
+        return [], False, 0
+    
+    data_list = response["data"]
+    if not data_list:
+        return [], False, 0
+    
+    parsed_data = []
+    for item in data_list:
+        parsed_item = _parse_okx_oi_item(item, start_ms)
+        if parsed_item:
+            parsed_data.append(parsed_item)
+    
+    should_continue = len(data_list) >= 100
+    next_end = int(data_list[-1]["ts"]) - 1 if should_continue else 0
+    
+    return parsed_data, should_continue, next_end
+
+
+def _finalize_okx_oi_dataframe(all_data: list) -> pd.DataFrame:
+    """将OKX OI数据列表转换为DataFrame"""
     if not all_data:
         return pd.DataFrame()
-
+    
     df = pd.DataFrame(all_data)
+    df = df.sort_values("timestamp").reset_index(drop=True)
     df["datetime"] = pd.to_datetime(df["timestamp"], unit="ms")
     return df
 
@@ -224,40 +334,19 @@ def fetch_okx_oi_history(
     while current_end > start_ms and iteration_count < MAX_ITERATIONS:
         iteration_count += 1
         try:
-            params = {
-                "instId": inst_id,
-                "period": period,
-                "end": str(current_end),
-                "limit": "100",
-            }
-
+            params = _build_okx_oi_params(inst_id, period, current_end)
             response = retry_fetch(
                 exchange.publicGetRubikStatContractsOpenInterestHistory,
                 params=params,
             )
 
-            if not response or "data" not in response:
+            parsed_data, should_continue, next_end = _process_okx_oi_response(response, start_ms)
+            all_data.extend(parsed_data)
+            
+            if not should_continue:
                 break
-
-            data_list = response["data"]
-            if not data_list:
-                break
-
-            for item in data_list:
-                ts = int(item["ts"])
-                if ts >= start_ms:
-                    all_data.append(
-                        {
-                            "timestamp": ts,
-                            "open_interest": float(item["oi"]),
-                            "open_interest_value": float(item["oiVol"]),
-                        }
-                    )
-
-            if len(data_list) < 100:
-                break
-
-            current_end = int(data_list[-1]["ts"]) - 1
+            
+            current_end = next_end
             time.sleep(exchange.rateLimit / 1000)
 
         except Exception as e:
@@ -267,12 +356,40 @@ def fetch_okx_oi_history(
     if iteration_count >= MAX_ITERATIONS:
         logger.warning(f"Reached max iterations ({MAX_ITERATIONS}) for OKX OI {symbol}")
 
+    return _finalize_okx_oi_dataframe(all_data)
+
+
+def _build_binance_funding_params(clean_symbol: str, current_start: int, end_ms: int) -> dict:
+    """构建Binance Funding Rate API请求参数"""
+    return {
+        "symbol": clean_symbol,
+        "startTime": current_start,
+        "endTime": end_ms,
+        "limit": 1000,
+    }
+
+
+def _parse_binance_funding_item(item: dict) -> dict:
+    """解析单个Binance Funding Rate数据项"""
+    return {
+        "timestamp": int(item["fundingTime"]),
+        "funding_rate": float(item["fundingRate"]),
+    }
+
+
+def _calculate_next_funding_start(all_data: list) -> int:
+    """计算下一次资金费率查询的起始时间（8小时后）"""
+    return all_data[-1]["timestamp"] + 8 * 3600 * 1000
+
+
+def _finalize_binance_funding_dataframe(all_data: list) -> pd.DataFrame:
+    """将Binance Funding Rate数据列表转换为DataFrame"""
     if not all_data:
         return pd.DataFrame()
-
+    
     df = pd.DataFrame(all_data)
-    df = df.sort_values("timestamp").reset_index(drop=True)
     df["datetime"] = pd.to_datetime(df["timestamp"], unit="ms")
+    df["funding_rate_annual"] = df["funding_rate"] * 3 * 365 * 100
     return df
 
 
@@ -288,30 +405,19 @@ def fetch_binance_funding_rate_history(
     while current_start < end_ms and iteration_count < MAX_ITERATIONS:
         iteration_count += 1
         try:
-            params = {
-                "symbol": clean_symbol,
-                "startTime": current_start,
-                "endTime": end_ms,
-                "limit": 1000,
-            }
-
+            params = _build_binance_funding_params(clean_symbol, current_start, end_ms)
             response = retry_fetch(exchange.fapiPublicGetFundingRate, params=params)
 
             if not response:
                 break
 
             for item in response:
-                all_data.append(
-                    {
-                        "timestamp": int(item["fundingTime"]),
-                        "funding_rate": float(item["fundingRate"]),
-                    }
-                )
+                all_data.append(_parse_binance_funding_item(item))
 
             if len(response) < 1000:
                 break
 
-            current_start = all_data[-1]["timestamp"] + 8 * 3600 * 1000
+            current_start = _calculate_next_funding_start(all_data)
             time.sleep(exchange.rateLimit / 1000)
 
         except Exception as e:
@@ -321,10 +427,63 @@ def fetch_binance_funding_rate_history(
     if iteration_count >= MAX_ITERATIONS:
         logger.warning(f"Reached max iterations ({MAX_ITERATIONS}) for Binance Funding {symbol}")
 
+    return _finalize_binance_funding_dataframe(all_data)
+
+
+def _build_okx_funding_params(inst_id: str, current_end: int) -> dict:
+    """构建OKX Funding Rate API请求参数"""
+    return {
+        "instId": inst_id,
+        "before": str(current_end),
+        "limit": "100",
+    }
+
+
+def _parse_okx_funding_item(item: dict, start_ms: int) -> dict:
+    """解析单个OKX Funding Rate数据项"""
+    ts = int(item["fundingTime"])
+    if ts >= start_ms:
+        return {
+            "timestamp": ts,
+            "funding_rate": float(item["fundingRate"]),
+            "realized_rate": float(item.get("realizedRate", 0)),
+        }
+    return None
+
+
+def _process_okx_funding_response(response: dict, start_ms: int) -> tuple[list, bool, int]:
+    """
+    处理OKX Funding Rate API响应
+    
+    Returns:
+        tuple: (数据列表, 是否继续, 下一个结束时间戳)
+    """
+    if not response or "data" not in response:
+        return [], False, 0
+    
+    data_list = response["data"]
+    if not data_list:
+        return [], False, 0
+    
+    parsed_data = []
+    for item in data_list:
+        parsed_item = _parse_okx_funding_item(item, start_ms)
+        if parsed_item:
+            parsed_data.append(parsed_item)
+    
+    should_continue = len(data_list) >= 100
+    next_end = int(data_list[-1]["fundingTime"]) - 1 if should_continue else 0
+    
+    return parsed_data, should_continue, next_end
+
+
+def _finalize_okx_funding_dataframe(all_data: list) -> pd.DataFrame:
+    """将OKX Funding Rate数据列表转换为DataFrame"""
     if not all_data:
         return pd.DataFrame()
-
+    
     df = pd.DataFrame(all_data)
+    df = df.sort_values("timestamp").reset_index(drop=True)
     df["datetime"] = pd.to_datetime(df["timestamp"], unit="ms")
     df["funding_rate_annual"] = df["funding_rate"] * 3 * 365 * 100
     return df
@@ -342,38 +501,18 @@ def fetch_okx_funding_rate_history(
     while current_end > start_ms and iteration_count < MAX_ITERATIONS:
         iteration_count += 1
         try:
-            params = {
-                "instId": inst_id,
-                "before": str(current_end),
-                "limit": "100",
-            }
-
+            params = _build_okx_funding_params(inst_id, current_end)
             response = retry_fetch(
                 exchange.publicGetPublicFundingRateHistory, params=params
             )
 
-            if not response or "data" not in response:
+            parsed_data, should_continue, next_end = _process_okx_funding_response(response, start_ms)
+            all_data.extend(parsed_data)
+            
+            if not should_continue:
                 break
-
-            data_list = response["data"]
-            if not data_list:
-                break
-
-            for item in data_list:
-                ts = int(item["fundingTime"])
-                if ts >= start_ms:
-                    all_data.append(
-                        {
-                            "timestamp": ts,
-                            "funding_rate": float(item["fundingRate"]),
-                            "realized_rate": float(item.get("realizedRate", 0)),
-                        }
-                    )
-
-            if len(data_list) < 100:
-                break
-
-            current_end = int(data_list[-1]["fundingTime"]) - 1
+            
+            current_end = next_end
             time.sleep(exchange.rateLimit / 1000)
 
         except Exception as e:
@@ -383,14 +522,125 @@ def fetch_okx_funding_rate_history(
     if iteration_count >= MAX_ITERATIONS:
         logger.warning(f"Reached max iterations ({MAX_ITERATIONS}) for OKX Funding {symbol}")
 
-    if not all_data:
-        return pd.DataFrame()
+    return _finalize_okx_funding_dataframe(all_data)
 
-    df = pd.DataFrame(all_data)
-    df = df.sort_values("timestamp").reset_index(drop=True)
-    df["datetime"] = pd.to_datetime(df["timestamp"], unit="ms")
-    df["funding_rate_annual"] = df["funding_rate"] * 3 * 365 * 100
-    return df
+
+def _initialize_exchange(exchange_id: str):
+    """初始化交易所连接"""
+    exchange_class = getattr(ccxt, exchange_id.lower())
+    exchange = exchange_class(
+        {"enableRateLimit": True, "options": {"defaultType": "swap"}}
+    )
+    exchange.load_markets()
+    return exchange
+
+
+def _resolve_and_validate_symbol(raw_symbol: str, exchange, exchange_id: str) -> tuple[str, str, str] | None:
+    """解析并验证交易对符号"""
+    ccxt_symbol, market_type = resolve_symbol_and_type(raw_symbol)
+    
+    if ccxt_symbol not in exchange.markets:
+        logger.warning(f"\n[WARNING] {raw_symbol} not found in {exchange_id.upper()}, skipping")
+        return None
+    
+    safe_symbol = raw_symbol.replace("/", "")
+    return ccxt_symbol, market_type, safe_symbol
+
+
+def _fetch_oi_data(exchange_id: str, exchange, ccxt_symbol: str, start_ms: int, end_ms: int, oi_period: str):
+    """获取OI数据"""
+    if exchange_id == "binance":
+        return fetch_binance_oi_history(exchange, ccxt_symbol, start_ms, end_ms, oi_period)
+    elif exchange_id == "okx":
+        return fetch_okx_oi_history(exchange, ccxt_symbol, start_ms, end_ms, oi_period.upper())
+    return None
+
+
+def _fetch_funding_data(exchange_id: str, exchange, ccxt_symbol: str, start_ms: int, end_ms: int):
+    """获取Funding Rate数据"""
+    if exchange_id == "binance":
+        return fetch_binance_funding_rate_history(exchange, ccxt_symbol, start_ms, end_ms)
+    elif exchange_id == "okx":
+        return fetch_okx_funding_rate_history(exchange, ccxt_symbol, start_ms, end_ms)
+    return None
+
+
+def _save_data_to_csv(df, file_path: Path, results_key: str, results: dict):
+    """保存数据到CSV文件"""
+    if not df.empty:
+        file_path.parent.mkdir(parents=True, exist_ok=True)
+        df.to_csv(file_path, index=False)
+        results[results_key].append(str(file_path))
+
+
+def _should_fetch_file(file_path: Path) -> bool:
+    """检查是否需要获取文件"""
+    return not (file_path.exists() and file_path.stat().st_size > 1024)
+
+
+def _process_oi_data(
+    exchange_id: str,
+    exchange,
+    ccxt_symbol: str,
+    safe_symbol: str,
+    start_date: str,
+    end_date: str,
+    start_ms: int,
+    end_ms: int,
+    oi_period: str,
+    base_dir: Path,
+    results: dict,
+    enable_oi: bool
+):
+    """处理OI数据获取"""
+    if not enable_oi:
+        return
+    
+    oi_filename = f"{exchange_id}-{safe_symbol}-oi-{oi_period}-{start_date}_{end_date}.csv"
+    oi_path = base_dir / "data" / "raw" / safe_symbol / oi_filename
+    
+    if _should_fetch_file(oi_path):
+        oi_df = _fetch_oi_data(exchange_id, exchange, ccxt_symbol, start_ms, end_ms, oi_period)
+        if oi_df is not None:
+            _save_data_to_csv(oi_df, oi_path, "oi_files", results)
+
+
+def _process_funding_data(
+    exchange_id: str,
+    exchange,
+    ccxt_symbol: str,
+    safe_symbol: str,
+    start_date: str,
+    end_date: str,
+    start_ms: int,
+    end_ms: int,
+    base_dir: Path,
+    results: dict
+):
+    """处理Funding Rate数据获取"""
+    funding_filename = f"{exchange_id}-{safe_symbol}-funding-{start_date}_{end_date}.csv"
+    funding_path = base_dir / "data" / "raw" / safe_symbol / funding_filename
+    
+    if _should_fetch_file(funding_path):
+        funding_df = _fetch_funding_data(exchange_id, exchange, ccxt_symbol, start_ms, end_ms)
+        if funding_df is not None:
+            _save_data_to_csv(funding_df, funding_path, "funding_files", results)
+
+
+def _print_fetch_results(results: dict, enable_oi: bool):
+    """打印获取结果"""
+    if enable_oi:
+        print(
+            f"✅ OI/Funding data retrieval complete: "
+            f"{len(results['oi_files'])} OI files, "
+            f"{len(results['funding_files'])} Funding files"
+        )
+    else:
+        print(
+            f"✅ Funding data retrieval complete: "
+            f"{len(results['funding_files'])} Funding files "
+            f"(OI data fetching disabled)"
+        )
 
 
 def batch_fetch_oi_and_funding(
@@ -408,99 +658,39 @@ def batch_fetch_oi_and_funding(
     原因：第三方 API 仅提供 21 天历史数据，不符合长期回测需求
     计划：将通过本地服务持续采集和存储 OI 数据
     """
-
-    # ⚠️ OI 数据获取已临时禁用
-    # 等待本地 OI 数据采集服务设计完成后重新启用
     ENABLE_OI_FETCH = False
 
-    exchange_class = getattr(ccxt, exchange_id.lower())
-    exchange = exchange_class(
-        {"enableRateLimit": True, "options": {"defaultType": "swap"}}
-    )
-    exchange.load_markets()
-
+    exchange = _initialize_exchange(exchange_id)
     start_ms = get_ms_timestamp(start_date)
     end_ms = get_ms_timestamp(end_date)
-
     results = {"oi_files": [], "funding_files": []}
 
     desc = f"📊 Fetching Funding from {exchange_id.upper()}" if not ENABLE_OI_FETCH else f"📊 Fetching OI/Funding from {exchange_id.upper()}"
-    with tqdm(
-        symbols,
-        desc=desc,
-        unit="symbol",
-    ) as pbar:
+    
+    with tqdm(symbols, desc=desc, unit="symbol") as pbar:
         for raw_symbol in pbar:
             pbar.set_postfix_str(f"{raw_symbol}", refresh=True)
 
-            # Use shared symbol resolver to get a ccxt-compatible symbol and market type
-            # resolve_symbol_and_type returns (ccxt_symbol, market_type)
-            ccxt_symbol, market_type = resolve_symbol_and_type(raw_symbol)
-
-            if ccxt_symbol not in exchange.markets:
-                logger.warning(f"\n[WARNING] {raw_symbol} not found in {exchange_id.upper()}, skipping")
+            symbol_info = _resolve_and_validate_symbol(raw_symbol, exchange, exchange_id)
+            if symbol_info is None:
                 continue
+            
+            ccxt_symbol, market_type, safe_symbol = symbol_info
 
-            safe_symbol = raw_symbol.replace("/", "")
-
-            # 获取 OI 数据（已禁用）
-            if ENABLE_OI_FETCH:
-                oi_filename = f"{exchange_id}-{safe_symbol}-oi-{oi_period}-{start_date}_{end_date}.csv"
-                oi_path = base_dir / "data" / "raw" / safe_symbol / oi_filename
-
-                if not (oi_path.exists() and oi_path.stat().st_size > 1024):
-                    if exchange_id == "binance":
-                        oi_df = fetch_binance_oi_history(
-                            exchange, ccxt_symbol, start_ms, end_ms, oi_period
-                        )
-                    elif exchange_id == "okx":
-                        oi_df = fetch_okx_oi_history(
-                            exchange, ccxt_symbol, start_ms, end_ms, oi_period.upper()
-                        )
-                    else:
-                        continue
-
-                    if not oi_df.empty:
-                        oi_path.parent.mkdir(parents=True, exist_ok=True)
-                        oi_df.to_csv(oi_path, index=False)
-                        results["oi_files"].append(str(oi_path))
-
-            # 获取 Funding Rate 数据
-            funding_filename = (
-                f"{exchange_id}-{safe_symbol}-funding-{start_date}_{end_date}.csv"
+            _process_oi_data(
+                exchange_id, exchange, ccxt_symbol, safe_symbol,
+                start_date, end_date, start_ms, end_ms, oi_period,
+                base_dir, results, ENABLE_OI_FETCH
             )
-            funding_path = base_dir / "data" / "raw" / safe_symbol / funding_filename
 
-            if not (funding_path.exists() and funding_path.stat().st_size > 1024):
-                if exchange_id == "binance":
-                    funding_df = fetch_binance_funding_rate_history(
-                        exchange, ccxt_symbol, start_ms, end_ms
-                    )
-                elif exchange_id == "okx":
-                    funding_df = fetch_okx_funding_rate_history(
-                        exchange, ccxt_symbol, start_ms, end_ms
-                    )
-                else:
-                    continue
-
-                if not funding_df.empty:
-                    funding_path.parent.mkdir(parents=True, exist_ok=True)
-                    funding_df.to_csv(funding_path, index=False)
-                    results["funding_files"].append(str(funding_path))
+            _process_funding_data(
+                exchange_id, exchange, ccxt_symbol, safe_symbol,
+                start_date, end_date, start_ms, end_ms,
+                base_dir, results
+            )
 
             time.sleep(0.2)
 
-    if ENABLE_OI_FETCH:
-        print(
-            f"✅ OI/Funding data retrieval complete: "
-            f"{len(results['oi_files'])} OI files, "
-            f"{len(results['funding_files'])} Funding files"
-        )
-    else:
-        print(
-            f"✅ Funding data retrieval complete: "
-            f"{len(results['funding_files'])} Funding files "
-            f"(OI data fetching disabled)"
-        )
-
+    _print_fetch_results(results, ENABLE_OI_FETCH)
     return results
+

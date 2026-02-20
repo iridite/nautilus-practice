@@ -142,6 +142,29 @@ def run_batch_data_retrieval(
         return []
 
 
+def _get_current_exchange(attempt: int, supported_exchanges: list) -> str:
+    """获取当前尝试使用的交易所"""
+    return supported_exchanges[min(attempt, len(supported_exchanges) - 1)]
+
+
+def _extract_files_count(result: dict, data_type: str) -> int:
+    """提取文件数量"""
+    if not result:
+        return 0
+    
+    if data_type == "oi":
+        return len(result.get("oi_files", []))
+    else:
+        return len(result.get("funding_files", []))
+
+
+def _calculate_retry_stats(attempt: int, current_exchange: str, exchange: str) -> tuple[int, int]:
+    """计算重试统计"""
+    retries_count = attempt if attempt > 0 else 0
+    fallbacks_count = 1 if current_exchange != exchange else 0
+    return retries_count, fallbacks_count
+
+
 def fetch_data_with_retry(
     data_type: str,
     symbols: list,
@@ -161,7 +184,7 @@ def fetch_data_with_retry(
 
     for attempt in range(max_retries):
         try:
-            current_exchange = supported_exchanges[min(attempt, len(supported_exchanges) - 1)]
+            current_exchange = _get_current_exchange(attempt, supported_exchanges)
 
             result = batch_fetch_oi_and_funding(
                 symbols=symbols,
@@ -172,22 +195,16 @@ def fetch_data_with_retry(
                 oi_period=period,
             )
 
-            if result:
-                if data_type == "oi":
-                    files_count = len(result.get("oi_files", []))
-                else:
-                    files_count = len(result.get("funding_files", []))
-                if attempt > 0:
-                    retries_count = attempt
-                if current_exchange != exchange:
-                    fallbacks_count = 1
+            files_count = _extract_files_count(result, data_type)
+            if files_count > 0:
+                retries_count, fallbacks_count = _calculate_retry_stats(
+                    attempt, current_exchange, exchange
+                )
                 break
 
         except Exception as e:
             error_msg = str(e)
-            if attempt < max_retries - 1:
-                continue
-            else:
+            if attempt >= max_retries - 1:
                 break
 
     return files_count, retries_count, fallbacks_count, error_msg
