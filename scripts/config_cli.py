@@ -174,11 +174,11 @@ def _print_migration_success(report: dict, verbose: bool):
     """打印迁移成功信息"""
     print("✅ 迁移成功!")
     print(f"📁 迁移的文件: {len(report['migrated_files'])} 个")
-    
+
     if verbose:
         for file_path in report['migrated_files']:
             print(f"  - {file_path}")
-    
+
     print(f"📁 备份位置: {report['backup_location']}")
 
 

@@ -6,7 +6,6 @@ Engine Performance Comparison
 
 import sys
 from pathlib import Path
-from datetime import datetime
 
 # 添加项目根目录到路径
 project_root = Path(__file__).parent.parent
@@ -209,8 +208,8 @@ def main():
         print("📁 结果文件:")
         print(f"  - 高级引擎性能数据: {high_profile}")
         print(f"  - 低级引擎性能数据: {low_profile}")
-        print(f"  - 高级引擎报告: output/profiling/high_level_engine_report.txt")
-        print(f"  - 低级引擎报告: output/profiling/low_level_engine_report.txt")
+        print("  - 高级引擎报告: output/profiling/high_level_engine_report.txt")
+        print("  - 低级引擎报告: output/profiling/low_level_engine_report.txt")
         print()
 
     except FileNotFoundError as e:

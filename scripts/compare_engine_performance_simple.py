@@ -212,7 +212,7 @@ def compare_results(high_profile: Path, low_profile: Path):
     )
     low_report_file = reporter.save_report(low_report, "simulated_low_level_report", format="txt")
 
-    print(f"\n✅ 详细报告已保存:")
+    print("\n✅ 详细报告已保存:")
     print(f"  - 高级引擎: {high_report_file}")
     print(f"  - 低级引擎: {low_report_file}")
 
@@ -246,7 +246,7 @@ def main():
         print("📁 结果文件:")
         print(f"  - 高级引擎性能数据: {high_profile}")
         print(f"  - 低级引擎性能数据: {low_profile}")
-        print(f"  - 详细报告: output/profiling/")
+        print("  - 详细报告: output/profiling/")
         print()
         print("💡 下一步:")
         print("  1. 查看生成的报告文件")

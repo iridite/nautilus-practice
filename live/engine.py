@@ -163,7 +163,7 @@ def _load_configs(env_name: Optional[str]):
     """加载配置"""
     if env_name:
         return load_config(env_name)
-    
+
     from core.loader import create_default_loader
     loader = create_default_loader()
     active_config = loader.load_active_config()
@@ -271,17 +271,17 @@ async def run_live(env_name: Optional[str] = None):
     """运行实盘交易"""
     env_config, strategy_config, active_config = _load_configs(env_name)
     _validate_live_config(env_config)
-    
+
     live_cfg = env_config.live
     trader_name, trader_id = _create_trader_id(live_cfg, active_config)
     logging_config = _create_logging_config(env_config, trader_name)
-    
+
     instrument_ids = live_cfg.instrument_ids
     venue_configs = _build_venue_configs(live_cfg, instrument_ids)
-    
+
     node_config = _create_node_config(trader_id, logging_config, live_cfg, venue_configs)
     node = TradingNode(config=node_config)
-    
+
     _setup_node(node, strategy_config, instrument_ids, venue_configs)
     _load_instruments(node, instrument_ids)
 

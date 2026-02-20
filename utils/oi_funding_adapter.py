@@ -57,7 +57,7 @@ class OIFundingDataLoader:
     def _log_missing_oi_file(self, file_path: Path, symbol: str, exchange: str):
         """记录缺失的OI文件信息"""
         logger.warning(f"⚠️  OI data file not found: {file_path}")
-        
+
         available_files = self._find_available_oi_files(symbol, exchange)
         if available_files:
             logger.info(f"💡 Found {len(available_files)} available OI file(s):")
@@ -82,7 +82,7 @@ class OIFundingDataLoader:
         ts_event = millis_to_nanos(ts_ms)
         ts_init = ts_event
         oi = Decimal(str(row["open_interest"]))
-        
+
         return OpenInterestData(
             instrument_id=instrument_id,
             open_interest=oi,
@@ -166,7 +166,7 @@ class OIFundingDataLoader:
     def _log_file_not_found(self, file_path: Path, symbol: str, exchange: str) -> None:
         """记录文件未找到的警告信息"""
         logger.warning(f"⚠️  Funding data file not found: {file_path}")
-        
+
         # 查找可用的替代文件
         available_files = self._find_available_funding_files(symbol, exchange)
         if available_files:
@@ -199,10 +199,10 @@ class OIFundingDataLoader:
         ts_ms = int(row["timestamp"])
         ts_event = millis_to_nanos(ts_ms)
         ts_init = ts_event
-        
+
         funding_rate = Decimal(str(row["funding_rate"]))
         next_funding_time = self._parse_next_funding_time(row, df)
-        
+
         return FundingRateData(
             instrument_id=instrument_id,
             funding_rate=funding_rate,
@@ -417,11 +417,11 @@ def _get_supported_exchanges(preferred_exchange: str) -> list:
     """获取支持的交易所列表"""
     if preferred_exchange == "auto":
         return ["binance", "okx"]
-    
+
     if preferred_exchange in ["binance", "okx"]:
         fallback = "okx" if preferred_exchange == "binance" else "binance"
         return [preferred_exchange, fallback]
-    
+
     return ["binance", "okx"]
 
 
@@ -438,10 +438,10 @@ def _process_data_task(
 ) -> tuple:
     """处理单个数据获取任务"""
     from utils.data_management.data_manager import fetch_data_with_retry
-    
+
     if not symbols:
         return 0, 0, 0, None
-    
+
     symbols_list = sorted(list(symbols))
     return fetch_data_with_retry(
         data_type, symbols_list, exchange, start_date, end_date, period,

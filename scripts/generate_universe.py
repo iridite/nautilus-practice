@@ -32,6 +32,7 @@ import calendar
 import json
 import sys
 from pathlib import Path
+from typing import List, Optional
 
 import pandas as pd
 from tqdm import tqdm
@@ -120,12 +121,12 @@ def _validate_data_directory() -> Optional[List[Path]]:
     if not DATA_DIR.exists():
         print(f"[!] Data directory not found: {DATA_DIR}")
         return None
-    
+
     all_files = list(DATA_DIR.glob("*_1d.csv"))
     if not all_files:
         print(f"[!] No CSV files found in {DATA_DIR}")
         return None
-    
+
     return all_files
 
 
@@ -134,11 +135,11 @@ def _parse_symbol_from_filename(file_path: Path) -> Optional[str]:
     filename = file_path.stem
     if "_" not in filename:
         return None
-    
+
     symbol = filename.split("_")[0]
     if is_stablecoin(symbol):
         return None
-    
+
     return symbol
 
 
@@ -148,11 +149,11 @@ def _load_and_prepare_data(file_path: Path) -> Optional[pd.DataFrame]:
         df = pd.read_csv(file_path, usecols=["timestamp", "close", "volume"])
         if df.empty:
             return None
-        
+
         df["datetime"] = pd.to_datetime(df["timestamp"], unit="ms")
         df["turnover"] = df["close"] * df["volume"]
         df.set_index("datetime", inplace=True)
-        
+
         return df
     except (FileNotFoundError, pd.errors.EmptyDataError, KeyError, ValueError) as e:
         symbol = file_path.stem.split("_")[0]
@@ -181,13 +182,13 @@ def _process_period_group(group: pd.DataFrame, period_start, symbol: str) -> Opt
     """处理单个周期的数据组"""
     if group.empty:
         return None
-    
+
     period_str = _generate_period_string(period_start, REBALANCE_FREQ)
     expected_days = get_expected_days(REBALANCE_FREQ, period_start)
-    
+
     if len(group) < expected_days * MIN_COUNT_RATIO:
         return None
-    
+
     avg_turnover = group["turnover"].mean()
     return (period_str, symbol, avg_turnover)
 
@@ -195,21 +196,21 @@ def _process_period_group(group: pd.DataFrame, period_start, symbol: str) -> Opt
 def _collect_period_stats(all_files: List[Path]) -> dict:
     """收集所有周期的统计数据"""
     period_stats = {}
-    
+
     print(f"[*] Found {len(all_files)} files. Starting data processing...")
     print(f"[*] Rebalance frequency: {REBALANCE_FREQ}")
-    
+
     for file_path in tqdm(all_files, desc="Reading CSVs"):
         symbol = _parse_symbol_from_filename(file_path)
         if not symbol:
             continue
-        
+
         df = _load_and_prepare_data(file_path)
         if df is None:
             continue
-        
+
         period_resample = df.resample(REBALANCE_FREQ)
-        
+
         for period_start, group in period_resample:
             result = _process_period_group(group, period_start, symbol)
             if result:
@@ -217,9 +218,9 @@ def _collect_period_stats(all_files: List[Path]) -> dict:
                 if period_str not in period_stats:
                     period_stats[period_str] = []
                 period_stats[period_str].append((sym, avg_turnover))
-        
+
         del df
-    
+
     return period_stats
 
 
@@ -227,18 +228,18 @@ def _build_universes(period_stats: dict) -> dict:
     """构建universe字典"""
     sorted_periods = sorted(period_stats.keys())
     universes = {n: {} for n in TOP_Ns}
-    
+
     for i in range(len(sorted_periods) - 1):
         current_period = sorted_periods[i]
         next_period = sorted_periods[i + 1]
-        
+
         candidates = period_stats[current_period]
         candidates.sort(key=lambda x: x[1], reverse=True)
-        
+
         for n in TOP_Ns:
             top_n_symbols = [c[0] for c in candidates[:n]]
             universes[n][next_period] = top_n_symbols
-    
+
     return universes
 
 
@@ -247,11 +248,11 @@ def generate_universe():
     从 CSV 数据中动态生成交易池，支持月度/周度/双周更新
     """
     validate_config()
-    
+
     all_files = _validate_data_directory()
     if not all_files:
         return {}
-    
+
     period_stats = _collect_period_stats(all_files)
     return _build_universes(period_stats)
 

@@ -107,7 +107,7 @@ class InstrumentFetcher:
     def _parse_instrument_id(self, instrument_id_str: str) -> Tuple[Optional[InstrumentId], Optional[str], Optional[str], Optional[str]]:
         """
         解析 instrument ID 字符串
-        
+
         Returns:
             Tuple of (instrument_id, venue, symbol, error_message)
         """
@@ -127,12 +127,12 @@ class InstrumentFetcher:
             provider = self._get_binance_provider(is_futures)
             await provider.load_async(instrument_id)
             return provider.find(instrument_id)
-        
+
         if venue == "OKX":
             provider = self._get_okx_provider()
             await provider.load_async(instrument_id)
             return provider.find(instrument_id)
-        
+
         return None
 
     def _save_instrument_to_file(self, instrument, file_path: Path, venue: str, symbol: str) -> str:
@@ -153,7 +153,7 @@ class InstrumentFetcher:
         return f"✅ Saved: {venue}/{symbol} (Price Step: {instrument.price_increment})"
 
     async def _retry_fetch_instrument(
-        self, instrument_id: InstrumentId, venue: str, symbol: str, 
+        self, instrument_id: InstrumentId, venue: str, symbol: str,
         instrument_id_str: str, retries: int, silent: bool
     ) -> Tuple[Optional[Any], Optional[str]]:
         """重试获取 instrument"""
@@ -163,7 +163,7 @@ class InstrumentFetcher:
                 if instrument:
                     return instrument, None
                 return None, f"⚠️ Instrument not found: {instrument_id_str}"
-            
+
             except Exception as e:
                 if attempt < retries:
                     sleep_time = 2.0 * attempt
@@ -174,7 +174,7 @@ class InstrumentFetcher:
                     await asyncio.sleep(sleep_time)
                 else:
                     return None, f"🔥 Final error fetching {instrument_id_str}: {e}"
-        
+
         return None, None
 
     async def fetch_one(
@@ -203,10 +203,10 @@ class InstrumentFetcher:
         instrument, error_msg = await self._retry_fetch_instrument(
             instrument_id, venue, symbol, instrument_id_str, retries, silent
         )
-        
+
         if error_msg:
             return None, False, error_msg
-        
+
         if not instrument:
             return None, False, None
 

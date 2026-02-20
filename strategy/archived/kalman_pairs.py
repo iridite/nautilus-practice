@@ -187,13 +187,13 @@ class KalmanPairsTradingStrategy(BaseStrategy):
         """检查是否应该处理bar"""
         if not (self._bar_a_updated and self._bar_b_updated):
             return False
-        
+
         if not self._check_data_sync():
             return False
-        
+
         if self.price_a is None or self.price_b is None:
             return False
-        
+
         return True
 
     def _reset_update_flags(self):

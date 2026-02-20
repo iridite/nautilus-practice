@@ -57,7 +57,7 @@ class DataValidator:
         """检查OI剧烈变化"""
         if self._last_valid_value is None or self._last_valid_value <= 0:
             return True, None
-        
+
         change_pct = abs(float((oi_value - self._last_valid_value) / self._last_valid_value))
         if change_pct > self.spike_threshold:
             error_msg = (
@@ -298,7 +298,7 @@ def _detect_time_column(df: pd.DataFrame, file_path: Path, file_type: str, logge
     for col in time_cols:
         if col in df.columns:
             return col, None
-    
+
     error_msg = f"{file_type}数据缺少时间列: {file_path}"
     if logger:
         logger.error(error_msg)
@@ -349,7 +349,7 @@ def _check_alignment_threshold(
         if logger:
             logger.warning(f"⚠️  {error_msg}")
         return False, error_msg
-    
+
     if logger:
         logger.info(f"✅ 数据对齐验证通过: {alignment_rate:.1%}")
     return True, None
@@ -397,7 +397,7 @@ def validate_multi_instrument_alignment(
         exists, error = _check_file_exists(primary_csv, "主标的", logger)
         if not exists:
             return False, error
-        
+
         exists, error = _check_file_exists(secondary_csv, "辅助标的", logger)
         if not exists:
             return False, error
@@ -410,7 +410,7 @@ def validate_multi_instrument_alignment(
         primary_time_col, error = _detect_time_column(primary_df, primary_csv, "主标的", logger)
         if error:
             return False, error
-        
+
         secondary_time_col, error = _detect_time_column(secondary_df, secondary_csv, "辅助标的", logger)
         if error:
             return False, error

@@ -187,7 +187,7 @@ def compare_real_engines(high_profile: Path, low_profile: Path):
     )
     reporter.save_report(low_md, "real_low_level_engine_report", format="md")
 
-    print(f"\n✅ 详细报告已保存:")
+    print("\n✅ 详细报告已保存:")
     print(f"  - 高级引擎: {high_report_file}")
     print(f"  - 低级引擎: {low_report_file}")
 
@@ -226,8 +226,8 @@ def main():
         print("📁 结果文件:")
         print(f"  - 高级引擎性能数据: {high_profile}")
         print(f"  - 低级引擎性能数据: {low_profile}")
-        print(f"  - 详细报告: output/profiling/real_*_report.txt")
-        print(f"  - Markdown 报告: output/profiling/real_*_report.md")
+        print("  - 详细报告: output/profiling/real_*_report.txt")
+        print("  - Markdown 报告: output/profiling/real_*_report.md")
         print()
 
     except Exception as e:

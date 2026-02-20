@@ -119,7 +119,7 @@ def _print_final_results(final_state):
 
     best = final_state.get("best_metrics")
     iteration = final_state.get('iteration', 0)
-    
+
     if final_state.get("goal_achieved"):
         _print_success_metrics(best, iteration)
     else:
@@ -143,11 +143,11 @@ def run_optimization(
     target = _get_optimization_target(target)
     initial_state = _create_initial_state(target, initial_code)
     config = {"recursion_limit": 200}
-    
+
     _print_optimization_header(target)
     final_state = _run_optimization_graph(initial_state, config)
     _print_final_results(final_state)
-    
+
     return final_state
 
 

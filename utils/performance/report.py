@@ -5,7 +5,7 @@ Report Generator
 """
 
 import pandas as pd
-from typing import Dict, Any, List
+from typing import List
 from datetime import datetime
 from .analyzer import StrategyAnalyzer
 

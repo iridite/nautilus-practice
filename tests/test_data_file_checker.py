@@ -30,7 +30,6 @@ class TestCheckSingleDataFile(unittest.TestCase):
     def test_file_exists_and_valid(self):
         """测试文件存在且大小有效"""
         # 创建测试文件
-        symbol = "BTC/USDT"
         safe_symbol = "BTCUSDT"
         data_dir = self.base_dir / "data" / "raw" / safe_symbol
         data_dir.mkdir(parents=True, exist_ok=True)
@@ -71,7 +70,6 @@ class TestCheckSingleDataFile(unittest.TestCase):
 
     def test_file_too_small(self):
         """测试文件太小"""
-        symbol = "ETH/USDT"
         safe_symbol = "ETHUSDT"
         data_dir = self.base_dir / "data" / "raw" / safe_symbol
         data_dir.mkdir(parents=True, exist_ok=True)

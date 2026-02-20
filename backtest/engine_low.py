@@ -168,7 +168,7 @@ def _process_instrument_custom_data(
 ) -> int:
     """处理单个标的的自定义数据"""
     from utils.oi_funding_adapter import merge_custom_data_with_bars
-    
+
     instrument_id = inst.id
     symbol = _get_symbol_from_instrument(instrument_id)
     symbol_dir = data_dir / symbol
@@ -190,7 +190,7 @@ def _process_instrument_custom_data(
         engine.add_data(merged_data)
         logger.info(f"   ✅ Added {len(merged_data)} custom data points for {symbol}")
         return len(merged_data)
-    
+
     return 0
 
 
@@ -253,10 +253,10 @@ def _get_order_position_stats(engine: BacktestEngine) -> tuple[int, int]:
     """获取订单和持仓统计"""
     orders_report = engine.trader.generate_order_fills_report()
     positions_report = engine.trader.generate_positions_report()
-    
+
     total_orders = len(orders_report) if orders_report is not None and hasattr(orders_report, '__len__') else 0
     total_positions = len(positions_report) if positions_report is not None and hasattr(positions_report, '__len__') else 0
-    
+
     return total_orders, total_positions
 
 
@@ -273,7 +273,7 @@ def _calculate_pnl_stats(realized_pnls) -> dict:
     winners = realized_pnls[realized_pnls > 0]
     losers = realized_pnls[realized_pnls < 0]
     total_pnl = float(realized_pnls.sum())
-    
+
     return {
         'PnL (total)': total_pnl,
         'PnL% (total)': total_pnl,
@@ -321,21 +321,21 @@ def _calculate_returns_stats(realized_pnls) -> dict:
     """计算收益率统计指标"""
     if len(realized_pnls) <= 1:
         return {}
-    
+
     import numpy as np
     returns = realized_pnls.values
     winners = realized_pnls[realized_pnls > 0]
     losers = realized_pnls[realized_pnls < 0]
-    
+
     avg_return, std_return = _calculate_basic_stats(returns)
     sharpe = _calculate_sharpe_ratio(avg_return, std_return)
     sortino = _calculate_sortino_ratio(returns, avg_return)
     profit_factor = _calculate_profit_factor(winners, losers)
-    
+
     avg_win = float(winners.mean()) if len(winners) > 0 else 0
     avg_loss = float(losers.mean()) if len(losers) > 0 else None
     risk_return = float(std_return / abs(avg_return)) if avg_return != 0 else None
-    
+
     return {
         'Returns Volatility (252 days)': std_return * np.sqrt(252),
         'Average (Return)': avg_return,
@@ -351,27 +351,27 @@ def _calculate_returns_stats(realized_pnls) -> dict:
 def _extract_pnl_from_positions(positions_report) -> dict:
     """从持仓报告中提取PnL统计"""
     stats_pnls = {}
-    
+
     try:
         if positions_report is None or not hasattr(positions_report, 'empty') or positions_report.empty:
             return stats_pnls
-        
+
         logger.debug(f"持仓报告列: {positions_report.columns.tolist()}")
-        
+
         pnl_column = _find_pnl_column(positions_report)
         if not pnl_column:
             logger.warning(f"持仓报告中未找到 PnL 列，可用列: {positions_report.columns.tolist()}")
             return stats_pnls
-        
+
         realized_pnls = positions_report[pnl_column].dropna()
         if len(realized_pnls) == 0:
             return stats_pnls
-        
+
         stats_pnls['USDT'] = _calculate_pnl_stats(realized_pnls)
-        
+
     except Exception as e:
         logger.warning(f"计算统计指标时出错: {e}")
-    
+
     return stats_pnls
 
 
@@ -403,14 +403,14 @@ def _build_result_dict(cfg: BacktestConfig, strategy_config: dict, total_orders:
             "total_positions": total_positions,
         }
     }
-    
+
     if stats_pnls:
         for currency, metrics in stats_pnls.items():
             result_dict["pnl"][str(currency)] = {
                 str(k): v if v == v else None
                 for k, v in metrics.items()
             }
-    
+
     return result_dict
 
 
@@ -429,14 +429,14 @@ def _save_result_json(cfg: BacktestConfig, base_dir: Path, result_dict: dict) ->
     """保存结果到JSON文件"""
     result_dir = base_dir / "output" / "backtest" / "result"
     result_dir.mkdir(parents=True, exist_ok=True)
-    
+
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     filename = f"{cfg.strategy.name}_{timestamp}.json"
     filepath = result_dir / filename
-    
+
     with open(filepath, "w", encoding="utf-8") as f:
         json.dump(result_dict, f, indent=2, ensure_ascii=False, default=str)
-    
+
     logger.info(f"📁 Results saved to: {filepath}")
 
 
@@ -456,14 +456,14 @@ def _process_backtest_results(
     try:
         strategy_config = _extract_strategy_config(cfg)
         total_orders, total_positions = _get_order_position_stats(engine)
-        
+
         positions_report = engine.trader.generate_positions_report()
         stats_pnls = _extract_pnl_from_positions(positions_report)
-        
+
         result_dict = _build_result_dict(cfg, strategy_config, total_orders, total_positions, stats_pnls)
         _add_returns_to_result(engine, result_dict)
         _save_result_json(cfg, base_dir, result_dict)
-        
+
     except Exception as e:
         logger.warning(f"⚠️ Error saving results: {e}")
 

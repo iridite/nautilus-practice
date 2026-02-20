@@ -303,7 +303,7 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
         if period_str not in self.universe_data:
             self.log.warning(f"当前周期 {period_str} 不在 Universe 数据中")
             return False
-        
+
         old_symbols = self.active_symbols.copy()
         self.active_symbols = set(self.universe_data[period_str])
         self._log_universe_change(self.current_period, period_str, old_symbols, self.active_symbols)
@@ -318,7 +318,6 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
         period_str = self._get_period_string(dt)
 
         if period_str != self.current_period:
-            old_period = self.current_period
             self.current_period = period_str
             self._update_active_symbols(period_str)
 
@@ -484,7 +483,7 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
             self.highest_high = float(bar.high)
         else:
             self.highest_high = max(self.highest_high, float(bar.high))
-        
+
         self.entry_bar_count += 1
         self._handle_exit(bar)
 
@@ -492,10 +491,10 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
         """检查基本入场条件"""
         if self._pending_entry_order:
             return False
-        
+
         if not self._is_symbol_active():
             return False
-        
+
         return True
 
     def _check_market_filters(self) -> bool:
@@ -503,21 +502,21 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
         if self.config.enable_btc_regime_filter:
             if not self._check_btc_market_regime():
                 return False
-        
+
         if self.config.enable_euphoria_filter:
             if self.market_euphoria_level in ("DANGER", "WARNING"):
                 return False
-        
+
         return True
 
     def _check_price_and_strength(self, close: float) -> bool:
         """检查价格和相对强度"""
         if close < self.sma:
             return False
-        
+
         if not self._check_relative_strength():
             return False
-        
+
         return True
 
     def _check_volume_condition(self, bar: Bar) -> bool:
@@ -531,11 +530,11 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
         """检查Keltner通道突破"""
         if self.ema is None or self.atr is None:
             return False
-        
+
         keltner_trigger_upper = self.ema + (self.config.keltner_trigger_multiplier * self.atr)
         if close <= keltner_trigger_upper:
             return False
-        
+
         return True
 
     def _check_wick_ratio(self, bar: Bar) -> bool:
@@ -552,22 +551,22 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
         """检查入场条件"""
         if not self._check_basic_entry_conditions():
             return False
-        
+
         if not self._check_market_filters():
             return False
-        
+
         if not self._check_price_and_strength(close):
             return False
-        
+
         if not self._check_volume_condition(bar):
             return False
-        
+
         if not self._check_keltner_breakout(close):
             return False
-        
+
         if not self._check_wick_ratio(bar):
             return False
-        
+
         return True
 
 
@@ -603,7 +602,7 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
         """更新EMA指标"""
         if len(self.closes) < self.config.ema_period:
             return
-        
+
         if self.ema is None:
             self.ema = sum(list(self.closes)[-self.config.ema_period:]) / self.config.ema_period
         else:
@@ -614,7 +613,7 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
         """更新ATR指标 (Wilder's Smoothing / RMA)"""
         if len(self.trs) < self.config.atr_period:
             return
-        
+
         if self.atr is None:
             self.atr = sum(list(self.trs)[-self.config.atr_period:]) / self.config.atr_period
         else:
@@ -856,11 +855,11 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
         """计算止损距离"""
         stop_distance = Decimal(str(self.config.stop_loss_atr_multiplier)) * Decimal(str(self.atr))
         min_stop_distance = bar.close.as_decimal() * Decimal(str(self.config.min_stop_distance_pct))
-        
+
         if stop_distance < min_stop_distance:
             self.log.warning(f"ATR过小({self.atr:.6f})，使用最小止损距离{min_stop_distance}")
             return min_stop_distance
-        
+
         return stop_distance
 
     def _calculate_qty_by_atr(self, equity: Decimal, stop_distance: Decimal, high_conviction: bool) -> Decimal:
@@ -868,7 +867,7 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
         risk_pct = self._get_risk_percent(high_conviction)
         risk_amount = equity * risk_pct * Decimal(str(self.config.leverage))
         qty = risk_amount / stop_distance
-        
+
         min_qty = Decimal(str(self.instrument.size_increment))
         if qty < min_qty:
             self.log.warning(
@@ -876,7 +875,7 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
                 f"size_increment={self.instrument.size_increment}, size_precision={self.instrument.size_precision}"
             )
             return Decimal("0")
-        
+
         return qty
 
     def _calculate_position_size(self, bar: Bar, high_conviction: bool) -> Decimal:
@@ -931,7 +930,7 @@ def _check_time_stop(self, bar: Bar) -> bool:
     """检查时间止损"""
     if not self.config.enable_time_stop or self.entry_bar_count < self.config.time_stop_bars:
         return False
-    
+
     momentum_threshold = 1 + self.config.time_stop_momentum_threshold
     if self.highest_high < self.entry_price * momentum_threshold:
         self.close_all_positions(self.instrument.id)
@@ -948,7 +947,7 @@ def _check_chandelier_exit(self, close: float) -> bool:
     """检查Chandelier Exit跟踪止损"""
     if self.atr is None:
         return False
-    
+
     trailing_stop = self.highest_high - (self.config.stop_loss_atr_multiplier * self.atr)
     if close < trailing_stop:
         self.close_all_positions(self.instrument.id)
@@ -966,7 +965,7 @@ def _check_parabolic_profit(self, close: float) -> bool:
     """检查抛物线止盈"""
     if self.ema is None:
         return False
-    
+
     deviation_pct = (close - self.ema) / self.ema
     if deviation_pct >= self.config.deviation_threshold:
         self.close_all_positions(self.instrument.id)
@@ -982,7 +981,7 @@ def _check_rsi_overbought(self, close: float) -> bool:
     """检查RSI超买止盈"""
     if self.rsi is None or not self.config.enable_rsi_stop_loss:
         return False
-    
+
     if self.rsi > 85 and self.rsi_watcher is False:
         self.rsi_watcher = True
     elif self.rsi_watcher and self.rsi <= 85:
@@ -1000,7 +999,7 @@ def _update_breakeven_status(self, close: float) -> None:
     """更新保本模式状态"""
     if self.atr is None or self.breakeven_active:
         return
-    
+
     breakeven_trigger_price = self.entry_price + Decimal(self.config.breakeven_multiplier * self.atr)
     if close > breakeven_trigger_price:
         self.breakeven_active = True
@@ -1015,7 +1014,7 @@ def _check_breakeven_stop(self, close: float) -> bool:
     """检查保本止损"""
     if not self.breakeven_active:
         return False
-    
+
     breakeven_stop_price = self.entry_price * Decimal("1.002")
     if close < breakeven_stop_price:
         self.close_all_positions(self.instrument.id)
@@ -1032,29 +1031,29 @@ def _check_breakeven_stop(self, close: float) -> bool:
 def _handle_exit(self, bar: Bar) -> None:
     """处理出场逻辑"""
     close = float(bar.close)
-    
+
     # 1. 时间止损检查（优先）
     if self._check_time_stop(bar):
         return
-    
+
     # 2. 跟踪止损检查（Chandelier Exit）
     if self._check_chandelier_exit(close):
         return
-    
+
     # 3. 抛物线止盈
     if self._check_parabolic_profit(close):
         return
-    
+
     # 4. RSI超买止盈
     if self._check_rsi_overbought(close):
         return
-    
+
     # 5. 保本止损机制
     if self.entry_price is None:
         return
-    
+
     self._update_breakeven_status(close)
-    
+
     if self._check_breakeven_stop(close):
         return
 

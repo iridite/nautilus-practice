@@ -128,7 +128,7 @@ def _compress_log_file(file_path: Path) -> bool:
     gz_path = file_path.with_suffix(".log.gz")
     if gz_path.exists():
         return False
-    
+
     try:
         with open(file_path, "rb") as f_in:
             with gzip.open(gz_path, "wb") as f_out:
@@ -184,7 +184,7 @@ def cleanup_by_age(
     for file_path in directory.rglob("*.log"):
         if not file_path.is_file():
             continue
-        
+
         age_days = _get_file_age_days(file_path, now)
         _process_log_file(file_path, age_days, keep_days, delete_days, stats)
 
@@ -192,7 +192,7 @@ def cleanup_by_age(
     for gz_path in directory.rglob("*.log.gz"):
         if not gz_path.is_file():
             continue
-        
+
         age_days = _get_file_age_days(gz_path, now)
         _process_gz_file(gz_path, age_days, delete_days, stats)
 

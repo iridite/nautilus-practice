@@ -22,7 +22,7 @@ import importlib
 import logging
 import os
 from pathlib import Path
-from typing import Iterable, List, Optional, Sequence, Tuple
+from typing import Iterable, List, Optional, Tuple
 
 from dotenv import load_dotenv
 
@@ -156,7 +156,7 @@ def _get_config_class(module: object, config_name: str, module_path: str) -> Tup
     if not hasattr(module, config_name):
         problems.append(f"Config class '{config_name}' not found in module '{module_path}'")
         return None, problems
-    
+
     return getattr(module, config_name), problems
 
 
@@ -173,14 +173,14 @@ def _filter_parameters(parameters: dict, valid_fields: set, config_name: str) ->
     provided = parameters or {}
     valid_params = {k: v for k, v in provided.items() if k in valid_fields}
     unknown_keys = [k for k in provided.keys() if k not in valid_fields]
-    
+
     if unknown_keys:
         logger.debug(
             "Filtered out unknown config keys when constructing %s: %s",
             config_name,
             unknown_keys,
         )
-    
+
     return valid_params
 
 
@@ -227,42 +227,42 @@ def check_strategy_instantiation(module_path: str, strategy_name: str, config_na
 def _check_environment(base_dir: Path, sandbox_cfg) -> List[str]:
     """检查环境文件和API环境变量"""
     problems = []
-    
+
     env_file = find_env_file(base_dir, getattr(sandbox_cfg, "is_testnet", False))
     problems += check_env_file_exists(env_file)
-    
+
     required_keys = [
         getattr(sandbox_cfg, "api_key_env", "OKX_API_KEY"),
         getattr(sandbox_cfg, "api_secret_env", "OKX_API_SECRET"),
         getattr(sandbox_cfg, "api_passphrase_env", "OKX_API_PASSPHRASE"),
     ]
     required_keys = [k for k in required_keys if k]
-    
+
     if env_file.exists() and required_keys:
         problems += check_api_env_vars(env_file, required_keys)
-    
+
     return problems
 
 
 def _check_strategy_config(strategy_cfg) -> List[str]:
     """检查策略模块和类的可导入性"""
     problems = []
-    
+
     module_path = getattr(strategy_cfg, "module_path", "")
     strategy_name = getattr(strategy_cfg, "name", "")
     config_name = getattr(strategy_cfg, "config_class", None) or f"{strategy_name}Config"
-    
+
     if not module_path or not strategy_name:
         problems.append("strategy configuration missing 'module_path' or 'name'.")
         return problems
-    
+
     imp_err = try_import_strategy(module_path, strategy_name, config_name)
     if imp_err:
         problems.append(imp_err)
     else:
         params = getattr(strategy_cfg, "parameters", {})
         problems += check_strategy_instantiation(module_path, strategy_name, config_name, params)
-    
+
     return problems
 
 
@@ -271,11 +271,11 @@ def _collect_instrument_ids(sandbox_cfg, strategy_cfg) -> tuple[set, List[str]]:
     problems = []
     inst_ids = list(getattr(sandbox_cfg, "instrument_ids", []) or [])
     all_needed_ids = set(inst_ids)
-    
+
     params = getattr(strategy_cfg, "parameters", {}) or {}
     btc_symbol = params.get("btc_symbol")
     explicit_btc_id = params.get("btc_instrument_id")
-    
+
     if btc_symbol and not explicit_btc_id and inst_ids:
         template = inst_ids[0]
         aux_id, aux_err = derive_aux_instrument_id(btc_symbol, template)
@@ -283,21 +283,21 @@ def _collect_instrument_ids(sandbox_cfg, strategy_cfg) -> tuple[set, List[str]]:
             all_needed_ids.add(aux_id)
         else:
             problems.append(aux_err or f"Unable to derive auxiliary instrument id for btc_symbol={btc_symbol}")
-    
+
     return all_needed_ids, problems
 
 
 def _check_instruments(base_dir: Path, all_needed_ids: set, sandbox_cfg, warn_on_missing: bool) -> List[str]:
     """检查instrument文件"""
     inst_problems = check_instrument_files(base_dir, all_needed_ids)
-    
+
     effective_warn = bool(warn_on_missing or getattr(sandbox_cfg, "allow_missing_instruments", False))
-    
+
     if inst_problems and effective_warn:
         for p in inst_problems:
             logger.warning("Preflight warning (missing instrument): %s", p)
         return []
-    
+
     return inst_problems
 
 
@@ -305,14 +305,14 @@ def _check_venue_support(sandbox_cfg) -> List[str]:
     """检查venue支持"""
     problems = []
     venue = getattr(sandbox_cfg, "venue", None)
-    
+
     if not venue:
         problems.append("sandbox_cfg.venue is not set")
     else:
         supported = {"OKX", "BINANCE"}
         if venue not in supported:
             problems.append(f"Unsupported sandbox venue: {venue!r}. Supported: {', '.join(sorted(supported))}")
-    
+
     return problems
 
 
@@ -349,16 +349,16 @@ def run_preflight(base_dir: Path, sandbox_cfg, strategy_cfg, warn_on_missing_ins
       - parameters: dict
     """
     problems: List[str] = []
-    
+
     problems += _check_environment(base_dir, sandbox_cfg)
     problems += _check_strategy_config(strategy_cfg)
-    
+
     all_needed_ids, id_problems = _collect_instrument_ids(sandbox_cfg, strategy_cfg)
     problems += id_problems
-    
+
     problems += _check_instruments(base_dir, all_needed_ids, sandbox_cfg, warn_on_missing_instruments)
     problems += _check_venue_support(sandbox_cfg)
-    
+
     return _deduplicate_problems(problems)
 
 

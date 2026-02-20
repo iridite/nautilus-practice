@@ -63,7 +63,7 @@ def _set_default_fees(data: dict):
     if _is_fee_missing_or_zero(maker_fee):
         data["maker_fee"] = "0.0002"
         logger.info("Maker fee is Unknown, set default values")
-    
+
     if _is_fee_missing_or_zero(taker_fee):
         data["taker_fee"] = "0.0005"
         logger.info("Taker fee is Unknown, set default values")
@@ -80,19 +80,19 @@ def load_instrument(
     specifying the Instrument subclass (e.g. "CryptoPerpetual").
     """
     path = Path(file_path)
-    
+
     # 验证文件
     _validate_instrument_file(path)
-    
+
     # 加载数据
     data = _load_instrument_data(path)
-    
+
     # 获取instrument类
     instrument_type = data.get("type")
     cls = _get_instrument_class(instrument_type, path)
-    
+
     # 设置默认手续费
     _set_default_fees(data)
-    
+
     return cls.from_dict(data)
 

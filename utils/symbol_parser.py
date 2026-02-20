@@ -79,16 +79,16 @@ def _parse_simplified_format(symbol: str) -> Tuple[str, str]:
     """解析简化格式的符号（不含"/"）"""
     if symbol.endswith("USDT"):
         return _parse_usdt_suffix(symbol)
-    
+
     if symbol.endswith("USD"):
         return _parse_usd_suffix(symbol)
-    
+
     if symbol.endswith("BTC") and len(symbol) > 6:
         return _parse_btc_suffix(symbol)
-    
+
     if symbol.endswith("ETH") and len(symbol) > 6:
         return _parse_eth_suffix(symbol)
-    
+
     # 默认假设是永续合约格式
     return symbol, "swap"
 
@@ -151,11 +151,11 @@ def _validate_timeframe_input(timeframe: str) -> str | None:
     """验证并标准化时间周期输入"""
     if not timeframe or not isinstance(timeframe, str):
         return None
-    
+
     timeframe = timeframe.strip().lower()
     if not timeframe:
         return None
-    
+
     return timeframe
 
 
@@ -163,15 +163,15 @@ def _parse_single_char_timeframe(timeframe: str) -> Tuple[BarAggregation, int] |
     """解析单字符时间周期（如 'm', 'h', 'd', 'w', 'M'）"""
     if len(timeframe) != 1:
         return None
-    
+
     unit = timeframe
     if unit == "M":  # 特殊处理大写 M (月份)
         return BarAggregation.MONTH, 1
-    
+
     unit_mapping = _get_unit_mapping()
     if unit in unit_mapping:
         return unit_mapping[unit], 1
-    
+
     return None
 
 
@@ -179,7 +179,7 @@ def _extract_period_and_unit(timeframe: str) -> Tuple[int, str] | None:
     """提取周期数和单位"""
     unit = timeframe[-1]
     period_str = timeframe[:-1]
-    
+
     try:
         period = int(period_str) if period_str else 1
         if period <= 0:
@@ -193,11 +193,11 @@ def _map_unit_to_aggregation(unit: str, period: int) -> Tuple[BarAggregation, in
     """将单位映射到BarAggregation"""
     if unit == "M":  # 特殊处理大写 M (月份)
         return BarAggregation.MONTH, period
-    
+
     unit_mapping = _get_unit_mapping()
     if unit in unit_mapping:
         return unit_mapping[unit], period
-    
+
     return None
 
 
@@ -237,29 +237,29 @@ def parse_timeframe(timeframe: str) -> Tuple[BarAggregation, int]:
     """
     # 默认返回值
     default_result = (BarAggregation.MINUTE, 1)
-    
+
     # 验证输入
     timeframe = _validate_timeframe_input(timeframe)
     if timeframe is None:
         return default_result
-    
+
     # 处理单字符输入
     result = _parse_single_char_timeframe(timeframe)
     if result is not None:
         return result
-    
+
     # 提取周期数和单位
     extracted = _extract_period_and_unit(timeframe)
     if extracted is None:
         return default_result
-    
+
     period, unit = extracted
-    
+
     # 映射单位到BarAggregation
     result = _map_unit_to_aggregation(unit, period)
     if result is None:
         return default_result
-    
+
     return result
 
 

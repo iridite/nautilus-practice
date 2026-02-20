@@ -136,7 +136,7 @@ def _check_data_range_mismatch(df: pd.DataFrame, start_date: str, end_date: str)
     actual_end = df.index.max()
     config_start = pd.Timestamp(start_date)
     config_end = pd.Timestamp(end_date)
-    
+
     has_mismatch = actual_end > config_end
     return has_mismatch, actual_start, actual_end, config_start, config_end
 
@@ -160,15 +160,15 @@ def _cleanup_csv_file(csv_path: Path, logger):
 def _cleanup_parquet_files(csv_path: Path, logger):
     """清理相关的Parquet文件"""
     import shutil
-    
+
     symbol = csv_path.stem.split('-')[1] if '-' in csv_path.stem else None
     if not symbol:
         return
-    
+
     parquet_base = csv_path.parent.parent / "parquet"
     if not parquet_base.exists():
         return
-    
+
     for strategy_dir in parquet_base.iterdir():
         if strategy_dir.is_dir():
             for symbol_dir in strategy_dir.rglob(f"*{symbol}*"):
@@ -189,18 +189,18 @@ def _check_and_cleanup_data_range(
     has_mismatch, actual_start, actual_end, config_start, config_end = _check_data_range_mismatch(
         df, start_date, end_date
     )
-    
+
     if not has_mismatch:
         return
-    
+
     _log_range_mismatch(csv_path, actual_start, actual_end, config_start, config_end, logger)
-    
+
     if not auto_cleanup:
         return
-    
+
     _cleanup_csv_file(csv_path, logger)
     _cleanup_parquet_files(csv_path, logger)
-    
+
     raise DataLoadError(
         "Data file removed due to range mismatch. "
         "Please re-run to download correct data range."
@@ -234,16 +234,16 @@ def _load_csv_with_time_column(csv_path: Path, time_column: Optional[str]) -> tu
     """加载CSV数据并检测时间列"""
     if time_column is None:
         time_column = detect_time_column(csv_path)
-    
+
     required_columns = [time_column, "open", "high", "low", "close", "volume"]
-    
+
     df_full = CSVBarDataLoader.load(
         file_path=csv_path,
         index_col=time_column,
         usecols=required_columns,
         parse_dates=True,
     )
-    
+
     df_full.sort_index(inplace=True)
     return df_full, time_column
 
@@ -260,15 +260,15 @@ def _process_and_validate_csv_data(
     """处理和验证CSV数据"""
     if start_date and end_date and len(df_full) > 0:
         _check_and_cleanup_data_range(df_full, csv_path, start_date, end_date, auto_cleanup, logger)
-    
+
     df = _filter_by_date_range(df_full, start_date, end_date)
-    
+
     if validate_data:
         _validate_ohlcv_data(df)
-    
+
     if len(df) == 0:
         raise DataLoadError(f"No data available in specified range for {csv_path}")
-    
+
     return df
 
 
@@ -414,7 +414,7 @@ def _validate_custom_csv_columns(df: pd.DataFrame, time_column: str, data_type: 
     """验证CSV列是否存在"""
     if time_column not in df.columns:
         raise DataLoadError(f"Time column '{time_column}' not found in {csv_path}")
-    
+
     if data_type.lower() == "oi":
         if "open_interest" not in df.columns:
             raise DataLoadError(f"'open_interest' column not found in {csv_path}")
@@ -430,7 +430,7 @@ def _create_oi_data(row, time_column: str, instrument_id: InstrumentId) -> OpenI
     ts_ms = int(row[time_column])
     ts_event = millis_to_nanos(ts_ms)
     ts_init = ts_event
-    
+
     return OpenInterestData(
         instrument_id=instrument_id,
         open_interest=Decimal(str(row["open_interest"])),
@@ -444,12 +444,12 @@ def _create_funding_data(row, time_column: str, instrument_id: InstrumentId, df:
     ts_ms = int(row[time_column])
     ts_event = millis_to_nanos(ts_ms)
     ts_init = ts_event
-    
+
     # 可选的下次资金费率时间
     next_funding_time = None
     if "next_funding_time" in df.columns and pd.notna(row["next_funding_time"]):
         next_funding_time = millis_to_nanos(int(row["next_funding_time"]))
-    
+
     return FundingRateData(
         instrument_id=instrument_id,
         funding_rate=Decimal(str(row["funding_rate"])),
@@ -462,14 +462,14 @@ def _create_funding_data(row, time_column: str, instrument_id: InstrumentId, df:
 def _parse_custom_data(df: pd.DataFrame, data_type: str, time_column: str, instrument_id: InstrumentId) -> List:
     """解析自定义数据"""
     data_list = []
-    
+
     if data_type.lower() == "oi":
         for _, row in df.iterrows():
             data_list.append(_create_oi_data(row, time_column, instrument_id))
     elif data_type.lower() == "funding":
         for _, row in df.iterrows():
             data_list.append(_create_funding_data(row, time_column, instrument_id, df))
-    
+
     return data_list
 
 
@@ -846,7 +846,7 @@ def _get_or_create_metadata(cache, parquet_path: Path, use_cache: bool, logger) 
     metadata = None
     if use_cache:
         metadata = cache.get_parquet_metadata(parquet_path)
-    
+
     if metadata is None:
         import pyarrow.parquet as pq
         parquet_file = pq.ParquetFile(parquet_path)
@@ -859,7 +859,7 @@ def _get_or_create_metadata(cache, parquet_path: Path, use_cache: bool, logger) 
         if use_cache:
             cache.put_parquet_metadata(parquet_path, metadata)
         logger.debug(f"Parquet 元数据: {metadata['num_rows']} 行, {metadata['num_row_groups']} 行组")
-    
+
     return metadata
 
 
@@ -870,7 +870,7 @@ def _detect_and_set_time_index(df: pd.DataFrame) -> pd.DataFrame:
         if col in df.columns:
             time_col = col
             break
-    
+
     if time_col:
         if time_col == "timestamp":
             df.index = pd.to_datetime(df[time_col], unit="ms")
@@ -878,7 +878,7 @@ def _detect_and_set_time_index(df: pd.DataFrame) -> pd.DataFrame:
             df.index = pd.to_datetime(df[time_col])
         df.index.name = "timestamp"
         df = df.drop(columns=[time_col])
-    
+
     return df
 
 
@@ -898,10 +898,10 @@ def _try_get_cached_parquet(cache, parquet_path: Path, start_date: str, end_date
 def _read_and_validate_parquet(parquet_path: Path) -> pd.DataFrame:
     """读取并验证Parquet文件"""
     df = pd.read_parquet(parquet_path)
-    
+
     if df.empty:
         raise DataLoadError(f"Parquet file is empty: {parquet_path}")
-    
+
     return df
 
 
@@ -909,15 +909,15 @@ def _process_parquet_data(df: pd.DataFrame, parquet_path: Path, start_date: str 
     """处理Parquet数据（设置索引、过滤范围）"""
     # 检测并设置时间索引
     df = _detect_and_set_time_index(df)
-    
+
     # 按时间范围过滤
     df = _filter_by_date_range(df, start_date, end_date)
-    
+
     if len(df) == 0:
         raise DataLoadError(
             f"No data in date range [{start_date} to {end_date}] for {parquet_path.name}"
         )
-    
+
     return df
 
 
@@ -974,17 +974,17 @@ def load_ohlcv_parquet(
     try:
         # 获取或创建元数据
         _get_or_create_metadata(cache, parquet_path, use_cache, logger)
-        
+
         # 读取并验证
         df = _read_and_validate_parquet(parquet_path)
-        
+
         # 处理数据
         df = _process_parquet_data(df, parquet_path, start_date, end_date)
-        
+
         # 缓存结果
         if use_cache:
             _cache_result(cache, parquet_path, start_date or "", end_date or "", df)
-        
+
         logger.info(f"✅ 加载 Parquet: {parquet_path.name} ({len(df)} 行)")
         return df
 

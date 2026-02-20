@@ -179,7 +179,7 @@ def example_strategy_filtering():
         min_win_rate=60.0,
     )
 
-    print(f"\n符合条件的策略（夏普率 > 1.0, 最大回撤 < 15%, 胜率 > 60%）:")
+    print("\n符合条件的策略（夏普率 > 1.0, 最大回撤 < 15%, 胜率 > 60%）:")
     print(f"共 {len(filtered)} 个策略:")
     for name in filtered:
         print(f"  - {name}")

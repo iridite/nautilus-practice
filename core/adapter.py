@@ -187,10 +187,10 @@ class ConfigAdapter:
         universe_top_n = params.get("universe_top_n")
         if not universe_top_n:
             return None
-        
+
         universe_freq = params.get("universe_freq", "ME")
         universe_file = self._get_universe_file_path(universe_top_n, universe_freq)
-        
+
         if universe_file.exists():
             return self._load_universe_from_file(universe_file)
         else:
@@ -376,7 +376,7 @@ class ConfigAdapter:
         """实例化策略配置类"""
         if not self.strategy_config.config_class:
             return params_dict
-        
+
         try:
             import importlib
             module = importlib.import_module(self.strategy_config.module_path)
@@ -388,22 +388,22 @@ class ConfigAdapter:
     def _build_strategy_params(self) -> Any:
         """构建策略参数"""
         params_dict = deepcopy(self.strategy_config.parameters)
-        
+
         # 还原基础instrument_id和bar_type
         self._restore_single_instrument(params_dict, "symbol", "instrument_id")
         self._restore_bar_type_if_needed(params_dict, "symbol")
-        
+
         # 还原btc相关
         self._restore_single_instrument(params_dict, "btc_symbol", "btc_instrument_id")
-        
+
         # 还原pairs相关 (for kalman_pairs)
         self._restore_single_instrument(params_dict, "symbol_a", "instrument_a_id")
         self._restore_single_instrument(params_dict, "symbol_b", "instrument_b_id")
         self._restore_bar_type_if_needed(params_dict, "symbol_a")
-        
+
         # 应用overrides
         self._apply_strategy_overrides(params_dict)
-        
+
         # 实例化配置类
         return self._instantiate_config_class(params_dict)
 

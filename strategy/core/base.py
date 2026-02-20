@@ -346,10 +346,10 @@ class BaseStrategy(Strategy):
         """获取用于余额检查的标的"""
         if instrument is None:
             instrument = self.get_instrument()
-        
+
         if instrument is None:
             self.log.warning("无法获取标的信息")
-        
+
         return instrument
 
     def _get_account_for_currency(self, quote_currency) -> Optional[object]:
@@ -358,7 +358,7 @@ class BaseStrategy(Strategy):
         if not accounts:
             self.log.warning("无法获取账户信息")
             return None
-        
+
         return next(
             (a for a in accounts if a.balance(quote_currency)), accounts[0]
         )
@@ -369,7 +369,7 @@ class BaseStrategy(Strategy):
         if not balance:
             self.log.warning(f"无法获取{quote_currency}余额")
             return None
-        
+
         return balance.free.as_decimal()
 
     def _check_balance_sufficient(self, available: Decimal, notional_value: Decimal) -> bool:

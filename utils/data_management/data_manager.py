@@ -151,7 +151,7 @@ def _extract_files_count(result: dict, data_type: str) -> int:
     """提取文件数量"""
     if not result:
         return 0
-    
+
     if data_type == "oi":
         return len(result.get("oi_files", []))
     else:

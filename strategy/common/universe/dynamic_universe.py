@@ -108,9 +108,6 @@ class DynamicUniverseManager:
             # 周期不在数据中，保持当前状态
             return False
 
-        old_period = self.current_period
-        old_symbols = self.active_symbols.copy()
-
         self.current_period = period_str
         self.active_symbols = set(self.universe_data[period_str])
 

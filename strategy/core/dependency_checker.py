@@ -60,7 +60,7 @@ def _add_missing_oi_tasks(tasks: dict, missing_files: list, start_date: str, end
     key = ("binance", "1h", start_date, end_date)
     if key not in tasks["oi_tasks"]:
         tasks["oi_tasks"][key] = set()
-    
+
     for file_path in missing_files:
         symbol = _extract_symbol_from_path(file_path)
         if symbol:
@@ -73,7 +73,7 @@ def _add_missing_funding_tasks(tasks: dict, missing_files: list, start_date: str
     key = ("binance", start_date, end_date)
     if key not in tasks["funding_tasks"]:
         tasks["funding_tasks"][key] = set()
-    
+
     for file_path in missing_files:
         symbol = _extract_symbol_from_path(file_path)
         if symbol:

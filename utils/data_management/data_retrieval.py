@@ -67,7 +67,7 @@ def _fetch_ohlcv_ccxt(exchange, symbol, timeframe, since, limit_ms):
     all_ohlcv = []
     current_since = since
     iteration_count = 0
-    
+
     while current_since < limit_ms and iteration_count < MAX_ITERATIONS:
         iteration_count += 1
         limit_param = _get_exchange_limit_param(exchange)
@@ -78,20 +78,20 @@ def _fetch_ohlcv_ccxt(exchange, symbol, timeframe, since, limit_ms):
             since=current_since,
             limit=limit_param,
         )
-        
+
         if not ohlcv:
             break
-        
+
         new_data = _filter_new_ohlcv_data(ohlcv, current_since)
         if not new_data:
             break
-        
+
         all_ohlcv.extend(new_data)
         current_since = all_ohlcv[-1][0] + 1
-        
+
         if current_since >= limit_ms:
             break
-        
+
         time.sleep(exchange.rateLimit / 1000)
 
     if iteration_count >= MAX_ITERATIONS:
@@ -200,16 +200,16 @@ def _parse_binance_oi_item(item: dict, start_ms: int, end_ms: int) -> dict:
 def _log_binance_oi_data_range(all_data: list, start_ms: int):
     """记录Binance OI数据范围信息"""
     from datetime import datetime
-    
+
     oldest_ts = min(item["timestamp"] for item in all_data)
     newest_ts = max(item["timestamp"] for item in all_data)
-    
+
     logger.info(
         f"ℹ️  Binance OI: Got {len(all_data)} records from "
         f"{datetime.fromtimestamp(oldest_ts/1000).date()} to "
         f"{datetime.fromtimestamp(newest_ts/1000).date()}"
     )
-    
+
     if oldest_ts > start_ms:
         logger.warning(
             f"⚠️  Warning: Requested data from {datetime.fromtimestamp(start_ms/1000).date()}, "
@@ -221,7 +221,7 @@ def _finalize_binance_oi_dataframe(all_data: list) -> pd.DataFrame:
     """将Binance OI数据列表转换为DataFrame"""
     if not all_data:
         return pd.DataFrame()
-    
+
     df = pd.DataFrame(all_data)
     df["datetime"] = pd.to_datetime(df["timestamp"], unit="ms")
     return df
@@ -288,26 +288,26 @@ def _parse_okx_oi_item(item: dict, start_ms: int) -> dict:
 def _process_okx_oi_response(response: dict, start_ms: int) -> tuple[list, bool, int]:
     """
     处理OKX OI API响应
-    
+
     Returns:
         tuple: (数据列表, 是否继续, 下一个结束时间戳)
     """
     if not response or "data" not in response:
         return [], False, 0
-    
+
     data_list = response["data"]
     if not data_list:
         return [], False, 0
-    
+
     parsed_data = []
     for item in data_list:
         parsed_item = _parse_okx_oi_item(item, start_ms)
         if parsed_item:
             parsed_data.append(parsed_item)
-    
+
     should_continue = len(data_list) >= 100
     next_end = int(data_list[-1]["ts"]) - 1 if should_continue else 0
-    
+
     return parsed_data, should_continue, next_end
 
 
@@ -315,7 +315,7 @@ def _finalize_okx_oi_dataframe(all_data: list) -> pd.DataFrame:
     """将OKX OI数据列表转换为DataFrame"""
     if not all_data:
         return pd.DataFrame()
-    
+
     df = pd.DataFrame(all_data)
     df = df.sort_values("timestamp").reset_index(drop=True)
     df["datetime"] = pd.to_datetime(df["timestamp"], unit="ms")
@@ -342,10 +342,10 @@ def fetch_okx_oi_history(
 
             parsed_data, should_continue, next_end = _process_okx_oi_response(response, start_ms)
             all_data.extend(parsed_data)
-            
+
             if not should_continue:
                 break
-            
+
             current_end = next_end
             time.sleep(exchange.rateLimit / 1000)
 
@@ -386,7 +386,7 @@ def _finalize_binance_funding_dataframe(all_data: list) -> pd.DataFrame:
     """将Binance Funding Rate数据列表转换为DataFrame"""
     if not all_data:
         return pd.DataFrame()
-    
+
     df = pd.DataFrame(all_data)
     df["datetime"] = pd.to_datetime(df["timestamp"], unit="ms")
     df["funding_rate_annual"] = df["funding_rate"] * 3 * 365 * 100
@@ -454,26 +454,26 @@ def _parse_okx_funding_item(item: dict, start_ms: int) -> dict:
 def _process_okx_funding_response(response: dict, start_ms: int) -> tuple[list, bool, int]:
     """
     处理OKX Funding Rate API响应
-    
+
     Returns:
         tuple: (数据列表, 是否继续, 下一个结束时间戳)
     """
     if not response or "data" not in response:
         return [], False, 0
-    
+
     data_list = response["data"]
     if not data_list:
         return [], False, 0
-    
+
     parsed_data = []
     for item in data_list:
         parsed_item = _parse_okx_funding_item(item, start_ms)
         if parsed_item:
             parsed_data.append(parsed_item)
-    
+
     should_continue = len(data_list) >= 100
     next_end = int(data_list[-1]["fundingTime"]) - 1 if should_continue else 0
-    
+
     return parsed_data, should_continue, next_end
 
 
@@ -481,7 +481,7 @@ def _finalize_okx_funding_dataframe(all_data: list) -> pd.DataFrame:
     """将OKX Funding Rate数据列表转换为DataFrame"""
     if not all_data:
         return pd.DataFrame()
-    
+
     df = pd.DataFrame(all_data)
     df = df.sort_values("timestamp").reset_index(drop=True)
     df["datetime"] = pd.to_datetime(df["timestamp"], unit="ms")
@@ -508,10 +508,10 @@ def fetch_okx_funding_rate_history(
 
             parsed_data, should_continue, next_end = _process_okx_funding_response(response, start_ms)
             all_data.extend(parsed_data)
-            
+
             if not should_continue:
                 break
-            
+
             current_end = next_end
             time.sleep(exchange.rateLimit / 1000)
 
@@ -538,11 +538,11 @@ def _initialize_exchange(exchange_id: str):
 def _resolve_and_validate_symbol(raw_symbol: str, exchange, exchange_id: str) -> tuple[str, str, str] | None:
     """解析并验证交易对符号"""
     ccxt_symbol, market_type = resolve_symbol_and_type(raw_symbol)
-    
+
     if ccxt_symbol not in exchange.markets:
         logger.warning(f"\n[WARNING] {raw_symbol} not found in {exchange_id.upper()}, skipping")
         return None
-    
+
     safe_symbol = raw_symbol.replace("/", "")
     return ccxt_symbol, market_type, safe_symbol
 
@@ -595,10 +595,10 @@ def _process_oi_data(
     """处理OI数据获取"""
     if not enable_oi:
         return
-    
+
     oi_filename = f"{exchange_id}-{safe_symbol}-oi-{oi_period}-{start_date}_{end_date}.csv"
     oi_path = base_dir / "data" / "raw" / safe_symbol / oi_filename
-    
+
     if _should_fetch_file(oi_path):
         oi_df = _fetch_oi_data(exchange_id, exchange, ccxt_symbol, start_ms, end_ms, oi_period)
         if oi_df is not None:
@@ -620,7 +620,7 @@ def _process_funding_data(
     """处理Funding Rate数据获取"""
     funding_filename = f"{exchange_id}-{safe_symbol}-funding-{start_date}_{end_date}.csv"
     funding_path = base_dir / "data" / "raw" / safe_symbol / funding_filename
-    
+
     if _should_fetch_file(funding_path):
         funding_df = _fetch_funding_data(exchange_id, exchange, ccxt_symbol, start_ms, end_ms)
         if funding_df is not None:
@@ -666,7 +666,7 @@ def batch_fetch_oi_and_funding(
     results = {"oi_files": [], "funding_files": []}
 
     desc = f"📊 Fetching Funding from {exchange_id.upper()}" if not ENABLE_OI_FETCH else f"📊 Fetching OI/Funding from {exchange_id.upper()}"
-    
+
     with tqdm(symbols, desc=desc, unit="symbol") as pbar:
         for raw_symbol in pbar:
             pbar.set_postfix_str(f"{raw_symbol}", refresh=True)
@@ -674,7 +674,7 @@ def batch_fetch_oi_and_funding(
             symbol_info = _resolve_and_validate_symbol(raw_symbol, exchange, exchange_id)
             if symbol_info is None:
                 continue
-            
+
             ccxt_symbol, market_type, safe_symbol = symbol_info
 
             _process_oi_data(

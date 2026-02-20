@@ -202,7 +202,7 @@ class APIHealthChecker:
             if not success:
                 logger.error(f"❌ API 认证失败: {message}")
             else:
-                logger.info(f"✓ API 认证通过")
+                logger.info("✓ API 认证通过")
         else:
             self.results["authentication"] = {
                 "success": True,
