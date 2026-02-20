@@ -58,8 +58,45 @@ from nautilus_trader.model.identifiers import InstrumentId
 from strategy.core.base import BaseStrategy, BaseStrategyConfig
 from utils import get_project_root
 from utils.custom_data import FundingRateData
-from config.constants import DEFAULT_EMA_PERIOD, DEFAULT_SMA_PERIOD
-from config.constants import DEFAULT_VOLUME_MULTIPLIER, TARGET_PRECISION_DECIMALS
+from config.constants import (
+    DEFAULT_EMA_PERIOD,
+    DEFAULT_SMA_PERIOD,
+    DEFAULT_ATR_PERIOD_LONG,
+    DEFAULT_BB_PERIOD,
+    DEFAULT_BB_STD,
+    DEFAULT_RSI_PERIOD,
+    DEFAULT_KELTNER_BASE_MULTIPLIER,
+    DEFAULT_KELTNER_TRIGGER_MULTIPLIER,
+    DEFAULT_VOLUME_MULTIPLIER,
+    RS_SHORT_PERIOD,
+    RS_LONG_PERIOD,
+    RS_SHORT_WEIGHT,
+    RS_LONG_WEIGHT,
+    RS_THRESHOLD,
+    BASE_RISK_PCT,
+    HIGH_CONVICTION_RISK_PCT,
+    STOP_LOSS_ATR_MULTIPLIER,
+    BREAKEVEN_MULTIPLIER,
+    MIN_STOP_DISTANCE_PCT,
+    TIME_STOP_BARS,
+    MOMENTUM_THRESHOLD,
+    DEVIATION_THRESHOLD,
+    MAX_UPPER_WICK_RATIO,
+    BTC_REGIME_SMA_PERIOD,
+    BTC_REGIME_ATR_PERIOD,
+    VOLATILITY_THRESHOLD,
+    FUNDING_RATE_WARNING_ANNUAL,
+    FUNDING_RATE_DANGER_ANNUAL,
+    BTC_DOMINANCE_CHANGE_THRESHOLD,
+    BTC_DOMINANCE_LOOKBACK_DAYS,
+    EUPHORIA_REDUCE_POSITION_PCT,
+    SQUEEZE_MEMORY_DAYS,
+    EMA_ALPHA_NUMERATOR,
+    EMA_ALPHA_DENOMINATOR_OFFSET,
+    ATR_ALPHA_NUMERATOR,
+    MAX_HISTORY_SIZE,
+    TARGET_PRECISION_DECIMALS,
+)
 
 TARGET_PRECISION = Decimal("0." + "0" * TARGET_PRECISION_DECIMALS)
 
@@ -81,60 +118,60 @@ class KeltnerRSBreakoutConfig(BaseStrategyConfig):
 
     # 指标参数
     ema_period: int = DEFAULT_EMA_PERIOD
-    atr_period: int = 20
+    atr_period: int = DEFAULT_ATR_PERIOD_LONG
     sma_period: int = DEFAULT_SMA_PERIOD
-    rsi_period: int = 14
-    bb_period: int = 20
-    bb_std: float = 2.0
-    volume_period: int = 20
+    rsi_period: int = DEFAULT_RSI_PERIOD
+    bb_period: int = DEFAULT_BB_PERIOD
+    bb_std: float = DEFAULT_BB_STD
+    volume_period: int = DEFAULT_ATR_PERIOD_LONG
 
     # 通道参数
-    keltner_base_multiplier: float = 1.5
-    keltner_trigger_multiplier: float = 2.25
+    keltner_base_multiplier: float = DEFAULT_KELTNER_BASE_MULTIPLIER
+    keltner_trigger_multiplier: float = DEFAULT_KELTNER_TRIGGER_MULTIPLIER
 
     # 风控参数
-    base_risk_pct: float = 0.01
-    high_conviction_risk_pct: float = 0.015
-    stop_loss_atr_multiplier: float = 2.0  # 从 3.0 降至 2.0
+    base_risk_pct: float = BASE_RISK_PCT
+    high_conviction_risk_pct: float = HIGH_CONVICTION_RISK_PCT
+    stop_loss_atr_multiplier: float = STOP_LOSS_ATR_MULTIPLIER
     enable_time_stop: bool = True  # 启用时间止损
-    time_stop_bars: int = 3  # 时间止损 K 线数
-    time_stop_momentum_threshold: float = 0.01  # 动能确认阈值（1%）
-    breakeven_multiplier: float = 1.0 #保本触发 atr 倍率
-    deviation_threshold: float = 0.40  # 抛物线止盈乖离阈值（40%）
+    time_stop_bars: int = TIME_STOP_BARS  # 时间止损 K 线数
+    time_stop_momentum_threshold: float = MOMENTUM_THRESHOLD  # 动能确认阈值（1%）
+    breakeven_multiplier: float = BREAKEVEN_MULTIPLIER #保本触发 atr 倍率
+    deviation_threshold: float = DEVIATION_THRESHOLD  # 抛物线止盈乖离阈值（40%）
     enable_rsi_stop_loss: bool = False # 启用 RSI 超买止损
     # 暂且不启用，由于抛物线止盈和 RSI 止盈功能上有重复倾向
-    max_upper_wick_ratio: float = 0.3  # K 线最大上影线比例（30%）
+    max_upper_wick_ratio: float = MAX_UPPER_WICK_RATIO  # K 线最大上影线比例（30%）
 
     # 过滤器参数
     volume_multiplier: float = DEFAULT_VOLUME_MULTIPLIER
-    rs_short_lookback_days: int = 5  # RS 短期回溯天数
-    rs_long_lookback_days: int = 20  # RS 长期回溯天数
-    rs_short_weight: float = 0.4  # RS 短期权重
-    rs_long_weight: float = 0.6  # RS 长期权重
-    squeeze_memory_days: int = 3
+    rs_short_lookback_days: int = RS_SHORT_PERIOD  # RS 短期回溯天数
+    rs_long_lookback_days: int = RS_LONG_PERIOD  # RS 长期回溯天数
+    rs_short_weight: float = RS_SHORT_WEIGHT  # RS 短期权重
+    rs_long_weight: float = RS_LONG_WEIGHT  # RS 长期权重
+    squeeze_memory_days: int = SQUEEZE_MEMORY_DAYS
 
     # BTC 市场状态过滤器参数
     enable_btc_regime_filter: bool = True  # 是否启用 BTC 市场状态过滤器
-    btc_regime_sma_period: int = 200  # BTC 趋势判定周期
-    btc_regime_atr_period: int = 14  # BTC 波动率计算周期
-    btc_max_atr_pct: float = 0.03  # BTC ATR 百分比阈值（3%）
+    btc_regime_sma_period: int = BTC_REGIME_SMA_PERIOD  # BTC 趋势判定周期
+    btc_regime_atr_period: int = BTC_REGIME_ATR_PERIOD  # BTC 波动率计算周期
+    btc_max_atr_pct: float = VOLATILITY_THRESHOLD  # BTC ATR 百分比阈值（3%）
 
     # 市场狂热度过滤器参数（基于 Funding Rate 和 BTC Dominance）
     enable_euphoria_filter: bool = True  # 是否启用市场狂热度过滤器
-    funding_rate_warning_annual: float = 100.0  # 资金费率警告阈值（年化%，停止开仓）
-    funding_rate_danger_annual: float = 200.0  # 资金费率危险阈值（年化%，开始清仓）
+    funding_rate_warning_annual: float = FUNDING_RATE_WARNING_ANNUAL  # 资金费率警告阈值（年化%，停止开仓）
+    funding_rate_danger_annual: float = FUNDING_RATE_DANGER_ANNUAL  # 资金费率危险阈值（年化%，开始清仓）
     enable_btc_dominance_filter: bool = False  # 是否启用 BTC Dominance 过滤器（需要额外数据源）
-    btc_dominance_change_threshold: float = 5.0  # BTC Dominance 变化阈值（%）
-    btc_dominance_lookback_days: int = 7  # BTC Dominance 回溯天数
-    euphoria_reduce_position_pct: float = 0.5  # 狂热状态下减仓比例（50%）
+    btc_dominance_change_threshold: float = BTC_DOMINANCE_CHANGE_THRESHOLD  # BTC Dominance 变化阈值（%）
+    btc_dominance_lookback_days: int = BTC_DOMINANCE_LOOKBACK_DAYS  # BTC Dominance 回溯天数
+    euphoria_reduce_position_pct: float = EUPHORIA_REDUCE_POSITION_PCT  # 狂热状态下减仓比例（50%）
 
     # Universe 参数
     universe_top_n: int | None = None  # Universe 规模（1, 5, 10, 25, 50, 100），None 表示不使用
     universe_freq: str = "ME"  # Universe 更新周期（ME=月度, W-MON=周度, 2W-MON=双周）
 
     # 其他参数
-    min_stop_distance_pct: float = 0.005  # 最小止损距离百分比（0.5%）
-    max_history_size: int = 100  # 历史数据最大保存数量
+    min_stop_distance_pct: float = MIN_STOP_DISTANCE_PCT  # 最小止损距离百分比（0.5%）
+    max_history_size: int = MAX_HISTORY_SIZE  # 历史数据最大保存数量
 
 
 class KeltnerRSBreakoutStrategy(BaseStrategy):
@@ -570,7 +607,7 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
         if self.ema is None:
             self.ema = sum(list(self.closes)[-self.config.ema_period:]) / self.config.ema_period
         else:
-            alpha = 2.0 / (self.config.ema_period + 1)
+            alpha = EMA_ALPHA_NUMERATOR / (self.config.ema_period + EMA_ALPHA_DENOMINATOR_OFFSET)
             self.ema = alpha * self.closes[-1] + (1 - alpha) * self.ema
 
     def _update_atr(self):
@@ -581,7 +618,7 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
         if self.atr is None:
             self.atr = sum(list(self.trs)[-self.config.atr_period:]) / self.config.atr_period
         else:
-            alpha = 1.0 / self.config.atr_period
+            alpha = ATR_ALPHA_NUMERATOR / self.config.atr_period
             self.atr = alpha * self.trs[-1] + (1 - alpha) * self.atr
 
     def _update_sma(self):
@@ -744,7 +781,7 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
     def _check_relative_strength(self) -> bool:
         """检查相对强弱（RS）- 短期强度过滤器"""
         rs_score = self._calculate_rs_score()
-        return rs_score is not None and rs_score > 0
+        return rs_score is not None and rs_score > RS_THRESHOLD
 
     def _handle_entry(self, bar: Bar, is_squeezing: bool, keltner_trigger_upper: float) -> None:
         """处理开仓逻辑（过滤器已在 on_bar 中检查）"""
