@@ -36,6 +36,7 @@ class ConfigAdapter:
     """配置适配器：将新配置系统转换为旧接口"""
 
     def __init__(self):
+        """初始化配置适配器，加载所有配置文件"""
         self.loader = ConfigLoader()
         self.active_config: ActiveConfig = self.loader.load_active_config()
         self.env_config: EnvironmentConfig = self.loader.load_environment_config(
@@ -47,38 +48,49 @@ class ConfigAdapter:
         self._backtest_config_cache: BacktestConfig | None = None
 
     def get_venue(self) -> str:
+        """获取交易所名称"""
         return self.env_config.trading.venue
 
     def get_start_date(self) -> str:
+        """获取回测开始日期"""
         return self.env_config.backtest.start_date
 
     def get_end_date(self) -> str:
+        """获取回测结束日期"""
         return self.env_config.backtest.end_date
 
     def get_initial_balances(self) -> List[Money]:
+        """获取初始资金余额"""
         balance = self.env_config.trading.initial_balance
         return [Money(str(balance), USDT)]
 
     def get_main_timeframe(self) -> str:
+        """获取主时间框架（active.yaml 优先）"""
         # active.yaml 的 timeframe 优先覆盖环境配置
         return self.active_config.timeframe or self.env_config.trading.main_timeframe
 
     def get_trend_timeframe(self) -> str:
+        """获取趋势时间框架"""
         return self.env_config.trading.trend_timeframe
 
     def get_primary_symbol(self) -> str:
+        """获取主交易标的"""
         return self.active_config.primary_symbol
 
     def get_strategy_name(self) -> str:
+        """获取策略名称"""
         return self.strategy_config.name
 
     def get_strategy_module_path(self) -> str:
+        """获取策略模块路径"""
         return self.strategy_config.module_path
 
     def get_strategy_config_class(self) -> str:
+        """获取策略配置类名"""
         return self.strategy_config.config_class or f"{self.strategy_config.name}Config"
 
     def get_strategy_parameters(self) -> Dict[str, Any]:
+        """获取策略参数字典"""
         return self.strategy_config.parameters
 
     def create_instrument_config(self, symbol: str) -> InstrumentConfig:
@@ -491,7 +503,7 @@ class ConfigAdapter:
         raise ConfigValidationError("策略配置中必须指定 symbols 或 symbol")
 
     def reload(self):
-        """重新加载配置"""
+        """重新加载所有配置文件并清除缓存"""
         self.active_config = self.loader.load_active_config()
         self.env_config = self.loader.load_environment_config(
             self.active_config.environment
@@ -506,5 +518,10 @@ _adapter = ConfigAdapter()
 
 
 def get_adapter() -> ConfigAdapter:
-    """获取全局配置适配器"""
+    """
+    获取全局配置适配器单例
+
+    Returns:
+        ConfigAdapter: 全局配置适配器实例
+    """
     return _adapter
