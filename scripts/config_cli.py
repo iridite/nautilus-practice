@@ -170,6 +170,33 @@ def cmd_test(args):
         return 1
 
 
+def _print_migration_success(report: dict, verbose: bool):
+    """打印迁移成功信息"""
+    print("✅ 迁移成功!")
+    print(f"📁 迁移的文件: {len(report['migrated_files'])} 个")
+    
+    if verbose:
+        for file_path in report['migrated_files']:
+            print(f"  - {file_path}")
+    
+    print(f"📁 备份位置: {report['backup_location']}")
+
+
+def _print_migration_failure(report: dict):
+    """打印迁移失败信息"""
+    print("❌ 迁移失败!")
+    for error in report['errors']:
+        print(f"  - {error}")
+
+
+def _print_migration_warnings(report: dict):
+    """打印迁移警告信息"""
+    if report['warnings']:
+        print("\n⚠️ 警告:")
+        for warning in report['warnings']:
+            print(f"  - {warning}")
+
+
 def cmd_migrate(args):
     """迁移现有配置"""
     try:
@@ -183,23 +210,11 @@ def cmd_migrate(args):
         report = migrate_settings()
 
         if report['success']:
-            print("✅ 迁移成功!")
-            print(f"📁 迁移的文件: {len(report['migrated_files'])} 个")
-
-            if args.verbose:
-                for file_path in report['migrated_files']:
-                    print(f"  - {file_path}")
-
-            print(f"📁 备份位置: {report['backup_location']}")
+            _print_migration_success(report, args.verbose)
         else:
-            print("❌ 迁移失败!")
-            for error in report['errors']:
-                print(f"  - {error}")
+            _print_migration_failure(report)
 
-        if report['warnings']:
-            print("\n⚠️ 警告:")
-            for warning in report['warnings']:
-                print(f"  - {warning}")
+        _print_migration_warnings(report)
 
         return 0 if report['success'] else 1
 

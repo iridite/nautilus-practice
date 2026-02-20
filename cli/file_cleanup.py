@@ -106,6 +106,58 @@ def auto_cleanup(
     return total_deleted
 
 
+def _get_file_age_days(file_path: Path, now: datetime) -> int:
+    """获取文件年龄（天数）"""
+    mtime = datetime.fromtimestamp(file_path.stat().st_mtime)
+    return (now - mtime).days
+
+
+def _delete_old_file(file_path: Path) -> bool:
+    """删除旧文件"""
+    try:
+        file_path.unlink()
+        logger.debug(f"Deleted old log: {file_path}")
+        return True
+    except Exception as e:
+        logger.warning(f"Failed to delete {file_path}: {e}")
+        return False
+
+
+def _compress_log_file(file_path: Path) -> bool:
+    """压缩日志文件"""
+    gz_path = file_path.with_suffix(".log.gz")
+    if gz_path.exists():
+        return False
+    
+    try:
+        with open(file_path, "rb") as f_in:
+            with gzip.open(gz_path, "wb") as f_out:
+                shutil.copyfileobj(f_in, f_out)
+        file_path.unlink()
+        logger.debug(f"Compressed log: {file_path}")
+        return True
+    except Exception as e:
+        logger.warning(f"Failed to compress {file_path}: {e}")
+        return False
+
+
+def _process_log_file(file_path: Path, age_days: int, keep_days: int, delete_days: int, stats: dict):
+    """处理单个日志文件"""
+    if age_days > delete_days:
+        if _delete_old_file(file_path):
+            stats["deleted"] += 1
+    elif age_days > keep_days:
+        if _compress_log_file(file_path):
+            stats["compressed"] += 1
+
+
+def _process_gz_file(gz_path: Path, age_days: int, delete_days: int, stats: dict):
+    """处理单个压缩文件"""
+    if age_days > delete_days:
+        if _delete_old_file(gz_path):
+            stats["deleted"] += 1
+
+
 def cleanup_by_age(
     directory: Path,
     keep_days: int = 7,
@@ -132,50 +184,17 @@ def cleanup_by_age(
     for file_path in directory.rglob("*.log"):
         if not file_path.is_file():
             continue
-
-        mtime = datetime.fromtimestamp(file_path.stat().st_mtime)
-        age_days = (now - mtime).days
-
-        # 删除超过 delete_days 的文件
-        if age_days > delete_days:
-            try:
-                file_path.unlink()
-                stats["deleted"] += 1
-                logger.debug(f"Deleted old log: {file_path}")
-            except Exception as e:
-                logger.warning(f"Failed to delete {file_path}: {e}")
-
-        # 压缩 keep_days 到 delete_days 之间的文件
-        elif age_days > keep_days:
-            gz_path = file_path.with_suffix(".log.gz")
-            if gz_path.exists():
-                continue
-
-            try:
-                with open(file_path, "rb") as f_in:
-                    with gzip.open(gz_path, "wb") as f_out:
-                        shutil.copyfileobj(f_in, f_out)
-                file_path.unlink()
-                stats["compressed"] += 1
-                logger.debug(f"Compressed log: {file_path}")
-            except Exception as e:
-                logger.warning(f"Failed to compress {file_path}: {e}")
+        
+        age_days = _get_file_age_days(file_path, now)
+        _process_log_file(file_path, age_days, keep_days, delete_days, stats)
 
     # 删除超过 delete_days 的 .gz 文件
     for gz_path in directory.rglob("*.log.gz"):
         if not gz_path.is_file():
             continue
-
-        mtime = datetime.fromtimestamp(gz_path.stat().st_mtime)
-        age_days = (now - mtime).days
-
-        if age_days > delete_days:
-            try:
-                gz_path.unlink()
-                stats["deleted"] += 1
-                logger.debug(f"Deleted old compressed log: {gz_path}")
-            except Exception as e:
-                logger.warning(f"Failed to delete {gz_path}: {e}")
+        
+        age_days = _get_file_age_days(gz_path, now)
+        _process_gz_file(gz_path, age_days, delete_days, stats)
 
     if stats["compressed"] > 0 or stats["deleted"] > 0:
         logger.info(
@@ -184,6 +203,7 @@ def cleanup_by_age(
         )
 
     return stats
+
 
 
 def auto_cleanup_by_age(

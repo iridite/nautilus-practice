@@ -104,6 +104,79 @@ class InstrumentFetcher:
             )
         return self._providers[key]
 
+    def _parse_instrument_id(self, instrument_id_str: str) -> Tuple[Optional[InstrumentId], Optional[str], Optional[str], Optional[str]]:
+        """
+        解析 instrument ID 字符串
+        
+        Returns:
+            Tuple of (instrument_id, venue, symbol, error_message)
+        """
+        try:
+            instrument_id = InstrumentId.from_str(instrument_id_str)
+            venue = instrument_id.venue.value
+            symbol = instrument_id.symbol.value
+            return instrument_id, venue, symbol, None
+        except Exception as e:
+            error_msg = f"❌ Invalid instrument ID string '{instrument_id_str}': {e}"
+            return None, None, None, error_msg
+
+    async def _fetch_instrument_from_provider(self, instrument_id: InstrumentId, venue: str, symbol: str):
+        """从交易所提供商获取 instrument"""
+        if venue == "BINANCE":
+            is_futures = "-PERP" in symbol or "-DELIVERY" in symbol
+            provider = self._get_binance_provider(is_futures)
+            await provider.load_async(instrument_id)
+            return provider.find(instrument_id)
+        
+        if venue == "OKX":
+            provider = self._get_okx_provider()
+            await provider.load_async(instrument_id)
+            return provider.find(instrument_id)
+        
+        return None
+
+    def _save_instrument_to_file(self, instrument, file_path: Path, venue: str, symbol: str) -> str:
+        """保存 instrument 到文件"""
+        file_path.parent.mkdir(parents=True, exist_ok=True)
+
+        def enc_hook(obj):
+            if hasattr(obj, "to_dict"):
+                try:
+                    return obj.to_dict()
+                except TypeError:
+                    return obj.to_dict(obj)
+            return str(obj)
+
+        with open(file_path, "wb") as f:
+            f.write(msgspec.json.encode(instrument, enc_hook=enc_hook))
+
+        return f"✅ Saved: {venue}/{symbol} (Price Step: {instrument.price_increment})"
+
+    async def _retry_fetch_instrument(
+        self, instrument_id: InstrumentId, venue: str, symbol: str, 
+        instrument_id_str: str, retries: int, silent: bool
+    ) -> Tuple[Optional[Any], Optional[str]]:
+        """重试获取 instrument"""
+        for attempt in range(1, retries + 1):
+            try:
+                instrument = await self._fetch_instrument_from_provider(instrument_id, venue, symbol)
+                if instrument:
+                    return instrument, None
+                return None, f"⚠️ Instrument not found: {instrument_id_str}"
+            
+            except Exception as e:
+                if attempt < retries:
+                    sleep_time = 2.0 * attempt
+                    if not silent:
+                        logger.warning(
+                            f"⚠️ Error fetching {instrument_id_str}: {e}. Retrying in {sleep_time}s..."
+                        )
+                    await asyncio.sleep(sleep_time)
+                else:
+                    return None, f"🔥 Final error fetching {instrument_id_str}: {e}"
+        
+        return None, None
+
     async def fetch_one(
         self, instrument_id_str: str, retries: int = 3, silent: bool = False
     ) -> Tuple[Optional[Path], bool, Optional[str]]:
@@ -116,69 +189,30 @@ class InstrumentFetcher:
             - was_fetched: True if newly fetched, False if existed or failed
             - log_message: Log message to display after progress bar completes
         """
-        try:
-            instrument_id = InstrumentId.from_str(instrument_id_str)
-            venue: str = instrument_id.venue.value
-            symbol: str = instrument_id.symbol.value
-        except Exception as e:
-            log_msg = f"❌ Invalid instrument ID string '{instrument_id_str}': {e}"
-            return None, False, log_msg
+        # 解析 instrument ID
+        instrument_id, venue, symbol, error_msg = self._parse_instrument_id(instrument_id_str)
+        if error_msg:
+            return None, False, error_msg
 
+        # 检查文件是否已存在
         file_path = self.output_dir / venue / f"{symbol}.json"
         if file_path.exists():
-            # 返回 skipped 状态，由 fetch_all 统一处理进度显示
             return file_path, False, None
 
-        for attempt in range(1, retries + 1):
-            try:
-                instrument = None
-                if venue == "BINANCE":
-                    is_futures = "-PERP" in symbol or "-DELIVERY" in symbol
-                    provider = self._get_binance_provider(is_futures)
-                    await provider.load_async(instrument_id)
-                    instrument = provider.find(instrument_id)
+        # 重试获取 instrument
+        instrument, error_msg = await self._retry_fetch_instrument(
+            instrument_id, venue, symbol, instrument_id_str, retries, silent
+        )
+        
+        if error_msg:
+            return None, False, error_msg
+        
+        if not instrument:
+            return None, False, None
 
-                elif venue == "OKX":
-                    provider = self._get_okx_provider()
-                    await provider.load_async(instrument_id)
-                    instrument = provider.find(instrument_id)
-
-                if instrument:
-                    file_path.parent.mkdir(parents=True, exist_ok=True)
-
-                    def enc_hook(obj):
-                        if hasattr(obj, "to_dict"):
-                            try:
-                                return obj.to_dict()
-                            except TypeError:
-                                return obj.to_dict(obj)
-                        return str(obj)
-
-                    with open(file_path, "wb") as f:
-                        f.write(msgspec.json.encode(instrument, enc_hook=enc_hook))
-
-                    log_msg = f"✅ Saved: {venue}/{symbol} (Price Step: {instrument.price_increment})"
-                    return file_path, True, log_msg
-                else:
-                    log_msg = f"⚠️ Instrument not found: {instrument_id_str}"
-                    return None, False, log_msg
-
-            except Exception as e:
-                if attempt < retries:
-                    # Longer sleep if we hit rate limits (implied by errors)
-                    sleep_time = 2.0 * attempt
-                    # 静默模式下不打印重试警告
-                    if not silent:
-                        logger.warning(
-                            f"⚠️ Error fetching {instrument_id_str}: {e}. Retrying in {sleep_time}s..."
-                        )
-                    await asyncio.sleep(sleep_time)
-                else:
-                    log_msg = f"🔥 Final error fetching {instrument_id_str}: {e}"
-                    return None, False, log_msg
-
-        # 如果 retries=0 或循环未执行，返回失败
-        return None, False, None
+        # 保存到文件
+        log_msg = self._save_instrument_to_file(instrument, file_path, venue, symbol)
+        return file_path, True, log_msg
 
     async def fetch_all(self, instrument_ids: List[str]):
         """Batch fetch with shared clients using tqdm progress bar"""

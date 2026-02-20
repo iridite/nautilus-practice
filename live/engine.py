@@ -159,26 +159,35 @@ def build_okx_config(live_cfg, instrument_ids):
     return data_config, exec_config
 
 
-async def run_live(env_name: Optional[str] = None):
-    """运行实盘交易"""
+def _load_configs(env_name: Optional[str]):
+    """加载配置"""
     if env_name:
-        env_config, strategy_config, active_config = load_config(env_name)
-    else:
-        from core.loader import create_default_loader
-        loader = create_default_loader()
-        active_config = loader.load_active_config()
-        env_config, strategy_config, _ = load_config(active_config.environment)
+        return load_config(env_name)
+    
+    from core.loader import create_default_loader
+    loader = create_default_loader()
+    active_config = loader.load_active_config()
+    env_config, strategy_config, _ = load_config(active_config.environment)
+    return env_config, strategy_config, active_config
 
+
+def _validate_live_config(env_config):
+    """验证实盘配置"""
     if not hasattr(env_config, 'live') or not env_config.live:
         raise ValueError("Environment does not have live trading configuration")
 
-    live_cfg = env_config.live
 
+def _create_trader_id(live_cfg, active_config) -> tuple:
+    """创建交易者ID"""
     trader_name = f"{live_cfg.venue}_{active_config.primary_symbol}_LIVE"
     trader_id = TraderId(trader_name.replace("_", "-"))
+    return trader_name, trader_id
 
+
+def _create_logging_config(env_config, trader_name):
+    """创建日志配置"""
     log_dir = BASE_DIR / "log" / "live" / trader_name
-    logging_config = LoggingConfig(
+    return LoggingConfig(
         log_level=env_config.logging.level,
         log_level_file=env_config.logging.file_level,
         log_directory=str(log_dir / "runtime"),
@@ -186,24 +195,32 @@ async def run_live(env_name: Optional[str] = None):
         use_pyo3=True,
     )
 
-    instrument_ids = live_cfg.instrument_ids
 
+def _build_venue_configs(live_cfg, instrument_ids):
+    """构建交易所配置"""
     if live_cfg.venue == "BINANCE":
         data_config, exec_config = build_binance_config(live_cfg, instrument_ids)
-        data_clients = {BINANCE: data_config}
-        exec_clients = {BINANCE: exec_config}
-        data_factory = {BINANCE: BinanceLiveDataClientFactory}
-        exec_factory = {BINANCE: BinanceLiveExecClientFactory}
+        return {
+            "data_clients": {BINANCE: data_config},
+            "exec_clients": {BINANCE: exec_config},
+            "data_factory": {BINANCE: BinanceLiveDataClientFactory},
+            "exec_factory": {BINANCE: BinanceLiveExecClientFactory}
+        }
     elif live_cfg.venue == "OKX":
         data_config, exec_config = build_okx_config(live_cfg, instrument_ids)
-        data_clients = {OKX: data_config}
-        exec_clients = {OKX: exec_config}
-        data_factory = {OKX: OKXLiveDataClientFactory}
-        exec_factory = {OKX: OKXLiveExecClientFactory}
+        return {
+            "data_clients": {OKX: data_config},
+            "exec_clients": {OKX: exec_config},
+            "data_factory": {OKX: OKXLiveDataClientFactory},
+            "exec_factory": {OKX: OKXLiveExecClientFactory}
+        }
     else:
         raise ValueError(f"Unsupported venue: {live_cfg.venue}")
 
-    node_config = TradingNodeConfig(
+
+def _create_node_config(trader_id, logging_config, live_cfg, venue_configs):
+    """创建节点配置"""
+    return TradingNodeConfig(
         environment=Environment.LIVE,
         trader_id=trader_id,
         logging=logging_config,
@@ -216,8 +233,8 @@ async def run_live(env_name: Optional[str] = None):
             timestamps_as_iso8601=True,
             flush_on_start=live_cfg.flush_cache_on_start,
         ),
-        data_clients=data_clients,
-        exec_clients=exec_clients,
+        data_clients=venue_configs["data_clients"],
+        exec_clients=venue_configs["exec_clients"],
         timeout_connection=10.0,
         timeout_reconciliation=10.0,
         timeout_portfolio=10.0,
@@ -225,18 +242,22 @@ async def run_live(env_name: Optional[str] = None):
         timeout_post_stop=5.0,
     )
 
-    node = TradingNode(config=node_config)
 
+def _setup_node(node, strategy_config, instrument_ids, venue_configs):
+    """设置节点"""
     strategy = load_strategy_instance(strategy_config, instrument_ids)
     node.trader.add_strategy(strategy)
 
-    for venue, factory in data_factory.items():
+    for venue, factory in venue_configs["data_factory"].items():
         node.add_data_client_factory(venue, factory)
-    for venue, factory in exec_factory.items():
+    for venue, factory in venue_configs["exec_factory"].items():
         node.add_exec_client_factory(venue, factory)
 
     node.build()
 
+
+def _load_instruments(node, instrument_ids):
+    """加载标的信息"""
     for inst_id_str in instrument_ids:
         venue_str = inst_id_str.split(".")[-1]
         inst_file = BASE_DIR / "data" / "instrument" / venue_str / f"{inst_id_str.split('.')[0]}.json"
@@ -244,6 +265,25 @@ async def run_live(env_name: Optional[str] = None):
         if inst_file.exists():
             inst = load_instrument(inst_file)
             node.cache.add_instrument(inst)
+
+
+async def run_live(env_name: Optional[str] = None):
+    """运行实盘交易"""
+    env_config, strategy_config, active_config = _load_configs(env_name)
+    _validate_live_config(env_config)
+    
+    live_cfg = env_config.live
+    trader_name, trader_id = _create_trader_id(live_cfg, active_config)
+    logging_config = _create_logging_config(env_config, trader_name)
+    
+    instrument_ids = live_cfg.instrument_ids
+    venue_configs = _build_venue_configs(live_cfg, instrument_ids)
+    
+    node_config = _create_node_config(trader_id, logging_config, live_cfg, venue_configs)
+    node = TradingNode(config=node_config)
+    
+    _setup_node(node, strategy_config, instrument_ids, venue_configs)
+    _load_instruments(node, instrument_ids)
 
     try:
         await node.run_async()

@@ -115,125 +115,146 @@ def get_expected_days(freq: str, period_start: pd.Timestamp) -> int:
         raise ValueError(f"不支持的频率: {freq}")
 
 
+def _validate_data_directory() -> Optional[List[Path]]:
+    """验证数据目录并返回CSV文件列表"""
+    if not DATA_DIR.exists():
+        print(f"[!] Data directory not found: {DATA_DIR}")
+        return None
+    
+    all_files = list(DATA_DIR.glob("*_1d.csv"))
+    if not all_files:
+        print(f"[!] No CSV files found in {DATA_DIR}")
+        return None
+    
+    return all_files
+
+
+def _parse_symbol_from_filename(file_path: Path) -> Optional[str]:
+    """从文件名解析symbol"""
+    filename = file_path.stem
+    if "_" not in filename:
+        return None
+    
+    symbol = filename.split("_")[0]
+    if is_stablecoin(symbol):
+        return None
+    
+    return symbol
+
+
+def _load_and_prepare_data(file_path: Path) -> Optional[pd.DataFrame]:
+    """加载并准备数据"""
+    try:
+        df = pd.read_csv(file_path, usecols=["timestamp", "close", "volume"])
+        if df.empty:
+            return None
+        
+        df["datetime"] = pd.to_datetime(df["timestamp"], unit="ms")
+        df["turnover"] = df["close"] * df["volume"]
+        df.set_index("datetime", inplace=True)
+        
+        return df
+    except (FileNotFoundError, pd.errors.EmptyDataError, KeyError, ValueError) as e:
+        symbol = file_path.stem.split("_")[0]
+        print(f"\n[!] Error processing {symbol}: {e}")
+        return None
+    except Exception as e:
+        symbol = file_path.stem.split("_")[0]
+        print(f"\n[!] Unexpected error processing {symbol}: {e}")
+        return None
+
+
+def _generate_period_string(period_start, rebalance_freq: str) -> str:
+    """生成周期字符串"""
+    if rebalance_freq == "ME":
+        return period_start.strftime("%Y-%m")
+    elif rebalance_freq == "W-MON":
+        return period_start.strftime("%Y-W%W")
+    elif rebalance_freq == "2W-MON":
+        week_num = int(period_start.strftime("%W"))
+        return f"{period_start.year}-2W{week_num//2:02d}"
+    else:
+        return period_start.strftime("%Y-%m-%d")
+
+
+def _process_period_group(group: pd.DataFrame, period_start, symbol: str) -> Optional[tuple[str, str, float]]:
+    """处理单个周期的数据组"""
+    if group.empty:
+        return None
+    
+    period_str = _generate_period_string(period_start, REBALANCE_FREQ)
+    expected_days = get_expected_days(REBALANCE_FREQ, period_start)
+    
+    if len(group) < expected_days * MIN_COUNT_RATIO:
+        return None
+    
+    avg_turnover = group["turnover"].mean()
+    return (period_str, symbol, avg_turnover)
+
+
+def _collect_period_stats(all_files: List[Path]) -> dict:
+    """收集所有周期的统计数据"""
+    period_stats = {}
+    
+    print(f"[*] Found {len(all_files)} files. Starting data processing...")
+    print(f"[*] Rebalance frequency: {REBALANCE_FREQ}")
+    
+    for file_path in tqdm(all_files, desc="Reading CSVs"):
+        symbol = _parse_symbol_from_filename(file_path)
+        if not symbol:
+            continue
+        
+        df = _load_and_prepare_data(file_path)
+        if df is None:
+            continue
+        
+        period_resample = df.resample(REBALANCE_FREQ)
+        
+        for period_start, group in period_resample:
+            result = _process_period_group(group, period_start, symbol)
+            if result:
+                period_str, sym, avg_turnover = result
+                if period_str not in period_stats:
+                    period_stats[period_str] = []
+                period_stats[period_str].append((sym, avg_turnover))
+        
+        del df
+    
+    return period_stats
+
+
+def _build_universes(period_stats: dict) -> dict:
+    """构建universe字典"""
+    sorted_periods = sorted(period_stats.keys())
+    universes = {n: {} for n in TOP_Ns}
+    
+    for i in range(len(sorted_periods) - 1):
+        current_period = sorted_periods[i]
+        next_period = sorted_periods[i + 1]
+        
+        candidates = period_stats[current_period]
+        candidates.sort(key=lambda x: x[1], reverse=True)
+        
+        for n in TOP_Ns:
+            top_n_symbols = [c[0] for c in candidates[:n]]
+            universes[n][next_period] = top_n_symbols
+    
+    return universes
+
+
 def generate_universe():
     """
     从 CSV 数据中动态生成交易池，支持月度/周度/双周更新
     """
-    # 验证配置参数
     validate_config()
-
-    if not DATA_DIR.exists():
-        print(f"[!] Data directory not found: {DATA_DIR}")
-        return {}
-
-    all_files = list(DATA_DIR.glob("*_1d.csv"))
+    
+    all_files = _validate_data_directory()
     if not all_files:
-        print(f"[!] No CSV files found in {DATA_DIR}")
         return {}
+    
+    period_stats = _collect_period_stats(all_files)
+    return _build_universes(period_stats)
 
-    # 用于存储所有币种的周期统计信息
-    # 结构: { PeriodString: [(symbol, mean_turnover), ...] }
-    period_stats = {}
-
-    print(f"[*] Found {len(all_files)} files. Starting data processing...")
-    print(f"[*] Rebalance frequency: {REBALANCE_FREQ}")
-
-    for file_path in tqdm(all_files, desc="Reading CSVs"):
-        # 解析文件名：期望格式为 SYMBOL_1d.csv
-        filename = file_path.stem  # 去除 .csv 后缀
-        if "_" not in filename:
-            continue
-        symbol = filename.split("_")[0]
-
-        # 1. 剔除稳定币
-        if is_stablecoin(symbol):
-            continue
-
-        try:
-            # 高效读取：仅读取必要列
-            df = pd.read_csv(file_path, usecols=["timestamp", "close", "volume"])
-            if df.empty:
-                continue
-
-            # 转换时间
-            df["datetime"] = pd.to_datetime(df["timestamp"], unit="ms")
-            # 计算每日成交额 (Turnover = Close * Volume)
-            df["turnover"] = df["close"] * df["volume"]
-
-            # 按配置频率分组
-            df.set_index("datetime", inplace=True)
-            period_resample = df.resample(REBALANCE_FREQ)
-
-            for period_start, group in period_resample:  # type: ignore
-                if group.empty:
-                    continue
-
-                # 根据频率生成时间字符串
-                if REBALANCE_FREQ == "ME":
-                    period_str = period_start.strftime("%Y-%m")  # type: ignore
-                elif REBALANCE_FREQ == "W-MON":
-                    period_str = period_start.strftime("%Y-W%W")  # type: ignore
-                elif REBALANCE_FREQ == "2W-MON":
-                    # 双周使用周数除以2来区分
-                    week_num = int(period_start.strftime("%W"))  # type: ignore
-                    period_str = f"{period_start.year}-2W{week_num//2:02d}"  # type: ignore
-                else:
-                    period_str = period_start.strftime("%Y-%m-%d")  # type: ignore
-
-                expected_days = get_expected_days(REBALANCE_FREQ, period_start)  # type: ignore
-
-                # 2. 处理新币入场：检查数据行数是否达标
-                if len(group) < expected_days * MIN_COUNT_RATIO:
-                    continue
-
-                avg_turnover = group["turnover"].mean()
-
-                if period_str not in period_stats:
-                    period_stats[period_str] = []
-
-                period_stats[period_str].append((symbol, avg_turnover))
-
-            # 显式删除 DataFrame 释放内存
-            del df
-
-        except FileNotFoundError:
-            print(f"\n[!] File not found: {symbol}")
-            continue
-        except pd.errors.EmptyDataError:
-            print(f"\n[!] Empty or invalid CSV: {symbol}")
-            continue
-        except KeyError as e:
-            print(f"\n[!] Missing required column in {symbol}: {e}")
-            continue
-        except ValueError as e:
-            print(f"\n[!] Data conversion error in {symbol}: {e}")
-            continue
-        except Exception as e:
-            print(f"\n[!] Unexpected error processing {symbol}: {e}")
-            continue
-
-    # 3. 排序并生成结果
-    # 注意：T 期的成交量排名决定 T+1 期的 Universe
-    # 重要：最后一个周期不会生成 universe（因为没有 T+1 期数据）
-    # 实盘使用时，需要确保有上个周期的完整数据才能生成本周期的交易池
-
-    sorted_periods = sorted(period_stats.keys())
-    universes = {n: {} for n in TOP_Ns}
-
-    for i in range(len(sorted_periods) - 1):
-        current_period = sorted_periods[i]
-        next_period = sorted_periods[i + 1]
-
-        # 获取当前期的所有币种，按成交额降序排列
-        candidates = period_stats[current_period]
-        candidates.sort(key=lambda x: x[1], reverse=True)
-
-        # 选取不同数量的 Top N
-        for n in TOP_Ns:
-            top_n_symbols = [c[0] for c in candidates[:n]]
-            universes[n][next_period] = top_n_symbols
-
-    return universes
 
 
 if __name__ == "__main__":

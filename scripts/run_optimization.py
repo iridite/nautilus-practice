@@ -14,27 +14,17 @@ from optimization.config import DEFAULT_OPTIMIZATION_TARGET
 from optimization.state import AgentState, OptimizationTarget
 
 
-def run_optimization(
-    target: OptimizationTarget = None,
-    initial_code: str = None,
-):
-    """
-    运行优化流程
-
-    Args:
-        target: 优化目标配置（不提供则使用默认值）
-        initial_code: 初始策略代码（可选，不提供则从文件读取）
-
-    Returns:
-        final_state: 最终的状态
-    """
-
+def _get_optimization_target(target: OptimizationTarget = None) -> OptimizationTarget:
+    """获取优化目标配置"""
     if target is None:
-        target = DEFAULT_OPTIMIZATION_TARGET
         print("⚠️ 未提供优化目标，使用默认配置")
+        return DEFAULT_OPTIMIZATION_TARGET
+    return target
 
-    # 初始化状态
-    initial_state: AgentState = {
+
+def _create_initial_state(target: OptimizationTarget, initial_code: str = None) -> AgentState:
+    """创建初始状态"""
+    return {
         # 用户输入
         "optimization_target": target,
         "initial_strategy_code": initial_code,
@@ -64,10 +54,9 @@ def run_optimization(
         "needs_initial_backtest": False,
     }
 
-    config = {
-        "recursion_limit": 200,  # 最大递归深度
-    }
 
+def _print_optimization_header(target: OptimizationTarget):
+    """打印优化系统启动信息"""
     print("\n" + "=" * 80)
     print("🚀 策略优化系统启动")
     print("=" * 80)
@@ -77,7 +66,9 @@ def run_optimization(
             print(f"  - {key}: {value}")
     print("\n")
 
-    # 运行 graph
+
+def _run_optimization_graph(initial_state: AgentState, config: dict):
+    """运行优化图并处理异常"""
     final_state = None
     try:
         for output in graph.stream(initial_state, config=config):
@@ -85,41 +76,78 @@ def run_optimization(
             print(f"\n{'=' * 80}")
             print(f"📍 当前节点: {node_name}")
             print(f"{'=' * 80}")
-
             final_state = output[node_name]
     except KeyboardInterrupt:
         print("\n\n⚠️ 用户中断优化流程")
     except Exception as e:
         print(f"\n\n❌ 优化流程发生错误: {e}")
         import traceback
-
         traceback.print_exc()
+    return final_state
 
-    # 输出最终结果
+
+def _print_success_metrics(best: dict, iteration: int):
+    """打印成功达成目标的指标"""
+    print("\n✅ 成功达成目标！")
+    if best:
+        print(f"  最终 Sharpe: {best['sharpe']:.3f}")
+        print(f"  交易次数: {best['total_trades']}")
+        print(f"  胜率: {best['win_rate']:.2%}")
+        print(f"  盈亏比: {best['profit_loss_ratio']:.2f}")
+        print(f"  预期值: {best['expectancy']:.4f}")
+    print(f"  迭代次数: {iteration}")
+
+
+def _print_failure_metrics(best: dict, iteration: int):
+    """打印未达成目标的指标"""
+    print("\n⚠️ 未达成目标")
+    if best:
+        print(f"  当前最佳 Sharpe: {best['sharpe']:.3f}")
+        print(f"  交易次数: {best['total_trades']}")
+        print(f"  胜率: {best['win_rate']:.2%}")
+    print(f"  迭代次数: {iteration}")
+
+
+def _print_final_results(final_state):
+    """打印最终结果"""
     print("\n" + "=" * 80)
     print("🏁 优化流程结束")
     print("=" * 80)
 
-    if final_state:
-        if final_state.get("goal_achieved"):
-            best = final_state.get("best_metrics")
-            print("\n✅ 成功达成目标！")
-            if best:
-                print(f"  最终 Sharpe: {best['sharpe']:.3f}")
-                print(f"  交易次数: {best['total_trades']}")
-                print(f"  胜率: {best['win_rate']:.2%}")
-                print(f"  盈亏比: {best['profit_loss_ratio']:.2f}")
-                print(f"  预期值: {best['expectancy']:.4f}")
-            print(f"  迭代次数: {final_state.get('iteration')}")
-        else:
-            print("\n⚠️ 未达成目标")
-            best = final_state.get("best_metrics")
-            if best:
-                print(f"  当前最佳 Sharpe: {best['sharpe']:.3f}")
-                print(f"  交易次数: {best['total_trades']}")
-                print(f"  胜率: {best['win_rate']:.2%}")
-            print(f"  迭代次数: {final_state.get('iteration', 0)}")
+    if not final_state:
+        return
 
+    best = final_state.get("best_metrics")
+    iteration = final_state.get('iteration', 0)
+    
+    if final_state.get("goal_achieved"):
+        _print_success_metrics(best, iteration)
+    else:
+        _print_failure_metrics(best, iteration)
+
+
+def run_optimization(
+    target: OptimizationTarget = None,
+    initial_code: str = None,
+):
+    """
+    运行优化流程
+
+    Args:
+        target: 优化目标配置（不提供则使用默认值）
+        initial_code: 初始策略代码（可选，不提供则从文件读取）
+
+    Returns:
+        final_state: 最终的状态
+    """
+    target = _get_optimization_target(target)
+    initial_state = _create_initial_state(target, initial_code)
+    config = {"recursion_limit": 200}
+    
+    _print_optimization_header(target)
+    final_state = _run_optimization_graph(initial_state, config)
+    _print_final_results(final_state)
+    
     return final_state
 
 
