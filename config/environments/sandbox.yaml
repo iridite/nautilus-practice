@@ -5,7 +5,7 @@ extends: "prod.yaml"
 # Sandbox特定配置
 sandbox:
   venue: "OKX"
-  is_testnet: true
+  is_testnet: true  # 使用测试网/模拟盘
 
   # 交易标的列表（基于 active 策略 keltner_rs_breakout 的 symbols）
   # 注意：BTCUSDT 会由代码自动添加（如果策略需要），无需手动配置
