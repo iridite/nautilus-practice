@@ -9,7 +9,7 @@ from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orders import Order
 from nautilus_trader.trading.strategy import Strategy
-from config.constants import DEFAULT_ATR_PERIOD, DEFAULT_RISK_PER_TRADE, DEFAULT_STOP_LOSS, DEFAULT_EMA_PERIOD, DEFAULT_SMA_PERIOD
+from config.constants import DEFAULT_ATR_PERIOD, DEFAULT_RISK_PER_TRADE
 
 
 class BaseStrategyConfig(StrategyConfig):  # pyright: ignore[reportGeneralTypeIssues]
@@ -203,6 +203,37 @@ class BaseStrategy(Strategy):
             )
         return self.instrument
 
+    def _validate_price(self, price: float | Decimal) -> Decimal | None:
+        """验证价格，返回Decimal或None"""
+        price = Decimal(str(price))
+        if price <= 0:
+            return None
+        return price
+
+    def _check_deprecated_trade_size(self):
+        """检查是否使用了已废弃的trade_size模式"""
+        if self.base_config.trade_size is not None and self.base_config.trade_size > 0:
+            self.log.error(
+                "固定仓位模式(trade_size)已废弃，不再支持。"
+                "请使用动态百分比模式(qty_percent)或ATR风险模式(use_atr_position_sizing=True)"
+            )
+            raise ValueError("trade_size mode is deprecated. Use qty_percent or ATR-based sizing.")
+
+    def _should_use_atr_sizing(self, atr_value: Optional[Decimal]) -> bool:
+        """判断是否应该使用ATR风险模式"""
+        return (
+            self.base_config.use_atr_position_sizing
+            and atr_value is not None
+            and atr_value > 0
+        )
+
+    def _should_use_percent_sizing(self) -> bool:
+        """判断是否应该使用百分比模式"""
+        return (
+            self.base_config.qty_percent is not None
+            and self.base_config.qty_percent > 0
+        )
+
     def calculate_order_qty(self, price: float | Decimal, atr_value: Optional[Decimal] = None) -> Quantity:
         """
         计算下单数量（仓位大小）
@@ -228,75 +259,127 @@ class BaseStrategy(Strategy):
         Quantity
             计算得到的下单数量（仓位大小）
         """
-        price = Decimal(str(price))
-        if price <= 0:
+        validated_price = self._validate_price(price)
+        if validated_price is None:
             return Quantity.from_int(0)
 
         instrument = self.get_instrument()
 
-        # Mode 1: Fixed Trade Size (DEPRECATED)
-        if self.base_config.trade_size is not None and self.base_config.trade_size > 0:
-            self.log.error(
-                "固定仓位模式(trade_size)已废弃，不再支持。"
-                "请使用动态百分比模式(qty_percent)或ATR风险模式(use_atr_position_sizing=True)"
-            )
-            raise ValueError("trade_size mode is deprecated. Use qty_percent or ATR-based sizing.")
+        self._check_deprecated_trade_size()
 
-        # Mode 3: ATR-Based Risk Sizing (Priority)
-        if self.base_config.use_atr_position_sizing and atr_value is not None and atr_value > 0:
-            return self._calculate_atr_qty(instrument, price, atr_value)
+        if self._should_use_atr_sizing(atr_value):
+            return self._calculate_atr_qty(instrument, validated_price, atr_value)
 
-        # Mode 2: Dynamic Percentage Sizing
-        if (
-            self.base_config.qty_percent is not None
-            and self.base_config.qty_percent > 0
-        ):
-            return self._calculate_dynamic_qty(instrument, price)
+        if self._should_use_percent_sizing():
+            return self._calculate_dynamic_qty(instrument, validated_price)
 
         return Quantity.from_int(0)
+
+    def _get_account_equity(self, instrument: Instrument) -> Decimal | None:
+        """获取账户权益"""
+        accounts = self.cache.accounts()
+        if not accounts:
+            return None
+
+        account = next(
+            (a for a in accounts if a.balance(instrument.quote_currency)),
+            accounts[0],
+        )
+        balance = account.balance(instrument.quote_currency)
+        if not balance:
+            return None
+
+        equity = balance.total.as_decimal()
+        if equity <= 0:
+            return None
+
+        return equity
+
+    def _calculate_effective_leverage(self, instrument: Instrument) -> Decimal:
+        """计算有效杠杆（考虑交易所限制）"""
+        leverage = Decimal(max(1, self.base_config.leverage))
+        if hasattr(instrument, "max_leverage") and instrument.max_leverage:
+            leverage = min(leverage, Decimal(instrument.max_leverage))
+        return leverage
+
+    def _calculate_raw_quantity(self, equity: Decimal, leverage: Decimal, price: Decimal, instrument: Instrument) -> Decimal:
+        """计算原始数量（考虑合约乘数）"""
+        qty_percent = Decimal(str(self.base_config.qty_percent)) if isinstance(self.base_config.qty_percent, float) else self.base_config.qty_percent
+        target_notional = equity * qty_percent * leverage
+        raw_qty = target_notional / price
+
+        if instrument.multiplier:
+            multiplier = Decimal(str(instrument.multiplier))
+            if multiplier > 0:
+                raw_qty = raw_qty / multiplier
+
+        return raw_qty
+
+    def _validate_minimum_size(self, raw_qty: Decimal, instrument: Instrument) -> bool:
+        """验证是否满足最小下单量"""
+        if instrument.size_increment:
+            min_size = instrument.size_increment.as_decimal()
+            if raw_qty < min_size:
+                return False
+        return True
 
     def _calculate_dynamic_qty(
         self, instrument: Instrument, price: Decimal
     ) -> Quantity:
         try:
-            accounts = self.cache.accounts()
-            if not accounts:
+            equity = self._get_account_equity(instrument)
+            if equity is None:
                 return Quantity.from_int(0)
 
-            account = next(
-                (a for a in accounts if a.balance(instrument.quote_currency)),
-                accounts[0],
-            )
-            balance = account.balance(instrument.quote_currency)
-            if not balance:
+            leverage = self._calculate_effective_leverage(instrument)
+            raw_qty = self._calculate_raw_quantity(equity, leverage, price, instrument)
+
+            if not self._validate_minimum_size(raw_qty, instrument):
                 return Quantity.from_int(0)
-
-            equity = balance.total.as_decimal()
-            if equity <= 0:
-                return Quantity.from_int(0)
-
-            leverage = Decimal(max(1, self.base_config.leverage))
-            if hasattr(instrument, "max_leverage") and instrument.max_leverage:
-                leverage = min(leverage, Decimal(instrument.max_leverage))
-
-            qty_percent = Decimal(str(self.base_config.qty_percent)) if isinstance(self.base_config.qty_percent, float) else self.base_config.qty_percent
-            target_notional = equity * qty_percent * leverage
-            raw_qty = target_notional / price
-
-            if instrument.multiplier:
-                multiplier = Decimal(str(instrument.multiplier))
-                if multiplier > 0:
-                    raw_qty = raw_qty / multiplier
-
-            if instrument.size_increment:
-                min_size = instrument.size_increment.as_decimal()
-                if raw_qty < min_size:
-                    return Quantity.from_int(0)
 
             return instrument.make_qty(raw_qty)
         except Exception as e:
             self.log.error(f"Dynamic qty calculation error: {e}")
             return Quantity.from_int(0)
+
+    def _get_instrument_for_balance_check(self, instrument: Optional[Instrument]) -> Optional[Instrument]:
+        """获取用于余额检查的标的"""
+        if instrument is None:
+            instrument = self.get_instrument()
+        
+        if instrument is None:
+            self.log.warning("无法获取标的信息")
+        
+        return instrument
+
+    def _get_account_for_currency(self, quote_currency) -> Optional[object]:
+        """获取指定货币的账户"""
+        accounts = self.cache.accounts()
+        if not accounts:
+            self.log.warning("无法获取账户信息")
+            return None
+        
+        return next(
+            (a for a in accounts if a.balance(quote_currency)), accounts[0]
+        )
+
+    def _get_available_balance(self, account, quote_currency) -> Optional[Decimal]:
+        """获取可用余额"""
+        balance = account.balance(quote_currency)
+        if not balance:
+            self.log.warning(f"无法获取{quote_currency}余额")
+            return None
+        
+        return balance.free.as_decimal()
+
+    def _check_balance_sufficient(self, available: Decimal, notional_value: Decimal) -> bool:
+        """检查余额是否充足"""
+        if available < notional_value:
+            self.log.warning(
+                f"余额不足: 需要{notional_value:.2f}, 可用{available:.2f}"
+            )
+            return False
+        return True
 
     def check_sufficient_balance(
         self, notional_value: Decimal, instrument: Optional[Instrument] = None
@@ -320,37 +403,19 @@ class BaseStrategy(Strategy):
             return True
 
         try:
+            instrument = self._get_instrument_for_balance_check(instrument)
             if instrument is None:
-                instrument = self.get_instrument()
-
-            if instrument is None:
-                self.log.warning("无法获取标的信息")
                 return False
 
-            accounts = self.cache.accounts()
-            if not accounts:
-                self.log.warning("无法获取账户信息")
+            account = self._get_account_for_currency(instrument.quote_currency)
+            if account is None:
                 return False
 
-            quote_currency = instrument.quote_currency
-            account = next(
-                (a for a in accounts if a.balance(quote_currency)), accounts[0]
-            )
-
-            balance = account.balance(quote_currency)
-            if not balance:
-                self.log.warning(f"无法获取{quote_currency}余额")
+            available = self._get_available_balance(account, instrument.quote_currency)
+            if available is None:
                 return False
 
-            available = balance.free.as_decimal()
-
-            if available < notional_value:
-                self.log.warning(
-                    f"余额不足: 需要{notional_value:.2f}, 可用{available:.2f}"
-                )
-                return False
-
-            return True
+            return self._check_balance_sufficient(available, notional_value)
 
         except Exception as e:
             self.log.error(f"余额检查失败: {e}")
@@ -480,6 +545,66 @@ class BaseStrategy(Strategy):
 
 
 
+    def _get_account_equity_for_atr(self, instrument: Instrument) -> Decimal | None:
+        """获取账户权益（ATR计算专用）"""
+        accounts = self.cache.accounts()
+        if not accounts:
+            self.log.warning("ATR仓位计算: 无法获取账户信息")
+            return None
+
+        account = next(
+            (a for a in accounts if a.balance(instrument.quote_currency)),
+            accounts[0],
+        )
+        balance = account.balance(instrument.quote_currency)
+        if not balance:
+            self.log.warning("ATR仓位计算: 无法获取余额")
+            return None
+
+        equity = balance.total.as_decimal()
+        if equity <= 0:
+            return None
+
+        return equity
+
+    def _calculate_atr_stop_distance(self, atr_value: Decimal) -> Decimal:
+        """计算ATR止损距离"""
+        return atr_value * Decimal(str(self.base_config.atr_stop_multiplier))
+
+    def _calculate_max_risk_amount(self, equity: Decimal) -> Decimal:
+        """计算最大风险金额"""
+        return equity * Decimal(str(self.base_config.max_position_risk_pct))
+
+    def _calculate_atr_raw_quantity(self, max_risk_amount: Decimal, stop_distance: Decimal, instrument: Instrument) -> Decimal:
+        """计算ATR原始数量（含杠杆和乘数调整）"""
+        # 基础数量: 风险金额 / 止损距离
+        raw_qty = max_risk_amount / stop_distance
+
+        # 应用杠杆
+        leverage = Decimal(max(1, self.base_config.leverage))
+        if hasattr(instrument, "max_leverage") and instrument.max_leverage:
+            leverage = min(leverage, Decimal(instrument.max_leverage))
+        raw_qty = raw_qty * leverage
+
+        # 处理合约乘数
+        if instrument.multiplier:
+            multiplier = Decimal(str(instrument.multiplier))
+            if multiplier > 0:
+                raw_qty = raw_qty / multiplier
+
+        return raw_qty
+
+    def _validate_atr_minimum_size(self, raw_qty: Decimal, instrument: Instrument) -> bool:
+        """验证ATR计算的最小数量"""
+        if instrument.size_increment:
+            min_size = instrument.size_increment.as_decimal()
+            if raw_qty < min_size:
+                self.log.warning(
+                    f"ATR仓位计算: 计算数量{raw_qty}小于最小数量{min_size}"
+                )
+                return False
+        return True
+
     def _calculate_atr_qty(
         self, instrument: Instrument, price: Decimal, atr_value: Decimal
     ) -> Quantity:
@@ -507,55 +632,16 @@ class BaseStrategy(Strategy):
             计算得到的下单数量
         """
         try:
-            # 获取账户权益
-            accounts = self.cache.accounts()
-            if not accounts:
-                self.log.warning("ATR仓位计算: 无法获取账户信息")
+            equity = self._get_account_equity_for_atr(instrument)
+            if equity is None:
                 return Quantity.from_int(0)
 
-            account = next(
-                (a for a in accounts if a.balance(instrument.quote_currency)),
-                accounts[0],
-            )
-            balance = account.balance(instrument.quote_currency)
-            if not balance:
-                self.log.warning("ATR仓位计算: 无法获取余额")
+            stop_distance = self._calculate_atr_stop_distance(atr_value)
+            max_risk_amount = self._calculate_max_risk_amount(equity)
+            raw_qty = self._calculate_atr_raw_quantity(max_risk_amount, stop_distance, instrument)
+
+            if not self._validate_atr_minimum_size(raw_qty, instrument):
                 return Quantity.from_int(0)
-
-            equity = balance.total.as_decimal()
-            if equity <= 0:
-                return Quantity.from_int(0)
-
-            # 计算止损距离（价格单位）
-            stop_distance = atr_value * Decimal(str(self.base_config.atr_stop_multiplier))
-
-            # 计算最大风险金额
-            max_risk_amount = equity * Decimal(str(self.base_config.max_position_risk_pct))
-
-            # 计算基础数量: 风险金额 / 止损距离
-            # 这给出了在止损距离下，损失等于风险金额的仓位大小
-            raw_qty = max_risk_amount / stop_distance
-
-            # 应用杠杆
-            leverage = Decimal(max(1, self.base_config.leverage))
-            if hasattr(instrument, "max_leverage") and instrument.max_leverage:
-                leverage = min(leverage, Decimal(instrument.max_leverage))
-            raw_qty = raw_qty * leverage
-
-            # 处理合约乘数
-            if instrument.multiplier:
-                multiplier = Decimal(str(instrument.multiplier))
-                if multiplier > 0:
-                    raw_qty = raw_qty / multiplier
-
-            # 检查最小数量
-            if instrument.size_increment:
-                min_size = instrument.size_increment.as_decimal()
-                if raw_qty < min_size:
-                    self.log.warning(
-                        f"ATR仓位计算: 计算数量{raw_qty}小于最小数量{min_size}"
-                    )
-                    return Quantity.from_int(0)
 
             qty = instrument.make_qty(raw_qty)
 

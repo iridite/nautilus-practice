@@ -169,49 +169,67 @@ class KalmanPairsTradingStrategy(BaseStrategy):
             f"出场阈值=±{self.config.exit_threshold}"
         )
 
-    def on_bar(self, bar: Bar):
-        """处理Bar事件"""
-        super().on_bar(bar)
-
-        # 更新价格缓存并标记更新状态
+    def _update_price_cache(self, bar: Bar) -> bool:
+        """更新价格缓存，返回是否成功更新"""
         if bar.bar_type.instrument_id == self.instrument_a_id:
             self.price_a = Decimal(str(bar.close))
             self.last_bar_a_ts = bar.ts_event
             self._bar_a_updated = True
+            return True
         elif bar.bar_type.instrument_id == self.instrument_b_id:
             self.price_b = Decimal(str(bar.close))
             self.last_bar_b_ts = bar.ts_event
             self._bar_b_updated = True
-        else:
-            return
+            return True
+        return False
 
-        # 只有两个资产都更新且数据同步时才处理
+    def _should_process_bar(self) -> bool:
+        """检查是否应该处理bar"""
         if not (self._bar_a_updated and self._bar_b_updated):
-            return
-
+            return False
+        
         if not self._check_data_sync():
-            return
-
+            return False
+        
         if self.price_a is None or self.price_b is None:
-            return
+            return False
+        
+        return True
 
-        # 重置更新标记
+    def _reset_update_flags(self):
+        """重置更新标记"""
         self._bar_a_updated = False
         self._bar_b_updated = False
 
-        # 更新卡尔曼滤波器
+    def _update_kalman_filter(self):
+        """更新卡尔曼滤波器"""
         y = float(self.price_a)
         x = float(self.price_b)
-
         self.current_alpha, self.current_beta, self.current_z_score = self.kalman.update(y, x)
         self.bar_count += 1
 
+    def _log_periodic_info(self):
+        """定期记录信息"""
         if self.bar_count % 10 == 0:
             self.log.info(
                 f"[Bar {self.bar_count}] "
                 f"A={self.price_a:.2f}, B={self.price_b:.2f}, "
                 f"Beta={self.current_beta:.4f}, Z={self.current_z_score:.2f}"
             )
+
+    def on_bar(self, bar: Bar):
+        """处理Bar事件"""
+        super().on_bar(bar)
+
+        if not self._update_price_cache(bar):
+            return
+
+        if not self._should_process_bar():
+            return
+
+        self._reset_update_flags()
+        self._update_kalman_filter()
+        self._log_periodic_info()
 
         if self.bar_count < self.config.warmup_period:
             return
