@@ -137,40 +137,55 @@ class ConfigAdapter:
             return ["main"]
         return timeframes
 
-    def _load_universe_symbols(self) -> set[str] | None:
-        """加载 universe 符号集合"""
-        params = self.strategy_config.parameters
+    def _extract_symbols_from_universe(self, u_data: dict) -> set[str]:
+        """从universe数据中提取符号集合"""
+        symbols = set()
+        for month_list in u_data.values():
+            for symbol in month_list:
+                if ":" in symbol:
+                    symbols.add(symbol.split(":")[0])
+                else:
+                    symbols.add(symbol)
+        return symbols
 
-        # 优先使用 universe_top_n 参数
+    def _get_universe_file_path(self, universe_top_n: int, universe_freq: str) -> Path:
+        """获取universe文件路径"""
+        return project_root / "data" / "universe" / f"universe_{universe_top_n}_{universe_freq}.json"
+
+    def _raise_universe_not_found_error(self, universe_file: Path, universe_top_n: int, universe_freq: str):
+        """抛出universe文件不存在错误"""
+        available_files = sorted([f.stem for f in (project_root / "data" / "universe").glob("universe_*.json")])
+        available_configs = [f.replace("universe_", "") for f in available_files]
+        raise ConfigValidationError(
+            f"配置的 Universe 文件不存在: {universe_file}\n"
+            f"配置参数: universe_top_n={universe_top_n}, universe_freq={universe_freq}\n"
+            f"可用的 Universe 配置: {', '.join(available_configs)}\n"
+            f"请修改配置文件中的 universe_top_n 或 universe_freq 参数，或运行以下命令生成缺失的 Universe 文件：\n"
+            f"  uv run python scripts/generate_universe.py"
+        )
+
+    def _load_universe_from_file(self, universe_file: Path) -> set[str]:
+        """从文件加载universe符号"""
+        with open(universe_file, "r") as f:
+            u_data = json.load(f)
+            return self._extract_symbols_from_universe(u_data)
+
+    def _load_universe_by_top_n(self, params: dict) -> set[str] | None:
+        """通过top_n参数加载universe"""
         universe_top_n = params.get("universe_top_n")
-        if universe_top_n:
-            universe_freq = params.get("universe_freq", "ME")
-            universe_file = project_root / "data" / "universe" / f"universe_{universe_top_n}_{universe_freq}.json"
-            if universe_file.exists():
-                with open(universe_file, "r") as f:
-                    u_data = json.load(f)
-                    symbols = set()
-                    for month_list in u_data.values():
-                        # 提取币对符号，去除 :USDT 后缀
-                        for symbol in month_list:
-                            if ":" in symbol:
-                                symbols.add(symbol.split(":")[0])
-                            else:
-                                symbols.add(symbol)
-                    return symbols
-            else:
-                # Universe 文件不存在时抛出严重错误
-                available_files = sorted([f.stem for f in (project_root / "data" / "universe").glob("universe_*.json")])
-                available_configs = [f.replace("universe_", "") for f in available_files]
-                raise ConfigValidationError(
-                    f"配置的 Universe 文件不存在: {universe_file}\n"
-                    f"配置参数: universe_top_n={universe_top_n}, universe_freq={universe_freq}\n"
-                    f"可用的 Universe 配置: {', '.join(available_configs)}\n"
-                    f"请修改配置文件中的 universe_top_n 或 universe_freq 参数，或运行以下命令生成缺失的 Universe 文件：\n"
-                    f"  uv run python scripts/generate_universe.py"
-                )
+        if not universe_top_n:
+            return None
+        
+        universe_freq = params.get("universe_freq", "ME")
+        universe_file = self._get_universe_file_path(universe_top_n, universe_freq)
+        
+        if universe_file.exists():
+            return self._load_universe_from_file(universe_file)
+        else:
+            self._raise_universe_not_found_error(universe_file, universe_top_n, universe_freq)
 
-        # 兼容旧的 universe_filename 参数
+    def _load_universe_by_filename(self, params: dict) -> set[str] | None:
+        """通过filename参数加载universe（兼容旧配置）"""
         universe_file = params.get("universe_filename") or params.get("universe_filepath")
         if not universe_file:
             return None
@@ -185,16 +200,20 @@ class ConfigAdapter:
                 f"请检查配置文件中的 universe_filename 或 universe_filepath 参数"
             )
 
-        with open(u_path, "r") as f:
-            u_data = json.load(f)
-            symbols = set()
-            for month_list in u_data.values():
-                for symbol in month_list:
-                    if ":" in symbol:
-                        symbols.add(symbol.split(":")[0])
-                    else:
-                        symbols.add(symbol)
+        return self._load_universe_from_file(u_path)
+
+    def _load_universe_symbols(self) -> set[str] | None:
+        """加载 universe 符号集合"""
+        params = self.strategy_config.parameters
+
+        # 优先使用 universe_top_n 参数
+        symbols = self._load_universe_by_top_n(params)
+        if symbols is not None:
             return symbols
+
+        # 兼容旧的 universe_filename 参数
+        return self._load_universe_by_filename(params)
+
 
     def _create_data_feeds_for_symbol(self, symbol: str, inst_cfg: InstrumentConfig) -> List[DataConfig]:
         """为单个标的创建数据流"""
@@ -319,58 +338,64 @@ class ConfigAdapter:
             bar_unit = unit_map.get(unit, "DAY")
             return f"{instrument_id}-{period}-{bar_unit}-{price_type.upper()}-{origination.upper()}"
 
-    def _build_strategy_params(self) -> Any:
-        """构建策略参数"""
-        params_dict = deepcopy(self.strategy_config.parameters)
+    def _restore_single_instrument(self, params_dict: dict, symbol_key: str, instrument_key: str) -> None:
+        """还原单个instrument_id"""
+        if symbol_key in params_dict and not params_dict.get(instrument_key):
+            params_dict[instrument_key] = self._restore_instrument_id(params_dict[symbol_key])
 
-        # 配置还原：从简化字段生成完整字段
-        if "symbol" in params_dict and not params_dict.get("instrument_id"):
-            params_dict["instrument_id"] = self._restore_instrument_id(params_dict["symbol"])
-
-        if "symbol" in params_dict and "timeframe" in params_dict and not params_dict.get("bar_type"):
+    def _restore_bar_type_if_needed(self, params_dict: dict, symbol_key: str) -> None:
+        """如果需要，还原bar_type"""
+        if symbol_key in params_dict and "timeframe" in params_dict and not params_dict.get("bar_type"):
             params_dict["bar_type"] = self._restore_bar_type(
-                params_dict["symbol"],
+                params_dict[symbol_key],
                 params_dict["timeframe"],
                 params_dict.get("price_type", "LAST"),
                 params_dict.get("origination", "EXTERNAL")
             )
 
-        # 还原 btc_symbol -> btc_instrument_id
-        if "btc_symbol" in params_dict and not params_dict.get("btc_instrument_id"):
-            params_dict["btc_instrument_id"] = self._restore_instrument_id(params_dict["btc_symbol"])
-
-        # 还原 symbol_a/symbol_b -> instrument_a_id/instrument_b_id (for kalman_pairs)
-        if "symbol_a" in params_dict and not params_dict.get("instrument_a_id"):
-            params_dict["instrument_a_id"] = self._restore_instrument_id(params_dict["symbol_a"])
-
-        if "symbol_b" in params_dict and not params_dict.get("instrument_b_id"):
-            params_dict["instrument_b_id"] = self._restore_instrument_id(params_dict["symbol_b"])
-
-        # 还原 bar_type for kalman_pairs (使用 symbol_a 作为主标的)
-        if "symbol_a" in params_dict and "timeframe" in params_dict and not params_dict.get("bar_type"):
-            params_dict["bar_type"] = self._restore_bar_type(
-                params_dict["symbol_a"],
-                params_dict["timeframe"],
-                params_dict.get("price_type", "LAST"),
-                params_dict.get("origination", "EXTERNAL")
-            )
-
-        # 应用 active.yaml 的 strategy overrides（仅用于调试）
+    def _apply_strategy_overrides(self, params_dict: dict) -> None:
+        """应用active.yaml的strategy overrides"""
         if self.active_config.overrides:
             strategy_overrides = self.active_config.overrides.get("strategy", {})
             if strategy_overrides:
                 params_dict.update(strategy_overrides)
 
-        if self.strategy_config.config_class:
-            try:
-                import importlib
-                module = importlib.import_module(self.strategy_config.module_path)
-                config_class = getattr(module, self.strategy_config.config_class)
-                return config_class(**params_dict)
-            except Exception:
-                return params_dict
+    def _instantiate_config_class(self, params_dict: dict) -> Any:
+        """实例化策略配置类"""
+        if not self.strategy_config.config_class:
+            return params_dict
+        
+        try:
+            import importlib
+            module = importlib.import_module(self.strategy_config.module_path)
+            config_class = getattr(module, self.strategy_config.config_class)
+            return config_class(**params_dict)
+        except Exception:
+            return params_dict
 
-        return params_dict
+    def _build_strategy_params(self) -> Any:
+        """构建策略参数"""
+        params_dict = deepcopy(self.strategy_config.parameters)
+        
+        # 还原基础instrument_id和bar_type
+        self._restore_single_instrument(params_dict, "symbol", "instrument_id")
+        self._restore_bar_type_if_needed(params_dict, "symbol")
+        
+        # 还原btc相关
+        self._restore_single_instrument(params_dict, "btc_symbol", "btc_instrument_id")
+        
+        # 还原pairs相关 (for kalman_pairs)
+        self._restore_single_instrument(params_dict, "symbol_a", "instrument_a_id")
+        self._restore_single_instrument(params_dict, "symbol_b", "instrument_b_id")
+        self._restore_bar_type_if_needed(params_dict, "symbol_a")
+        
+        # 应用overrides
+        self._apply_strategy_overrides(params_dict)
+        
+        # 实例化配置类
+        return self._instantiate_config_class(params_dict)
+
+
 
     def _check_data_limits(self):
         """检查数据限制"""

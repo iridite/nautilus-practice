@@ -128,38 +128,54 @@ class LegacyStrategyConfig(BaseModel):
             return self.config_class
         return f"{self.name.replace('Strategy', '')}Config"
 
+    def _convert_params_to_dict(self) -> dict:
+        """将params转换为字典"""
+        if isinstance(self.params, dict):
+            return self.params.copy()
+        
+        if hasattr(self.params, "__dict__"):
+            return {k: v for k, v in self.params.__dict__.items() if not k.startswith("_")}
+        
+        try:
+            from msgspec import structs
+            return structs.asdict(self.params)
+        except (ImportError, TypeError):
+            return {}
+
+    def _add_basic_params(self, p: dict, instrument_id: Any, leverage: int):
+        """添加基础参数"""
+        p["instrument_id"] = str(instrument_id)
+        p["leverage"] = leverage
+
+    def _add_main_bar_types(self, p: dict, feed_bar_types: Dict[str, Any]):
+        """添加主要bar类型"""
+        if "main" in feed_bar_types:
+            bt = feed_bar_types["main"]
+            p["bar_type"] = bt
+            p["trade_bar_type"] = str(bt)
+
+    def _add_trend_bar_type(self, p: dict, feed_bar_types: Dict[str, Any]):
+        """添加趋势bar类型"""
+        if "trend" in feed_bar_types:
+            p["trend_bar_type"] = str(feed_bar_types["trend"])
+
+    def _add_custom_bar_types(self, p: dict, feed_bar_types: Dict[str, Any]):
+        """添加自定义bar类型"""
+        for label, bt in feed_bar_types.items():
+            if label not in ["main", "trend"]:
+                p[f"{label}_bar_type"] = str(bt)
+
     def resolve_params(
         self,
         instrument_id: Any,
         leverage: int,
         feed_bar_types: Dict[str, Any],
     ) -> Dict[str, Any]:
-        if isinstance(self.params, dict):
-            p = self.params.copy()
-        elif hasattr(self.params, "__dict__"):
-            p = {k: v for k, v in self.params.__dict__.items() if not k.startswith("_")}
-        else:
-            try:
-                from msgspec import structs
-                p = structs.asdict(self.params)
-            except (ImportError, TypeError):
-                p = {}
-
-        p["instrument_id"] = str(instrument_id)
-        p["leverage"] = leverage
-
-        if "main" in feed_bar_types:
-            bt = feed_bar_types["main"]
-            p["bar_type"] = bt
-            p["trade_bar_type"] = str(bt)
-
-        if "trend" in feed_bar_types:
-            p["trend_bar_type"] = str(feed_bar_types["trend"])
-
-        for label, bt in feed_bar_types.items():
-            if label not in ["main", "trend"]:
-                p[f"{label}_bar_type"] = str(bt)
-
+        p = self._convert_params_to_dict()
+        self._add_basic_params(p, instrument_id, leverage)
+        self._add_main_bar_types(p, feed_bar_types)
+        self._add_trend_bar_type(p, feed_bar_types)
+        self._add_custom_bar_types(p, feed_bar_types)
         return p
 
 
@@ -195,25 +211,42 @@ class BacktestConfig(BaseModel):
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    def model_post_init(self, __context):
-        """Pydantic v2 post-initialization hook"""
+    def _migrate_instrument_to_instruments(self):
+        """迁移单个instrument到instruments列表"""
         if self.instrument and not self.instruments:
             self.instruments.append(self.instrument)
 
-        if self.data and self.data not in self.data_feeds:
-            if self.data.label == "main":
-                self.data.label = "main"
-            self.data_feeds.insert(0, self.data)
+    def _add_main_data_feed(self):
+        """添加主数据源到data_feeds"""
+        if not self.data or self.data in self.data_feeds:
+            return
+        
+        if self.data.label == "main":
+            self.data.label = "main"
+        self.data_feeds.insert(0, self.data)
 
-        if self.aux_data and self.aux_data not in self.data_feeds:
-            if self.aux_data.label == "main":
-                self.aux_data.label = "trend"
-            self.data_feeds.append(self.aux_data)
+    def _add_aux_data_feed(self):
+        """添加辅助数据源到data_feeds"""
+        if not self.aux_data or self.aux_data in self.data_feeds:
+            return
+        
+        if self.aux_data.label == "main":
+            self.aux_data.label = "trend"
+        self.data_feeds.append(self.aux_data)
 
+    def _set_default_data_feeds(self):
+        """设置默认的data和aux_data"""
         if self.data_feeds and self.data is None:
             self.data = self.data_feeds[0]
         if len(self.data_feeds) > 1 and self.aux_data is None:
             self.aux_data = self.data_feeds[1]
+
+    def model_post_init(self, __context):
+        """Pydantic v2 post-initialization hook"""
+        self._migrate_instrument_to_instruments()
+        self._add_main_data_feed()
+        self._add_aux_data_feed()
+        self._set_default_data_feeds()
 
 
 # ============================================================
@@ -533,17 +566,25 @@ class ActiveConfig(BaseModel):
     def validate_timeframe(cls, v):
         if v is None:
             return v
+        
         if not v or not isinstance(v, str):
             raise ValueError("Timeframe must be a non-empty string")
+        
         if v[-1] not in ["m", "h", "d"]:
             raise ValueError("Timeframe must end with 'm', 'h', or 'd'")
+        
+        cls._validate_timeframe_period(v)
+        return v
+
+    @classmethod
+    def _validate_timeframe_period(cls, v: str):
+        """验证时间周期数值"""
         try:
             period = int(v[:-1]) if len(v) > 1 else 1
             if period <= 0:
                 raise ValueError("Timeframe period must be positive")
         except ValueError:
             raise ValueError("Invalid timeframe format")
-        return v
 
     @validator("price_type")
     def validate_price_type(cls, v):

@@ -272,6 +272,54 @@ class ConfigLoader:
 
         return self._env_var_pattern.sub(replace_var, text)
 
+    def _validate_environment_configs(self, report: Dict[str, Any]):
+        """验证所有环境配置"""
+        for env_name in self.paths.list_environments():
+            try:
+                env_config = self.load_environment_config(env_name)
+                report["environments"][env_name] = {"valid": True, "config": env_config}
+            except Exception as e:
+                report["valid"] = False
+                report["errors"].append(f"Environment '{env_name}': {str(e)}")
+                report["environments"][env_name] = {"valid": False, "error": str(e)}
+
+    def _validate_strategy_configs(self, report: Dict[str, Any]):
+        """验证所有策略配置"""
+        for strategy_name in self.paths.list_strategies():
+            try:
+                strategy_config = self.load_strategy_config(strategy_name)
+                report["strategies"][strategy_name] = {
+                    "valid": True,
+                    "config": strategy_config,
+                }
+            except Exception as e:
+                report["valid"] = False
+                report["errors"].append(f"Strategy '{strategy_name}': {str(e)}")
+                report["strategies"][strategy_name] = {"valid": False, "error": str(e)}
+
+    def _check_active_config_references(self, active_config, report: Dict[str, Any]):
+        """检查活跃配置引用的环境和策略是否存在"""
+        if active_config.environment not in report["environments"]:
+            report["warnings"].append(
+                f"Active config references unknown environment: {active_config.environment}"
+            )
+        
+        if active_config.strategy not in report["strategies"]:
+            report["warnings"].append(
+                f"Active config references unknown strategy: {active_config.strategy}"
+            )
+
+    def _validate_active_config(self, report: Dict[str, Any]):
+        """验证活跃配置"""
+        try:
+            active_config = self.load_active_config()
+            report["active"] = {"valid": True, "config": active_config}
+            self._check_active_config_references(active_config, report)
+        except Exception as e:
+            report["valid"] = False
+            report["errors"].append(f"Active config: {str(e)}")
+            report["active"] = {"valid": False, "error": str(e)}
+
     def validate_config_files(self) -> Dict[str, Any]:
         """
         验证所有配置文件的有效性
@@ -288,49 +336,9 @@ class ConfigLoader:
             "active": None,
         }
 
-        # 验证环境配置
-        for env_name in self.paths.list_environments():
-            try:
-                env_config = self.load_environment_config(env_name)
-                report["environments"][env_name] = {"valid": True, "config": env_config}
-            except Exception as e:
-                report["valid"] = False
-                report["errors"].append(f"Environment '{env_name}': {str(e)}")
-                report["environments"][env_name] = {"valid": False, "error": str(e)}
-
-        # 验证策略配置
-        for strategy_name in self.paths.list_strategies():
-            try:
-                strategy_config = self.load_strategy_config(strategy_name)
-                report["strategies"][strategy_name] = {
-                    "valid": True,
-                    "config": strategy_config,
-                }
-            except Exception as e:
-                report["valid"] = False
-                report["errors"].append(f"Strategy '{strategy_name}': {str(e)}")
-                report["strategies"][strategy_name] = {"valid": False, "error": str(e)}
-
-        # 验证活跃配置
-        try:
-            active_config = self.load_active_config()
-            report["active"] = {"valid": True, "config": active_config}
-
-            # 检查引用的环境和策略是否存在
-            if active_config.environment not in report["environments"]:
-                report["warnings"].append(
-                    f"Active config references unknown environment: {active_config.environment}"
-                )
-
-            if active_config.strategy not in report["strategies"]:
-                report["warnings"].append(
-                    f"Active config references unknown strategy: {active_config.strategy}"
-                )
-
-        except Exception as e:
-            report["valid"] = False
-            report["errors"].append(f"Active config: {str(e)}")
-            report["active"] = {"valid": False, "error": str(e)}
+        self._validate_environment_configs(report)
+        self._validate_strategy_configs(report)
+        self._validate_active_config(report)
 
         return report
 
