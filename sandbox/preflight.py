@@ -26,16 +26,9 @@ from typing import Iterable, List, Optional, Sequence, Tuple
 
 from dotenv import load_dotenv
 
+from core.exceptions import PreflightError
+
 logger = logging.getLogger(__name__)
-
-
-class PreflightError(RuntimeError):
-    """Raised when preflight detects blocking problems."""
-
-    def __init__(self, problems: Sequence[str]):
-        msg = "Preflight failed with the following problems:\n" + "\n".join(f"- {p}" for p in problems)
-        super().__init__(msg)
-        self.problems = list(problems)
 
 
 def find_env_file(base_dir: Path, is_testnet: bool) -> Path:

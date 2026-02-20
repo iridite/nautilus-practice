@@ -32,15 +32,8 @@ logger = logging.getLogger(__name__)
 # 导入缓存模块
 from .data_cache import get_cache
 
-
-class DataLoadError(Exception):
-    """数据加载错误"""
-    pass
-
-
-class TimeColumnError(DataLoadError):
-    """时间列检测错误"""
-    pass
+# 导入统一异常
+from core.exceptions import DataLoadError, TimeColumnError
 
 
 def detect_time_column(csv_path: Union[str, Path], sample_rows: int = 5) -> str:

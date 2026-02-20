@@ -15,15 +15,7 @@ from typing import Tuple
 
 from nautilus_trader.model.enums import BarAggregation
 
-
-class SymbolParsingError(Exception):
-    """符号解析错误"""
-    pass
-
-
-class TimeframeParsingError(Exception):
-    """时间周期解析错误"""
-    pass
+from core.exceptions import SymbolParsingError, TimeframeParsingError
 
 
 def _parse_standard_ccxt_format(symbol: str) -> Tuple[str, str]:

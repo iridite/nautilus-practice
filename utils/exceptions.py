@@ -1,50 +1,28 @@
 """
-统一异常类模块
+统一异常类模块（已弃用）
 
-提供项目范围内的标准异常类，用于数据管理、配置处理和验证等场景。
+此模块已弃用，所有异常类已迁移到 core.exceptions。
+为了向后兼容，此模块重新导出核心异常类。
+
+请使用：
+    from core.exceptions import DataValidationError, DataFetchError, ConfigError
+
+而不是：
+    from utils.exceptions import DataValidationError, DataFetchError, ConfigurationError
 """
 
-from typing import Optional
+# 从核心异常模块导入
+from core.exceptions import (
+    ConfigError,
+    ConfigurationError,  # 向后兼容别名
+    DataFetchError,
+    DataValidationError,
+)
 
-
-class DataValidationError(Exception):
-    """数据验证异常"""
-
-    def __init__(self, message: str, field_name: Optional[str] = None):
-        super().__init__(message)
-        self.field_name = field_name
-
-    def __str__(self) -> str:
-        if self.field_name:
-            return f"{self.args[0]} (field: {self.field_name})"
-        return self.args[0]
-
-
-class DataFetchError(Exception):
-    """数据获取异常"""
-
-    def __init__(self, message: str, source: Optional[str] = None, cause: Optional[Exception] = None):
-        super().__init__(message)
-        self.source = source
-        self.cause = cause
-
-    def __str__(self) -> str:
-        msg = self.args[0]
-        if self.source:
-            msg = f"{msg} (source: {self.source})"
-        if self.cause:
-            msg = f"{msg} (caused by: {self.cause})"
-        return msg
-
-
-class ConfigurationError(Exception):
-    """配置异常"""
-
-    def __init__(self, message: str, config_key: Optional[str] = None):
-        super().__init__(message)
-        self.config_key = config_key
-
-    def __str__(self) -> str:
-        if self.config_key:
-            return f"{self.args[0]} (config: {self.config_key})"
-        return self.args[0]
+# 导出以保持向后兼容
+__all__ = [
+    "DataValidationError",
+    "DataFetchError",
+    "ConfigurationError",
+    "ConfigError",
+]
