@@ -8,7 +8,7 @@ OI 和 Funding Rate 数据适配器
 import logging
 from decimal import Decimal
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 
 import pandas as pd
 from nautilus_trader.core.nautilus_pyo3 import millis_to_nanos
@@ -48,6 +48,48 @@ class OIFundingDataLoader:
         oi_files = list(symbol_dir.glob(f"{exchange}-{safe_symbol}-oi-*.csv"))
         return sorted(oi_files)
 
+    def _build_oi_file_path(self, symbol: str, exchange: str, period: str, start_date: str, end_date: str) -> Path:
+        """构建OI数据文件路径"""
+        safe_symbol = symbol.replace("/", "")
+        filename = f"{exchange}-{safe_symbol}-oi-{period}-{start_date}_{end_date}.csv"
+        return self.data_dir / safe_symbol / filename
+
+    def _log_missing_oi_file(self, file_path: Path, symbol: str, exchange: str):
+        """记录缺失的OI文件信息"""
+        logger.warning(f"⚠️  OI data file not found: {file_path}")
+        
+        available_files = self._find_available_oi_files(symbol, exchange)
+        if available_files:
+            logger.info(f"💡 Found {len(available_files)} available OI file(s):")
+            for f in available_files[:5]:
+                logger.info(f"   - {f.name}")
+            if len(available_files) > 5:
+                logger.info(f"   ... and {len(available_files) - 5} more")
+        else:
+            safe_symbol = symbol.replace("/", "")
+            logger.error(f"❌ No OI data files found for {symbol} in {self.data_dir / safe_symbol}")
+
+    def _validate_oi_dataframe(self, df: pd.DataFrame, file_path: Path) -> bool:
+        """验证OI数据格式"""
+        if "timestamp" not in df.columns or "open_interest" not in df.columns:
+            logger.warning(f"Warning: Invalid OI data format in {file_path}")
+            return False
+        return True
+
+    def _convert_row_to_oi_data(self, row, instrument_id: InstrumentId) -> OpenInterestData:
+        """将DataFrame行转换为OpenInterestData对象"""
+        ts_ms = int(row["timestamp"])
+        ts_event = millis_to_nanos(ts_ms)
+        ts_init = ts_event
+        oi = Decimal(str(row["open_interest"]))
+        
+        return OpenInterestData(
+            instrument_id=instrument_id,
+            open_interest=oi,
+            ts_event=ts_event,
+            ts_init=ts_init,
+        )
+
     def load_oi_data(
         self,
         symbol: str,
@@ -80,50 +122,22 @@ class OIFundingDataLoader:
         List[OpenInterestData]
             OI 数据列表，按时间戳排序
         """
-        safe_symbol = symbol.replace("/", "")
-        filename = f"{exchange}-{safe_symbol}-oi-{period}-{start_date}_{end_date}.csv"
-        file_path = self.data_dir / safe_symbol / filename
+        file_path = self._build_oi_file_path(symbol, exchange, period, start_date, end_date)
 
         if not file_path.exists():
-            logger.warning(f"⚠️  OI data file not found: {file_path}")
-
-            # 查找可用的替代文件
-            available_files = self._find_available_oi_files(symbol, exchange)
-            if available_files:
-                logger.info(f"💡 Found {len(available_files)} available OI file(s):")
-                for f in available_files[:5]:  # 只显示前5个
-                    logger.info(f"   - {f.name}")
-                if len(available_files) > 5:
-                    logger.info(f"   ... and {len(available_files) - 5} more")
-            else:
-                logger.error(f"❌ No OI data files found for {symbol} in {self.data_dir / safe_symbol}")
-
+            self._log_missing_oi_file(file_path, symbol, exchange)
             return []
 
         try:
             df = pd.read_csv(file_path)
 
-            # 确保必需的列存在
-            if "timestamp" not in df.columns or "open_interest" not in df.columns:
-                logger.warning(f"Warning: Invalid OI data format in {file_path}")
+            if not self._validate_oi_dataframe(df, file_path):
                 return []
 
-            # 转换为 OpenInterestData 对象
-            oi_data_list = []
-            for _, row in df.iterrows():
-                ts_ms = int(row["timestamp"])
-                ts_event = millis_to_nanos(ts_ms)
-                ts_init = ts_event  # 回测时假设数据获取时间与事件时间相同
-
-                oi = Decimal(str(row["open_interest"]))
-
-                oi_data = OpenInterestData(
-                    instrument_id=instrument_id,
-                    open_interest=oi,
-                    ts_event=ts_event,
-                    ts_init=ts_init,
-                )
-                oi_data_list.append(oi_data)
+            oi_data_list = [
+                self._convert_row_to_oi_data(row, instrument_id)
+                for _, row in df.iterrows()
+            ]
 
             logger.info(f"✅ Loaded {len(oi_data_list)} OI data points for {symbol}")
             return oi_data_list
@@ -142,6 +156,70 @@ class OIFundingDataLoader:
 
         funding_files = list(symbol_dir.glob(f"{exchange}-{safe_symbol}-funding-*.csv"))
         return sorted(funding_files)
+
+    def _build_funding_file_path(self, symbol: str, exchange: str, start_date: str, end_date: str) -> Path:
+        """构建Funding数据文件路径"""
+        safe_symbol = symbol.replace("/", "")
+        filename = f"{exchange}-{safe_symbol}-funding-{start_date}_{end_date}.csv"
+        return self.data_dir / safe_symbol / filename
+
+    def _log_file_not_found(self, file_path: Path, symbol: str, exchange: str) -> None:
+        """记录文件未找到的警告信息"""
+        logger.warning(f"⚠️  Funding data file not found: {file_path}")
+        
+        # 查找可用的替代文件
+        available_files = self._find_available_funding_files(symbol, exchange)
+        if available_files:
+            logger.info(f"💡 Found {len(available_files)} available Funding file(s):")
+            for f in available_files[:5]:  # 只显示前5个
+                logger.info(f"   - {f.name}")
+            if len(available_files) > 5:
+                logger.info(f"   ... and {len(available_files) - 5} more")
+        else:
+            safe_symbol = symbol.replace("/", "")
+            logger.error(f"❌ No Funding data files found for {symbol} in {self.data_dir / safe_symbol}")
+
+    def _validate_funding_dataframe(self, df: pd.DataFrame, file_path: Path) -> bool:
+        """验证Funding数据DataFrame格式"""
+        if "timestamp" not in df.columns or "funding_rate" not in df.columns:
+            logger.warning(f"Warning: Invalid funding data format in {file_path}")
+            return False
+        return True
+
+    def _parse_next_funding_time(self, row: pd.Series, df: pd.DataFrame) -> Optional[int]:
+        """解析下次资金费率结算时间"""
+        if "next_funding_time" in df.columns and pd.notna(row["next_funding_time"]):
+            return millis_to_nanos(int(row["next_funding_time"]))
+        return None
+
+    def _convert_row_to_funding_data(
+        self, row: pd.Series, df: pd.DataFrame, instrument_id: InstrumentId
+    ) -> FundingRateData:
+        """将DataFrame行转换为FundingRateData对象"""
+        ts_ms = int(row["timestamp"])
+        ts_event = millis_to_nanos(ts_ms)
+        ts_init = ts_event
+        
+        funding_rate = Decimal(str(row["funding_rate"]))
+        next_funding_time = self._parse_next_funding_time(row, df)
+        
+        return FundingRateData(
+            instrument_id=instrument_id,
+            funding_rate=funding_rate,
+            next_funding_time=next_funding_time,
+            ts_event=ts_event,
+            ts_init=ts_init,
+        )
+
+    def _parse_funding_dataframe(
+        self, df: pd.DataFrame, instrument_id: InstrumentId
+    ) -> List[FundingRateData]:
+        """解析DataFrame为FundingRateData列表"""
+        funding_data_list = []
+        for _, row in df.iterrows():
+            funding_data = self._convert_row_to_funding_data(row, df, instrument_id)
+            funding_data_list.append(funding_data)
+        return funding_data_list
 
     def load_funding_data(
         self,
@@ -172,58 +250,19 @@ class OIFundingDataLoader:
         List[FundingRateData]
             Funding Rate 数据列表，按时间戳排序
         """
-        safe_symbol = symbol.replace("/", "")
-        filename = f"{exchange}-{safe_symbol}-funding-{start_date}_{end_date}.csv"
-        file_path = self.data_dir / safe_symbol / filename
+        file_path = self._build_funding_file_path(symbol, exchange, start_date, end_date)
 
         if not file_path.exists():
-            logger.warning(f"⚠️  Funding data file not found: {file_path}")
-
-            # 查找可用的替代文件
-            available_files = self._find_available_funding_files(symbol, exchange)
-            if available_files:
-                logger.info(f"💡 Found {len(available_files)} available Funding file(s):")
-                for f in available_files[:5]:  # 只显示前5个
-                    logger.info(f"   - {f.name}")
-                if len(available_files) > 5:
-                    logger.info(f"   ... and {len(available_files) - 5} more")
-            else:
-                logger.error(f"❌ No Funding data files found for {symbol} in {self.data_dir / safe_symbol}")
-
+            self._log_file_not_found(file_path, symbol, exchange)
             return []
 
         try:
             df = pd.read_csv(file_path)
 
-            # 确保必需的列存在
-            if "timestamp" not in df.columns or "funding_rate" not in df.columns:
-                logger.warning(f"Warning: Invalid funding data format in {file_path}")
+            if not self._validate_funding_dataframe(df, file_path):
                 return []
 
-            # 转换为 FundingRateData 对象
-            funding_data_list = []
-            for _, row in df.iterrows():
-                ts_ms = int(row["timestamp"])
-                ts_event = millis_to_nanos(ts_ms)
-                ts_init = ts_event
-
-                funding_rate = Decimal(str(row["funding_rate"]))
-
-                # 下次资金费率结算时间（如果有的话）
-                next_funding_time = None
-                if "next_funding_time" in df.columns and pd.notna(
-                    row["next_funding_time"]
-                ):
-                    next_funding_time = millis_to_nanos(int(row["next_funding_time"]))
-
-                funding_data = FundingRateData(
-                    instrument_id=instrument_id,
-                    funding_rate=funding_rate,
-                    next_funding_time=next_funding_time,
-                    ts_event=ts_event,
-                    ts_init=ts_init,
-                )
-                funding_data_list.append(funding_data)
+            funding_data_list = self._parse_funding_dataframe(df, instrument_id)
 
             print(
                 f"✅ Loaded {len(funding_data_list)} Funding Rate data points for {symbol}"
@@ -374,6 +413,51 @@ def validate_data_alignment(
     return result
 
 
+def _get_supported_exchanges(preferred_exchange: str) -> list:
+    """获取支持的交易所列表"""
+    if preferred_exchange == "auto":
+        return ["binance", "okx"]
+    
+    if preferred_exchange in ["binance", "okx"]:
+        fallback = "okx" if preferred_exchange == "binance" else "binance"
+        return [preferred_exchange, fallback]
+    
+    return ["binance", "okx"]
+
+
+def _process_data_task(
+    data_type: str,
+    symbols: set,
+    exchange: str,
+    start_date: str,
+    end_date: str,
+    period: str,
+    base_dir: Path,
+    max_retries: int,
+    supported_exchanges: list
+) -> tuple:
+    """处理单个数据获取任务"""
+    from utils.data_management.data_manager import fetch_data_with_retry
+    
+    if not symbols:
+        return 0, 0, 0, None
+    
+    symbols_list = sorted(list(symbols))
+    return fetch_data_with_retry(
+        data_type, symbols_list, exchange, start_date, end_date, period,
+        base_dir, max_retries, supported_exchanges
+    )
+
+
+def _update_results(results: dict, files: int, retries: int, fallbacks: int, error: str, file_key: str):
+    """更新结果统计"""
+    results[file_key] += files
+    results["retries"] += retries
+    results["fallbacks"] += fallbacks
+    if error:
+        results["errors"].append(error)
+
+
 def execute_oi_funding_data_fetch(
     tasks: dict,
     base_dir: Path,
@@ -399,50 +483,24 @@ def execute_oi_funding_data_fetch(
     dict
         执行结果统计
     """
-    from utils.data_management.data_manager import fetch_data_with_retry
-
     results = {"oi_files": 0, "funding_files": 0, "errors": [], "retries": 0, "fallbacks": 0}
-
-    supported_exchanges = (
-        ["binance", "okx"] if preferred_exchange == "auto"
-        else [preferred_exchange, "okx" if preferred_exchange == "binance" else "binance"]
-        if preferred_exchange in ["binance", "okx"]
-        else ["binance", "okx"]
-    )
+    supported_exchanges = _get_supported_exchanges(preferred_exchange)
 
     # 处理 OI 数据
     for (exchange, period, start_date, end_date), symbols in tasks["oi_tasks"].items():
-        if not symbols:
-            continue
-
-        symbols_list = sorted(list(symbols))
-        files, retries, fallbacks, error = fetch_data_with_retry(
-            "oi", symbols_list, exchange, start_date, end_date, period,
+        files, retries, fallbacks, error = _process_data_task(
+            "oi", symbols, exchange, start_date, end_date, period,
             base_dir, max_retries, supported_exchanges
         )
-
-        results["oi_files"] += files
-        results["retries"] += retries
-        results["fallbacks"] += fallbacks
-        if error:
-            results["errors"].append(error)
+        _update_results(results, files, retries, fallbacks, error, "oi_files")
 
     # 处理 Funding 数据
     for (exchange, start_date, end_date), symbols in tasks["funding_tasks"].items():
-        if not symbols:
-            continue
-
-        symbols_list = sorted(list(symbols))
-        files, retries, fallbacks, error = fetch_data_with_retry(
-            "funding", symbols_list, exchange, start_date, end_date, "1h",
+        files, retries, fallbacks, error = _process_data_task(
+            "funding", symbols, exchange, start_date, end_date, "1h",
             base_dir, max_retries, supported_exchanges
         )
-
-        results["funding_files"] += files
-        results["retries"] += retries
-        results["fallbacks"] += fallbacks
-        if error:
-            results["errors"].append(error)
+        _update_results(results, files, retries, fallbacks, error, "funding_files")
 
     return results
 

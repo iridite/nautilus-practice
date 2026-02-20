@@ -26,6 +26,81 @@ class TimeframeParsingError(Exception):
     pass
 
 
+def _parse_standard_ccxt_format(symbol: str) -> Tuple[str, str]:
+    """解析标准 CCXT 格式 (包含 "/")"""
+    if ":" in symbol:
+        # BTC/USDT:USDT -> 永续合约
+        return symbol, "swap"
+    else:
+        # BTC/USDT -> 现货
+        return symbol, "spot"
+
+
+def _parse_usdt_suffix(symbol: str) -> Tuple[str, str]:
+    """解析 USDT 后缀格式 (BTCUSDT -> BTC/USDT:USDT)"""
+    base = symbol[:-4]  # 去掉 USDT
+    if len(base) < 2:
+        raise SymbolParsingError(f"Invalid symbol format: {symbol}")
+    ccxt_symbol = f"{base}/USDT:USDT"
+    return ccxt_symbol, "swap"
+
+
+def _parse_usd_suffix(symbol: str) -> Tuple[str, str]:
+    """解析 USD 后缀格式 (BTCUSD -> BTC/USD:BTC)"""
+    base = symbol[:-3]  # 去掉 USD
+    if len(base) < 2:
+        raise SymbolParsingError(f"Invalid symbol format: {symbol}")
+    ccxt_symbol = f"{base}/USD:{base}"
+    return ccxt_symbol, "swap"
+
+
+def _parse_btc_suffix(symbol: str) -> Tuple[str, str]:
+    """解析 BTC 后缀格式 (ETHBTC -> ETH/BTC)"""
+    base = symbol[:-3]  # 去掉 BTC
+    if len(base) >= 2 and base != "BTC":  # 确保 base 有效且不等于 BTC
+        ccxt_symbol = f"{base}/BTC"
+        return ccxt_symbol, "spot"
+    else:
+        # 如果不符合条件，返回原始符号
+        return symbol, "swap"
+
+
+def _parse_eth_suffix(symbol: str) -> Tuple[str, str]:
+    """解析 ETH 后缀格式 (LINKETH -> LINK/ETH)"""
+    base = symbol[:-3]  # 去掉 ETH
+    if len(base) >= 2 and base not in ["BTC", "ETH"]:  # 确保 base 有效且不是常见基础币
+        ccxt_symbol = f"{base}/ETH"
+        return ccxt_symbol, "spot"
+    else:
+        # 对于 BTCETH 这种情况，返回原始符号
+        return symbol, "swap"
+
+
+def _validate_symbol_input(input_symbol: str) -> str:
+    """验证并标准化输入符号"""
+    if not input_symbol or not isinstance(input_symbol, str):
+        raise SymbolParsingError("Symbol must be a non-empty string")
+    return input_symbol.strip().upper()
+
+
+def _parse_simplified_format(symbol: str) -> Tuple[str, str]:
+    """解析简化格式的符号（不含"/"）"""
+    if symbol.endswith("USDT"):
+        return _parse_usdt_suffix(symbol)
+    
+    if symbol.endswith("USD"):
+        return _parse_usd_suffix(symbol)
+    
+    if symbol.endswith("BTC") and len(symbol) > 6:
+        return _parse_btc_suffix(symbol)
+    
+    if symbol.endswith("ETH") and len(symbol) > 6:
+        return _parse_eth_suffix(symbol)
+    
+    # 默认假设是永续合约格式
+    return symbol, "swap"
+
+
 def resolve_symbol_and_type(input_symbol: str) -> Tuple[str, str]:
     """
     解析输入的交易对符号，返回 CCXT 统一格式符号和市场类型
@@ -59,60 +134,79 @@ def resolve_symbol_and_type(input_symbol: str) -> Tuple[str, str]:
     SymbolParsingError
         当符号格式无法识别时
     """
-    if not input_symbol or not isinstance(input_symbol, str):
-        raise SymbolParsingError("Symbol must be a non-empty string")
-
-    input_symbol = input_symbol.strip().upper()
+    normalized_symbol = _validate_symbol_input(input_symbol)
 
     # 已经是标准 CCXT 格式 (包含 "/")
-    if "/" in input_symbol:
-        if ":" in input_symbol:
-            # BTC/USDT:USDT -> 永续合约
-            return input_symbol, "swap"
-        else:
-            # BTC/USDT -> 现货
-            return input_symbol, "spot"
+    if "/" in normalized_symbol:
+        return _parse_standard_ccxt_format(normalized_symbol)
 
     # 简化格式，需要解析
-    if input_symbol.endswith("USDT"):
-        # BTCUSDT -> BTC/USDT:USDT
-        base = input_symbol[:-4]  # 去掉 USDT
-        if len(base) < 2:
-            raise SymbolParsingError(f"Invalid symbol format: {input_symbol}")
-        ccxt_symbol = f"{base}/USDT:USDT"
-        return ccxt_symbol, "swap"
+    return _parse_simplified_format(normalized_symbol)
 
-    elif input_symbol.endswith("USD") and not input_symbol.endswith("USDT"):
-        # BTCUSD -> BTC/USD:BTC
-        base = input_symbol[:-3]  # 去掉 USD
-        if len(base) < 2:
-            raise SymbolParsingError(f"Invalid symbol format: {input_symbol}")
-        ccxt_symbol = f"{base}/USD:{base}"
-        return ccxt_symbol, "swap"
 
-    elif input_symbol.endswith("BTC") and len(input_symbol) > 6:
-        # ETHBTC -> ETH/BTC (现货)，但是 BTCBTC 这种情况除外
-        base = input_symbol[:-3]  # 去掉 BTC
-        if len(base) >= 2 and base != "BTC":  # 确保 base 有效且不等于 BTC
-            ccxt_symbol = f"{base}/BTC"
-            return ccxt_symbol, "spot"
-        else:
-            # 如果不符合条件，返回原始符号
-            return input_symbol, "swap"
 
-    elif input_symbol.endswith("ETH") and len(input_symbol) > 6:
-        # LINKETH -> LINK/ETH (现货)，但是 BTCETH、ETHETH 这种情况除外
-        base = input_symbol[:-3]  # 去掉 ETH
-        if len(base) >= 2 and base not in ["BTC", "ETH"]:  # 确保 base 有效且不是常见基础币
-            ccxt_symbol = f"{base}/ETH"
-            return ccxt_symbol, "spot"
-        else:
-            # 对于 BTCETH 这种情况，返回原始符号
-            return input_symbol, "swap"
+def _get_unit_mapping() -> dict:
+    """获取时间单位映射"""
+    return {
+        "m": BarAggregation.MINUTE,
+        "h": BarAggregation.HOUR,
+        "d": BarAggregation.DAY,
+        "w": BarAggregation.WEEK,
+    }
 
-    else:
-        # 默认假设是永续合约格式，返回原始符号
-        return input_symbol, "swap"
+
+def _validate_timeframe_input(timeframe: str) -> str | None:
+    """验证并标准化时间周期输入"""
+    if not timeframe or not isinstance(timeframe, str):
+        return None
+    
+    timeframe = timeframe.strip().lower()
+    if not timeframe:
+        return None
+    
+    return timeframe
+
+
+def _parse_single_char_timeframe(timeframe: str) -> Tuple[BarAggregation, int] | None:
+    """解析单字符时间周期（如 'm', 'h', 'd', 'w', 'M'）"""
+    if len(timeframe) != 1:
+        return None
+    
+    unit = timeframe
+    if unit == "M":  # 特殊处理大写 M (月份)
+        return BarAggregation.MONTH, 1
+    
+    unit_mapping = _get_unit_mapping()
+    if unit in unit_mapping:
+        return unit_mapping[unit], 1
+    
+    return None
+
+
+def _extract_period_and_unit(timeframe: str) -> Tuple[int, str] | None:
+    """提取周期数和单位"""
+    unit = timeframe[-1]
+    period_str = timeframe[:-1]
+    
+    try:
+        period = int(period_str) if period_str else 1
+        if period <= 0:
+            return None
+        return period, unit
+    except ValueError:
+        return None
+
+
+def _map_unit_to_aggregation(unit: str, period: int) -> Tuple[BarAggregation, int] | None:
+    """将单位映射到BarAggregation"""
+    if unit == "M":  # 特殊处理大写 M (月份)
+        return BarAggregation.MONTH, period
+    
+    unit_mapping = _get_unit_mapping()
+    if unit in unit_mapping:
+        return unit_mapping[unit], period
+    
+    return None
 
 
 def parse_timeframe(timeframe: str) -> Tuple[BarAggregation, int]:
@@ -149,57 +243,32 @@ def parse_timeframe(timeframe: str) -> Tuple[BarAggregation, int]:
     >>> aggregation, period = parse_timeframe("invalid")
     >>> print(aggregation, period)  # BarAggregation.MINUTE 1 (默认值)
     """
-    # 对于空值或非字符串，返回默认值
-    if not timeframe or not isinstance(timeframe, str):
-        return BarAggregation.MINUTE, 1
-
-    timeframe = timeframe.strip().lower()
-
-    # 空字符串返回默认值
-    if not timeframe:
-        return BarAggregation.MINUTE, 1
-
-    # 根据单位映射到 BarAggregation
-    unit_mapping = {
-        "m": BarAggregation.MINUTE,
-        "h": BarAggregation.HOUR,
-        "d": BarAggregation.DAY,
-        "w": BarAggregation.WEEK,
-    }
-
-    # 处理单字符输入（如 "m", "h", "d", "w"）
-    if len(timeframe) == 1:
-        unit = timeframe
-        if unit == "M":  # 特殊处理大写 M (月份)
-            return BarAggregation.MONTH, 1
-        elif unit in unit_mapping:
-            return unit_mapping[unit], 1
-        else:
-            # 无效单位，返回默认值
-            return BarAggregation.MINUTE, 1
-
-    # 提取单位和周期数
-    unit = timeframe[-1]
-    period_str = timeframe[:-1]
-
-    try:
-        period = int(period_str) if period_str else 1
-        if period <= 0:
-            # 无效周期，返回默认值
-            return BarAggregation.MINUTE, 1
-    except ValueError:
-        # 无效周期数字，返回默认值
-        return BarAggregation.MINUTE, 1
-
-    # 特殊处理大写 M (月份)
-    if unit == "M":
-        return BarAggregation.MONTH, period
-
-    if unit in unit_mapping:
-        return unit_mapping[unit], period
-    else:
-        # 无效单位，返回默认值
-        return BarAggregation.MINUTE, 1
+    # 默认返回值
+    default_result = (BarAggregation.MINUTE, 1)
+    
+    # 验证输入
+    timeframe = _validate_timeframe_input(timeframe)
+    if timeframe is None:
+        return default_result
+    
+    # 处理单字符输入
+    result = _parse_single_char_timeframe(timeframe)
+    if result is not None:
+        return result
+    
+    # 提取周期数和单位
+    extracted = _extract_period_and_unit(timeframe)
+    if extracted is None:
+        return default_result
+    
+    period, unit = extracted
+    
+    # 映射单位到BarAggregation
+    result = _map_unit_to_aggregation(unit, period)
+    if result is None:
+        return default_result
+    
+    return result
 
 
 def normalize_symbol(symbol: str, exchange: str = "binance") -> str:

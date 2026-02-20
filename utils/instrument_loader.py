@@ -8,6 +8,67 @@ from nautilus_trader.model.instruments import Instrument
 
 logger = logging.getLogger(__name__)
 
+
+def _validate_instrument_file(file_path: Path):
+    """验证instrument文件是否存在"""
+    if not file_path.exists():
+        raise FileNotFoundError(f"Instrument file not found: {file_path}")
+
+
+def _load_instrument_data(file_path: Path) -> dict:
+    """加载instrument JSON数据"""
+    with open(file_path, "r") as f:
+        return json.load(f)
+
+
+def _get_instrument_class(instrument_type: str, file_path: Path):
+    """获取instrument类"""
+    if not instrument_type:
+        raise ValueError(f"Invalid instrument data: missing 'type' field in {file_path}")
+
+    cls = getattr(instruments_module, instrument_type, None)
+
+    if cls is None:
+        raise ValueError(f"Unknown instrument type: {instrument_type}")
+
+    if not issubclass(cls, Instrument):
+        raise TypeError(f"Class {instrument_type} is not a subclass of Instrument")
+
+    if not hasattr(cls, "from_dict"):
+        raise ValueError(
+            f"Instrument class {instrument_type} does not support from_dict deserialization"
+        )
+
+    return cls
+
+
+def _is_fee_missing_or_zero(fee_value) -> bool:
+    """检查手续费是否缺失或为零"""
+    if fee_value is None:
+        return True
+    if str(fee_value) in ("0", "0.0"):
+        return True
+    try:
+        return float(fee_value) == 0
+    except (ValueError, TypeError):
+        return True
+
+
+def _set_default_fees(data: dict):
+    """设置默认手续费（如果缺失或为0）"""
+    maker_fee = data.get("maker_fee")
+    taker_fee = data.get("taker_fee")
+
+    # 默认: maker 0.02%, taker 0.05% (典型永续合约手续费)
+    if _is_fee_missing_or_zero(maker_fee):
+        data["maker_fee"] = "0.0002"
+        logger.info("Maker fee is Unknown, set default values")
+    
+    if _is_fee_missing_or_zero(taker_fee):
+        data["taker_fee"] = "0.0005"
+        logger.info("Taker fee is Unknown, set default values")
+
+
 def load_instrument(
     file_path: Union[str, Path],
 ) -> Instrument:
@@ -19,43 +80,19 @@ def load_instrument(
     specifying the Instrument subclass (e.g. "CryptoPerpetual").
     """
     path = Path(file_path)
-    if not path.exists():
-        raise FileNotFoundError(f"Instrument file not found: {path}")
-
-    with open(path, "r") as f:
-        data = json.load(f)
-
+    
+    # 验证文件
+    _validate_instrument_file(path)
+    
+    # 加载数据
+    data = _load_instrument_data(path)
+    
+    # 获取instrument类
     instrument_type = data.get("type")
-    if not instrument_type:
-        raise ValueError(f"Invalid instrument data: missing 'type' field in {path}")
+    cls = _get_instrument_class(instrument_type, path)
+    
+    # 设置默认手续费
+    _set_default_fees(data)
+    
+    return cls.from_dict(data)
 
-    # Dynamically get the class from the instruments module
-    cls = getattr(instruments_module, instrument_type, None)
-
-    if cls is None:
-        raise ValueError(f"Unknown instrument type: {instrument_type}")
-
-    # Verify it is indeed an Instrument subclass
-    # Note: Some factory classes might not be direct subclasses, but usually we are looking for data classes
-    if not issubclass(cls, Instrument):
-        raise TypeError(f"Class {instrument_type} is not a subclass of Instrument")
-
-    if not hasattr(cls, "from_dict"):
-        raise ValueError(
-            f"Instrument class {instrument_type} does not support from_dict deserialization"
-        )
-
-    # Fee handling: Binance provides fees in JSON, OKX does not
-    # Default: maker 0.02%, taker 0.05% (typical perpetual contract fees)
-    maker_fee = data.get("maker_fee")
-    taker_fee = data.get("taker_fee")
-
-    # 如果手续费缺失或为 0（OKX 常见情况），设置更符合实际的默认值（例如 maker 0.02%, taker 0.05%）
-    if maker_fee is None or str(maker_fee) in ("0", "0.0") or float(maker_fee) == 0:
-        data["maker_fee"] = "0.0002"
-        logger.info("Maker fee is Unknown, set default values")
-    if taker_fee is None or str(taker_fee) in ("0", "0.0") or float(taker_fee) == 0:
-        data["taker_fee"] = "0.0005"
-        logger.info("Taker fee is Unknown, set default values")
-
-    return cls.from_dict(data)  # return a Instrument
