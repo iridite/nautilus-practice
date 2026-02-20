@@ -2,14 +2,21 @@
 统一的Sandbox运行框架
 
 基于YAML配置文件快速启动实时交易环境
+
+⚠️ 重要说明:
+- Sandbox 模式连接到交易所的测试网/模拟盘环境
+- 这不是纯本地的 Paper Trading,而是与交易所测试服务器的真实连接
+- 订单会发送到交易所的测试环境,使用虚拟资金进行交易
+- 如需纯本地回测,请使用 backtest 模式而非 sandbox 模式
 """
 
 import asyncio
 import copy
 import os
 import sys
+import time
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Tuple
 
 from dotenv import load_dotenv
 from nautilus_trader.adapters.okx import OKX, OKXDataClientConfig, OKXExecClientConfig
@@ -39,6 +46,7 @@ logger = logging.getLogger(__name__)
 from core.loader import load_config
 from core.schemas import SandboxConfig
 from sandbox.preflight import run_preflight
+from utils.api_health_check import check_api_health
 from utils.instrument_helpers import build_bar_type_from_timeframe, format_aux_instrument_id
 from utils.instrument_loader import load_instrument
 
@@ -301,9 +309,9 @@ def _validate_sandbox_config(env_config):
     """验证sandbox配置"""
     if not env_config.sandbox:
         raise ValueError("Environment does not have sandbox configuration")
-    
+
     sandbox_cfg = env_config.sandbox
-    
+
     # 生产环境安全检查：禁止在生产模式下使用 allow_missing_instruments
     if not sandbox_cfg.is_testnet and sandbox_cfg.allow_missing_instruments:
         raise ValueError(
@@ -314,8 +322,142 @@ def _validate_sandbox_config(env_config):
             "  2. Set allow_missing_instruments=false (for production)\n"
             "  3. Ensure all instrument files are present before starting"
         )
-    
+
     return sandbox_cfg
+
+
+async def _run_api_health_check(sandbox_cfg):
+    """运行 API 健康检查"""
+    logger.info("=" * 60)
+    logger.info("开始 API 健康检查...")
+    logger.info("=" * 60)
+
+    # 加载环境变量
+    env_file = _get_env_file_path(sandbox_cfg.is_testnet)
+    load_dotenv(env_file)
+
+    # 获取 API 凭证（用于认证测试）
+    api_key = os.getenv(sandbox_cfg.api_key_env)
+    api_secret = os.getenv(sandbox_cfg.api_secret_env)
+
+    # 根据交易所选择 API 端点
+    if sandbox_cfg.venue == "OKX":
+        base_url = "https://www.okx.com" if not sandbox_cfg.is_testnet else "https://www.okx.com"
+        # OKX 使用不同的健康检查端点
+        is_healthy, summary = await _check_okx_api_health(
+            base_url=base_url,
+            api_key=api_key,
+            api_secret=api_secret,
+            is_testnet=sandbox_cfg.is_testnet
+        )
+    elif sandbox_cfg.venue == "BINANCE":
+        base_url = "https://api.binance.com" if not sandbox_cfg.is_testnet else "https://testnet.binance.vision"
+        is_healthy, summary = await check_api_health(
+            api_key=api_key,
+            api_secret=api_secret,
+            base_url=base_url
+        )
+    else:
+        logger.warning(f"API 健康检查暂不支持交易所: {sandbox_cfg.venue}，跳过检查")
+        return
+
+    # 输出检查结果
+    print(summary)
+
+    if not is_healthy:
+        raise RuntimeError(
+            "API 健康检查失败，无法启动交易。\n"
+            "请检查:\n"
+            "  1. 网络连接是否正常\n"
+            "  2. API 密钥是否正确配置\n"
+            "  3. 系统时间是否同步\n"
+            "  4. 交易所 API 服务是否可用"
+        )
+
+    logger.info("✓ API 健康检查通过，继续启动...")
+
+
+async def _check_okx_api_health(
+    base_url: str,
+    api_key: Optional[str],
+    api_secret: Optional[str],
+    is_testnet: bool
+) -> Tuple[bool, str]:
+    """检查 OKX API 健康状态"""
+    import httpx
+
+    results = {}
+    lines = ["\n" + "="*60]
+    lines.append("OKX API 健康检查结果")
+    lines.append("="*60)
+
+    # 1. 基础连接测试
+    try:
+        start_time = time.time()
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.get(f"{base_url}/api/v5/public/time")
+            elapsed_ms = (time.time() - start_time) * 1000
+
+            if response.status_code == 200:
+                results["connectivity"] = True
+                lines.append(f"✓ 连接测试: 成功 ({elapsed_ms:.0f}ms)")
+            else:
+                results["connectivity"] = False
+                lines.append(f"✗ 连接测试: HTTP {response.status_code}")
+    except Exception as e:
+        results["connectivity"] = False
+        lines.append(f"✗ 连接测试: {type(e).__name__}: {str(e)}")
+
+    if not results.get("connectivity"):
+        lines.append("="*60)
+        lines.append("✗ 连接失败，无法继续检查")
+        lines.append("="*60 + "\n")
+        return False, "\n".join(lines)
+
+    # 2. 时间同步检查
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            local_time = int(time.time() * 1000)
+            response = await client.get(f"{base_url}/api/v5/public/time")
+
+            if response.status_code == 200:
+                server_time = int(response.json()["data"][0]["ts"])
+                time_diff = abs(server_time - local_time)
+
+                if time_diff > 5000:
+                    results["time_sync"] = False
+                    lines.append(f"✗ 时间同步: 时间差过大 {time_diff}ms（建议 <1000ms）")
+                elif time_diff > 1000:
+                    results["time_sync"] = True
+                    lines.append(f"⚠ 时间同步: 时间差较大 {time_diff}ms（建议 <1000ms）")
+                else:
+                    results["time_sync"] = True
+                    lines.append(f"✓ 时间同步: 正常 ({time_diff}ms)")
+            else:
+                results["time_sync"] = False
+                lines.append(f"✗ 时间同步: 无法获取服务器时间")
+    except Exception as e:
+        results["time_sync"] = False
+        lines.append(f"✗ 时间同步: {type(e).__name__}: {str(e)}")
+
+    # 3. API 认证测试（如果提供了密钥）
+    if api_key and api_secret:
+        lines.append(f"⊘ API 认证: 跳过（OKX 认证需要 passphrase，将在实际连接时验证）")
+    else:
+        lines.append(f"⊘ API 认证: 跳过（未配置密钥）")
+
+    lines.append("="*60)
+
+    is_healthy = results.get("connectivity", False) and results.get("time_sync", False)
+
+    if is_healthy:
+        lines.append("✓ 所有检查通过，可以开始交易")
+    else:
+        lines.append("✗ 检查未通过，请修复上述问题后重试")
+
+    lines.append("="*60 + "\n")
+
+    return is_healthy, "\n".join(lines)
 
 
 def _run_preflight_checks(sandbox_cfg, strategy_config):
@@ -476,7 +618,7 @@ def _validate_loaded_instruments(missing_instruments, sandbox_cfg):
     """验证加载的标的"""
     if not missing_instruments:
         return
-    
+
     if not sandbox_cfg.allow_missing_instruments:
         missing_list = "\n".join([f"  - {inst_id} (expected: {path})" for inst_id, path in missing_instruments])
         raise FileNotFoundError(
@@ -541,10 +683,13 @@ async def run_sandbox(env_name: Optional[str] = None):
     """运行Sandbox"""
     # 加载配置
     env_config, strategy_config, active_config = _load_environment_config(env_name)
-    
+
     # 验证配置
     sandbox_cfg = _validate_sandbox_config(env_config)
-    
+
+    # API 健康检查
+    await _run_api_health_check(sandbox_cfg)
+
     # 运行预检查
     _run_preflight_checks(sandbox_cfg, strategy_config)
     
