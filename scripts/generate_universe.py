@@ -30,12 +30,21 @@
 """
 import calendar
 import json
+import logging
 import sys
 from pathlib import Path
 from typing import List, Optional
 
 import pandas as pd
 from tqdm import tqdm
+
+# 配置日志
+logging.basicConfig(
+    level=logging.INFO,
+    format="[%(asctime)s] %(levelname)s - %(message)s",
+    datefmt="%H:%M:%S",
+)
+logger = logging.getLogger(__name__)
 
 # 添加项目根目录到 Python 路径
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -119,12 +128,12 @@ def get_expected_days(freq: str, period_start: pd.Timestamp) -> int:
 def _validate_data_directory() -> Optional[List[Path]]:
     """验证数据目录并返回CSV文件列表"""
     if not DATA_DIR.exists():
-        print(f"[!] Data directory not found: {DATA_DIR}")
+        logger.error(f"Data directory not found: {DATA_DIR}")
         return None
 
     all_files = list(DATA_DIR.glob("*_1d.csv"))
     if not all_files:
-        print(f"[!] No CSV files found in {DATA_DIR}")
+        logger.error(f"No CSV files found in {DATA_DIR}")
         return None
 
     return all_files
@@ -157,11 +166,11 @@ def _load_and_prepare_data(file_path: Path) -> Optional[pd.DataFrame]:
         return df
     except (FileNotFoundError, pd.errors.EmptyDataError, KeyError, ValueError) as e:
         symbol = file_path.stem.split("_")[0]
-        print(f"\n[!] Error processing {symbol}: {e}")
+        logger.warning(f"Error processing {symbol}: {e}")
         return None
     except Exception as e:
         symbol = file_path.stem.split("_")[0]
-        print(f"\n[!] Unexpected error processing {symbol}: {e}")
+        logger.error(f"Unexpected error processing {symbol}: {e}")
         return None
 
 
@@ -197,8 +206,8 @@ def _collect_period_stats(all_files: List[Path]) -> dict:
     """收集所有周期的统计数据"""
     period_stats = {}
 
-    print(f"[*] Found {len(all_files)} files. Starting data processing...")
-    print(f"[*] Rebalance frequency: {REBALANCE_FREQ}")
+    logger.info(f"Found {len(all_files)} files. Starting data processing...")
+    logger.info(f"Rebalance frequency: {REBALANCE_FREQ}")
 
     for file_path in tqdm(all_files, desc="Reading CSVs"):
         symbol = _parse_symbol_from_filename(file_path)
@@ -266,11 +275,11 @@ if __name__ == "__main__":
             if not universe:
                 continue
 
-            print(f"\n[*] Sample Universe Top {n} (Latest Period):")
+            logger.info(f"\nSample Universe Top {n} (Latest Period):")
             last_period = sorted(universe.keys())[-1]
-            print(f"Period: {last_period}")
+            logger.info(f"Period: {last_period}")
             sample_size = min(10, len(universe[last_period]))
-            print(
+            logger.info(
                 f"Symbols ({len(universe[last_period])}): {universe[last_period][:sample_size]} ..."
             )
 
@@ -280,6 +289,6 @@ if __name__ == "__main__":
             output_path.parent.mkdir(parents=True, exist_ok=True)
             with open(output_path, "w") as f:
                 json.dump(universe, f, indent=4)
-            print(f"[√] Universe Top {n} saved to: {output_path}")
+            logger.info(f"Universe Top {n} saved to: {output_path}")
     else:
-        print("[!] No universes generated. Check if data exists in data/top/")
+        logger.warning("No universes generated. Check if data exists in data/top/")

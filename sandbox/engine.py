@@ -66,12 +66,55 @@ def _validate_instrument_count(instrument_ids: list, max_instances: int = 20):
 
 
 def _load_strategy_classes(strategy_config):
-    """动态加载策略类和配置类"""
+    """
+    动态加载策略类和配置类
+
+    Args:
+        strategy_config: 策略配置对象
+
+    Returns:
+        tuple: (StrategyClass, ConfigClass)
+
+    Raises:
+        ValueError: 当模块路径不安全或类不存在时
+        ImportError: 当模块导入失败时
+    """
+    import importlib
+
     module_path = strategy_config.module_path
     strategy_name = strategy_config.name
     config_class_name = strategy_config.config_class or f"{strategy_name}Config"
 
-    module = __import__(module_path, fromlist=[strategy_name, config_class_name])
+    # 安全验证：只允许从 strategy 模块加载
+    if not module_path.startswith("strategy."):
+        raise ValueError(
+            f"Invalid module path: {module_path}. "
+            "Only modules under 'strategy.*' are allowed for security reasons."
+        )
+
+    # 验证策略名称格式（防止注入）
+    if not strategy_name.replace("_", "").isalnum():
+        raise ValueError(
+            f"Invalid strategy name: {strategy_name}. "
+            "Strategy name must contain only alphanumeric characters and underscores."
+        )
+
+    try:
+        # 使用 importlib 替代 __import__（更安全）
+        module = importlib.import_module(module_path)
+    except ImportError as e:
+        raise ImportError(f"Failed to import module '{module_path}': {e}")
+
+    # 验证类是否存在
+    if not hasattr(module, strategy_name):
+        raise ValueError(
+            f"Strategy class '{strategy_name}' not found in module '{module_path}'"
+        )
+    if not hasattr(module, config_class_name):
+        raise ValueError(
+            f"Config class '{config_class_name}' not found in module '{module_path}'"
+        )
+
     StrategyClass = getattr(module, strategy_name)
     ConfigClass = getattr(module, config_class_name)
 
