@@ -1,6 +1,11 @@
 """
 Strategy: Keltner RS Breakout (KRB)
 Type: Medium-Frequency Trend Following
+
+ℹ️ Note: A refactored version exists at strategy/keltner_rs_breakout_refactored.py
+   The refactored version uses modular components and is ~40% shorter (651 vs 1078 lines).
+   Consider migrating to the refactored version for better maintainability.
+
 Core Logic:
   1. Entry: Close > EMA(20) + 2.25*ATR(20)
   2. Filter A (Market Regime): BTC > SMA(200) and BTC_ATR% < 3%
@@ -852,21 +857,53 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
         ))
 
     def _calculate_stop_distance(self, bar: Bar) -> Decimal:
-        """计算止损距离"""
-        stop_distance = Decimal(str(self.config.stop_loss_atr_multiplier)) * Decimal(str(self.atr))
+        """计算止损距离
+
+        添加ATR下限保护，防止横盘市场ATR过小导致仓位计算异常
+        """
+        # ✅ P0修复: 添加ATR下限保护（0.5%）
+        ATR_FLOOR = bar.close.as_decimal() * Decimal("0.005")  # 0.5%下限
+        safe_atr = max(Decimal(str(self.atr)), ATR_FLOOR)
+
+        if safe_atr > Decimal(str(self.atr)):
+            self.log.warning(
+                f"⚠️ ATR过小({self.atr:.6f})，使用下限保护{ATR_FLOOR:.6f} "
+                f"(当前价格: {bar.close})"
+            )
+
+        stop_distance = Decimal(str(self.config.stop_loss_atr_multiplier)) * safe_atr
         min_stop_distance = bar.close.as_decimal() * Decimal(str(self.config.min_stop_distance_pct))
 
         if stop_distance < min_stop_distance:
-            self.log.warning(f"ATR过小({self.atr:.6f})，使用最小止损距离{min_stop_distance}")
+            self.log.warning(
+                f"止损距离({stop_distance:.6f})小于最小止损距离({min_stop_distance:.6f})，"
+                f"使用最小止损距离"
+            )
             return min_stop_distance
 
         return stop_distance
 
     def _calculate_qty_by_atr(self, equity: Decimal, stop_distance: Decimal, high_conviction: bool) -> Decimal:
-        """使用ATR风险模式计算仓位"""
+        """使用ATR风险模式计算仓位
+
+        添加仓位上限保护，防止异常大仓位导致爆仓风险
+        """
         risk_pct = self._get_risk_percent(high_conviction)
         risk_amount = equity * risk_pct * Decimal(str(self.config.leverage))
         qty = risk_amount / stop_distance
+
+        # ✅ P0修复: 添加仓位上限检查（防止异常大仓位）
+        # 最大仓位 = 账户权益 * 杠杆 * 最大仓位比例（默认50%）
+        max_position_pct = Decimal("0.5")  # 最大50%仓位
+        max_qty = equity * Decimal(str(self.config.leverage)) * max_position_pct / Decimal(str(self.instrument.price_increment))
+
+        if qty > max_qty:
+            self.log.warning(
+                f"⚠️ 计算仓位({qty:.4f})超过最大限制({max_qty:.4f})，"
+                f"使用最大仓位。可能原因: ATR过小或止损距离过小。"
+                f"equity={equity}, risk_pct={risk_pct}, stop_distance={stop_distance}"
+            )
+            qty = max_qty
 
         min_qty = Decimal(str(self.instrument.size_increment))
         if qty < min_qty:
@@ -879,9 +916,11 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
         return qty
 
     def _calculate_position_size(self, bar: Bar, high_conviction: bool) -> Decimal:
-        # AI 代码生成的这里返回 decimal，
-        # 但是实际上返回的是 Quantity 类型，而且静态检查并不能发现这个问题
-        """计算仓位大小"""
+        """计算仓位大小
+
+        Returns:
+            Decimal: 仓位数量（注意：返回Decimal类型，不是Quantity类型）
+        """
         equity = self._get_account_equity()
         if equity is None:
             return Decimal("0")
@@ -926,137 +965,130 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
         # 标记已执行减仓，防止重复触发
         self.euphoria_reduced = True
 
-def _check_time_stop(self, bar: Bar) -> bool:
-    """检查时间止损"""
-    if not self.config.enable_time_stop or self.entry_bar_count < self.config.time_stop_bars:
+    def _check_time_stop(self, bar: Bar) -> bool:
+        """检查时间止损"""
+        if not self.config.enable_time_stop or self.entry_bar_count < self.config.time_stop_bars:
+            return False
+
+        momentum_threshold = 1 + self.config.time_stop_momentum_threshold
+        if self.highest_high < self.entry_price * momentum_threshold:
+            self.close_all_positions(self.instrument.id)
+            self.log.info(
+                f"时间止损平仓: bars={self.entry_bar_count}, "
+                f"highest={self.highest_high:.2f}, entry={self.entry_price:.2f}"
+            )
+            self._reset_position_tracking()
+            return True
         return False
 
-    momentum_threshold = 1 + self.config.time_stop_momentum_threshold
-    if self.highest_high < self.entry_price * momentum_threshold:
-        self.close_all_positions(self.instrument.id)
-        self.log.info(
-            f"时间止损平仓: bars={self.entry_bar_count}, "
-            f"highest={self.highest_high:.2f}, entry={self.entry_price:.2f}"
-        )
-        self._reset_position_tracking()
-        return True
-    return False
+    def _check_chandelier_exit(self, close: float) -> bool:
+        """检查Chandelier Exit跟踪止损"""
+        if self.atr is None:
+            return False
 
-
-def _check_chandelier_exit(self, close: float) -> bool:
-    """检查Chandelier Exit跟踪止损"""
-    if self.atr is None:
+        trailing_stop = self.highest_high - (self.config.stop_loss_atr_multiplier * self.atr)
+        if close < trailing_stop:
+            self.close_all_positions(self.instrument.id)
+            self.log.info(
+                f"Chandelier Exit 平仓: "
+                f"price={close:.2f}, stop={trailing_stop:.2f}, "
+                f"highest={self.highest_high:.2f}"
+            )
+            self._reset_position_tracking()
+            return True
         return False
 
-    trailing_stop = self.highest_high - (self.config.stop_loss_atr_multiplier * self.atr)
-    if close < trailing_stop:
-        self.close_all_positions(self.instrument.id)
-        self.log.info(
-            f"Chandelier Exit 平仓: "
-            f"price={close:.2f}, stop={trailing_stop:.2f}, "
-            f"highest={self.highest_high:.2f}"
-        )
-        self._reset_position_tracking()
-        return True
-    return False
+    def _check_parabolic_profit(self, close: float) -> bool:
+        """检查抛物线止盈"""
+        if self.ema is None:
+            return False
 
-
-def _check_parabolic_profit(self, close: float) -> bool:
-    """检查抛物线止盈"""
-    if self.ema is None:
+        deviation_pct = (close - self.ema) / self.ema
+        if deviation_pct >= self.config.deviation_threshold:
+            self.close_all_positions(self.instrument.id)
+            self.log.info(
+                f"抛物线止盈平仓: price={close:.2f}, ema={self.ema:.2f}, deviation={deviation_pct:.4f}"
+            )
+            self._reset_position_tracking()
+            return True
         return False
 
-    deviation_pct = (close - self.ema) / self.ema
-    if deviation_pct >= self.config.deviation_threshold:
-        self.close_all_positions(self.instrument.id)
-        self.log.info(
-            f"抛物线止盈平仓: price={close:.2f}, ema={self.ema:.2f}, deviation={deviation_pct:.4f}"
-        )
-        self._reset_position_tracking()
-        return True
-    return False
+    def _check_rsi_overbought(self, close: float) -> bool:
+        """检查RSI超买止盈"""
+        if self.rsi is None or not self.config.enable_rsi_stop_loss:
+            return False
 
-
-def _check_rsi_overbought(self, close: float) -> bool:
-    """检查RSI超买止盈"""
-    if self.rsi is None or not self.config.enable_rsi_stop_loss:
+        if self.rsi > 85 and self.rsi_watcher is False:
+            self.rsi_watcher = True
+        elif self.rsi_watcher and self.rsi <= 85:
+            self.close_all_positions(self.instrument.id)
+            self.log.info(
+                f"RSI 超买右侧平仓: price={close:.2f}, rsi={self.rsi:.2f}"
+            )
+            self._reset_position_tracking()
+            self.rsi_watcher = False
+            return True
         return False
 
-    if self.rsi > 85 and self.rsi_watcher is False:
-        self.rsi_watcher = True
-    elif self.rsi_watcher and self.rsi <= 85:
-        self.close_all_positions(self.instrument.id)
-        self.log.info(
-            f"RSI 超买右侧平仓: price={close:.2f}, rsi={self.rsi:.2f}"
-        )
-        self._reset_position_tracking()
-        self.rsi_watcher = False
-        return True
-    return False
+    def _update_breakeven_status(self, close: float) -> None:
+        """更新保本模式状态"""
+        if self.atr is None or self.breakeven_active:
+            return
 
+        breakeven_trigger_price = self.entry_price + Decimal(self.config.breakeven_multiplier * self.atr)
+        if close > breakeven_trigger_price:
+            self.breakeven_active = True
+            self.log.info(
+                f"✅ 保本模式激活: price={close:.2f}, "
+                f"trigger={breakeven_trigger_price:.2f}, "
+                f"breakeven_stop={self.entry_price * Decimal('1.002'):.2f}"
+            )
 
-def _update_breakeven_status(self, close: float) -> None:
-    """更新保本模式状态"""
-    if self.atr is None or self.breakeven_active:
-        return
+    def _check_breakeven_stop(self, close: float) -> bool:
+        """检查保本止损"""
+        if not self.breakeven_active:
+            return False
 
-    breakeven_trigger_price = self.entry_price + Decimal(self.config.breakeven_multiplier * self.atr)
-    if close > breakeven_trigger_price:
-        self.breakeven_active = True
-        self.log.info(
-            f"✅ 保本模式激活: price={close:.2f}, "
-            f"trigger={breakeven_trigger_price:.2f}, "
-            f"breakeven_stop={self.entry_price * Decimal('1.002'):.2f}"
-        )
-
-
-def _check_breakeven_stop(self, close: float) -> bool:
-    """检查保本止损"""
-    if not self.breakeven_active:
+        breakeven_stop_price = self.entry_price * Decimal("1.002")
+        if close < breakeven_stop_price:
+            self.close_all_positions(self.instrument.id)
+            self.log.info(
+                f"🛡️ 保本止损平仓: price={close:.2f}, "
+                f"breakeven_stop={breakeven_stop_price:.2f}, "
+                f"entry={self.entry_price:.2f}"
+            )
+            self._reset_position_tracking()
+            return True
         return False
 
-    breakeven_stop_price = self.entry_price * Decimal("1.002")
-    if close < breakeven_stop_price:
-        self.close_all_positions(self.instrument.id)
-        self.log.info(
-            f"🛡️ 保本止损平仓: price={close:.2f}, "
-            f"breakeven_stop={breakeven_stop_price:.2f}, "
-            f"entry={self.entry_price:.2f}"
-        )
-        self._reset_position_tracking()
-        return True
-    return False
+    def _handle_exit(self, bar: Bar) -> None:
+        """处理出场逻辑"""
+        close = float(bar.close)
 
+        # 1. 时间止损检查（优先）
+        if self._check_time_stop(bar):
+            return
 
-def _handle_exit(self, bar: Bar) -> None:
-    """处理出场逻辑"""
-    close = float(bar.close)
+        # 2. 跟踪止损检查（Chandelier Exit）
+        if self._check_chandelier_exit(close):
+            return
 
-    # 1. 时间止损检查（优先）
-    if self._check_time_stop(bar):
-        return
+        # 3. 抛物线止盈
+        if self._check_parabolic_profit(close):
+            return
 
-    # 2. 跟踪止损检查（Chandelier Exit）
-    if self._check_chandelier_exit(close):
-        return
+        # 4. RSI超买止盈
+        if self._check_rsi_overbought(close):
+            return
 
-    # 3. 抛物线止盈
-    if self._check_parabolic_profit(close):
-        return
+        # 5. 保本止损机制
+        if self.entry_price is None:
+            return
 
-    # 4. RSI超买止盈
-    if self._check_rsi_overbought(close):
-        return
+        self._update_breakeven_status(close)
 
-    # 5. 保本止损机制
-    if self.entry_price is None:
-        return
-
-    self._update_breakeven_status(close)
-
-    if self._check_breakeven_stop(close):
-        return
-
+        if self._check_breakeven_stop(close):
+            return
 
     def _reset_position_tracking(self) -> None:
         """重置持仓跟踪变量"""
