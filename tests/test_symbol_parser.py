@@ -15,7 +15,16 @@ import unittest
 
 from nautilus_trader.model.enums import BarAggregation
 
-from utils.symbol_parser import parse_timeframe, resolve_symbol_and_type
+from core.exceptions import SymbolParsingError, TimeframeParsingError
+from utils.symbol_parser import (
+    parse_timeframe,
+    resolve_symbol_and_type,
+    normalize_symbol,
+    extract_base_quote,
+    is_perpetual_contract,
+    convert_timeframe_to_seconds,
+    convert_nautilus_to_ccxt_timeframe,
+)
 
 
 class TestSymbolParser(unittest.TestCase):
@@ -236,6 +245,129 @@ class TestSymbolParser(unittest.TestCase):
                 agg, period = parse_timeframe(timeframe)
                 self.assertEqual(agg, expected_agg)
                 self.assertEqual(period, expected_period)
+
+    def test_normalize_symbol_binance(self):
+        """测试 Binance 格式标准化"""
+        # 现货
+        result = normalize_symbol("BTC/USDT", "binance")
+        self.assertEqual(result, "BTCUSDT")
+
+        # 永续合约
+        result = normalize_symbol("BTC/USDT:USDT", "binance")
+        self.assertEqual(result, "BTCUSDT")
+
+        result = normalize_symbol("ETHUSDT", "binance")
+        self.assertEqual(result, "ETHUSDT")
+
+    def test_normalize_symbol_okx(self):
+        """测试 OKX 格式标准化"""
+        # 现货
+        result = normalize_symbol("BTC/USDT", "okx")
+        self.assertEqual(result, "BTC-USDT")
+
+        # 永续合约
+        result = normalize_symbol("BTC/USDT:USDT", "okx")
+        self.assertEqual(result, "BTC-USDT-SWAP")
+
+        result = normalize_symbol("ETHUSDT", "okx")
+        self.assertEqual(result, "ETH-USDT-SWAP")
+
+    def test_normalize_symbol_default(self):
+        """测试默认交易所格式"""
+        result = normalize_symbol("BTCUSDT", "unknown_exchange")
+        self.assertEqual(result, "BTC/USDT:USDT")
+
+    def test_extract_base_quote(self):
+        """测试提取基础货币和计价货币"""
+        # 标准格式
+        base, quote = extract_base_quote("BTC/USDT")
+        self.assertEqual(base, "BTC")
+        self.assertEqual(quote, "USDT")
+
+        # 永续合约格式
+        base, quote = extract_base_quote("BTC/USDT:USDT")
+        self.assertEqual(base, "BTC")
+        self.assertEqual(quote, "USDT")
+
+        # 简化格式
+        base, quote = extract_base_quote("ETHUSDT")
+        self.assertEqual(base, "ETH")
+        self.assertEqual(quote, "USDT")
+
+    def test_is_perpetual_contract(self):
+        """测试判断是否为永续合约"""
+        # 永续合约
+        self.assertTrue(is_perpetual_contract("BTCUSDT"))
+        self.assertTrue(is_perpetual_contract("BTC/USDT:USDT"))
+        self.assertTrue(is_perpetual_contract("ETHUSD"))
+
+        # 现货
+        self.assertFalse(is_perpetual_contract("BTC/USDT"))
+        self.assertFalse(is_perpetual_contract("ETH/BTC"))
+
+    def test_convert_timeframe_to_seconds(self):
+        """测试时间周期转换为秒数"""
+        self.assertEqual(convert_timeframe_to_seconds("1m"), 60)
+        self.assertEqual(convert_timeframe_to_seconds("5m"), 300)
+        self.assertEqual(convert_timeframe_to_seconds("1h"), 3600)
+        self.assertEqual(convert_timeframe_to_seconds("4h"), 14400)
+        self.assertEqual(convert_timeframe_to_seconds("1d"), 86400)
+        self.assertEqual(convert_timeframe_to_seconds("1w"), 604800)
+
+    def test_convert_nautilus_to_ccxt_timeframe(self):
+        """测试 Nautilus 格式转换为 CCXT 格式"""
+        result = convert_nautilus_to_ccxt_timeframe(BarAggregation.MINUTE, 1)
+        self.assertEqual(result, "1m")
+
+        result = convert_nautilus_to_ccxt_timeframe(BarAggregation.MINUTE, 5)
+        self.assertEqual(result, "5m")
+
+        result = convert_nautilus_to_ccxt_timeframe(BarAggregation.HOUR, 1)
+        self.assertEqual(result, "1h")
+
+        result = convert_nautilus_to_ccxt_timeframe(BarAggregation.DAY, 1)
+        self.assertEqual(result, "1d")
+
+        result = convert_nautilus_to_ccxt_timeframe(BarAggregation.WEEK, 1)
+        self.assertEqual(result, "1w")
+
+    def test_error_handling(self):
+        """测试错误处理"""
+        # 测试无效符号
+        with self.assertRaises(SymbolParsingError):
+            resolve_symbol_and_type("")
+
+    def test_edge_cases_btc_eth_suffix(self):
+        """测试 BTC/ETH 后缀的边界情况"""
+        # LINKBTC (7个字符) 应该被解析为 LINK/BTC 现货
+        symbol, market_type = resolve_symbol_and_type("LINKBTC")
+        self.assertEqual(symbol, "LINK/BTC")
+        self.assertEqual(market_type, "spot")
+
+        # LINKETH (7个字符) 应该被解析为 LINK/ETH 现货
+        symbol, market_type = resolve_symbol_and_type("LINKETH")
+        self.assertEqual(symbol, "LINK/ETH")
+        self.assertEqual(market_type, "spot")
+
+        # ETHBTC (6个字符，不满足 > 6) 应该被当作 swap
+        symbol, market_type = resolve_symbol_and_type("ETHBTC")
+        self.assertEqual(symbol, "ETHBTC")
+        self.assertEqual(market_type, "swap")
+
+        # BTCETH (6个字符，不满足 > 6) 应该被当作 swap
+        symbol, market_type = resolve_symbol_and_type("BTCETH")
+        self.assertEqual(symbol, "BTCETH")
+        self.assertEqual(market_type, "swap")
+
+    def test_short_symbols(self):
+        """测试短符号"""
+        # 太短的 USDT 后缀符号
+        with self.assertRaises(SymbolParsingError):
+            resolve_symbol_and_type("USDT")
+
+        # 太短的 USD 后缀符号
+        with self.assertRaises(SymbolParsingError):
+            resolve_symbol_and_type("USD")
 
 
 if __name__ == "__main__":
