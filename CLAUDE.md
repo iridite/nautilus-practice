@@ -45,14 +45,17 @@ uv run pytest tests/test_common_components.py -v
 
 ### 运行回测
 ```bash
-# 主回测入口（自动获取 Funding Rate 数据）
+# 基本回测（使用低级引擎，默认）
 uv run python main.py backtest
 
-# 跳过 OI 数据检查（仅使用 OHLCV 数据）
-uv run python main.py backtest --skip-oi-data
+# 使用高级引擎（推荐，性能提升 32%）
+uv run python main.py backtest --type high
 
-# 指定首选交易所和重试设置
+# 指定首选交易所和重试设置（针对需要 OI/Funding 数据的策略）
 uv run python main.py backtest --oi-exchange binance --max-retries 5
+
+# 跳过 OI 数据检查（仅当策略不需要 OI/Funding 数据时使用）
+uv run python main.py backtest --skip-oi-data
 
 # 运行特定策略回测
 uv run python backtest/backtest_oi_divergence.py

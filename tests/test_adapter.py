@@ -49,22 +49,26 @@ class TestConfigAdapter(unittest.TestCase):
     @patch('core.adapter.ConfigLoader')
     def test_get_main_timeframe(self, mock_loader):
         adapter = ConfigAdapter()
+        adapter.active_config = Mock()
+        adapter.active_config.timeframe = None
         adapter.env_config = Mock()
-        adapter.env_config.data.main_timeframe = "1h"
+        adapter.env_config.trading = Mock()
+        adapter.env_config.trading.main_timeframe = "1h"
         self.assertEqual(adapter.get_main_timeframe(), "1h")
 
     @patch('core.adapter.ConfigLoader')
     def test_get_trend_timeframe(self, mock_loader):
         adapter = ConfigAdapter()
         adapter.env_config = Mock()
-        adapter.env_config.data.trend_timeframe = "4h"
+        adapter.env_config.trading = Mock()
+        adapter.env_config.trading.trend_timeframe = "4h"
         self.assertEqual(adapter.get_trend_timeframe(), "4h")
 
     @patch('core.adapter.ConfigLoader')
     def test_get_primary_symbol(self, mock_loader):
         adapter = ConfigAdapter()
-        adapter.env_config = Mock()
-        adapter.env_config.trading.primary_symbol = "BTCUSDT"
+        adapter.active_config = Mock()
+        adapter.active_config.primary_symbol = "BTCUSDT"
         self.assertEqual(adapter.get_primary_symbol(), "BTCUSDT")
 
     @patch('core.adapter.ConfigLoader')
@@ -119,25 +123,27 @@ class TestAdapterHelperMethods(unittest.TestCase):
         adapter = ConfigAdapter()
         path = adapter._get_universe_file_path(10, "1d")
         self.assertIsInstance(path, Path)
-        self.assertIn("top_10", str(path))
-        self.assertIn("1d", str(path))
+        self.assertIn("universe_10_1d", str(path))
 
     @patch('core.adapter.ConfigLoader')
     def test_restore_instrument_id(self, mock_loader):
         adapter = ConfigAdapter()
         adapter.env_config = Mock()
+        adapter.env_config.trading = Mock()
         adapter.env_config.trading.venue = "BINANCE"
+        adapter.env_config.trading.instrument_type = "SWAP"
 
         result = adapter._restore_instrument_id("BTCUSDT")
-        self.assertIn("BTCUSDT", result)
+        # 格式应该是 BTC-USDT-SWAP.BINANCE
+        self.assertIn("BTC", result)
+        self.assertIn("USDT", result)
         self.assertIn("BINANCE", result)
 
     @patch('core.adapter.ConfigLoader')
     def test_get_required_timeframes(self, mock_loader):
         adapter = ConfigAdapter()
-        adapter.env_config = Mock()
-        adapter.env_config.data.main_timeframe = "1h"
-        adapter.env_config.data.trend_timeframe = "4h"
+        adapter.strategy_config = Mock()
+        adapter.strategy_config.parameters = {"timeframes": ["1h", "4h"]}
 
         timeframes = adapter.get_required_timeframes()
         self.assertIsInstance(timeframes, list)

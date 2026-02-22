@@ -151,6 +151,10 @@ def format_aux_instrument_id(
             "venue is required when template_inst_id does not specify a venue"
         )
 
+    # Venue-specific type normalization: BINANCE uses PERP for perpetual contracts
+    if resolved_venue == "BINANCE" and resolved_inst_type in ("SWAP", "PERP"):
+        resolved_inst_type = "PERP"
+
     instrument_id = f"{formatted_symbol}-{resolved_inst_type}.{resolved_venue}"
     return instrument_id
 

@@ -134,7 +134,13 @@ def batch_fetch_ohlcv(
         bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]",
     ) as pbar:
         for raw_symbol in pbar:
-            ccxt_symbol, market_type = resolve_symbol_and_type(raw_symbol)
+            try:
+                ccxt_symbol, market_type = resolve_symbol_and_type(raw_symbol)
+            except Exception as e:
+                logger.warning(f"\n[WARNING] Failed to parse symbol {raw_symbol}: {e}, skipping")
+                skipped_count += 1
+                continue
+
             safe_symbol = raw_symbol.replace("/", "")
 
             filename = (
@@ -537,7 +543,11 @@ def _initialize_exchange(exchange_id: str):
 
 def _resolve_and_validate_symbol(raw_symbol: str, exchange, exchange_id: str) -> tuple[str, str, str] | None:
     """解析并验证交易对符号"""
-    ccxt_symbol, market_type = resolve_symbol_and_type(raw_symbol)
+    try:
+        ccxt_symbol, market_type = resolve_symbol_and_type(raw_symbol)
+    except Exception as e:
+        logger.warning(f"\n[WARNING] Failed to parse symbol {raw_symbol}: {e}, skipping")
+        return None
 
     if ccxt_symbol not in exchange.markets:
         logger.warning(f"\n[WARNING] {raw_symbol} not found in {exchange_id.upper()}, skipping")

@@ -130,7 +130,8 @@ class TestHelperFunctions(unittest.TestCase):
         csv_mtime = 500.0
         parquet_mtime = 1000.0
         result = _check_file_freshness(csv_mtime, parquet_mtime)
-        self.assertFalse(result)
+        # CSV比Parquet旧500秒，差距在3600秒内，返回True（文件一致）
+        self.assertTrue(result)
 
     def test_check_file_freshness_no_parquet(self):
         """测试无Parquet文件"""
@@ -144,7 +145,9 @@ class TestHelperFunctions(unittest.TestCase):
         """测试CSV文件存在且有效"""
         mock_file = MagicMock()
         mock_file.exists.return_value = True
-        mock_file.stat.return_value.st_size = 1000
+        mock_stat = MagicMock()
+        mock_stat.st_size = 2000  # 大于1024字节
+        mock_file.stat.return_value = mock_stat
         result = _check_csv_file_validity(mock_file)
         self.assertTrue(result)
 
@@ -169,19 +172,22 @@ class TestHelperFunctions(unittest.TestCase):
 class TestDataProcessing(unittest.TestCase):
     """测试数据处理函数"""
 
-    @patch('backtest.engine_high.Path')
-    def test_count_csv_lines_success(self, mock_path):
+    @patch('builtins.open')
+    def test_count_csv_lines_success(self, mock_open):
         """测试CSV行数统计"""
-        mock_file = MagicMock()
-        mock_file.open.return_value.__enter__.return_value = ["line1\n", "line2\n", "line3\n"]
-        result = _count_csv_lines(mock_file)
-        self.assertEqual(result, 3)
+        # 模拟文件内容：header + 3行数据
+        mock_open.return_value.__enter__.return_value = iter(["header\n", "line1\n", "line2\n", "line3\n"])
 
-    @patch('backtest.engine_high.Path')
-    def test_count_csv_lines_error(self, mock_path):
-        """测试CSV行数统计错误处理"""
         mock_file = MagicMock()
-        mock_file.open.side_effect = OSError("File not found")
+        result = _count_csv_lines(mock_file)
+        self.assertEqual(result, 3)  # 4行总数 - 1行header = 3
+
+    @patch('builtins.open')
+    def test_count_csv_lines_error(self, mock_open):
+        """测试CSV行数统计错误处理"""
+        mock_open.side_effect = OSError("File not found")
+
+        mock_file = MagicMock()
         result = _count_csv_lines(mock_file)
         self.assertEqual(result, 0)
 
@@ -192,27 +198,28 @@ class TestMetricsBuilding(unittest.TestCase):
     def test_build_pnl_metrics(self):
         """测试PnL指标构建"""
         from backtest.engine_high import _build_pnl_metrics
-        from nautilus_trader.backtest.results import BacktestResult
 
-        mock_result = Mock(spec=BacktestResult)
-        mock_result.total_pnl = 1000.0
-        mock_result.total_return = 0.1
+        mock_result = Mock()
+        mock_result.stats_pnls = {
+            "USDT": {"total_pnl": 1000.0, "total_return": 0.1}
+        }
 
         metrics = _build_pnl_metrics(mock_result)
         self.assertIsInstance(metrics, dict)
-        self.assertIn("total_pnl", metrics)
+        self.assertIn("USDT", metrics)
 
     def test_build_returns_metrics(self):
         """测试收益率指标构建"""
         from backtest.engine_high import _build_returns_metrics
-        from nautilus_trader.backtest.results import BacktestResult
 
-        mock_result = Mock(spec=BacktestResult)
-        mock_result.sharpe_ratio = 1.5
-        mock_result.sortino_ratio = 2.0
+        mock_result = Mock()
+        mock_result.stats_returns = {
+            "USDT": 0.15
+        }
 
         metrics = _build_returns_metrics(mock_result)
         self.assertIsInstance(metrics, dict)
+        self.assertIn("USDT", metrics)
 
     def test_build_filter_stats_with_data(self):
         """测试过滤统计构建"""

@@ -67,12 +67,22 @@ class TestInstrumentConfig:
         assert inst_id == "ETHUSDT.BINANCE"
 
     def test_get_id_for_binance_swap(self):
-        """测试 Binance 永续合约的 instrument_id 生成"""
+        """测试 Binance 永续合约的 instrument_id 生成（使用 SWAP）"""
         inst_id = InstrumentConfig.get_id_for(
             venue_name="BINANCE",
             base_currency="USDT",
             quote_currency="BTC",
             inst_type=InstrumentType.SWAP
+        )
+        assert inst_id == "BTCUSDT-PERP.BINANCE"
+
+    def test_get_id_for_binance_perp(self):
+        """测试 Binance 永续合约的 instrument_id 生成（使用 PERP）"""
+        inst_id = InstrumentConfig.get_id_for(
+            venue_name="BINANCE",
+            base_currency="USDT",
+            quote_currency="BTC",
+            inst_type=InstrumentType.PERP
         )
         assert inst_id == "BTCUSDT-PERP.BINANCE"
 

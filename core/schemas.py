@@ -32,11 +32,13 @@ class InstrumentType(Enum):
         SPOT: 现货交易
         FUTURES: 期货合约
         SWAP: 永续合约
+        PERP: 永续合约（别名）
         OPTION: 期权合约
     """
     SPOT = "SPOT"
     FUTURES = "FUTURES"
     SWAP = "SWAP"
+    PERP = "PERP"
     OPTION = "OPTION"
 
 
@@ -89,7 +91,7 @@ class InstrumentConfig(BaseModel):
         elif venue_name == "BINANCE":
             if inst_type == InstrumentType.SPOT:
                 return f"{quote_currency}{base_currency}.{venue_name}"
-            elif inst_type == InstrumentType.SWAP:
+            elif inst_type in (InstrumentType.SWAP, InstrumentType.PERP):
                 return f"{quote_currency}{base_currency}-PERP.{venue_name}"
             elif inst_type in (InstrumentType.FUTURES, InstrumentType.OPTION):
                 return f"{quote_currency}{base_currency}-{inst_type.value}.{venue_name}"
@@ -408,7 +410,7 @@ class TradingConfig(BaseModel):
     @classmethod
     def validate_instrument_type(cls, v):
         """验证合约类型是否有效"""
-        valid_types = ["SPOT", "FUTURES", "SWAP", "OPTION"]
+        valid_types = ["SPOT", "FUTURES", "SWAP", "OPTION", "PERP"]
         if v.upper() not in valid_types:
             raise ValueError(f"Instrument type must be one of {valid_types}")
         return v.upper()
