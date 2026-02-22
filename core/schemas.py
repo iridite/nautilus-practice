@@ -25,7 +25,15 @@ project_root: Path = Path(__file__).parent.parent.resolve()
 # ============================================================
 
 class InstrumentType(Enum):
-    """交易工具类型"""
+    """
+    交易工具类型枚举
+
+    Attributes:
+        SPOT: 现货交易
+        FUTURES: 期货合约
+        SWAP: 永续合约
+        OPTION: 期权合约
+    """
     SPOT = "SPOT"
     FUTURES = "FUTURES"
     SWAP = "SWAP"
@@ -33,7 +41,18 @@ class InstrumentType(Enum):
 
 
 class InstrumentConfig(BaseModel):
-    """交易工具配置"""
+    """
+    交易工具配置
+
+    定义交易标的的基本信息，包括交易所、货币对、合约类型和杠杆。
+
+    Attributes:
+        type: 合约类型（默认为永续合约）
+        venue_name: 交易所名称（OKX, BINANCE）
+        base_currency: 基础货币（通常为 USDT）
+        quote_currency: 报价货币（BTC, ETH 等）
+        leverage: 杠杆倍数（默认为 1）
+    """
     type: InstrumentType = InstrumentType.SWAP
     venue_name: str = "OKX"
     base_currency: str = "USDT"
@@ -78,11 +97,21 @@ class InstrumentConfig(BaseModel):
             raise ValueError(f"Unsupported venue: {venue_name}")
 
     def get_symbol(self) -> str:
-        """获取交易对符号（如 BTCUSDT）"""
+        """
+        获取交易对符号
+
+        Returns:
+            交易对符号字符串（如 BTCUSDT）
+        """
         return f"{self.quote_currency}{self.base_currency}"
 
     def get_json_path(self) -> Path:
-        """获取合约定义 JSON 文件的路径"""
+        """
+        获取合约定义 JSON 文件的路径
+
+        Returns:
+            合约定义文件的完整路径
+        """
         return (
             project_root
             / "data"
@@ -93,7 +122,12 @@ class InstrumentConfig(BaseModel):
 
     @property
     def instrument_id(self) -> str:
-        """获取标准化的 instrument_id"""
+        """
+        获取标准化的 instrument_id
+
+        Returns:
+            标准化的交易标的标识符（如 BTC-USDT-SWAP.OKX）
+        """
         return self.get_id_for(
             venue_name=self.venue_name,
             base_currency=self.base_currency,
@@ -107,7 +141,20 @@ class InstrumentConfig(BaseModel):
 # ============================================================
 
 class DataConfig(BaseModel):
-    """数据配置"""
+    """
+    数据配置
+
+    定义回测或实盘交易所需的市场数据配置。
+
+    Attributes:
+        csv_file_name: CSV 数据文件名
+        bar_aggregation: K线聚合类型（默认为小时）
+        bar_period: K线周期（默认为 1）
+        price_type: 价格类型（默认为最新价）
+        origination: 数据来源（默认为外部）
+        instrument_id: 交易标的 ID（可选）
+        label: 数据标签（默认为 main）
+    """
     csv_file_name: str
     bar_aggregation: BarAggregation = BarAggregation.HOUR
     bar_period: int = 1
@@ -134,7 +181,18 @@ class DataConfig(BaseModel):
 # ============================================================
 
 class LegacyStrategyConfig(BaseModel):
-    """策略配置容器"""
+    """
+    策略配置容器（遗留版本）
+
+    用于配置策略的基本信息和参数。
+
+    Attributes:
+        name: 策略名称
+        module_path: 策略模块路径
+        config_class: 配置类名（可选，默认为 {name}Config）
+        params: 策略参数字典
+        trade_pair_list: 交易对列表（可选）
+    """
     name: str
     module_path: str
     config_class: str | None = None
@@ -144,7 +202,14 @@ class LegacyStrategyConfig(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     def resolve_config_class(self) -> str:
-        """解析策略配置类名（如果未指定则自动生成）"""
+        """
+        解析策略配置类名
+
+        如果未指定 config_class，则自动生成为 {name}Config。
+
+        Returns:
+            配置类名
+        """
         if self.config_class:
             return self.config_class
         return f"{self.name.replace('Strategy', '')}Config"
@@ -216,7 +281,19 @@ class LegacyStrategyConfig(BaseModel):
 # ============================================================
 
 class LogConfig(BaseModel):
-    """日志配置"""
+    """
+    日志配置
+
+    控制日志输出级别和格式。
+
+    Attributes:
+        log_level: 控制台日志级别（默认 INFO）
+        log_level_file: 文件日志级别（默认 DEBUG）
+        log_colors: 是否启用彩色日志（默认 True）
+        use_pyo3: 是否使用 PyO3 日志（默认 True）
+        log_component_levels: 组件级别的日志配置
+        log_components_only: 是否仅记录指定组件的日志（默认 False）
+    """
     log_level: str = "INFO"
     log_level_file: str = "DEBUG"
     log_colors: bool = True
@@ -226,7 +303,24 @@ class LogConfig(BaseModel):
 
 
 class BacktestConfig(BaseModel):
-    """回测配置容器"""
+    """
+    回测配置容器
+
+    定义回测所需的所有配置，包括交易标的、策略、数据源等。
+
+    Attributes:
+        instrument: 单个交易标的配置（遗留字段）
+        strategy: 策略配置
+        instruments: 交易标的列表
+        data_feeds: 数据源列表
+        start_date: 回测开始日期（可选）
+        end_date: 回测结束日期（可选）
+        initial_balances: 初始资金列表（默认 10,000 USDT）
+        output_html_report: 是否输出 HTML 报告（默认 False）
+        logging: 日志配置（可选）
+        data: 主数据配置（可选）
+        aux_data: 辅助数据配置（可选）
+    """
     instrument: InstrumentConfig
     strategy: LegacyStrategyConfig
     instruments: List[InstrumentConfig] = Field(default_factory=list)
@@ -244,7 +338,11 @@ class BacktestConfig(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     def _migrate_instrument_to_instruments(self):
-        """迁移单个instrument到instruments列表"""
+        """
+        迁移单个 instrument 到 instruments 列表
+
+        用于向后兼容旧配置格式。
+        """
         if self.instrument and not self.instruments:
             self.instruments.append(self.instrument)
 
