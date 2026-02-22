@@ -38,8 +38,23 @@ log/archive/
 *.temp
 *.swp
 *.swo
+*~
 
 # Mypy cache
 .mypy_cache/
 .ruff_cache/
 *.egg-info/
+
+# Jupyter Notebook
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# OS specific
+Thumbs.db
+.Spotlight-V100
+.Trashes

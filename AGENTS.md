@@ -2,6 +2,8 @@
 
 This document provides coding guidelines for AI agents working in this repository. This is a quantitative trading project built on the NautilusTrader framework for backtesting and live trading cryptocurrency strategies.
 
+> **⚡ 需要快速参考？** 本文件包含详细的开发指南、组件使用示例和完整的项目历史。如需快速上手和常用命令，请先查看 [CLAUDE.md](CLAUDE.md)。
+
 ## 📦 Project Overview
 
 - **Framework**: NautilusTrader 1.223.0

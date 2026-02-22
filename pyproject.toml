@@ -74,6 +74,12 @@ omit = [
     "setup.py",
     "*/sandbox/*",
     "*/scripts/*",
+    "main.py",
+    "*/profiling/*",
+    "utils/api_health_check.py",
+    "cli/file_cleanup.py",
+    "live/engine.py",
+    "strategy/keltner_rs_breakout_refactored.py",
 ]
 
 [tool.coverage.report]
@@ -93,6 +99,32 @@ skip_covered = false
 
 [tool.coverage.html]
 directory = "htmlcov"
+
+[tool.mypy]
+python_version = "3.12"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+check_untyped_defs = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+warn_unreachable = true
+strict_equality = true
+show_error_codes = true
+
+# 第三方库缺少类型提示时忽略
+[[tool.mypy.overrides]]
+module = [
+    "nautilus_trader.*",
+    "ccxt.*",
+    "ta.*",
+    "joblib.*",
+    "lightgbm.*",
+]
+ignore_missing_imports = true
 
 [dependency-groups]
 dev = [
