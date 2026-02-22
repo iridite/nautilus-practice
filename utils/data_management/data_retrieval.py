@@ -168,8 +168,8 @@ def batch_fetch_ohlcv(
                 )
             )
 
-    print(
-        f"✅ Data retrieval complete: {len(configs)}/{total} symbols "
+    logger.info(
+        f"Data retrieval complete: {len(configs)}/{total} symbols "
         f"(fetched: {fetched_count}, cached: {skipped_count})"
     )
 
@@ -630,14 +630,14 @@ def _process_funding_data(
 def _print_fetch_results(results: dict, enable_oi: bool):
     """打印获取结果"""
     if enable_oi:
-        print(
-            f"✅ OI/Funding data retrieval complete: "
+        logger.info(
+            f"OI/Funding data retrieval complete: "
             f"{len(results['oi_files'])} OI files, "
             f"{len(results['funding_files'])} Funding files"
         )
     else:
-        print(
-            f"✅ Funding data retrieval complete: "
+        logger.info(
+            f"Funding data retrieval complete: "
             f"{len(results['funding_files'])} Funding files "
             f"(OI data fetching disabled)"
         )

@@ -264,8 +264,8 @@ class OIFundingDataLoader:
 
             funding_data_list = self._parse_funding_dataframe(df, instrument_id)
 
-            print(
-                f"✅ Loaded {len(funding_data_list)} Funding Rate data points for {symbol}"
+            logger.info(
+                f"Loaded {len(funding_data_list)} Funding Rate data points for {symbol}"
             )
             return funding_data_list
 
