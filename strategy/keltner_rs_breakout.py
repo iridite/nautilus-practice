@@ -460,8 +460,8 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
         # 检查 Squeeze 状态
         keltner_upper, keltner_lower = self.keltner.get_keltner_base_bands()
         is_squeezing = self.squeeze_detector.check_squeeze(
-            self.keltner.bb_upper,
-            self.keltner.bb_lower,
+            self.keltner.bb.upper,
+            self.keltner.bb.lower,
             keltner_upper,
             keltner_lower,
         )
