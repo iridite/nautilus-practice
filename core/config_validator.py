@@ -85,7 +85,6 @@ class StrictConfigValidator:
     ) -> List[ConfigValidationWarning]:
         """查找模型中必需但 YAML 中缺失的字段（没有默认值的字段）"""
         warnings = []
-        model_fields = StrictConfigValidator.get_model_fields(model)
         nested_fields = StrictConfigValidator.get_nested_model_fields(model)
 
         for field_name, field_info in model.model_fields.items():
