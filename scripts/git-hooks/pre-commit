@@ -1,0 +1,27 @@
+#!/bin/bash
+
+# Get current branch name
+current_branch=$(git symbolic-ref --short HEAD 2>/dev/null)
+
+# Check if on main branch
+if [ "$current_branch" = "main" ]; then
+    echo ""
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "❌ ERROR: Direct commit to main branch is blocked!"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+    echo "Please follow the proper workflow:"
+    echo ""
+    echo "1. Create a feature branch:"
+    echo "   git checkout -b <type>/<description>"
+    echo ""
+    echo "2. Make your commits on the feature branch"
+    echo ""
+    echo "3. Push and create a Pull Request"
+    echo ""
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+    exit 1
+fi
+
+exit 0

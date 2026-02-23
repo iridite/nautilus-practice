@@ -19,6 +19,9 @@ This file provides comprehensive guidance for Claude Code (claude.ai/code) and A
 # 安装所有依赖
 uv sync
 
+# 安装 Git Hooks（阻止直接提交到 main 分支）
+./scripts/setup-hooks.sh
+
 # 激活虚拟环境（如需要）
 source .venv/bin/activate
 ```
@@ -445,6 +448,43 @@ bottlenecks = analyzer.identify_bottlenecks(threshold=0.05)
 2. **推送控制**: 仅在明确授权后才能推送到远程
 3. **测试优先**: 推送前运行完整测试套件
 4. **变更透明**: 提供简洁的补丁摘要（文件、动机、测试结果）
+
+### ⚠️ 关键教训（从实际错误中学到）
+
+**问题**: AI Agent 两次直接在 main 分支提交代码，违反分支管理规则
+
+**根本原因**:
+- pre-push hook **只能阻止推送操作**，**无法阻止本地提交**
+- AI Agent 在开始工作时没有先创建分支
+- 依赖 hook 提醒而非主动遵守规则
+
+**正确流程（必须严格遵守）**:
+1. **开始任何工作前**，先检查当前分支：`git branch --show-current`
+2. **如果在 main 分支**，立即创建新分支：`git checkout -b <type>/<description>`
+3. **完成工作后**，推送分支并创建 PR
+4. **绝不直接在 main 分支提交**，即使是小改动
+
+**补救流程**（如果已经在 main 提交）:
+```bash
+# 1. 创建新分支指向错误的 commit
+git branch <type>/<description> <commit-hash>
+
+# 2. 重置 main 到上一个正确的 commit
+git reset --hard <previous-commit>
+
+# 3. Force push main（需要 --no-verify）
+git push origin main --force --no-verify
+
+# 4. 切换到新分支并推送
+git checkout <type>/<description>
+git push origin <type>/<description> --no-verify
+
+# 5. 创建并合并 PR
+gh pr create --title "..." --body "..."
+gh pr merge <pr-number> --squash --delete-branch
+```
+
+**记住**: Hook 是最后一道防线，不是第一道。主动遵守规则，不要等 hook 提醒。
 
 ### 提交前检查清单
 - [ ] 运行 `uv sync` 确保环境可重现
