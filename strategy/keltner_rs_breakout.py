@@ -255,6 +255,11 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
         # 订单状态跟踪
         self._pending_entry_order = False
 
+        # 符号活跃缓存
+        self._base_symbol: str | None = None
+        self._is_active_cache: bool = True
+        self._last_universe_period: int | None = None
+
     def on_start(self) -> None:
         """策略启动时初始化"""
         super().on_start()
@@ -264,6 +269,9 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
             f"EMA={self.config.ema_period}, ATR={self.config.atr_period}, "
             f"SMA={self.config.sma_period}, BTC={self.config.btc_instrument_id}"
         )
+
+        # 解析 base symbol 一次
+        self._parse_base_symbol()
 
         # 初始化 RSI 指标
         if self.rsi_indicator:
@@ -306,6 +314,38 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
                 FundingRateData, metadata={"instrument_id": self.instrument.id}
             )
             self.unsubscribe_data(funding_data_type)
+
+    def _parse_base_symbol(self) -> None:
+        """解析并缓存 base symbol（仅在启动时执行一次）"""
+        try:
+            from utils.instrument_helpers import parse_instrument_id
+
+            # 优先使用 instrument.id，如果不可用则使用 config.symbol
+            instrument_str = str(self.instrument.id) if self.instrument else self.config.symbol
+            symbol, _, _ = parse_instrument_id(instrument_str)
+            self._base_symbol = symbol.replace("-", "") if symbol else ""
+        except Exception:
+            # Fallback: 从 instrument 或 config 中提取 base symbol
+            instrument_str = str(self.instrument.id) if self.instrument else self.config.symbol
+            self._base_symbol = instrument_str.split("-")[0].split(".")[0]
+
+        if hasattr(self, "log"):
+            self.log.info(f"解析 base symbol: {self._base_symbol}")
+
+    def _update_active_cache(self, ts_event: int) -> None:
+        """更新符号活跃缓存（仅在 universe 周期变化时更新）"""
+        if self.universe_manager is None:
+            self._is_active_cache = True
+            return
+
+        current_period = self.universe_manager.get_current_period(ts_event)
+        if current_period != self._last_universe_period:
+            self._last_universe_period = current_period
+            self._is_active_cache = self.universe_manager.is_active(self._base_symbol)
+            self.log.debug(
+                f"更新活跃缓存: period={current_period}, "
+                f"symbol={self._base_symbol}, active={self._is_active_cache}"
+            )
 
     def on_data(self, data: CustomData) -> None:
         """处理自定义数据（如 Funding Rate）"""
@@ -381,20 +421,8 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
         self._handle_exit(bar)
 
     def _is_symbol_active(self) -> bool:
-        """判断当前币种是否活跃"""
-        if self.universe_manager is None:
-            return True
-
-        try:
-            from utils.instrument_helpers import parse_instrument_id
-
-            symbol, _, _ = parse_instrument_id(str(self.instrument.id))
-            base_symbol = symbol.replace("-", "") if symbol else ""
-        except Exception:
-            instrument_str = str(self.instrument.id)
-            base_symbol = instrument_str.split("-")[0].split(".")[0]
-
-        return self.universe_manager.is_active(base_symbol)
+        """判断当前币种是否活跃（使用缓存）"""
+        return self._is_active_cache
 
     def _check_entry_conditions(self, bar: Bar) -> bool:
         """检查入场条件"""
@@ -449,9 +477,10 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
         else:
             return
 
-        # 更新 Universe
+        # 更新 Universe 和活跃缓存
         if self.universe_manager:
             self.universe_manager.update(bar.ts_event)
+            self._update_active_cache(bar.ts_event)
 
         # 等待指标准备好
         if not self.keltner.is_ready():
