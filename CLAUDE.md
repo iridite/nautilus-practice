@@ -1,8 +1,6 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
-
-> **📖 需要更详细的信息？** 本文件是快速参考指南。如需详细的组件使用示例、完整的架构演进历史、性能分析工具文档和迁移指南，请参考 [AGENTS.md](AGENTS.md)。
+This file provides comprehensive guidance for Claude Code (claude.ai/code) and AI agents working with code in this repository.
 
 ## 项目概述
 
@@ -433,13 +431,93 @@ bottlenecks = analyzer.identify_bottlenecks(threshold=0.05)
 ### 仓库隐私说明
 此仓库是私有的。所有文件（包括敏感配置、API 密钥和专有代码）都可以安全地提交到版本控制。远程仓库托管在具有受限访问权限的私有服务器上。
 
+## 分支管理规则
+
+### 严格禁止
+
+1. **永远不要直接在 main 分支提交**
+2. **所有变更必须通过 PR**
+3. **所有 PR 必须通过 CI 检查**
+
+### 分支命名规范
+
+必须遵循格式：`<type>/<description>`
+
+| 类型 | 用途 | 示例 |
+|------|------|------|
+| `feat` | 新功能 | `feat/add-rsi-strategy` |
+| `fix` | Bug 修复 | `fix/position-sizing-bug` |
+| `refactor` | 重构 | `refactor/simplify-config` |
+| `chore` | 配置/工具 | `chore/update-deps` |
+| `docs` | 文档 | `docs/update-readme` |
+| `test` | 测试 | `test/add-unit-tests` |
+
+### 工作流程
+
+```bash
+# 1. 创建新分支
+git checkout -b feat/your-feature-name
+
+# 2. 开发完成后检查
+./scripts/check.sh
+
+# 3. 推送并创建 PR
+git push origin feat/your-feature-name
+```
+
+### PR 大小限制
+
+- ⚠️ 警告：净增加 > 500 行
+- ❌ 拒绝：净增加 > 1000 行
+- ⚠️ 警告：修改 > 20 个文件
+
+详细规则见：`docs/DEVELOPMENT_RULES.md`
+
+---
+
+## 反过度工程化原则
+
+### 核心原则
+
+1. **YAGNI (You Aren't Gonna Need It)**
+   - 不要为"未来可能需要"的功能写代码
+   - 只解决当前存在的实际问题
+
+2. **保持简单**
+   - 2-3 个策略不需要复杂的组件库
+   - 直接的代码比过度抽象更好
+
+3. **投入产出比**
+   - 每行代码都应该有明确的业务价值
+   - 避免"完美主义"陷阱
+
+### 警告信号
+
+如果你发现自己在做以下事情，请停下来：
+
+- ❌ 为 2 个策略构建支持 20+ 策略的基础设施
+- ❌ 写大量"计划"和"分析"文档
+- ❌ 构建"未来可能用到"的工具
+- ❌ 重构已经工作的代码（没有明确痛点）
+- ❌ 创建"以防万一"的抽象层
+
+### 正确的做法
+
+- ✅ 专注于开发新策略（业务价值）
+- ✅ 只在��到实际重复时才抽象
+- ✅ 保持 PR 小而专注（< 500 行）
+- ✅ 文档简洁实用（不要写没人读的文档）
+
+---
+
 ## 文档参考
 
-- `AGENTS.md`: AI agent 详细开发指南（完整版本）
 - `README.md`: 项目概述和快速开始
-- `docs/utils_guide.md`: 工具模块使用指南
+- `SETUP_COMPLETE.md`: 分支管理配置完成说明
+- `docs/DEVELOPMENT_RULES.md`: 详细开发规范
+- `docs/QUICK_START_BRANCH_MANAGEMENT.md`: 快速参考
+- `docs/BRANCH_PROTECTION_SETUP.md`: GitHub 配置指南
 - `strategy/common/README.md`: 策略组件库文档
 - `utils/performance/README.md`: 性能分析工具文档
 - `utils/profiling/README.md`: 性能分析工具文档
 - `docs/MODULAR_REFACTORING.md`: 模块化重构报告
-- `docs/REFACTORING_VERIFICATION.md`: 重构验证报告
