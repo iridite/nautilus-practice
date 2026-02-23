@@ -270,7 +270,7 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
             f"SMA={self.config.sma_period}, BTC={self.config.btc_instrument_id}"
         )
 
-        # 解析 base symbol 一次
+        # 解析 base symbol（用于缓存机制）
         self._parse_base_symbol()
 
         # 初始化 RSI 指标
@@ -489,8 +489,8 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
         # 检查 Squeeze 状态
         keltner_upper, keltner_lower = self.keltner.get_keltner_base_bands()
         is_squeezing = self.squeeze_detector.check_squeeze(
-            self.keltner.bb_upper,
-            self.keltner.bb_lower,
+            self.keltner.bb.upper,
+            self.keltner.bb.lower,
             keltner_upper,
             keltner_lower,
         )
