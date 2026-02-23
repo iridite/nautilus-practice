@@ -320,13 +320,17 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
         try:
             from utils.instrument_helpers import parse_instrument_id
 
-            symbol, _, _ = parse_instrument_id(str(self.instrument.id))
+            # 优先使用 instrument.id，如果不可用则使用 config.symbol
+            instrument_str = str(self.instrument.id) if self.instrument else self.config.symbol
+            symbol, _, _ = parse_instrument_id(instrument_str)
             self._base_symbol = symbol.replace("-", "") if symbol else ""
         except Exception:
-            instrument_str = str(self.instrument.id)
+            # Fallback: 从 instrument 或 config 中提取 base symbol
+            instrument_str = str(self.instrument.id) if self.instrument else self.config.symbol
             self._base_symbol = instrument_str.split("-")[0].split(".")[0]
 
-        self.log.info(f"解析 base symbol: {self._base_symbol}")
+        if hasattr(self, "log"):
+            self.log.info(f"解析 base symbol: {self._base_symbol}")
 
     def _update_active_cache(self, ts_event: int) -> None:
         """更新符号活跃缓存（仅在 universe 周期变化时更新）"""

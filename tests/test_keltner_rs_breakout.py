@@ -50,39 +50,29 @@ class TestSymbolActiveCache(unittest.TestCase):
     def test_parse_base_symbol_with_helper(self, mock_root, mock_universe_cls):
         """测试使用 instrument_helpers 解析 base symbol"""
         mock_root.return_value = Path("/tmp")
-        mock_universe_file = Path("/tmp/data/universe/universe_15_ME.json")
-        mock_universe_file.parent.mkdir(parents=True, exist_ok=True)
-        mock_universe_file.write_text('{"2024-01": ["ETHUSDT", "BTCUSDT"]}')
 
         with patch("utils.instrument_helpers.parse_instrument_id") as mock_parse:
             mock_parse.return_value = ("ETH-USDT", "BINANCE", "PERP")
 
             strategy = KeltnerRSBreakoutStrategy(self.config)
-            strategy.on_start()
+            strategy._parse_base_symbol()
 
             self.assertEqual(strategy._base_symbol, "ETHUSDT")
             mock_parse.assert_called_once()
-
-        mock_universe_file.unlink(missing_ok=True)
 
     @patch("strategy.keltner_rs_breakout.DynamicUniverseManager")
     @patch("strategy.keltner_rs_breakout.get_project_root")
     def test_parse_base_symbol_fallback(self, mock_root, mock_universe_cls):
         """测试解析失败时的 fallback 逻辑"""
         mock_root.return_value = Path("/tmp")
-        mock_universe_file = Path("/tmp/data/universe/universe_15_ME.json")
-        mock_universe_file.parent.mkdir(parents=True, exist_ok=True)
-        mock_universe_file.write_text('{"2024-01": ["ETHUSDT", "BTCUSDT"]}')
 
         with patch("utils.instrument_helpers.parse_instrument_id") as mock_parse:
             mock_parse.side_effect = Exception("Parse error")
 
             strategy = KeltnerRSBreakoutStrategy(self.config)
-            strategy.on_start()
+            strategy._parse_base_symbol()
 
             self.assertEqual(strategy._base_symbol, "ETHUSDT")
-
-        mock_universe_file.unlink(missing_ok=True)
 
     @patch("strategy.keltner_rs_breakout.get_project_root")
     def test_cache_initialization(self, mock_root):
