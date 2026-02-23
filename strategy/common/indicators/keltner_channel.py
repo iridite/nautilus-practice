@@ -5,13 +5,12 @@ Keltner Channel 是一个基于 EMA 和 ATR 的波动率通道指标。
 包含 EMA、ATR、Bollinger Bands 等基础指标计算。
 """
 
-from collections import deque
-from nautilus_trader.indicators.volatility import BollingerBands
-from config.constants import (
-    EMA_ALPHA_NUMERATOR,
-    EMA_ALPHA_DENOMINATOR_OFFSET,
-    ATR_ALPHA_NUMERATOR,
+from nautilus_trader.indicators import (
+    ExponentialMovingAverage,
+    SimpleMovingAverage,
+    AverageTrueRange,
 )
+from nautilus_trader.indicators.volatility import BollingerBands
 
 
 class KeltnerChannel:
@@ -59,20 +58,12 @@ class KeltnerChannel:
         self.keltner_base_multiplier = keltner_base_multiplier
         self.keltner_trigger_multiplier = keltner_trigger_multiplier
 
-        # 数据存储
-        max_period = max(ema_period, bb_period, sma_period)
-        self.closes = deque(maxlen=max_period + 1)
-        self.volumes = deque(maxlen=volume_period + 1)
-        self.trs = deque(maxlen=atr_period)
-
-        # NautilusTrader BollingerBands 指标
+        # NautilusTrader 指标实例
+        self.ema_indicator = ExponentialMovingAverage(period=ema_period)
+        self.atr_indicator = AverageTrueRange(period=atr_period)
+        self.sma_indicator = SimpleMovingAverage(period=sma_period)
         self.bb = BollingerBands(period=bb_period, k=bb_std)
-
-        # 指标值
-        self.ema: float | None = None
-        self.atr: float | None = None
-        self.sma: float | None = None
-        self.volume_sma: float | None = None
+        self.volume_sma_indicator = SimpleMovingAverage(period=volume_period)
 
     def update(self, high: float, low: float, close: float, volume: float) -> None:
         """
@@ -84,54 +75,32 @@ class KeltnerChannel:
             close: 收盘价
             volume: 成交量
         """
-        self.closes.append(close)
-        self.volumes.append(volume)
-
-        # 更新 BollingerBands
+        # 更新所有 NautilusTrader 指标
+        self.ema_indicator.update_raw(close)
+        self.atr_indicator.update_raw(high, low, close)
+        self.sma_indicator.update_raw(close)
         self.bb.update_raw(high, low, close)
+        self.volume_sma_indicator.update_raw(volume)
 
-        # 计算 True Range
-        if len(self.closes) > 1:
-            tr = max(high - low, abs(high - self.closes[-2]), abs(low - self.closes[-2]))
-            self.trs.append(tr)
+    @property
+    def ema(self) -> float | None:
+        """获取 EMA 值"""
+        return self.ema_indicator.value if self.ema_indicator.initialized else None
 
-        # 更新所有指标
-        self._update_ema()
-        self._update_atr()
-        self._update_sma()
-        self._update_volume_sma()
+    @property
+    def atr(self) -> float | None:
+        """获取 ATR 值"""
+        return self.atr_indicator.value if self.atr_indicator.initialized else None
 
-    def _update_ema(self) -> None:
-        """更新 EMA 指标"""
-        if len(self.closes) < self.ema_period:
-            return
+    @property
+    def sma(self) -> float | None:
+        """获取 SMA 值"""
+        return self.sma_indicator.value if self.sma_indicator.initialized else None
 
-        if self.ema is None:
-            self.ema = sum(list(self.closes)[-self.ema_period :]) / self.ema_period
-        else:
-            alpha = EMA_ALPHA_NUMERATOR / (self.ema_period + EMA_ALPHA_DENOMINATOR_OFFSET)
-            self.ema = alpha * self.closes[-1] + (1 - alpha) * self.ema
-
-    def _update_atr(self) -> None:
-        """更新 ATR 指标 (Wilder's Smoothing / RMA)"""
-        if len(self.trs) < self.atr_period:
-            return
-
-        if self.atr is None:
-            self.atr = sum(list(self.trs)[-self.atr_period :]) / self.atr_period
-        else:
-            alpha = ATR_ALPHA_NUMERATOR / self.atr_period
-            self.atr = alpha * self.trs[-1] + (1 - alpha) * self.atr
-
-    def _update_sma(self) -> None:
-        """更新 SMA 指标"""
-        if len(self.closes) >= self.sma_period:
-            self.sma = sum(list(self.closes)[-self.sma_period :]) / self.sma_period
-
-    def _update_volume_sma(self) -> None:
-        """更新 Volume SMA 指标"""
-        if len(self.volumes) >= self.volume_period:
-            self.volume_sma = sum(list(self.volumes)[-self.volume_period :]) / self.volume_period
+    @property
+    def volume_sma(self) -> float | None:
+        """获取 Volume SMA 值"""
+        return self.volume_sma_indicator.value if self.volume_sma_indicator.initialized else None
 
     def get_keltner_base_bands(self) -> tuple[float | None, float | None]:
         """
@@ -140,11 +109,14 @@ class KeltnerChannel:
         Returns:
             (upper_band, lower_band) 或 (None, None)
         """
-        if self.ema is None or self.atr is None:
+        if not self.ema_indicator.initialized or not self.atr_indicator.initialized:
             return None, None
 
-        upper = self.ema + (self.keltner_base_multiplier * self.atr)
-        lower = self.ema - (self.keltner_base_multiplier * self.atr)
+        ema_value = self.ema_indicator.value
+        atr_value = self.atr_indicator.value
+
+        upper = ema_value + (self.keltner_base_multiplier * atr_value)
+        lower = ema_value - (self.keltner_base_multiplier * atr_value)
         return upper, lower
 
     def get_keltner_trigger_bands(self) -> tuple[float | None, float | None]:
@@ -154,11 +126,14 @@ class KeltnerChannel:
         Returns:
             (upper_band, lower_band) 或 (None, None)
         """
-        if self.ema is None or self.atr is None:
+        if not self.ema_indicator.initialized or not self.atr_indicator.initialized:
             return None, None
 
-        upper = self.ema + (self.keltner_trigger_multiplier * self.atr)
-        lower = self.ema - (self.keltner_trigger_multiplier * self.atr)
+        ema_value = self.ema_indicator.value
+        atr_value = self.atr_indicator.value
+
+        upper = ema_value + (self.keltner_trigger_multiplier * atr_value)
+        lower = ema_value - (self.keltner_trigger_multiplier * atr_value)
         return upper, lower
 
     def is_squeezing(self) -> bool:
@@ -190,9 +165,9 @@ class KeltnerChannel:
             True 表示所有指标都已计算完成
         """
         return (
-            self.ema is not None
-            and self.atr is not None
-            and self.sma is not None
+            self.ema_indicator.initialized
+            and self.atr_indicator.initialized
+            and self.sma_indicator.initialized
             and self.bb.initialized
-            and self.volume_sma is not None
+            and self.volume_sma_indicator.initialized
         )
