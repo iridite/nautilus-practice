@@ -1,44 +1,27 @@
-# Live 实盘交易环境配置
-# 警告: 此配置用于真实资金交易，请谨慎使用
+# OKX 实盘环境配置
+# 警告：此配置用于真实资金交易，请谨慎使用
 
-trading:
-  venue: BINANCE
-  instrument_type: SWAP
-  initial_balance: 10000
-  currency: USDT
-  main_timeframe: 1d
-  trend_timeframe: 4h
+extends: "base.yaml"
 
-backtest:
-  start_date: "2024-01-01"
-  end_date: "2024-12-31"
-
-logging:
-  level: INFO
-  file_level: DEBUG
-  components:
-    Portfolio: INFO
-    RiskEngine: INFO
-    ExecutionEngine: INFO
-  components_only: true
-
-file_cleanup:
-  enabled: true
-  max_files_per_dir: 100
-  target_dirs:
-    - log
-    - output
-
-# Live 实盘配置
+# 实盘特定配置
 live:
-  venue: BINANCE
-  instrument_ids:
-    - ETHUSDT-PERP.BINANCE
+  venue: "OKX"
+  is_testnet: false
 
-  # API 凭证环境变量
-  api_key_env: BINANCE_API_KEY
-  api_secret_env: BINANCE_API_SECRET
-  api_passphrase_env: ""
+  # 交易标的列表（根据策略动态调整）
+  instrument_ids:
+    - "ETH-USDT-SWAP.OKX"
+    - "SOL-USDT-SWAP.OKX"
+    - "BNB-USDT-SWAP.OKX"
+    - "DOGE-USDT-SWAP.OKX"
+
+  # 实盘环境不允许缺失 instrument json
+  allow_missing_instruments: false
+
+  # API 环境变量名称（主网）
+  api_key_env: "OKX_MAINNET_API_KEY"
+  api_secret_env: "OKX_MAINNET_API_SECRET"
+  api_passphrase_env: "OKX_MAINNET_API_PASSPHRASE"
 
   # 执行引擎配置
   reconciliation: true
@@ -47,3 +30,33 @@ live:
 
   # 缓存配置
   flush_cache_on_start: false
+
+# 交易配置（覆盖 base.yaml）
+trading:
+  venue: "OKX"
+  instrument_type: "SWAP"
+  initial_balance: 10000 # 真实资金，根据实际情况调整
+  currency: "USDT"
+
+# 日志配置（实盘使用保守的日志级别）
+logging:
+  level: "INFO"
+  file_level: "INFO"
+  components:
+    TradingNode: "INFO"
+    LiveExecEngine: "INFO"
+    Strategy: "INFO"
+    RiskEngine: "INFO"
+    Portfolio: "INFO"
+  components_only: true
+
+# 文件清理配置（实盘保留更长时间用于审计）
+file_cleanup:
+  enabled: true
+  use_time_rotation: true
+  keep_days: 30
+  delete_days: 90
+  max_files_per_dir: 200
+  target_dirs:
+    - "log"
+    - "output"

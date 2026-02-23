@@ -1,38 +1,35 @@
-# 开发环境配置
-# 继承基础配置，并覆盖开发环境特定的设置
+# 开发/回测环境配置
+# 用于本地策略回测和开发测试
 
 extends: "base.yaml"
 
-# 开发环境使用更短的回测周期进行快速测试
+# 回测时间范围（开发环境使用完整历史数据）
 backtest:
   start_date: "2022-01-01"
   end_date: "2026-01-01"
-  # start_date: "2025-12-01"
-  # end_date: "2025-12-30"
 
-# 开发环境使用更详细的日志
+# 开发环境使用更详细的日志便于调试
 logging:
   level: "DEBUG"
   file_level: "DEBUG"
   components:
     BacktestEngine: "DEBUG"
     DataFeed: "DEBUG"
-    RSSqueezeStrategy: "DEBUG"
-    OIDivergenceStrategy: "DEBUG"
+    Strategy: "DEBUG"
     OrderMatchingEngine: "WARNING"
-  # components_only: false
+  components_only: false
 
-# 开发环境可以使用更小的初始资金进行测试
+# 开发环境使用较小的初始资金进行快速测试
 trading:
   initial_balance: 100
 
-# 文件清理配置 - 自动清理旧的日志和输出文件
+# 文件清理配置（开发环境保留较短时间）
 file_cleanup:
   enabled: true
-  use_time_rotation: true # 启用时间轮转策略
-  keep_days: 7 # 保留最近7天的日志
-  delete_days: 30 # 删除超过30天的日志
-  max_files_per_dir: 50 # 开发环境保留较少文件（时间轮转模式下不使用）
+  use_time_rotation: true
+  keep_days: 7
+  delete_days: 30
+  max_files_per_dir: 50
   target_dirs:
     - "log"
     - "output"
