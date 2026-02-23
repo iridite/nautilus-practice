@@ -13,6 +13,18 @@ from core import get_adapter
 class TestBacktestPipeline(unittest.TestCase):
     """回测流程集成测试"""
 
+    @classmethod
+    def setUpClass(cls):
+        """检查 universe 文件是否存在"""
+        adapter = get_adapter()
+        params = adapter.strategy_config.parameters
+        universe_top_n = params.get("universe_top_n", 15)
+        universe_freq = params.get("universe_freq", "W-MON")
+        universe_file = Path(f"data/universe/universe_{universe_top_n}_{universe_freq}.json")
+
+        if not universe_file.exists():
+            raise unittest.SkipTest(f"Universe 文件不存在: {universe_file}")
+
     def setUp(self):
         """测试前准备"""
         self.base_dir = Path(__file__).parent.parent.parent
