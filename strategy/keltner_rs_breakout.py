@@ -338,8 +338,10 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
             self._is_active_cache = True
             return
 
-        current_period = self.universe_manager.get_current_period(ts_event)
-        if current_period != self._last_universe_period:
+        # 调用 update() 检查周期是否变化
+        period_changed = self.universe_manager.update(ts_event)
+        if period_changed:
+            current_period = self.universe_manager.get_current_period()
             self._last_universe_period = current_period
             self._is_active_cache = self.universe_manager.is_active(self._base_symbol)
             self.log.debug(
