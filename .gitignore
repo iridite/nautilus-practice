@@ -32,6 +32,7 @@ coverage.xml
 # 日志文件
 log/**/*.log
 log/archive/
+*.log
 
 # 临时文件
 *.tmp

@@ -18,6 +18,7 @@ from utils.custom_data import FundingRateData, OpenInterestData
 
 logger = logging.getLogger(__name__)
 
+
 class OIFundingDataLoader:
     """
     OI 和 Funding Rate 数据加载器
@@ -48,7 +49,9 @@ class OIFundingDataLoader:
         oi_files = list(symbol_dir.glob(f"{exchange}-{safe_symbol}-oi-*.csv"))
         return sorted(oi_files)
 
-    def _build_oi_file_path(self, symbol: str, exchange: str, period: str, start_date: str, end_date: str) -> Path:
+    def _build_oi_file_path(
+        self, symbol: str, exchange: str, period: str, start_date: str, end_date: str
+    ) -> Path:
         """构建OI数据文件路径"""
         safe_symbol = symbol.replace("/", "")
         filename = f"{exchange}-{safe_symbol}-oi-{period}-{start_date}_{end_date}.csv"
@@ -135,8 +138,7 @@ class OIFundingDataLoader:
                 return []
 
             oi_data_list = [
-                self._convert_row_to_oi_data(row, instrument_id)
-                for _, row in df.iterrows()
+                self._convert_row_to_oi_data(row, instrument_id) for _, row in df.iterrows()
             ]
 
             logger.info(f"✅ Loaded {len(oi_data_list)} OI data points for {symbol}")
@@ -157,7 +159,9 @@ class OIFundingDataLoader:
         funding_files = list(symbol_dir.glob(f"{exchange}-{safe_symbol}-funding-*.csv"))
         return sorted(funding_files)
 
-    def _build_funding_file_path(self, symbol: str, exchange: str, start_date: str, end_date: str) -> Path:
+    def _build_funding_file_path(
+        self, symbol: str, exchange: str, start_date: str, end_date: str
+    ) -> Path:
         """构建Funding数据文件路径"""
         safe_symbol = symbol.replace("/", "")
         filename = f"{exchange}-{safe_symbol}-funding-{start_date}_{end_date}.csv"
@@ -177,7 +181,9 @@ class OIFundingDataLoader:
                 logger.info(f"   ... and {len(available_files) - 5} more")
         else:
             safe_symbol = symbol.replace("/", "")
-            logger.error(f"❌ No Funding data files found for {symbol} in {self.data_dir / safe_symbol}")
+            logger.error(
+                f"❌ No Funding data files found for {symbol} in {self.data_dir / safe_symbol}"
+            )
 
     def _validate_funding_dataframe(self, df: pd.DataFrame, file_path: Path) -> bool:
         """验证Funding数据DataFrame格式"""
@@ -264,9 +270,7 @@ class OIFundingDataLoader:
 
             funding_data_list = self._parse_funding_dataframe(df, instrument_id)
 
-            logger.info(
-                f"Loaded {len(funding_data_list)} Funding Rate data points for {symbol}"
-            )
+            logger.info(f"Loaded {len(funding_data_list)} Funding Rate data points for {symbol}")
             return funding_data_list
 
         except Exception as e:
@@ -434,7 +438,7 @@ def _process_data_task(
     period: str,
     base_dir: Path,
     max_retries: int,
-    supported_exchanges: list
+    supported_exchanges: list,
 ) -> tuple:
     """处理单个数据获取任务"""
     from utils.data_management.data_manager import fetch_data_with_retry
@@ -444,12 +448,21 @@ def _process_data_task(
 
     symbols_list = sorted(list(symbols))
     return fetch_data_with_retry(
-        data_type, symbols_list, exchange, start_date, end_date, period,
-        base_dir, max_retries, supported_exchanges
+        data_type,
+        symbols_list,
+        exchange,
+        start_date,
+        end_date,
+        period,
+        base_dir,
+        max_retries,
+        supported_exchanges,
     )
 
 
-def _update_results(results: dict, files: int, retries: int, fallbacks: int, error: str, file_key: str):
+def _update_results(
+    results: dict, files: int, retries: int, fallbacks: int, error: str, file_key: str
+):
     """更新结果统计"""
     results[file_key] += files
     results["retries"] += retries
@@ -459,10 +472,7 @@ def _update_results(results: dict, files: int, retries: int, fallbacks: int, err
 
 
 def execute_oi_funding_data_fetch(
-    tasks: dict,
-    base_dir: Path,
-    preferred_exchange: str = "auto",
-    max_retries: int = 3
+    tasks: dict, base_dir: Path, preferred_exchange: str = "auto", max_retries: int = 3
 ) -> dict:
     """
     执行 OI 和 Funding Rate 数据获取（带智能重试和错误恢复）
@@ -489,16 +499,30 @@ def execute_oi_funding_data_fetch(
     # 处理 OI 数据
     for (exchange, period, start_date, end_date), symbols in tasks["oi_tasks"].items():
         files, retries, fallbacks, error = _process_data_task(
-            "oi", symbols, exchange, start_date, end_date, period,
-            base_dir, max_retries, supported_exchanges
+            "oi",
+            symbols,
+            exchange,
+            start_date,
+            end_date,
+            period,
+            base_dir,
+            max_retries,
+            supported_exchanges,
         )
         _update_results(results, files, retries, fallbacks, error, "oi_files")
 
     # 处理 Funding 数据
     for (exchange, start_date, end_date), symbols in tasks["funding_tasks"].items():
         files, retries, fallbacks, error = _process_data_task(
-            "funding", symbols, exchange, start_date, end_date, "1h",
-            base_dir, max_retries, supported_exchanges
+            "funding",
+            symbols,
+            exchange,
+            start_date,
+            end_date,
+            "1h",
+            base_dir,
+            max_retries,
+            supported_exchanges,
         )
         _update_results(results, files, retries, fallbacks, error, "funding_files")
 

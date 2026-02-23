@@ -14,6 +14,7 @@ import pandas as pd
 
 logger = logging.getLogger(__name__)
 
+
 class DataValidator:
     """
     数据验证器
@@ -70,9 +71,7 @@ class DataValidator:
             return False, error_msg
         return True, None
 
-    def validate_oi(
-        self, oi_value: Optional[Decimal], logger=None
-    ) -> tuple[bool, Optional[str]]:
+    def validate_oi(self, oi_value: Optional[Decimal], logger=None) -> tuple[bool, Optional[str]]:
         """
         验证 OI（持仓量）数据
 
@@ -99,7 +98,9 @@ class DataValidator:
         self._last_valid_value = oi_value
         return True, None
 
-    def _check_funding_none(self, funding_annual: Optional[Decimal], logger) -> tuple[bool, Optional[str]]:
+    def _check_funding_none(
+        self, funding_annual: Optional[Decimal], logger
+    ) -> tuple[bool, Optional[str]]:
         """检查资金费率是否为None"""
         if funding_annual is None:
             error_msg = "Invalid Funding Rate data: None"
@@ -193,7 +194,9 @@ class DataValidator:
             return False, error_msg
         return True, None
 
-    def _check_price_min_range(self, price: Decimal, min_price: Optional[Decimal], logger) -> tuple[bool, Optional[str]]:
+    def _check_price_min_range(
+        self, price: Decimal, min_price: Optional[Decimal], logger
+    ) -> tuple[bool, Optional[str]]:
         """检查价格最小范围"""
         if min_price is not None and price < min_price:
             error_msg = f"Price {price} below minimum {min_price}"
@@ -202,7 +205,9 @@ class DataValidator:
             return False, error_msg
         return True, None
 
-    def _check_price_max_range(self, price: Decimal, max_price: Optional[Decimal], logger) -> tuple[bool, Optional[str]]:
+    def _check_price_max_range(
+        self, price: Decimal, max_price: Optional[Decimal], logger
+    ) -> tuple[bool, Optional[str]]:
         """检查价格最大范围"""
         if max_price is not None and price > max_price:
             error_msg = f"Price {price} above maximum {max_price}"
@@ -276,7 +281,6 @@ class DataValidator:
         self._last_valid_value = price
         return True, None
 
-
     def reset(self):
         """重置验证器状态"""
         self._last_valid_value = None
@@ -292,9 +296,11 @@ def _check_file_exists(file_path: Path, file_type: str, logger) -> tuple[bool, O
     return True, None
 
 
-def _detect_time_column(df: pd.DataFrame, file_path: Path, file_type: str, logger) -> tuple[Optional[str], Optional[str]]:
+def _detect_time_column(
+    df: pd.DataFrame, file_path: Path, file_type: str, logger
+) -> tuple[Optional[str], Optional[str]]:
     """检测数据框中的时间列"""
-    time_cols = ['timestamp', 'datetime', 'time', 'date']
+    time_cols = ["timestamp", "datetime", "time", "date"]
     for col in time_cols:
         if col in df.columns:
             return col, None
@@ -305,7 +311,9 @@ def _detect_time_column(df: pd.DataFrame, file_path: Path, file_type: str, logge
     return None, error_msg
 
 
-def _calculate_alignment_stats(primary_timestamps: set, secondary_timestamps: set) -> tuple[int, int, int, float]:
+def _calculate_alignment_stats(
+    primary_timestamps: set, secondary_timestamps: set
+) -> tuple[int, int, int, float]:
     """计算对齐统计信息"""
     common_timestamps = primary_timestamps & secondary_timestamps
     primary_count = len(primary_timestamps)
@@ -315,7 +323,9 @@ def _calculate_alignment_stats(primary_timestamps: set, secondary_timestamps: se
     return primary_count, secondary_count, common_count, alignment_rate
 
 
-def _log_alignment_info(logger, primary_count: int, secondary_count: int, common_count: int, alignment_rate: float) -> None:
+def _log_alignment_info(
+    logger, primary_count: int, secondary_count: int, common_count: int, alignment_rate: float
+) -> None:
     """记录对齐信息"""
     if logger:
         logger.info(
@@ -335,7 +345,7 @@ def _check_alignment_threshold(
     primary_count: int,
     secondary_count: int,
     common_count: int,
-    logger
+    logger,
 ) -> tuple[bool, Optional[str]]:
     """检查对齐率是否达到阈值"""
     if alignment_rate < min_alignment_rate:
@@ -356,10 +366,7 @@ def _check_alignment_threshold(
 
 
 def validate_multi_instrument_alignment(
-    primary_csv: Path,
-    secondary_csv: Path,
-    min_alignment_rate: float = 0.95,
-    logger=None
+    primary_csv: Path, secondary_csv: Path, min_alignment_rate: float = 0.95, logger=None
 ) -> tuple[bool, Optional[str]]:
     """
     验证多标的数据时间戳对齐
@@ -411,7 +418,9 @@ def validate_multi_instrument_alignment(
         if error:
             return False, error
 
-        secondary_time_col, error = _detect_time_column(secondary_df, secondary_csv, "辅助标的", logger)
+        secondary_time_col, error = _detect_time_column(
+            secondary_df, secondary_csv, "辅助标的", logger
+        )
         if error:
             return False, error
 
@@ -429,10 +438,14 @@ def validate_multi_instrument_alignment(
 
         # 检查对齐率阈值
         return _check_alignment_threshold(
-            alignment_rate, min_alignment_rate,
-            primary_csv, secondary_csv,
-            primary_count, secondary_count, common_count,
-            logger
+            alignment_rate,
+            min_alignment_rate,
+            primary_csv,
+            secondary_csv,
+            primary_count,
+            secondary_count,
+            common_count,
+            logger,
         )
 
     except Exception as e:
@@ -440,10 +453,6 @@ def validate_multi_instrument_alignment(
         if logger:
             logger.error(error_msg)
         return False, error_msg
-
-
-
-
 
 
 def prepare_data_feeds(args, adapter, base_dir, universe_symbols: set):
@@ -476,9 +485,7 @@ def prepare_data_feeds(args, adapter, base_dir, universe_symbols: set):
 
     if missing_symbols:
         logger.info(f"📥 {len(missing_symbols)} symbols need data")
-        run_batch_data_retrieval(
-            missing_symbols, start_date, end_date, timeframe, venue, base_dir
-        )
+        run_batch_data_retrieval(missing_symbols, start_date, end_date, timeframe, venue, base_dir)
     else:
         logger.info("✅ All data files present\n")
 
@@ -492,10 +499,12 @@ def _check_multi_instrument_alignment(adapter, base_dir: Path, venue: str, timef
     try:
         # 获取策略配置
         config = adapter.build_backtest_config()
-        strategy_params = config.strategy.params if hasattr(config.strategy, 'params') else config.strategy
+        strategy_params = (
+            config.strategy.params if hasattr(config.strategy, "params") else config.strategy
+        )
 
         # 检查是否有辅助标的配置（如 btc_instrument_id）
-        btc_instrument_id = getattr(strategy_params, 'btc_instrument_id', None)
+        btc_instrument_id = getattr(strategy_params, "btc_instrument_id", None)
         if not btc_instrument_id:
             return  # 策略不需要多标的对齐检查
 

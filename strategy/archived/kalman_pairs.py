@@ -443,16 +443,12 @@ class KalmanPairsTradingStrategy(BaseStrategy):
         abs_z = abs(z)
 
         if abs_z > self.config.stop_loss_threshold:
-            self.log.warning(
-                f"触发止损: Z={z:.2f} > {self.config.stop_loss_threshold}, 相关性破裂"
-            )
+            self.log.warning(f"触发止损: Z={z:.2f} > {self.config.stop_loss_threshold}, 相关性破裂")
             self._close_all_positions()
             return
 
         if abs_z < self.config.exit_threshold:
-            self.log.info(
-                f"触发出场: Z={z:.2f} < {self.config.exit_threshold}, 均值回归完成"
-            )
+            self.log.info(f"触发出场: Z={z:.2f} < {self.config.exit_threshold}, 均值回归完成")
             self._close_all_positions()
             return
 

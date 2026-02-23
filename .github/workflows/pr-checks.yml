@@ -1,0 +1,130 @@
+name: PR Checks
+
+on:
+  pull_request:
+    branches:
+      - main
+    types: [opened, synchronize, reopened]
+
+jobs:
+  validate-branch:
+    name: Validate Branch Name
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check branch name
+        run: |
+          BRANCH_NAME="${{ github.head_ref }}"
+          if [[ ! "$BRANCH_NAME" =~ ^(feat|fix|refactor|chore|docs|test)/.+ ]]; then
+            echo "❌ Invalid branch name: $BRANCH_NAME"
+            echo "Branch name must follow pattern: feat/*, fix/*, refactor/*, chore/*, docs/*, test/*"
+            exit 1
+          fi
+          echo "✅ Branch name is valid: $BRANCH_NAME"
+
+  run-tests:
+    name: Run Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12.12'
+
+      - name: Install uv
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Run tests
+        run: |
+          uv run python -m unittest discover -s tests -p "test_*.py" -v
+
+      - name: Check test coverage
+        run: |
+          uv run pytest --cov=. --cov-report=term-missing --cov-fail-under=28
+        continue-on-error: false
+
+  lint-check:
+    name: Lint Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12.12'
+
+      - name: Install uv
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Run ruff check
+        run: uv run ruff check .
+
+      - name: Run ruff format check
+        run: uv run ruff format --check .
+
+  pr-size-check:
+    name: PR Size Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check PR size
+        run: |
+          # 获取 PR 的文件变更统计
+          git fetch origin main
+          CHANGED_FILES=$(git diff --name-only origin/main...HEAD | wc -l)
+          ADDED_LINES=$(git diff --numstat origin/main...HEAD | awk '{sum+=$1} END {print sum}')
+          DELETED_LINES=$(git diff --numstat origin/main...HEAD | awk '{sum+=$2} END {print sum}')
+          NET_LINES=$((ADDED_LINES - DELETED_LINES))
+
+          echo "📊 PR Statistics:"
+          echo "  - Changed files: $CHANGED_FILES"
+          echo "  - Added lines: $ADDED_LINES"
+          echo "  - Deleted lines: $DELETED_LINES"
+          echo "  - Net change: $NET_LINES lines"
+
+          # 警告：超过 500 行净增加
+          if [ $NET_LINES -gt 500 ]; then
+            echo "⚠️  WARNING: This PR adds $NET_LINES lines (net)"
+            echo "Consider breaking it into smaller PRs for easier review"
+          fi
+
+          # 错误：超过 1000 行净增加
+          if [ $NET_LINES -gt 1000 ]; then
+            echo "❌ ERROR: This PR is too large ($NET_LINES lines net)"
+            echo "Please break it into smaller, focused PRs"
+            exit 1
+          fi
+
+          # 警告：修改超过 20 个文件
+          if [ $CHANGED_FILES -gt 20 ]; then
+            echo "⚠️  WARNING: This PR changes $CHANGED_FILES files"
+            echo "Consider breaking it into smaller PRs"
+          fi
+
+          echo "✅ PR size is acceptable"
+
+  block-direct-push:
+    name: Block Direct Push to Main
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      - name: Reject direct push
+        run: |
+          echo "❌ Direct push to main branch is not allowed!"
+          echo "Please create a feature branch and submit a PR"
+          exit 1

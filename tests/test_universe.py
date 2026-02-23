@@ -29,14 +29,12 @@ class TestUniverseModule(unittest.TestCase):
     def tearDown(self):
         """清理临时文件"""
         import shutil
+
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
     def test_load_universe_file_success(self):
         """测试成功加载 Universe JSON 文件"""
-        universe_data = {
-            "2025-01": ["BTCUSDT", "ETHUSDT"],
-            "2025-02": ["BTCUSDT", "SOLUSDT"]
-        }
+        universe_data = {"2025-01": ["BTCUSDT", "ETHUSDT"], "2025-02": ["BTCUSDT", "SOLUSDT"]}
 
         universe_file = self.temp_path / "universe.json"
         with open(universe_file, "w") as f:
@@ -93,10 +91,7 @@ class TestUniverseModule(unittest.TestCase):
 
     def test_extract_universe_symbols_all_months(self):
         """测试提取所有月份的符号"""
-        universe_data = {
-            "2025-01": ["BTCUSDT", "ETHUSDT"],
-            "2025-02": ["BTCUSDT", "SOLUSDT"]
-        }
+        universe_data = {"2025-01": ["BTCUSDT", "ETHUSDT"], "2025-02": ["BTCUSDT", "SOLUSDT"]}
 
         symbols = extract_universe_symbols(universe_data)
         self.assertEqual(symbols, {"BTCUSDT", "ETHUSDT", "SOLUSDT"})
@@ -106,7 +101,7 @@ class TestUniverseModule(unittest.TestCase):
         universe_data = {
             "2025-01": ["BTCUSDT", "ETHUSDT"],
             "2025-02": ["BTCUSDT", "SOLUSDT"],
-            "2025-03": ["BNBUSDT"]
+            "2025-03": ["BNBUSDT"],
         }
 
         symbols = extract_universe_symbols(universe_data, months=["2025-01", "2025-03"])
@@ -114,9 +109,7 @@ class TestUniverseModule(unittest.TestCase):
 
     def test_extract_universe_symbols_nonexistent_month(self):
         """测试提取不存在的月份（应该警告但不报错）"""
-        universe_data = {
-            "2025-01": ["BTCUSDT", "ETHUSDT"]
-        }
+        universe_data = {"2025-01": ["BTCUSDT", "ETHUSDT"]}
 
         symbols = extract_universe_symbols(universe_data, months=["2025-01", "2025-99"])
         self.assertEqual(symbols, {"BTCUSDT", "ETHUSDT"})
@@ -155,10 +148,7 @@ class TestUniverseModule(unittest.TestCase):
         universe_symbols = {"BTCUSDT", "ETHUSDT"}
 
         instrument_ids = parse_universe_symbols(
-            universe_symbols,
-            venue="BINANCE",
-            base_currency="USDT",
-            inst_type=InstrumentType.SWAP
+            universe_symbols, venue="BINANCE", base_currency="USDT", inst_type=InstrumentType.SWAP
         )
 
         self.assertEqual(len(instrument_ids), 2)
@@ -170,10 +160,7 @@ class TestUniverseModule(unittest.TestCase):
         universe_symbols = {"BTCUSDT:BINANCE"}
 
         instrument_ids = parse_universe_symbols(
-            universe_symbols,
-            venue="BINANCE",
-            base_currency="USDT",
-            inst_type=InstrumentType.SWAP
+            universe_symbols, venue="BINANCE", base_currency="USDT", inst_type=InstrumentType.SWAP
         )
 
         self.assertEqual(len(instrument_ids), 1)

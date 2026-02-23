@@ -15,7 +15,7 @@ def check_single_data_file(
     timeframe: str,
     exchange: str,
     base_dir: Path,
-    min_size_bytes: int = 10 * 1024
+    min_size_bytes: int = 10 * 1024,
 ) -> Tuple[bool, str]:
     """
     检查单个交易对的数据文件是否存在
@@ -46,12 +46,7 @@ def check_single_data_file(
 
 
 def check_oi_data_exists(
-    symbols: List[str],
-    start_date: str,
-    end_date: str,
-    period: str,
-    exchange: str,
-    base_dir: Path
+    symbols: List[str], start_date: str, end_date: str, period: str, exchange: str, base_dir: Path
 ) -> Tuple[bool, List[str]]:
     """
     检查 OI 数据文件是否存在
@@ -81,11 +76,7 @@ def check_oi_data_exists(
 
 
 def check_funding_data_exists(
-    symbols: List[str],
-    start_date: str,
-    end_date: str,
-    exchange: str,
-    base_dir: Path
+    symbols: List[str], start_date: str, end_date: str, exchange: str, base_dir: Path
 ) -> Tuple[bool, List[str]]:
     """
     检查 Funding Rate 数据文件是否存在

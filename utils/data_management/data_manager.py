@@ -98,9 +98,7 @@ class DataQualityChecker:
 
         return issues
 
-    def check_price_outliers(
-        self, df: pd.DataFrame, symbol: str, sigma: float = 3.0
-    ) -> List[str]:
+    def check_price_outliers(self, df: pd.DataFrame, symbol: str, sigma: float = 3.0) -> List[str]:
         """
         检查价格异常值（使用3-sigma规则）
 
@@ -261,9 +259,7 @@ class DataQualityChecker:
         is_valid = len(all_issues) == 0
 
         if not is_valid and raise_on_error:
-            raise DataValidationError(
-                f"{symbol} 数据质量问题: {'; '.join(all_issues)}"
-            )
+            raise DataValidationError(f"{symbol} 数据质量问题: {'; '.join(all_issues)}")
 
         return is_valid, all_issues
 
@@ -275,15 +271,12 @@ class DataManager:
         self.base_dir = base_dir
         self.data_dir = base_dir / "data" / "raw"
         self.enable_quality_check = enable_quality_check
-        self.quality_checker = DataQualityChecker(enable_logging=True) if enable_quality_check else None
+        self.quality_checker = (
+            DataQualityChecker(enable_logging=True) if enable_quality_check else None
+        )
 
     def check_data_availability(
-        self,
-        symbols: List[str],
-        start_date: str,
-        end_date: str,
-        timeframe: str,
-        exchange: str
+        self, symbols: List[str], start_date: str, end_date: str, timeframe: str, exchange: str
     ) -> Tuple[List[str], List[str]]:
         """
         检查数据可用性
@@ -312,7 +305,7 @@ class DataManager:
         end_date: str,
         timeframe: str,
         exchange: str,
-        max_retries: int = 3
+        max_retries: int = 3,
     ) -> dict:
         """
         获取缺失数据
@@ -337,7 +330,7 @@ class DataManager:
         end_date: str,
         timeframe: str,
         exchange: str,
-        auto_fetch: bool = True
+        auto_fetch: bool = True,
     ) -> bool:
         """
         确保数据就绪
@@ -358,9 +351,7 @@ class DataManager:
         if not auto_fetch:
             return False
 
-        result = self.fetch_missing_data(
-            missing, start_date, end_date, timeframe, exchange
-        )
+        result = self.fetch_missing_data(missing, start_date, end_date, timeframe, exchange)
 
         return result["success"] > 0
 
@@ -515,7 +506,7 @@ def fetch_data_with_retry(
     period: str,
     base_dir: Path,
     max_retries: int,
-    supported_exchanges: list
+    supported_exchanges: list,
 ) -> tuple[int, int, int, str | None]:
     """带重试的数据获取"""
     files_count = 0

@@ -130,7 +130,9 @@ def _looks_like_time_column(series: pd.Series) -> bool:
     return any(keyword in col_name for keyword in time_keywords)
 
 
-def _check_data_range_mismatch(df: pd.DataFrame, start_date: str, end_date: str) -> tuple[bool, pd.Timestamp, pd.Timestamp, pd.Timestamp, pd.Timestamp]:
+def _check_data_range_mismatch(
+    df: pd.DataFrame, start_date: str, end_date: str
+) -> tuple[bool, pd.Timestamp, pd.Timestamp, pd.Timestamp, pd.Timestamp]:
     """检查数据范围是否匹配"""
     actual_start = df.index.min()
     actual_end = df.index.max()
@@ -161,7 +163,7 @@ def _cleanup_parquet_files(csv_path: Path, logger):
     """清理相关的Parquet文件"""
     import shutil
 
-    symbol = csv_path.stem.split('-')[1] if '-' in csv_path.stem else None
+    symbol = csv_path.stem.split("-")[1] if "-" in csv_path.stem else None
     if not symbol:
         return
 
@@ -178,12 +180,7 @@ def _cleanup_parquet_files(csv_path: Path, logger):
 
 
 def _check_and_cleanup_data_range(
-    df: pd.DataFrame,
-    csv_path: Path,
-    start_date: str,
-    end_date: str,
-    auto_cleanup: bool,
-    logger
+    df: pd.DataFrame, csv_path: Path, start_date: str, end_date: str, auto_cleanup: bool, logger
 ) -> None:
     """检查数据范围并执行清理"""
     has_mismatch, actual_start, actual_end, config_start, config_end = _check_data_range_mismatch(
@@ -202,12 +199,13 @@ def _check_and_cleanup_data_range(
     _cleanup_parquet_files(csv_path, logger)
 
     raise DataLoadError(
-        "Data file removed due to range mismatch. "
-        "Please re-run to download correct data range."
+        "Data file removed due to range mismatch. Please re-run to download correct data range."
     )
 
 
-def _filter_by_date_range(df: pd.DataFrame, start_date: str | None, end_date: str | None) -> pd.DataFrame:
+def _filter_by_date_range(
+    df: pd.DataFrame, start_date: str | None, end_date: str | None
+) -> pd.DataFrame:
     """按日期范围过滤数据"""
     if start_date:
         start_ts = parse_date_to_timestamp(start_date)
@@ -220,7 +218,9 @@ def _filter_by_date_range(df: pd.DataFrame, start_date: str | None, end_date: st
     return df
 
 
-def _try_get_cached_csv_data(csv_path: Path, start_date: str, end_date: str, use_cache: bool) -> Optional[pd.DataFrame]:
+def _try_get_cached_csv_data(
+    csv_path: Path, start_date: str, end_date: str, use_cache: bool
+) -> Optional[pd.DataFrame]:
     """尝试从缓存获取CSV数据"""
     if use_cache and start_date and end_date:
         cache = get_cache()
@@ -230,7 +230,9 @@ def _try_get_cached_csv_data(csv_path: Path, start_date: str, end_date: str, use
     return None
 
 
-def _load_csv_with_time_column(csv_path: Path, time_column: Optional[str]) -> tuple[pd.DataFrame, str]:
+def _load_csv_with_time_column(
+    csv_path: Path, time_column: Optional[str]
+) -> tuple[pd.DataFrame, str]:
     """加载CSV数据并检测时间列"""
     if time_column is None:
         time_column = detect_time_column(csv_path)
@@ -255,7 +257,7 @@ def _process_and_validate_csv_data(
     end_date: Optional[str],
     validate_data: bool,
     auto_cleanup: bool,
-    logger
+    logger,
 ) -> pd.DataFrame:
     """处理和验证CSV数据"""
     if start_date and end_date and len(df_full) > 0:
@@ -272,7 +274,13 @@ def _process_and_validate_csv_data(
     return df
 
 
-def _cache_csv_data(csv_path: Path, start_date: Optional[str], end_date: Optional[str], df: pd.DataFrame, use_cache: bool):
+def _cache_csv_data(
+    csv_path: Path,
+    start_date: Optional[str],
+    end_date: Optional[str],
+    df: pd.DataFrame,
+    use_cache: bool,
+):
     """缓存CSV数据"""
     if use_cache and start_date and end_date:
         cache = get_cache()
@@ -286,7 +294,7 @@ def load_ohlcv_csv(
     end_date: str | None = None,
     validate_data: bool = True,
     auto_cleanup: bool = True,
-    use_cache: bool = True
+    use_cache: bool = True,
 ) -> pd.DataFrame:
     """
     加载OHLCV CSV数据，支持自动时间列检测和时间范围过滤
@@ -351,7 +359,6 @@ def load_ohlcv_csv(
         raise DataLoadError(f"Error loading OHLCV data from {csv_path}: {e}")
 
 
-
 def _validate_ohlcv_data(df: pd.DataFrame) -> None:
     """验证OHLCV数据完整性"""
     required_cols = ["open", "high", "low", "close", "volume"]
@@ -368,11 +375,11 @@ def _validate_ohlcv_data(df: pd.DataFrame) -> None:
 
     # 检查价格逻辑
     invalid_rows = (
-        (df["high"] < df["low"]) |
-        (df["high"] < df["open"]) |
-        (df["high"] < df["close"]) |
-        (df["low"] > df["open"]) |
-        (df["low"] > df["close"])
+        (df["high"] < df["low"])
+        | (df["high"] < df["open"])
+        | (df["high"] < df["close"])
+        | (df["low"] > df["open"])
+        | (df["low"] > df["close"])
     )
 
     if invalid_rows.any():
@@ -380,11 +387,7 @@ def _validate_ohlcv_data(df: pd.DataFrame) -> None:
         raise DataLoadError(f"Invalid OHLC data detected at {first_invalid}")
 
 
-def create_nautilus_bars(
-    df: pd.DataFrame,
-    bar_type: Any,
-    instrument: Any
-) -> List[Bar]:
+def create_nautilus_bars(df: pd.DataFrame, bar_type: Any, instrument: Any) -> List[Bar]:
     """
     将pandas DataFrame转换为NautilusTrader Bar对象列表
 
@@ -410,7 +413,9 @@ def create_nautilus_bars(
         raise DataLoadError(f"Error creating Nautilus bars: {e}")
 
 
-def _validate_custom_csv_columns(df: pd.DataFrame, time_column: str, data_type: str, csv_path: Path):
+def _validate_custom_csv_columns(
+    df: pd.DataFrame, time_column: str, data_type: str, csv_path: Path
+):
     """验证CSV列是否存在"""
     if time_column not in df.columns:
         raise DataLoadError(f"Time column '{time_column}' not found in {csv_path}")
@@ -439,7 +444,9 @@ def _create_oi_data(row, time_column: str, instrument_id: InstrumentId) -> OpenI
     )
 
 
-def _create_funding_data(row, time_column: str, instrument_id: InstrumentId, df: pd.DataFrame) -> FundingRateData:
+def _create_funding_data(
+    row, time_column: str, instrument_id: InstrumentId, df: pd.DataFrame
+) -> FundingRateData:
     """创建Funding Rate数据对象"""
     ts_ms = int(row[time_column])
     ts_event = millis_to_nanos(ts_ms)
@@ -459,7 +466,9 @@ def _create_funding_data(row, time_column: str, instrument_id: InstrumentId, df:
     )
 
 
-def _parse_custom_data(df: pd.DataFrame, data_type: str, time_column: str, instrument_id: InstrumentId) -> List:
+def _parse_custom_data(
+    df: pd.DataFrame, data_type: str, time_column: str, instrument_id: InstrumentId
+) -> List:
     """解析自定义数据"""
     data_list = []
 
@@ -477,7 +486,7 @@ def load_custom_csv_data(
     csv_path: Union[str, Path],
     data_type: str,
     instrument_id: InstrumentId,
-    time_column: str | None = None
+    time_column: str | None = None,
 ) -> List[Union[OpenInterestData, FundingRateData]]:
     """
     加载自定义CSV数据（OI或Funding Rate）
@@ -522,12 +531,11 @@ def load_custom_csv_data(
         raise DataLoadError(f"Error loading custom data from {csv_path}: {e}")
 
 
-
 def batch_load_custom_data(
     data_dir: Path,
     symbol: str,
     instrument_id: InstrumentId,
-    data_types: List[str] = ["oi", "funding"]
+    data_types: List[str] = ["oi", "funding"],
 ) -> Dict[str, List]:
     """
     批量加载指定符号的所有自定义数据
@@ -599,8 +607,8 @@ def clean_and_deduplicate_data(df: pd.DataFrame) -> pd.DataFrame:
     df_clean = df_clean.dropna()
 
     # 如果有时间索引，去除重复的时间戳
-    if hasattr(df_clean.index, 'duplicated'):
-        df_clean = df_clean[~df_clean.index.duplicated(keep='first')]
+    if hasattr(df_clean.index, "duplicated"):
+        df_clean = df_clean[~df_clean.index.duplicated(keep="first")]
 
     return df_clean
 
@@ -667,12 +675,7 @@ class DataLoader:
         self.raw_data_dir = base_dir / "data" / "raw"
 
     def load_ohlcv(
-        self,
-        symbol: str,
-        timeframe: str,
-        start_date: str,
-        end_date: str,
-        exchange: str = "binance"
+        self, symbol: str, timeframe: str, start_date: str, end_date: str, exchange: str = "binance"
     ) -> pd.DataFrame:
         """
         加载指定符号的OHLCV数据
@@ -702,10 +705,7 @@ class DataLoader:
         return load_ohlcv_csv(file_path, start_date=start_date, end_date=end_date)
 
     def load_custom_data(
-        self,
-        symbol: str,
-        instrument_id: InstrumentId,
-        data_types: List[str] = ["oi", "funding"]
+        self, symbol: str, instrument_id: InstrumentId, data_types: List[str] = ["oi", "funding"]
     ) -> Dict[str, List]:
         """
         加载指定符号的自定义数据
@@ -727,12 +727,7 @@ class DataLoader:
         return batch_load_custom_data(self.raw_data_dir, symbol, instrument_id, data_types)
 
     def validate_data_availability(
-        self,
-        symbol: str,
-        timeframe: str,
-        start_date: str,
-        end_date: str,
-        exchange: str = "binance"
+        self, symbol: str, timeframe: str, start_date: str, end_date: str, exchange: str = "binance"
     ) -> Tuple[bool, str | None]:
         """
         验证数据可用性
@@ -763,14 +758,13 @@ class DataLoader:
             end_date=end_date,
             timeframe=timeframe,
             exchange=exchange,
-            base_dir=self.base_dir
+            base_dir=self.base_dir,
         )
         return (exists, None if exists else "Data file not found")
 
 
 def load_csv_with_time_detection(
-    csv_path: Union[str, Path],
-    time_column: str | None = None
+    csv_path: Union[str, Path], time_column: str | None = None
 ) -> pd.DataFrame:
     """
     简化的CSV数据加载函数，支持自动时间列检测
@@ -821,7 +815,7 @@ def load_csv_with_time_detection(
             if time_column.lower() == "datetime":
                 try:
                     # 使用 ISO8601 格式支持混合日期时间格式
-                    df[time_column] = pd.to_datetime(df[time_column], format='ISO8601')
+                    df[time_column] = pd.to_datetime(df[time_column], format="ISO8601")
                 except Exception as e:
                     logger.error(f"Warning: Failed to convert datetime column: {e}")
             # timestamp列保持原样（数值类型）
@@ -833,7 +827,9 @@ def load_csv_with_time_detection(
         return pd.DataFrame()
 
 
-def _try_get_cached_data(cache, parquet_path: Path, start_date: str, end_date: str, logger) -> Optional[pd.DataFrame]:
+def _try_get_cached_data(
+    cache, parquet_path: Path, start_date: str, end_date: str, logger
+) -> Optional[pd.DataFrame]:
     """尝试从缓存获取数据"""
     cached_df = cache.get(parquet_path, start_date, end_date)
     if cached_df is not None:
@@ -849,16 +845,19 @@ def _get_or_create_metadata(cache, parquet_path: Path, use_cache: bool, logger) 
 
     if metadata is None:
         import pyarrow.parquet as pq
+
         parquet_file = pq.ParquetFile(parquet_path)
         metadata = {
             "num_rows": parquet_file.metadata.num_rows,
             "num_row_groups": parquet_file.metadata.num_row_groups,
             "columns": [col for col in parquet_file.schema.names],
-            "schema": str(parquet_file.schema)
+            "schema": str(parquet_file.schema),
         }
         if use_cache:
             cache.put_parquet_metadata(parquet_path, metadata)
-        logger.debug(f"Parquet 元数据: {metadata['num_rows']} 行, {metadata['num_row_groups']} 行组")
+        logger.debug(
+            f"Parquet 元数据: {metadata['num_rows']} 行, {metadata['num_row_groups']} 行组"
+        )
 
     return metadata
 
@@ -882,12 +881,16 @@ def _detect_and_set_time_index(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def _cache_result(cache, parquet_path: Path, start_date: str, end_date: str, df: pd.DataFrame) -> None:
+def _cache_result(
+    cache, parquet_path: Path, start_date: str, end_date: str, df: pd.DataFrame
+) -> None:
     """缓存结果数据"""
     cache.put(parquet_path, start_date, end_date, df)
 
 
-def _try_get_cached_parquet(cache, parquet_path: Path, start_date: str, end_date: str, logger) -> pd.DataFrame | None:
+def _try_get_cached_parquet(
+    cache, parquet_path: Path, start_date: str, end_date: str, logger
+) -> pd.DataFrame | None:
     """尝试从缓存获取Parquet数据"""
     cached_df = _try_get_cached_data(cache, parquet_path, start_date, end_date, logger)
     if cached_df is not None:
@@ -905,7 +908,9 @@ def _read_and_validate_parquet(parquet_path: Path) -> pd.DataFrame:
     return df
 
 
-def _process_parquet_data(df: pd.DataFrame, parquet_path: Path, start_date: str | None, end_date: str | None) -> pd.DataFrame:
+def _process_parquet_data(
+    df: pd.DataFrame, parquet_path: Path, start_date: str | None, end_date: str | None
+) -> pd.DataFrame:
     """处理Parquet数据（设置索引、过滤范围）"""
     # 检测并设置时间索引
     df = _detect_and_set_time_index(df)
@@ -925,7 +930,7 @@ def load_ohlcv_parquet(
     parquet_path: Union[str, Path],
     start_date: str | None = None,
     end_date: str | None = None,
-    use_cache: bool = True
+    use_cache: bool = True,
 ) -> pd.DataFrame:
     """
     加载 OHLCV Parquet 数据，支持元数据缓存和时间范围过滤
@@ -967,7 +972,9 @@ def load_ohlcv_parquet(
     # 尝试从缓存获取
     cache = get_cache()
     if use_cache:
-        cached_df = _try_get_cached_parquet(cache, parquet_path, start_date or "", end_date or "", logger)
+        cached_df = _try_get_cached_parquet(
+            cache, parquet_path, start_date or "", end_date or "", logger
+        )
         if cached_df is not None:
             return cached_df
 
@@ -992,13 +999,12 @@ def load_ohlcv_parquet(
         raise DataLoadError(f"Error loading Parquet file {parquet_path}: {e}")
 
 
-
 def load_ohlcv_auto(
     file_path: Union[str, Path],
     start_date: str | None = None,
     end_date: str | None = None,
     use_cache: bool = True,
-    **kwargs
+    **kwargs,
 ) -> pd.DataFrame:
     """
     自动检测文件格式并加载 OHLCV 数据（CSV 或 Parquet）
@@ -1037,18 +1043,11 @@ def load_ohlcv_auto(
 
     if suffix == ".parquet":
         return load_ohlcv_parquet(
-            file_path,
-            start_date=start_date,
-            end_date=end_date,
-            use_cache=use_cache
+            file_path, start_date=start_date, end_date=end_date, use_cache=use_cache
         )
     elif suffix == ".csv":
         return load_ohlcv_csv(
-            file_path,
-            start_date=start_date,
-            end_date=end_date,
-            use_cache=use_cache,
-            **kwargs
+            file_path, start_date=start_date, end_date=end_date, use_cache=use_cache, **kwargs
         )
     else:
         raise DataLoadError(f"Unsupported file format: {suffix}. Expected .csv or .parquet")

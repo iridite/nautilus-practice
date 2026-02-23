@@ -80,9 +80,7 @@ class TestDataValidator(unittest.TestCase):
 
     def test_validate_funding_rate_abnormal(self):
         """测试异常资金费率（超出范围）"""
-        is_valid, error = self.validator.validate_funding_rate(
-            Decimal("600"), max_abs_value=500.0
-        )
+        is_valid, error = self.validator.validate_funding_rate(Decimal("600"), max_abs_value=500.0)
         self.assertFalse(is_valid)
         self.assertIn("Abnormal Funding Rate", error)
 
@@ -125,9 +123,7 @@ class TestDataValidator(unittest.TestCase):
 
     def test_validate_price_below_minimum(self):
         """测试价格低于最小值"""
-        is_valid, error = self.validator.validate_price(
-            Decimal("100"), min_price=Decimal("1000")
-        )
+        is_valid, error = self.validator.validate_price(Decimal("100"), min_price=Decimal("1000"))
         self.assertFalse(is_valid)
         self.assertIn("below minimum", error)
 
@@ -179,6 +175,7 @@ class TestMultiInstrumentAlignment(unittest.TestCase):
     def tearDown(self):
         """清理临时文件"""
         import shutil
+
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
     def test_alignment_perfect(self):
@@ -187,13 +184,17 @@ class TestMultiInstrumentAlignment(unittest.TestCase):
         primary_csv = self.temp_path / "primary.csv"
         secondary_csv = self.temp_path / "secondary.csv"
 
-        primary_csv.write_text("timestamp,open,high,low,close,volume\n"
-                               "2025-01-01,100,110,90,105,1000\n"
-                               "2025-01-02,105,115,95,110,1100\n")
+        primary_csv.write_text(
+            "timestamp,open,high,low,close,volume\n"
+            "2025-01-01,100,110,90,105,1000\n"
+            "2025-01-02,105,115,95,110,1100\n"
+        )
 
-        secondary_csv.write_text("timestamp,open,high,low,close,volume\n"
-                                 "2025-01-01,50000,51000,49000,50500,2000\n"
-                                 "2025-01-02,50500,51500,49500,51000,2100\n")
+        secondary_csv.write_text(
+            "timestamp,open,high,low,close,volume\n"
+            "2025-01-01,50000,51000,49000,50500,2000\n"
+            "2025-01-02,50500,51500,49500,51000,2100\n"
+        )
 
         is_aligned, error = validate_multi_instrument_alignment(
             primary_csv, secondary_csv, min_alignment_rate=0.95
@@ -209,13 +210,13 @@ class TestMultiInstrumentAlignment(unittest.TestCase):
         # 主标的有 10 条数据
         primary_data = "timestamp,open,high,low,close,volume\n"
         for i in range(10):
-            primary_data += f"2025-01-{i+1:02d},100,110,90,105,1000\n"
+            primary_data += f"2025-01-{i + 1:02d},100,110,90,105,1000\n"
         primary_csv.write_text(primary_data)
 
         # 辅助标的只有 5 条数据（50% 对齐率）
         secondary_data = "timestamp,open,high,low,close,volume\n"
         for i in range(5):
-            secondary_data += f"2025-01-{i+1:02d},50000,51000,49000,50500,2000\n"
+            secondary_data += f"2025-01-{i + 1:02d},50000,51000,49000,50500,2000\n"
         secondary_csv.write_text(secondary_data)
 
         is_aligned, error = validate_multi_instrument_alignment(
@@ -230,9 +231,7 @@ class TestMultiInstrumentAlignment(unittest.TestCase):
         secondary_csv.write_text("timestamp,open,high,low,close,volume\n")
 
         is_aligned, error = validate_multi_instrument_alignment(
-            self.temp_path / "nonexistent.csv",
-            secondary_csv,
-            min_alignment_rate=0.95
+            self.temp_path / "nonexistent.csv", secondary_csv, min_alignment_rate=0.95
         )
         self.assertFalse(is_aligned)
         self.assertIn("不存在", error)
@@ -243,9 +242,7 @@ class TestMultiInstrumentAlignment(unittest.TestCase):
         primary_csv.write_text("timestamp,open,high,low,close,volume\n")
 
         is_aligned, error = validate_multi_instrument_alignment(
-            primary_csv,
-            self.temp_path / "nonexistent.csv",
-            min_alignment_rate=0.95
+            primary_csv, self.temp_path / "nonexistent.csv", min_alignment_rate=0.95
         )
         self.assertFalse(is_aligned)
         self.assertIn("不存在", error)
@@ -257,8 +254,9 @@ class TestMultiInstrumentAlignment(unittest.TestCase):
 
         # 缺少时间列
         primary_csv.write_text("open,high,low,close,volume\n100,110,90,105,1000\n")
-        secondary_csv.write_text("timestamp,open,high,low,close,volume\n"
-                                 "2025-01-01,50000,51000,49000,50500,2000\n")
+        secondary_csv.write_text(
+            "timestamp,open,high,low,close,volume\n2025-01-01,50000,51000,49000,50500,2000\n"
+        )
 
         is_aligned, error = validate_multi_instrument_alignment(
             primary_csv, secondary_csv, min_alignment_rate=0.95
@@ -271,11 +269,13 @@ class TestMultiInstrumentAlignment(unittest.TestCase):
         primary_csv = self.temp_path / "primary.csv"
         secondary_csv = self.temp_path / "secondary.csv"
 
-        primary_csv.write_text("datetime,open,high,low,close,volume\n"
-                               "2025-01-01,100,110,90,105,1000\n")
+        primary_csv.write_text(
+            "datetime,open,high,low,close,volume\n2025-01-01,100,110,90,105,1000\n"
+        )
 
-        secondary_csv.write_text("datetime,open,high,low,close,volume\n"
-                                 "2025-01-01,50000,51000,49000,50500,2000\n")
+        secondary_csv.write_text(
+            "datetime,open,high,low,close,volume\n2025-01-01,50000,51000,49000,50500,2000\n"
+        )
 
         is_aligned, error = validate_multi_instrument_alignment(
             primary_csv, secondary_csv, min_alignment_rate=0.95

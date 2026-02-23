@@ -13,6 +13,7 @@ from typing import Optional
 @dataclass
 class ParsedFilename:
     """解析后的文件名信息"""
+
     exchange: str
     symbol: str
     timeframe: str
@@ -25,20 +26,20 @@ class FilenameParser:
 
     # 格式1: okx-BTCUSDT-1h-2020-01-01_2026-01-14.csv
     PATTERN_UNDERSCORE = re.compile(
-        r'^(?P<exchange>\w+)-(?P<symbol>\w+)-(?P<timeframe>\w+)-'
-        r'(?P<start_date>\d{4}-\d{2}-\d{2})_(?P<end_date>\d{4}-\d{2}-\d{2})\.csv$'
+        r"^(?P<exchange>\w+)-(?P<symbol>\w+)-(?P<timeframe>\w+)-"
+        r"(?P<start_date>\d{4}-\d{2}-\d{2})_(?P<end_date>\d{4}-\d{2}-\d{2})\.csv$"
     )
 
     # 格式2: binance-DOGEUSDT-1h-2025-12-01-2025-12-30.csv
     PATTERN_DASH = re.compile(
-        r'^(?P<exchange>\w+)-(?P<symbol>\w+)-(?P<timeframe>\w+)-'
-        r'(?P<start_date>\d{4}-\d{2}-\d{2})-(?P<end_date>\d{4}-\d{2}-\d{2})\.csv$'
+        r"^(?P<exchange>\w+)-(?P<symbol>\w+)-(?P<timeframe>\w+)-"
+        r"(?P<start_date>\d{4}-\d{2}-\d{2})-(?P<end_date>\d{4}-\d{2}-\d{2})\.csv$"
     )
 
     # 格式3: binance-DOGEUSDT-1h-2025-12-01.csv (单日期)
     PATTERN_SINGLE = re.compile(
-        r'^(?P<exchange>\w+)-(?P<symbol>\w+)-(?P<timeframe>\w+)-'
-        r'(?P<date>\d{4}-\d{2}-\d{2})\.csv$'
+        r"^(?P<exchange>\w+)-(?P<symbol>\w+)-(?P<timeframe>\w+)-"
+        r"(?P<date>\d{4}-\d{2}-\d{2})\.csv$"
     )
 
     @classmethod
@@ -70,11 +71,11 @@ class FilenameParser:
         if match:
             d = match.groupdict()
             return ParsedFilename(
-                exchange=d['exchange'],
-                symbol=d['symbol'],
-                timeframe=d['timeframe'],
-                start_date=d['date'],
-                end_date=d['date']
+                exchange=d["exchange"],
+                symbol=d["symbol"],
+                timeframe=d["timeframe"],
+                start_date=d["date"],
+                end_date=d["date"],
             )
 
         return None

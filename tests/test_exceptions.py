@@ -252,9 +252,7 @@ class TestExceptionAttributes:
     def test_multiple_attributes(self):
         """测试多个属性"""
         exc = DataLoadError(
-            "Load failed",
-            file_path="/data/test.csv",
-            cause=IOError("File not found")
+            "Load failed", file_path="/data/test.csv", cause=IOError("File not found")
         )
         assert exc.file_path == "/data/test.csv"
         assert isinstance(exc.cause, IOError)

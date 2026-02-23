@@ -17,6 +17,7 @@ from utils.universe import parse_universe_symbols
 
 logger = logging.getLogger(__name__)
 
+
 def check_and_fetch_strategy_data(args, adapter, base_dir: Path, universe_symbols: set):
     """检查并获取策略所需数据"""
     if args.skip_oi_data:
@@ -27,11 +28,13 @@ def check_and_fetch_strategy_data(args, adapter, base_dir: Path, universe_symbol
 
     current_config = adapter.build_backtest_config()
     strategy_tasks = check_strategy_data_dependencies(
-        current_config.strategy.params if hasattr(current_config.strategy, 'params') else current_config.strategy,
+        current_config.strategy.params
+        if hasattr(current_config.strategy, "params")
+        else current_config.strategy,
         adapter.get_start_date(),
         adapter.get_end_date(),
         base_dir,
-        universe_symbols
+        universe_symbols,
     )
 
     if strategy_tasks["missing_count"] > 0:
@@ -40,8 +43,8 @@ def check_and_fetch_strategy_data(args, adapter, base_dir: Path, universe_symbol
         fetch_results = execute_oi_funding_data_fetch(
             strategy_tasks,
             base_dir,
-            preferred_exchange=getattr(args, 'oi_exchange', 'auto'),
-            max_retries=getattr(args, 'max_retries', 3)
+            preferred_exchange=getattr(args, "oi_exchange", "auto"),
+            max_retries=getattr(args, "max_retries", 3),
         )
 
         total_files = fetch_results["oi_files"] + fetch_results["funding_files"]
@@ -66,6 +69,7 @@ def update_instrument_definitions(adapter, base_dir: Path, universe_symbols: set
 
         if universe_symbols:
             from core.schemas import InstrumentType
+
             venue = adapter.get_venue()
             inst_type = InstrumentType(adapter.env_config.trading.instrument_type)
             universe_inst_ids = parse_universe_symbols(universe_symbols, venue, "USDT", inst_type)

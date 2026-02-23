@@ -17,7 +17,7 @@ def retry_fetch(
     delay: float = 5.0,
     backoff_factor: float = 2.0,
     exceptions: Tuple[Type[Exception], ...] = (ccxt.NetworkError, ccxt.ExchangeError),
-    **kwargs
+    **kwargs,
 ) -> Any:
     """
     带重试机制的函数调用包装器

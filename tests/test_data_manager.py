@@ -1,6 +1,7 @@
 """
 Tests for Data Manager
 """
+
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -17,7 +18,7 @@ class TestDataManager(unittest.TestCase):
         self.assertEqual(self.manager.base_dir, self.base_dir)
         self.assertEqual(self.manager.data_dir, self.base_dir / "data" / "raw")
 
-    @patch('utils.data_management.data_manager.check_single_data_file')
+    @patch("utils.data_management.data_manager.check_single_data_file")
     def test_check_data_availability(self, mock_check):
         mock_check.return_value = (True, None)
         available, missing = self.manager.check_data_availability(

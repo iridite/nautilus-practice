@@ -93,9 +93,9 @@ def test_relative_strength():
     for i in range(25):
         timestamp = i * 86400 * 1_000_000_000  # 每天
         # 标的涨幅 2%/天
-        symbol_price = 100 * (1.02 ** i)
+        symbol_price = 100 * (1.02**i)
         # BTC 涨幅 1%/天
-        btc_price = 50000 * (1.01 ** i)
+        btc_price = 50000 * (1.01**i)
 
         rs_calc.update_symbol_price(timestamp, symbol_price)
         rs_calc.update_benchmark_price(timestamp, btc_price)
@@ -208,9 +208,7 @@ def test_exit_signals():
 
     # 测试时间止损
     should_exit = exit_signals.check_time_stop(
-        entry_bar_count=3,
-        highest_high=100.5,
-        entry_price=Decimal("100")
+        entry_bar_count=3, highest_high=100.5, entry_price=Decimal("100")
     )
     assert should_exit, "❌ 应该触发时间止损"
     print(f"✅ 时间止损检测: {should_exit}")
@@ -218,19 +216,12 @@ def test_exit_signals():
     # 测试 Chandelier Exit（close < highest_high - 2.6 * atr）
     # 95 < 100 - 2.6 * 2.0 = 95 < 94.8 (False)
     # 修正：使用更低的价格
-    should_exit = exit_signals.check_chandelier_exit(
-        close=94,
-        highest_high=100,
-        atr=2.0
-    )
+    should_exit = exit_signals.check_chandelier_exit(close=94, highest_high=100, atr=2.0)
     assert should_exit, "❌ 应该触发 Chandelier Exit"
     print(f"✅ Chandelier Exit 检测: {should_exit}")
 
     # 测试抛物线止盈
-    should_exit = exit_signals.check_parabolic_profit(
-        close=150,
-        ema=100
-    )
+    should_exit = exit_signals.check_parabolic_profit(close=150, ema=100)
     assert should_exit, "❌ 应该触发抛物线止盈"
     print(f"✅ 抛物线止盈检测: {should_exit}")
 
@@ -250,10 +241,7 @@ def test_squeeze_detector():
 
     # 测试 Squeeze 状态
     is_squeezing = squeeze_detector.check_squeeze(
-        bb_upper=102,
-        bb_lower=98,
-        keltner_upper=105,
-        keltner_lower=95
+        bb_upper=102, bb_lower=98, keltner_upper=105, keltner_lower=95
     )
     assert is_squeezing, "❌ 应该检测到 Squeeze"
     print(f"✅ Squeeze 检测: {is_squeezing}")

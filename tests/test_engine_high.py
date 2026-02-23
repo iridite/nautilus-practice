@@ -1,6 +1,7 @@
 """
 Tests for High-Level Backtest Engine
 """
+
 import unittest
 from unittest.mock import Mock, MagicMock, patch
 from pathlib import Path
@@ -71,6 +72,7 @@ class TestHelperFunctions(unittest.TestCase):
     def test_build_timeframe_string_with_minute(self):
         """测试分钟级数据源"""
         from nautilus_trader.model.enums import BarAggregation
+
         cfg = Mock(spec=BacktestConfig)
         feed = Mock()
         feed.bar_period = 5
@@ -82,6 +84,7 @@ class TestHelperFunctions(unittest.TestCase):
     def test_build_timeframe_string_with_hour(self):
         """测试小时级数据源"""
         from nautilus_trader.model.enums import BarAggregation
+
         cfg = Mock(spec=BacktestConfig)
         feed = Mock()
         feed.bar_period = 1
@@ -93,6 +96,7 @@ class TestHelperFunctions(unittest.TestCase):
     def test_build_timeframe_string_with_day(self):
         """测试日级数据源"""
         from nautilus_trader.model.enums import BarAggregation
+
         cfg = Mock(spec=BacktestConfig)
         feed = Mock()
         feed.bar_period = 1
@@ -140,7 +144,7 @@ class TestHelperFunctions(unittest.TestCase):
         result = _check_file_freshness(csv_mtime, parquet_mtime)
         self.assertTrue(result)
 
-    @patch('backtest.engine_high.Path')
+    @patch("backtest.engine_high.Path")
     def test_check_csv_file_validity_exists(self, mock_path):
         """测试CSV文件存在且有效"""
         mock_file = MagicMock()
@@ -151,7 +155,7 @@ class TestHelperFunctions(unittest.TestCase):
         result = _check_csv_file_validity(mock_file)
         self.assertTrue(result)
 
-    @patch('backtest.engine_high.Path')
+    @patch("backtest.engine_high.Path")
     def test_check_csv_file_validity_not_exists(self, mock_path):
         """测试CSV文件不存在"""
         mock_file = MagicMock()
@@ -159,7 +163,7 @@ class TestHelperFunctions(unittest.TestCase):
         result = _check_csv_file_validity(mock_file)
         self.assertFalse(result)
 
-    @patch('backtest.engine_high.Path')
+    @patch("backtest.engine_high.Path")
     def test_check_csv_file_validity_empty(self, mock_path):
         """测试CSV文件为空"""
         mock_file = MagicMock()
@@ -172,17 +176,19 @@ class TestHelperFunctions(unittest.TestCase):
 class TestDataProcessing(unittest.TestCase):
     """测试数据处理函数"""
 
-    @patch('builtins.open')
+    @patch("builtins.open")
     def test_count_csv_lines_success(self, mock_open):
         """测试CSV行数统计"""
         # 模拟文件内容：header + 3行数据
-        mock_open.return_value.__enter__.return_value = iter(["header\n", "line1\n", "line2\n", "line3\n"])
+        mock_open.return_value.__enter__.return_value = iter(
+            ["header\n", "line1\n", "line2\n", "line3\n"]
+        )
 
         mock_file = MagicMock()
         result = _count_csv_lines(mock_file)
         self.assertEqual(result, 3)  # 4行总数 - 1行header = 3
 
-    @patch('builtins.open')
+    @patch("builtins.open")
     def test_count_csv_lines_error(self, mock_open):
         """测试CSV行数统计错误处理"""
         mock_open.side_effect = OSError("File not found")
@@ -200,9 +206,7 @@ class TestMetricsBuilding(unittest.TestCase):
         from backtest.engine_high import _build_pnl_metrics
 
         mock_result = Mock()
-        mock_result.stats_pnls = {
-            "USDT": {"total_pnl": 1000.0, "total_return": 0.1}
-        }
+        mock_result.stats_pnls = {"USDT": {"total_pnl": 1000.0, "total_return": 0.1}}
 
         metrics = _build_pnl_metrics(mock_result)
         self.assertIsInstance(metrics, dict)
@@ -213,9 +217,7 @@ class TestMetricsBuilding(unittest.TestCase):
         from backtest.engine_high import _build_returns_metrics
 
         mock_result = Mock()
-        mock_result.stats_returns = {
-            "USDT": 0.15
-        }
+        mock_result.stats_returns = {"USDT": 0.15}
 
         metrics = _build_returns_metrics(mock_result)
         self.assertIsInstance(metrics, dict)
@@ -227,7 +229,7 @@ class TestMetricsBuilding(unittest.TestCase):
 
         filter_stats = {
             "filter1": {"passed": 10, "failed": 5},
-            "filter2": {"passed": 8, "failed": 7}
+            "filter2": {"passed": 8, "failed": 7},
         }
         result = _build_filter_stats(filter_stats)
         self.assertIsInstance(result, dict)
@@ -250,7 +252,7 @@ class TestTradeAnalysis(unittest.TestCase):
         trade_metrics = [
             {"pnl": 100, "return": 0.1},
             {"pnl": -50, "return": -0.05},
-            {"pnl": 200, "return": 0.2}
+            {"pnl": 200, "return": 0.2},
         ]
         winners = [{"pnl": 100}, {"pnl": 200}]
         losers = [{"pnl": -50}]
@@ -264,11 +266,7 @@ class TestTradeAnalysis(unittest.TestCase):
         """测试PnL统计计算"""
         from backtest.engine_high import _calculate_pnl_stats
 
-        trade_metrics = [
-            {"pnl": 100},
-            {"pnl": -50},
-            {"pnl": 200}
-        ]
+        trade_metrics = [{"pnl": 100}, {"pnl": -50}, {"pnl": 200}]
 
         stats = _calculate_pnl_stats(trade_metrics)
         self.assertIsInstance(stats, dict)
@@ -277,10 +275,7 @@ class TestTradeAnalysis(unittest.TestCase):
         """测试盈利交易统计"""
         from backtest.engine_high import _calculate_winner_stats
 
-        winners = [
-            {"pnl": 100, "return": 0.1},
-            {"pnl": 200, "return": 0.2}
-        ]
+        winners = [{"pnl": 100, "return": 0.1}, {"pnl": 200, "return": 0.2}]
 
         stats = _calculate_winner_stats(winners)
         self.assertIsInstance(stats, dict)
@@ -289,10 +284,7 @@ class TestTradeAnalysis(unittest.TestCase):
         """测试亏损交易统计"""
         from backtest.engine_high import _calculate_loser_stats
 
-        losers = [
-            {"pnl": -50, "return": -0.05},
-            {"pnl": -100, "return": -0.1}
-        ]
+        losers = [{"pnl": -50, "return": -0.05}, {"pnl": -100, "return": -0.1}]
 
         stats = _calculate_loser_stats(losers)
         self.assertIsInstance(stats, dict)
@@ -304,9 +296,10 @@ class TestEngineHighIntegration(unittest.TestCase):
     def test_module_imports(self):
         """测试模块可以正确导入"""
         from backtest import engine_high
-        self.assertTrue(hasattr(engine_high, 'run_high_level'))
-        self.assertTrue(hasattr(engine_high, '_load_instruments'))
-        self.assertTrue(hasattr(engine_high, '_check_parquet_coverage'))
+
+        self.assertTrue(hasattr(engine_high, "run_high_level"))
+        self.assertTrue(hasattr(engine_high, "_load_instruments"))
+        self.assertTrue(hasattr(engine_high, "_check_parquet_coverage"))
 
     def test_exception_imports(self):
         """测试异常类可以正确导入"""
@@ -314,8 +307,9 @@ class TestEngineHighIntegration(unittest.TestCase):
             BacktestEngineError,
             CatalogError,
             DataLoadError,
-            InstrumentLoadError
+            InstrumentLoadError,
         )
+
         # 验证异常类是 Exception 的子类
         self.assertTrue(issubclass(BacktestEngineError, Exception))
         self.assertTrue(issubclass(CatalogError, Exception))

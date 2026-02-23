@@ -57,11 +57,7 @@ class MarketRegimeFilter:
 
         # 计算 True Range
         if len(self.closes) > 1:
-            tr = max(
-                high - low,
-                abs(high - self.closes[-2]),
-                abs(low - self.closes[-2])
-            )
+            tr = max(high - low, abs(high - self.closes[-2]), abs(low - self.closes[-2]))
             self.trs.append(tr)
 
         # 更新指标
@@ -71,7 +67,7 @@ class MarketRegimeFilter:
     def _update_sma(self) -> None:
         """更新 SMA 指标"""
         if len(self.closes) >= self.sma_period:
-            self.sma = sum(list(self.closes)[-self.sma_period:]) / self.sma_period
+            self.sma = sum(list(self.closes)[-self.sma_period :]) / self.sma_period
 
     def _update_atr(self) -> None:
         """更新 ATR 指标 (Wilder's Smoothing)"""
@@ -79,7 +75,7 @@ class MarketRegimeFilter:
             return
 
         if self.atr is None:
-            self.atr = sum(list(self.trs)[-self.atr_period:]) / self.atr_period
+            self.atr = sum(list(self.trs)[-self.atr_period :]) / self.atr_period
         else:
             alpha = 1.0 / self.atr_period
             self.atr = alpha * self.trs[-1] + (1 - alpha) * self.atr

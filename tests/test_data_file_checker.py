@@ -25,6 +25,7 @@ class TestCheckSingleDataFile(unittest.TestCase):
     def tearDown(self):
         """清理测试环境"""
         import shutil
+
         shutil.rmtree(self.temp_dir)
 
     def test_file_exists_and_valid(self):
@@ -38,7 +39,7 @@ class TestCheckSingleDataFile(unittest.TestCase):
         filepath = data_dir / filename
 
         # 写入足够大的数据
-        with open(filepath, 'w') as f:
+        with open(filepath, "w") as f:
             f.write("timestamp,open,high,low,close,volume\n" * 1000)
 
         exists, path = check_single_data_file(
@@ -48,7 +49,7 @@ class TestCheckSingleDataFile(unittest.TestCase):
             timeframe="1h",
             exchange="OKX",
             base_dir=self.base_dir,
-            min_size_bytes=10 * 1024
+            min_size_bytes=10 * 1024,
         )
 
         self.assertTrue(exists)
@@ -62,7 +63,7 @@ class TestCheckSingleDataFile(unittest.TestCase):
             end_date="2024-01-31",
             timeframe="1h",
             exchange="OKX",
-            base_dir=self.base_dir
+            base_dir=self.base_dir,
         )
 
         self.assertFalse(exists)
@@ -78,7 +79,7 @@ class TestCheckSingleDataFile(unittest.TestCase):
         filepath = data_dir / filename
 
         # 写入很小的数据
-        with open(filepath, 'w') as f:
+        with open(filepath, "w") as f:
             f.write("test")
 
         exists, path = check_single_data_file(
@@ -88,7 +89,7 @@ class TestCheckSingleDataFile(unittest.TestCase):
             timeframe="1h",
             exchange="OKX",
             base_dir=self.base_dir,
-            min_size_bytes=10 * 1024
+            min_size_bytes=10 * 1024,
         )
 
         self.assertFalse(exists)
@@ -105,7 +106,7 @@ class TestCheckSingleDataFile(unittest.TestCase):
         filepath = data_dir / filename
 
         # 写入足够大的数据（大于 10KB）
-        with open(filepath, 'w') as f:
+        with open(filepath, "w") as f:
             f.write("timestamp,open,high,low,close,volume\n" * 500)
 
         exists, path = check_single_data_file(
@@ -114,7 +115,7 @@ class TestCheckSingleDataFile(unittest.TestCase):
             end_date="2024-02-28",
             timeframe="5m",
             exchange="binance",  # 小写
-            base_dir=self.base_dir
+            base_dir=self.base_dir,
         )
 
         self.assertTrue(exists)
@@ -133,7 +134,7 @@ class TestCheckSingleDataFile(unittest.TestCase):
         filepath = data_dir / filename
 
         # 写入 5KB 数据
-        with open(filepath, 'w') as f:
+        with open(filepath, "w") as f:
             f.write("x" * 5000)
 
         # 使用 1KB 最小大小 - 应该通过
@@ -144,7 +145,7 @@ class TestCheckSingleDataFile(unittest.TestCase):
             timeframe="1h",
             exchange="OKX",
             base_dir=self.base_dir,
-            min_size_bytes=1024
+            min_size_bytes=1024,
         )
         self.assertTrue(exists1)
 
@@ -156,7 +157,7 @@ class TestCheckSingleDataFile(unittest.TestCase):
             timeframe="1h",
             exchange="OKX",
             base_dir=self.base_dir,
-            min_size_bytes=10 * 1024
+            min_size_bytes=10 * 1024,
         )
         self.assertFalse(exists2)
 
@@ -172,6 +173,7 @@ class TestCheckOiDataExists(unittest.TestCase):
     def tearDown(self):
         """清理测试环境"""
         import shutil
+
         shutil.rmtree(self.temp_dir)
 
     def test_all_files_exist(self):
@@ -187,7 +189,7 @@ class TestCheckOiDataExists(unittest.TestCase):
             filepath = data_dir / filename
 
             # 写入足够大的数据（大于 1024 字节）
-            with open(filepath, 'w') as f:
+            with open(filepath, "w") as f:
                 f.write("timestamp,open_interest\n" * 100)
 
         all_exist, missing = check_oi_data_exists(
@@ -196,7 +198,7 @@ class TestCheckOiDataExists(unittest.TestCase):
             end_date="2024-01-31",
             period="5m",
             exchange="okx",  # 小写
-            base_dir=self.base_dir
+            base_dir=self.base_dir,
         )
 
         self.assertTrue(all_exist)
@@ -215,7 +217,7 @@ class TestCheckOiDataExists(unittest.TestCase):
         filepath = data_dir / filename
 
         # 写入足够大的数据
-        with open(filepath, 'w') as f:
+        with open(filepath, "w") as f:
             f.write("timestamp,open_interest\n" * 100)
 
         all_exist, missing = check_oi_data_exists(
@@ -224,7 +226,7 @@ class TestCheckOiDataExists(unittest.TestCase):
             end_date="2024-01-31",
             period="5m",
             exchange="okx",  # 小写
-            base_dir=self.base_dir
+            base_dir=self.base_dir,
         )
 
         self.assertFalse(all_exist)
@@ -243,7 +245,7 @@ class TestCheckOiDataExists(unittest.TestCase):
         filepath = data_dir / filename
 
         # 写入小于 1024 字节的数据
-        with open(filepath, 'w') as f:
+        with open(filepath, "w") as f:
             f.write("small")
 
         all_exist, missing = check_oi_data_exists(
@@ -252,7 +254,7 @@ class TestCheckOiDataExists(unittest.TestCase):
             end_date="2024-01-31",
             period="5m",
             exchange="OKX",
-            base_dir=self.base_dir
+            base_dir=self.base_dir,
         )
 
         self.assertFalse(all_exist)
@@ -266,7 +268,7 @@ class TestCheckOiDataExists(unittest.TestCase):
             end_date="2024-01-31",
             period="5m",
             exchange="OKX",
-            base_dir=self.base_dir
+            base_dir=self.base_dir,
         )
 
         self.assertTrue(all_exist)
@@ -284,6 +286,7 @@ class TestCheckFundingDataExists(unittest.TestCase):
     def tearDown(self):
         """清理测试环境"""
         import shutil
+
         shutil.rmtree(self.temp_dir)
 
     def test_all_files_exist(self):
@@ -298,7 +301,7 @@ class TestCheckFundingDataExists(unittest.TestCase):
             filename = f"okx-{safe_symbol}-funding-2024-01-01_2024-01-31.csv"
             filepath = data_dir / filename
 
-            with open(filepath, 'w') as f:
+            with open(filepath, "w") as f:
                 f.write("timestamp,funding_rate\n" * 200)
 
         all_exist, missing = check_funding_data_exists(
@@ -306,7 +309,7 @@ class TestCheckFundingDataExists(unittest.TestCase):
             start_date="2024-01-01",
             end_date="2024-01-31",
             exchange="OKX",
-            base_dir=self.base_dir
+            base_dir=self.base_dir,
         )
 
         self.assertTrue(all_exist)
@@ -325,7 +328,7 @@ class TestCheckFundingDataExists(unittest.TestCase):
         filepath = data_dir / filename
 
         # 写入足够大的数据
-        with open(filepath, 'w') as f:
+        with open(filepath, "w") as f:
             f.write("timestamp,funding_rate\n" * 100)
 
         all_exist, missing = check_funding_data_exists(
@@ -333,7 +336,7 @@ class TestCheckFundingDataExists(unittest.TestCase):
             start_date="2024-01-01",
             end_date="2024-01-31",
             exchange="binance",  # 小写
-            base_dir=self.base_dir
+            base_dir=self.base_dir,
         )
 
         self.assertFalse(all_exist)
@@ -350,7 +353,7 @@ class TestCheckFundingDataExists(unittest.TestCase):
         filename = f"okx-{safe_symbol}-funding-2024-01-01_2024-01-31.csv"
         filepath = data_dir / filename
 
-        with open(filepath, 'w') as f:
+        with open(filepath, "w") as f:
             f.write("tiny")
 
         all_exist, missing = check_funding_data_exists(
@@ -358,7 +361,7 @@ class TestCheckFundingDataExists(unittest.TestCase):
             start_date="2024-01-01",
             end_date="2024-01-31",
             exchange="OKX",
-            base_dir=self.base_dir
+            base_dir=self.base_dir,
         )
 
         self.assertFalse(all_exist)
@@ -371,7 +374,7 @@ class TestCheckFundingDataExists(unittest.TestCase):
             start_date="2024-01-01",
             end_date="2024-01-31",
             exchange="OKX",
-            base_dir=self.base_dir
+            base_dir=self.base_dir,
         )
 
         self.assertTrue(all_exist)
@@ -386,7 +389,7 @@ class TestCheckFundingDataExists(unittest.TestCase):
             start_date="2024-01-01",
             end_date="2024-01-31",
             exchange="OKX",
-            base_dir=self.base_dir
+            base_dir=self.base_dir,
         )
 
         self.assertFalse(all_exist)

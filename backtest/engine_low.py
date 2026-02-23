@@ -89,7 +89,9 @@ def _load_data_for_feed(
         )
 
         if len(df) == 0:
-            raise DataLoadError(f"No data available in range for {data_cfg.csv_file_name}", str(data_path))
+            raise DataLoadError(
+                f"No data available in range for {data_cfg.csv_file_name}", str(data_path)
+            )
 
         # 使用 Wrangler 转换并注入引擎
         wrangler = BarDataWrangler(feed_bar_type, inst)
@@ -119,23 +121,21 @@ def _find_custom_data_files(symbol_dir: Path) -> tuple[list, list]:
 
 
 def _load_oi_data_for_symbol(
-    loader: OIFundingDataLoader,
-    oi_files: list,
-    symbol: str,
-    instrument_id,
-    cfg: BacktestConfig
+    loader: OIFundingDataLoader, oi_files: list, symbol: str, instrument_id, cfg: BacktestConfig
 ) -> list:
     """加载OI数据"""
     oi_data_list = []
     if oi_files:
         for oi_file in oi_files:
-            oi_data_list.extend(loader.load_oi_data(
-                symbol=symbol,
-                instrument_id=instrument_id,
-                start_date=cfg.start_date,
-                end_date=cfg.end_date,
-                exchange=cfg.instrument.venue_name.lower() if cfg.instrument else "binance"
-            ))
+            oi_data_list.extend(
+                loader.load_oi_data(
+                    symbol=symbol,
+                    instrument_id=instrument_id,
+                    start_date=cfg.start_date,
+                    end_date=cfg.end_date,
+                    exchange=cfg.instrument.venue_name.lower() if cfg.instrument else "binance",
+                )
+            )
     return oi_data_list
 
 
@@ -144,27 +144,26 @@ def _load_funding_data_for_symbol(
     funding_files: list,
     symbol: str,
     instrument_id,
-    cfg: BacktestConfig
+    cfg: BacktestConfig,
 ) -> list:
     """加载Funding Rate数据"""
     funding_data_list = []
     if funding_files:
         for funding_file in funding_files:
-            funding_data_list.extend(loader.load_funding_data(
-                symbol=symbol,
-                instrument_id=instrument_id,
-                start_date=cfg.start_date,
-                end_date=cfg.end_date,
-                exchange=cfg.instrument.venue_name.lower() if cfg.instrument else "binance"
-            ))
+            funding_data_list.extend(
+                loader.load_funding_data(
+                    symbol=symbol,
+                    instrument_id=instrument_id,
+                    start_date=cfg.start_date,
+                    end_date=cfg.end_date,
+                    exchange=cfg.instrument.venue_name.lower() if cfg.instrument else "binance",
+                )
+            )
     return funding_data_list
 
 
 def _process_instrument_custom_data(
-    inst,
-    data_dir: Path,
-    cfg: BacktestConfig,
-    engine: BacktestEngine
+    inst, data_dir: Path, cfg: BacktestConfig, engine: BacktestEngine
 ) -> int:
     """处理单个标的的自定义数据"""
     from utils.oi_funding_adapter import merge_custom_data_with_bars
@@ -180,9 +179,11 @@ def _process_instrument_custom_data(
     oi_files, funding_files = _find_custom_data_files(symbol_dir)
 
     # 加载数据
-    loader = OIFundingDataLoader(Path(cfg.base_dir) if hasattr(cfg, 'base_dir') else Path.cwd())
+    loader = OIFundingDataLoader(Path(cfg.base_dir) if hasattr(cfg, "base_dir") else Path.cwd())
     oi_data_list = _load_oi_data_for_symbol(loader, oi_files, symbol, instrument_id, cfg)
-    funding_data_list = _load_funding_data_for_symbol(loader, funding_files, symbol, instrument_id, cfg)
+    funding_data_list = _load_funding_data_for_symbol(
+        loader, funding_files, symbol, instrument_id, cfg
+    )
 
     # 合并并添加到引擎
     if oi_data_list or funding_data_list:
@@ -235,8 +236,6 @@ def _load_custom_data_to_engine(
         raise CustomDataError(f"Custom data loading failed: {e}", cause=e)
 
 
-
-
 def _extract_strategy_config(cfg: BacktestConfig) -> dict:
     """提取策略配置"""
     strategy_params = cfg.strategy.params
@@ -254,15 +253,21 @@ def _get_order_position_stats(engine: BacktestEngine) -> tuple[int, int]:
     orders_report = engine.trader.generate_order_fills_report()
     positions_report = engine.trader.generate_positions_report()
 
-    total_orders = len(orders_report) if orders_report is not None and hasattr(orders_report, '__len__') else 0
-    total_positions = len(positions_report) if positions_report is not None and hasattr(positions_report, '__len__') else 0
+    total_orders = (
+        len(orders_report) if orders_report is not None and hasattr(orders_report, "__len__") else 0
+    )
+    total_positions = (
+        len(positions_report)
+        if positions_report is not None and hasattr(positions_report, "__len__")
+        else 0
+    )
 
     return total_orders, total_positions
 
 
 def _find_pnl_column(positions_report):
     """查找PnL列名"""
-    for col in ['realized_pnl', 'pnl', 'realized_return', 'return']:
+    for col in ["realized_pnl", "pnl", "realized_return", "return"]:
         if col in positions_report.columns:
             return col
     return None
@@ -275,22 +280,23 @@ def _calculate_pnl_stats(realized_pnls) -> dict:
     total_pnl = float(realized_pnls.sum())
 
     return {
-        'PnL (total)': total_pnl,
-        'PnL% (total)': total_pnl,
-        'Max Winner': float(winners.max()) if len(winners) > 0 else None,
-        'Avg Winner': float(winners.mean()) if len(winners) > 0 else None,
-        'Min Winner': float(winners.min()) if len(winners) > 0 else None,
-        'Min Loser': float(losers.min()) if len(losers) > 0 else None,
-        'Avg Loser': float(losers.mean()) if len(losers) > 0 else None,
-        'Max Loser': float(losers.max()) if len(losers) > 0 else None,
-        'Expectancy': float(realized_pnls.mean()) if len(realized_pnls) > 0 else None,
-        'Win Rate': float(len(winners) / len(realized_pnls)) if len(realized_pnls) > 0 else None,
+        "PnL (total)": total_pnl,
+        "PnL% (total)": total_pnl,
+        "Max Winner": float(winners.max()) if len(winners) > 0 else None,
+        "Avg Winner": float(winners.mean()) if len(winners) > 0 else None,
+        "Min Winner": float(winners.min()) if len(winners) > 0 else None,
+        "Min Loser": float(losers.min()) if len(losers) > 0 else None,
+        "Avg Loser": float(losers.mean()) if len(losers) > 0 else None,
+        "Max Loser": float(losers.max()) if len(losers) > 0 else None,
+        "Expectancy": float(realized_pnls.mean()) if len(realized_pnls) > 0 else None,
+        "Win Rate": float(len(winners) / len(realized_pnls)) if len(realized_pnls) > 0 else None,
     }
 
 
 def _calculate_basic_stats(returns):
     """计算基础统计指标"""
     import numpy as np
+
     avg_return = float(np.mean(returns))
     std_return = float(np.std(returns))
     return avg_return, std_return
@@ -299,12 +305,14 @@ def _calculate_basic_stats(returns):
 def _calculate_sharpe_ratio(avg_return: float, std_return: float) -> float:
     """计算夏普比率"""
     import numpy as np
+
     return float(avg_return / std_return * np.sqrt(252)) if std_return > 0 else 0
 
 
 def _calculate_sortino_ratio(returns, avg_return: float) -> float:
     """计算索提诺比率"""
     import numpy as np
+
     downside_returns = returns[returns < 0]
     downside_std = float(np.std(downside_returns)) if len(downside_returns) > 0 else 0
     return float(avg_return / downside_std * np.sqrt(252)) if downside_std > 0 else 0
@@ -323,6 +331,7 @@ def _calculate_returns_stats(realized_pnls) -> dict:
         return {}
 
     import numpy as np
+
     returns = realized_pnls.values
     winners = realized_pnls[realized_pnls > 0]
     losers = realized_pnls[realized_pnls < 0]
@@ -337,14 +346,14 @@ def _calculate_returns_stats(realized_pnls) -> dict:
     risk_return = float(std_return / abs(avg_return)) if avg_return != 0 else None
 
     return {
-        'Returns Volatility (252 days)': std_return * np.sqrt(252),
-        'Average (Return)': avg_return,
-        'Average Loss (Return)': avg_loss,
-        'Average Win (Return)': avg_win,
-        'Sharpe Ratio (252 days)': sharpe,
-        'Sortino Ratio (252 days)': sortino,
-        'Profit Factor': profit_factor,
-        'Risk Return Ratio': risk_return,
+        "Returns Volatility (252 days)": std_return * np.sqrt(252),
+        "Average (Return)": avg_return,
+        "Average Loss (Return)": avg_loss,
+        "Average Win (Return)": avg_win,
+        "Sharpe Ratio (252 days)": sharpe,
+        "Sortino Ratio (252 days)": sortino,
+        "Profit Factor": profit_factor,
+        "Risk Return Ratio": risk_return,
     }
 
 
@@ -353,7 +362,11 @@ def _extract_pnl_from_positions(positions_report) -> dict:
     stats_pnls = {}
 
     try:
-        if positions_report is None or not hasattr(positions_report, 'empty') or positions_report.empty:
+        if (
+            positions_report is None
+            or not hasattr(positions_report, "empty")
+            or positions_report.empty
+        ):
             return stats_pnls
 
         logger.debug(f"持仓报告列: {positions_report.columns.tolist()}")
@@ -367,7 +380,7 @@ def _extract_pnl_from_positions(positions_report) -> dict:
         if len(realized_pnls) == 0:
             return stats_pnls
 
-        stats_pnls['USDT'] = _calculate_pnl_stats(realized_pnls)
+        stats_pnls["USDT"] = _calculate_pnl_stats(realized_pnls)
 
     except Exception as e:
         logger.warning(f"计算统计指标时出错: {e}")
@@ -375,7 +388,13 @@ def _extract_pnl_from_positions(positions_report) -> dict:
     return stats_pnls
 
 
-def _build_result_dict(cfg: BacktestConfig, strategy_config: dict, total_orders: int, total_positions: int, stats_pnls: dict) -> dict:
+def _build_result_dict(
+    cfg: BacktestConfig,
+    strategy_config: dict,
+    total_orders: int,
+    total_positions: int,
+    stats_pnls: dict,
+) -> dict:
     """构建结果字典"""
     result_dict = {
         "meta": {
@@ -401,14 +420,13 @@ def _build_result_dict(cfg: BacktestConfig, strategy_config: dict, total_orders:
         "performance": {
             "total_orders": total_orders,
             "total_positions": total_positions,
-        }
+        },
     }
 
     if stats_pnls:
         for currency, metrics in stats_pnls.items():
             result_dict["pnl"][str(currency)] = {
-                str(k): v if v == v else None
-                for k, v in metrics.items()
+                str(k): v if v == v else None for k, v in metrics.items()
             }
 
     return result_dict
@@ -460,13 +478,14 @@ def _process_backtest_results(
         positions_report = engine.trader.generate_positions_report()
         stats_pnls = _extract_pnl_from_positions(positions_report)
 
-        result_dict = _build_result_dict(cfg, strategy_config, total_orders, total_positions, stats_pnls)
+        result_dict = _build_result_dict(
+            cfg, strategy_config, total_orders, total_positions, stats_pnls
+        )
         _add_returns_to_result(engine, result_dict)
         _save_result_json(cfg, base_dir, result_dict)
 
     except Exception as e:
         logger.warning(f"⚠️ Error saving results: {e}")
-
 
 
 def _setup_engine(cfg: BacktestConfig, base_dir: Path) -> BacktestEngine:
@@ -488,8 +507,10 @@ def _setup_engine(cfg: BacktestConfig, base_dir: Path) -> BacktestEngine:
     )
 
     venue_name = cfg.instrument.venue_name if cfg.instrument else "BINANCE"
-    oms_type_str = getattr(cfg.strategy.params if hasattr(cfg.strategy, 'params') else {}, 'oms_type', 'HEDGING')
-    oms_type = OmsType.HEDGING if oms_type_str == 'HEDGING' else OmsType.NETTING
+    oms_type_str = getattr(
+        cfg.strategy.params if hasattr(cfg.strategy, "params") else {}, "oms_type", "HEDGING"
+    )
+    oms_type = OmsType.HEDGING if oms_type_str == "HEDGING" else OmsType.NETTING
 
     engine.add_venue(
         venue=Venue(venue_name),
@@ -514,14 +535,18 @@ def _filter_instruments_with_data(cfg: BacktestConfig, base_dir: Path) -> List:
         return list(cfg.instruments)
 
     for inst_cfg in cfg.instruments:
-        symbol = inst_cfg.instrument_id.split("-")[0] if "-" in inst_cfg.instrument_id else inst_cfg.instrument_id.split(".")[0]
+        symbol = (
+            inst_cfg.instrument_id.split("-")[0]
+            if "-" in inst_cfg.instrument_id
+            else inst_cfg.instrument_id.split(".")[0]
+        )
 
         if cfg.data_feeds:
             first_feed = cfg.data_feeds[0]
             unit_map = {
                 BarAggregation.MINUTE: "m",
                 BarAggregation.HOUR: "h",
-                BarAggregation.DAY: "d"
+                BarAggregation.DAY: "d",
             }
             timeframe = f"{first_feed.bar_period}{unit_map.get(first_feed.bar_aggregation, 'h')}"
         else:
@@ -544,7 +569,9 @@ def _filter_instruments_with_data(cfg: BacktestConfig, base_dir: Path) -> List:
     if not instruments_with_data:
         raise BacktestEngineError("No instruments with available data found")
 
-    logger.info(f"📊 Found {len(instruments_with_data)}/{len(cfg.instruments)} instruments with data")
+    logger.info(
+        f"📊 Found {len(instruments_with_data)}/{len(cfg.instruments)} instruments with data"
+    )
     return instruments_with_data
 
 
@@ -555,7 +582,9 @@ def _load_instruments(engine: BacktestEngine, instruments_with_data: List) -> Di
     for inst_cfg in instruments_with_data:
         inst_path = inst_cfg.get_json_path()
         if not inst_path.exists():
-            raise InstrumentLoadError(f"Instrument path not found: {inst_path}", inst_cfg.instrument_id)
+            raise InstrumentLoadError(
+                f"Instrument path not found: {inst_path}", inst_cfg.instrument_id
+            )
 
         try:
             inst = load_instrument(inst_path)
@@ -563,13 +592,18 @@ def _load_instruments(engine: BacktestEngine, instruments_with_data: List) -> Di
             loaded_instruments[str(inst.id)] = inst
             logger.info(f"✅ Loaded instrument: {inst.id}")
         except Exception as e:
-            raise InstrumentLoadError(f"Failed to load instrument {inst_cfg.instrument_id}: {e}",
-                                    inst_cfg.instrument_id, e)
+            raise InstrumentLoadError(
+                f"Failed to load instrument {inst_cfg.instrument_id}: {e}",
+                inst_cfg.instrument_id,
+                e,
+            )
 
     return loaded_instruments
 
 
-def _load_data_feeds(engine: BacktestEngine, cfg: BacktestConfig, base_dir: Path, loaded_instruments: Dict) -> Dict:
+def _load_data_feeds(
+    engine: BacktestEngine, cfg: BacktestConfig, base_dir: Path, loaded_instruments: Dict
+) -> Dict:
     """加载回测数据"""
     all_feeds = {}
     total_feeds = len(cfg.data_feeds)
@@ -591,16 +625,16 @@ def _load_data_feeds(engine: BacktestEngine, cfg: BacktestConfig, base_dir: Path
     return all_feeds
 
 
-def _add_strategies(engine: BacktestEngine, cfg: BacktestConfig, all_feeds: Dict, loaded_instruments: Dict) -> int:
+def _add_strategies(
+    engine: BacktestEngine, cfg: BacktestConfig, all_feeds: Dict, loaded_instruments: Dict
+) -> int:
     """配置与添加策略"""
     StrategyClass = load_strategy_class(cfg.strategy.module_path, cfg.strategy.name)
     ConfigClass = load_strategy_config_class(
         cfg.strategy.module_path, cfg.strategy.resolve_config_class()
     )
 
-    global_feeds = {
-        label: bt for (iid, label), bt in all_feeds.items() if label == "benchmark"
-    }
+    global_feeds = {label: bt for (iid, label), bt in all_feeds.items() if label == "benchmark"}
     strategies_count = 0
 
     for inst_id, inst in loaded_instruments.items():
@@ -633,8 +667,7 @@ def _generate_report(cfg: BacktestConfig, base_dir: Path, engine: BacktestEngine
         output_dir = base_dir / "output"
         output_dir.mkdir(parents=True, exist_ok=True)
         report_path = (
-            output_dir
-            / f"low_{cfg.strategy.name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.html"
+            output_dir / f"low_{cfg.strategy.name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.html"
         )
         create_tearsheet(engine=engine, output_path=str(report_path))
         logger.info(f"📊 HTML Report generated: {report_path}")
@@ -671,7 +704,9 @@ def run_low_level(cfg: BacktestConfig, base_dir: Path):
         strategies_count = _add_strategies(engine, cfg, all_feeds, loaded_instruments)
 
         if strategies_count == 0:
-            raise BacktestEngineError("No strategy instances were created. Check config and data paths.")
+            raise BacktestEngineError(
+                "No strategy instances were created. Check config and data paths."
+            )
 
         logger.info(f"⏳ Running engine with {strategies_count} strategy instances...")
         engine.run()
@@ -690,4 +725,3 @@ def run_low_level(cfg: BacktestConfig, base_dir: Path):
         raise
     except Exception as e:
         raise BacktestEngineError(f"Unexpected error during backtest: {e}", e)
-

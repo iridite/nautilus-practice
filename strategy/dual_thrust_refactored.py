@@ -131,9 +131,7 @@ class DualThrustStrategyRefactored(BaseStrategy):
             )
             self.submit_order(order)
             self.position_opened = True
-            self.log.info(
-                f"突破上轨做多: price={current_price:.2f}, upper={upper_band:.2f}"
-            )
+            self.log.info(f"突破上轨做多: price={current_price:.2f}, upper={upper_band:.2f}")
 
     def _open_short(self, bar: Bar, current_price: float, lower_band: float | None):
         """开空仓"""
@@ -146,9 +144,7 @@ class DualThrustStrategyRefactored(BaseStrategy):
             )
             self.submit_order(order)
             self.position_opened = True
-            self.log.info(
-                f"突破下轨做空: price={current_price:.2f}, lower={lower_band:.2f}"
-            )
+            self.log.info(f"突破下轨做空: price={current_price:.2f}, lower={lower_band:.2f}")
 
     def _check_exit(
         self,

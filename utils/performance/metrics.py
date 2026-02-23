@@ -299,7 +299,9 @@ class PerformanceMetrics:
 
         return len(self.trades)
 
-    def get_all_metrics(self, risk_free_rate: float = 0.0, trading_days: int = 365) -> Dict[str, Any]:
+    def get_all_metrics(
+        self, risk_free_rate: float = 0.0, trading_days: int = 365
+    ) -> Dict[str, Any]:
         """
         计算所有性能指标
 
@@ -316,28 +318,28 @@ class PerformanceMetrics:
             # 收益指标
             "total_return": self.total_return(),
             "annualized_return": self.annualized_return(trading_days),
-
             # 风险指标
             "max_drawdown": max_dd_info["max_drawdown"],
             "max_drawdown_duration": max_dd_info["duration_days"],
             "volatility": self.volatility(annualize=True, trading_days=trading_days),
-            "downside_volatility": self.downside_volatility(annualize=True, trading_days=trading_days),
-
+            "downside_volatility": self.downside_volatility(
+                annualize=True, trading_days=trading_days
+            ),
             # 风险调整收益指标
             "sharpe_ratio": self.sharpe_ratio(risk_free_rate, trading_days),
             "sortino_ratio": self.sortino_ratio(risk_free_rate, trading_days),
             "calmar_ratio": self.calmar_ratio(trading_days),
-
             # 交易统计
             "total_trades": self.total_trades(),
             "win_rate": self.win_rate(),
             "profit_factor": self.profit_factor(),
             "average_trade": self.average_trade(),
-
             # 时间信息
             "start_date": self.equity_curve.index[0] if len(self.equity_curve) > 0 else None,
             "end_date": self.equity_curve.index[-1] if len(self.equity_curve) > 0 else None,
-            "total_days": (self.equity_curve.index[-1] - self.equity_curve.index[0]).days if len(self.equity_curve) > 1 else 0,
+            "total_days": (self.equity_curve.index[-1] - self.equity_curve.index[0]).days
+            if len(self.equity_curve) > 1
+            else 0,
         }
 
         return metrics

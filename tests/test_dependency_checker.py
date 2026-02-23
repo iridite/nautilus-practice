@@ -118,8 +118,8 @@ class TestCheckStrategyDataDependencies(unittest.TestCase):
         self.start_date = "2024-01-01"
         self.end_date = "2024-01-10"
 
-    @patch('strategy.core.dependency_checker.check_oi_data_exists')
-    @patch('strategy.core.dependency_checker.check_funding_data_exists')
+    @patch("strategy.core.dependency_checker.check_oi_data_exists")
+    @patch("strategy.core.dependency_checker.check_funding_data_exists")
     def test_no_data_types(self, mock_funding, mock_oi):
         """测试没有数据类型要求"""
         strategy_config = MagicMock()
@@ -135,7 +135,7 @@ class TestCheckStrategyDataDependencies(unittest.TestCase):
         mock_oi.assert_not_called()
         mock_funding.assert_not_called()
 
-    @patch('strategy.core.dependency_checker.check_oi_data_exists')
+    @patch("strategy.core.dependency_checker.check_oi_data_exists")
     def test_check_oi_data_all_exists(self, mock_check_oi):
         """测试 OI 数据全部存在"""
         mock_check_oi.return_value = (True, [])
@@ -154,13 +154,10 @@ class TestCheckStrategyDataDependencies(unittest.TestCase):
         self.assertEqual(len(tasks["oi_tasks"]), 0)
         mock_check_oi.assert_called_once()
 
-    @patch('strategy.core.dependency_checker.check_oi_data_exists')
+    @patch("strategy.core.dependency_checker.check_oi_data_exists")
     def test_check_oi_data_missing(self, mock_check_oi):
         """测试 OI 数据缺失"""
-        mock_check_oi.return_value = (
-            False,
-            ["data/raw/BTCUSDT/oi_binance_BTCUSDT_1h.csv"]
-        )
+        mock_check_oi.return_value = (False, ["data/raw/BTCUSDT/oi_binance_BTCUSDT_1h.csv"])
 
         strategy_config = MagicMock()
         strategy_config.data_types = ["oi"]
@@ -175,7 +172,7 @@ class TestCheckStrategyDataDependencies(unittest.TestCase):
         self.assertGreater(tasks["missing_count"], 0)
         self.assertGreater(len(tasks["oi_tasks"]), 0)
 
-    @patch('strategy.core.dependency_checker.check_funding_data_exists')
+    @patch("strategy.core.dependency_checker.check_funding_data_exists")
     def test_check_funding_data_all_exists(self, mock_check_funding):
         """测试 Funding Rate 数据全部存在"""
         mock_check_funding.return_value = (True, [])
@@ -194,13 +191,10 @@ class TestCheckStrategyDataDependencies(unittest.TestCase):
         self.assertEqual(len(tasks["funding_tasks"]), 0)
         mock_check_funding.assert_called_once()
 
-    @patch('strategy.core.dependency_checker.check_funding_data_exists')
+    @patch("strategy.core.dependency_checker.check_funding_data_exists")
     def test_check_funding_data_missing(self, mock_check_funding):
         """测试 Funding Rate 数据缺失"""
-        mock_check_funding.return_value = (
-            False,
-            ["data/raw/BTCUSDT/funding_binance_BTCUSDT.csv"]
-        )
+        mock_check_funding.return_value = (False, ["data/raw/BTCUSDT/funding_binance_BTCUSDT.csv"])
 
         strategy_config = MagicMock()
         strategy_config.data_types = ["funding"]
@@ -215,8 +209,8 @@ class TestCheckStrategyDataDependencies(unittest.TestCase):
         self.assertGreater(tasks["missing_count"], 0)
         self.assertGreater(len(tasks["funding_tasks"]), 0)
 
-    @patch('strategy.core.dependency_checker.check_oi_data_exists')
-    @patch('strategy.core.dependency_checker.check_funding_data_exists')
+    @patch("strategy.core.dependency_checker.check_oi_data_exists")
+    @patch("strategy.core.dependency_checker.check_funding_data_exists")
     def test_check_multiple_data_types(self, mock_funding, mock_oi):
         """测试检查多种数据类型"""
         mock_oi.return_value = (False, ["data/raw/BTCUSDT/oi_binance_BTCUSDT_1h.csv"])
@@ -252,7 +246,7 @@ class TestCheckStrategyDataDependencies(unittest.TestCase):
         self.assertEqual(tasks["missing_count"], 0)
         self.assertEqual(len(tasks["oi_tasks"]), 0)
 
-    @patch('strategy.core.dependency_checker.check_oi_data_exists')
+    @patch("strategy.core.dependency_checker.check_oi_data_exists")
     def test_with_universe_symbols(self, mock_check_oi):
         """测试使用 universe_symbols"""
         mock_check_oi.return_value = (True, [])
@@ -265,8 +259,7 @@ class TestCheckStrategyDataDependencies(unittest.TestCase):
         universe_symbols = {"BTCUSDT:BINANCE", "ETHUSDT:BINANCE"}
 
         check_strategy_data_dependencies(
-            strategy_config, self.start_date, self.end_date,
-            self.base_dir, universe_symbols
+            strategy_config, self.start_date, self.end_date, self.base_dir, universe_symbols
         )
 
         # 应该检查 universe 中的符号
@@ -275,12 +268,12 @@ class TestCheckStrategyDataDependencies(unittest.TestCase):
         symbols_checked = call_args[0]
         self.assertEqual(len(symbols_checked), 2)
 
-    @patch('strategy.core.dependency_checker.check_oi_data_exists')
+    @patch("strategy.core.dependency_checker.check_oi_data_exists")
     def test_invalid_file_path_handling(self, mock_check_oi):
         """测试处理无效的文件路径"""
         mock_check_oi.return_value = (
             False,
-            ["invalid_path"]  # 无法从中提取符号
+            ["invalid_path"],  # 无法从中提取符号
         )
 
         strategy_config = MagicMock()

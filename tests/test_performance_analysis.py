@@ -42,7 +42,7 @@ class TestPerformanceMetrics:
         """测试夏普率计算"""
         # 创建稳定增长的权益曲线
         dates = pd.date_range("2024-01-01", periods=365, freq="D")
-        equity = pd.Series([100 * (1.001 ** i) for i in range(365)], index=dates)
+        equity = pd.Series([100 * (1.001**i) for i in range(365)], index=dates)
 
         metrics = PerformanceMetrics(equity)
         sharpe = metrics.sharpe_ratio(risk_free_rate=0.0, trading_days=365)
@@ -56,9 +56,7 @@ class TestPerformanceMetrics:
         equity = pd.Series([100 + i * 5 for i in range(10)], index=dates)
 
         # 创建交易记录：6 胜 4 负
-        trades = pd.DataFrame({
-            "pnl": [10, -5, 15, -3, 20, -8, 12, -4, 18, -6]
-        })
+        trades = pd.DataFrame({"pnl": [10, -5, 15, -3, 20, -8, 12, -4, 18, -6]})
 
         metrics = PerformanceMetrics(equity, trades)
         win_rate = metrics.win_rate()
@@ -72,9 +70,7 @@ class TestPerformanceMetrics:
         equity = pd.Series([100 + i * 5 for i in range(10)], index=dates)
 
         # 创建交易记录
-        trades = pd.DataFrame({
-            "pnl": [10, -5, 20, -10, 30, -5]
-        })
+        trades = pd.DataFrame({"pnl": [10, -5, 20, -10, 30, -5]})
 
         metrics = PerformanceMetrics(equity, trades)
         pf = metrics.profit_factor()
@@ -145,10 +141,10 @@ class TestStrategyAnalyzer:
         dates = pd.date_range("2024-01-01", periods=100, freq="D")
 
         # 策略 A：高收益高波动
-        equity_a = pd.Series([100 * (1.01 ** i) for i in range(100)], index=dates)
+        equity_a = pd.Series([100 * (1.01**i) for i in range(100)], index=dates)
 
         # 策略 B：低收益低波动
-        equity_b = pd.Series([100 * (1.005 ** i) for i in range(100)], index=dates)
+        equity_b = pd.Series([100 * (1.005**i) for i in range(100)], index=dates)
 
         analyzer.add_strategy("Strategy A", equity_a)
         analyzer.add_strategy("Strategy B", equity_b)
@@ -164,8 +160,8 @@ class TestStrategyAnalyzer:
 
         dates = pd.date_range("2024-01-01", periods=100, freq="D")
 
-        equity_a = pd.Series([100 * (1.01 ** i) for i in range(100)], index=dates)
-        equity_b = pd.Series([100 * (1.005 ** i) for i in range(100)], index=dates)
+        equity_a = pd.Series([100 * (1.01**i) for i in range(100)], index=dates)
+        equity_b = pd.Series([100 * (1.005**i) for i in range(100)], index=dates)
 
         analyzer.add_strategy("Strategy A", equity_a)
         analyzer.add_strategy("Strategy B", equity_b)
@@ -186,8 +182,7 @@ class TestStrategyAnalyzer:
 
         # 策略 B：低夏普率（高波动）
         equity_b = pd.Series(
-            [100 + i * 2 + np.random.randn() * 10 for i in range(100)],
-            index=dates
+            [100 + i * 2 + np.random.randn() * 10 for i in range(100)], index=dates
         )
 
         analyzer.add_strategy("Strategy A", equity_a)

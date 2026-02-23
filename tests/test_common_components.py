@@ -3,7 +3,11 @@ Tests for common strategy components
 """
 
 import pytest
-from strategy.common.indicators import KeltnerChannel, RelativeStrengthCalculator, MarketRegimeFilter
+from strategy.common.indicators import (
+    KeltnerChannel,
+    RelativeStrengthCalculator,
+    MarketRegimeFilter,
+)
 from strategy.common.signals import EntrySignalGenerator, ExitSignalGenerator, SqueezeDetector
 from strategy.common.universe import DynamicUniverseManager
 from pathlib import Path
@@ -30,7 +34,9 @@ class TestKeltnerChannel:
 
     def test_update_and_calculation(self):
         """测试更新和计算"""
-        keltner = KeltnerChannel(ema_period=5, atr_period=5, sma_period=5, bb_period=5, volume_period=5)
+        keltner = KeltnerChannel(
+            ema_period=5, atr_period=5, sma_period=5, bb_period=5, volume_period=5
+        )
 
         # 模拟 10 根 K 线
         for i in range(10):
@@ -107,8 +113,8 @@ class TestRelativeStrengthCalculator:
         # 模拟标的跑赢基准的情况
         for i in range(25):
             timestamp = i * 1_000_000_000
-            rs_calc.update_symbol_price(timestamp, 100 * (1.02 ** i))  # 2% 日涨幅
-            rs_calc.update_benchmark_price(timestamp, 100 * (1.01 ** i))  # 1% 日涨幅
+            rs_calc.update_symbol_price(timestamp, 100 * (1.02**i))  # 2% 日涨幅
+            rs_calc.update_benchmark_price(timestamp, 100 * (1.01**i))  # 1% 日涨幅
 
         rs = rs_calc.calculate_rs()
         assert rs is not None
@@ -230,7 +236,7 @@ class TestDynamicUniverseManager:
     def test_initialization_and_loading(self):
         """测试初始化和加载"""
         # 创建临时 Universe 文件
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
             universe_data = {
                 "2020-01": ["BTCUSDT", "ETHUSDT"],
                 "2020-02": ["BTCUSDT", "ETHUSDT", "BNBUSDT"],
@@ -250,7 +256,7 @@ class TestDynamicUniverseManager:
 
     def test_symbol_activity_check(self):
         """测试标的活跃性检查"""
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
             universe_data = {
                 "2020-01": ["BTCUSDT", "ETHUSDT"],
             }

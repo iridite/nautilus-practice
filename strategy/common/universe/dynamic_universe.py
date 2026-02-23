@@ -58,9 +58,7 @@ class DynamicUniverseManager:
 
             # 转换符号格式：BTCUSDT:USDT -> BTCUSDT
             for period, symbols in raw_data.items():
-                self.universe_data[period] = [
-                    s.split(":")[0] if ":" in s else s for s in symbols
-                ]
+                self.universe_data[period] = [s.split(":")[0] if ":" in s else s for s in symbols]
 
         except Exception as e:
             raise RuntimeError(f"加载 Universe 文件失败: {e}")

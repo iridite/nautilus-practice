@@ -81,6 +81,7 @@ class NautilusPracticeError(Exception):
 
 class ConfigError(NautilusPracticeError):
     """配置系统基础异常"""
+
     pass
 
 
@@ -131,6 +132,7 @@ class ConfigLoadError(ConfigError):
 
     在加载配置文件时发生的异常，包括文件不存在、格式错误、解析失败等。
     """
+
     pass
 
 
@@ -140,6 +142,7 @@ class UniverseParseError(ConfigError):
 
     在解析交易标的池配置时发生的异常���
     """
+
     pass
 
 
@@ -149,6 +152,7 @@ class InstrumentConfigError(ConfigError):
 
     在处理交易标的配置时发生的异常。
     """
+
     pass
 
 
@@ -159,6 +163,7 @@ class InstrumentConfigError(ConfigError):
 
 class DataError(NautilusPracticeError):
     """数据处理基础异常"""
+
     pass
 
 
@@ -169,7 +174,9 @@ class DataValidationError(DataError):
     在验证数据质量、格式、完整性时发生的异常。
     """
 
-    def __init__(self, message: str, field_name: Optional[str] = None, cause: Optional[Exception] = None):
+    def __init__(
+        self, message: str, field_name: Optional[str] = None, cause: Optional[Exception] = None
+    ):
         """
         初始化数据验证错误
 
@@ -200,7 +207,9 @@ class DataLoadError(DataError):
     包括文件不存在、格式错误、数据验证失败等。
     """
 
-    def __init__(self, message: str, file_path: Optional[str] = None, cause: Optional[Exception] = None):
+    def __init__(
+        self, message: str, file_path: Optional[str] = None, cause: Optional[Exception] = None
+    ):
         """
         初始化数据加载错误
 
@@ -230,7 +239,9 @@ class DataFetchError(DataError):
     在从交易所或其他数据源获取数据时发生的异常。
     """
 
-    def __init__(self, message: str, source: Optional[str] = None, cause: Optional[Exception] = None):
+    def __init__(
+        self, message: str, source: Optional[str] = None, cause: Optional[Exception] = None
+    ):
         """
         初始化数据获取错误
 
@@ -259,6 +270,7 @@ class TimeColumnError(DataLoadError):
 
     在检测或处理CSV文件的时间列时发生的异常。
     """
+
     pass
 
 
@@ -270,7 +282,9 @@ class CatalogError(DataError):
     包括目录创建失败、数据写入错误、索引损坏等。
     """
 
-    def __init__(self, message: str, catalog_path: Optional[str] = None, cause: Optional[Exception] = None):
+    def __init__(
+        self, message: str, catalog_path: Optional[str] = None, cause: Optional[Exception] = None
+    ):
         """
         初始化数据目录错误
 
@@ -300,6 +314,7 @@ class CatalogError(DataError):
 
 class BacktestError(NautilusPracticeError):
     """回测系统基础异常"""
+
     pass
 
 
@@ -309,6 +324,7 @@ class BacktestEngineError(BacktestError):
 
     在回测引擎运行过程中发生的通用异常。
     """
+
     pass
 
 
@@ -320,7 +336,9 @@ class InstrumentLoadError(BacktestError):
     包括标的定义文件不存在、格式错误、标的验证失败等。
     """
 
-    def __init__(self, message: str, instrument_id: Optional[str] = None, cause: Optional[Exception] = None):
+    def __init__(
+        self, message: str, instrument_id: Optional[str] = None, cause: Optional[Exception] = None
+    ):
         """
         初始化标的加载错误
 
@@ -351,7 +369,9 @@ class StrategyConfigError(BacktestError):
     包括参数验证失败、必需参数缺失、参数类型错误等。
     """
 
-    def __init__(self, message: str, strategy_name: Optional[str] = None, cause: Optional[Exception] = None):
+    def __init__(
+        self, message: str, strategy_name: Optional[str] = None, cause: Optional[Exception] = None
+    ):
         """
         初始化策略配置错误
 
@@ -382,7 +402,9 @@ class CustomDataError(BacktestError):
     包括数据注入失败、格式不匹配、时间范围错误等。
     """
 
-    def __init__(self, message: str, data_type: Optional[str] = None, cause: Optional[Exception] = None):
+    def __init__(
+        self, message: str, data_type: Optional[str] = None, cause: Optional[Exception] = None
+    ):
         """
         初始化自定义数据错误
 
@@ -412,6 +434,7 @@ class ResultProcessingError(BacktestError):
     在处理回测结果时发生的异常。
     包括JSON序列化失败、文件写入错误、统计计算异常等。
     """
+
     pass
 
 
@@ -428,7 +451,7 @@ class ValidationError(BacktestError):
         message: str,
         field_name: Optional[str] = None,
         field_value: Optional[str] = None,
-        cause: Optional[Exception] = None
+        cause: Optional[Exception] = None,
     ):
         """
         初始化验证错误
@@ -464,6 +487,7 @@ class ValidationError(BacktestError):
 
 class ParsingError(NautilusPracticeError):
     """解析处理基础异常"""
+
     pass
 
 
@@ -473,6 +497,7 @@ class SymbolParsingError(ParsingError):
 
     在解析交易对符号时发生的异常。
     """
+
     pass
 
 
@@ -482,6 +507,7 @@ class TimeframeParsingError(ParsingError):
 
     在解析时间周期格式时发生的异常。
     """
+
     pass
 
 
@@ -506,7 +532,9 @@ class PreflightError(NautilusPracticeError):
         problems : Sequence[str]
             问题列表
         """
-        msg = "Preflight failed with the following problems:\n" + "\n".join(f"- {p}" for p in problems)
+        msg = "Preflight failed with the following problems:\n" + "\n".join(
+            f"- {p}" for p in problems
+        )
         super().__init__(msg)
         self.problems = list(problems)
 
@@ -526,14 +554,12 @@ ConfigurationError = ConfigError  # 已弃用，使用 ConfigError
 __all__ = [
     # 基础异常
     "NautilusPracticeError",
-
     # 配置相关
     "ConfigError",
     "ConfigValidationError",
     "ConfigLoadError",
     "UniverseParseError",
     "InstrumentConfigError",
-
     # 数据相关
     "DataError",
     "DataValidationError",
@@ -541,7 +567,6 @@ __all__ = [
     "DataFetchError",
     "TimeColumnError",
     "CatalogError",
-
     # 回测相关
     "BacktestError",
     "BacktestEngineError",
@@ -550,15 +575,12 @@ __all__ = [
     "CustomDataError",
     "ResultProcessingError",
     "ValidationError",
-
     # 解析相关
     "ParsingError",
     "SymbolParsingError",
     "TimeframeParsingError",
-
     # 运行时相关
     "PreflightError",
-
     # 向后兼容（已弃用）
     "ConfigurationError",
 ]

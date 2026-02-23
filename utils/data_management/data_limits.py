@@ -140,9 +140,7 @@ def validate_strategy_data_requirements(
     results = {}
 
     for data_type in data_types:
-        is_available, warning = check_data_availability(
-            start_date, end_date, exchange, data_type
-        )
+        is_available, warning = check_data_availability(start_date, end_date, exchange, data_type)
         results[data_type] = (is_available, warning)
 
     return results

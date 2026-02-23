@@ -141,9 +141,9 @@ class KeltnerRSBreakoutConfig(BaseStrategyConfig):
     enable_time_stop: bool = True  # 启用时间止损
     time_stop_bars: int = TIME_STOP_BARS  # 时间止损 K 线数
     time_stop_momentum_threshold: float = MOMENTUM_THRESHOLD  # 动能确认阈值（1%）
-    breakeven_multiplier: float = BREAKEVEN_MULTIPLIER #保本触发 atr 倍率
+    breakeven_multiplier: float = BREAKEVEN_MULTIPLIER  # 保本触发 atr 倍率
     deviation_threshold: float = DEVIATION_THRESHOLD  # 抛物线止盈乖离阈值（40%）
-    enable_rsi_stop_loss: bool = False # 启用 RSI 超买止损
+    enable_rsi_stop_loss: bool = False  # 启用 RSI 超买止损
     # 暂且不启用，由于抛物线止盈和 RSI 止盈功能上有重复倾向
     max_upper_wick_ratio: float = MAX_UPPER_WICK_RATIO  # K 线最大上影线比例（30%）
 
@@ -163,10 +163,16 @@ class KeltnerRSBreakoutConfig(BaseStrategyConfig):
 
     # 市场狂热度过滤器参数（基于 Funding Rate 和 BTC Dominance）
     enable_euphoria_filter: bool = True  # 是否启用市场狂热度过滤器
-    funding_rate_warning_annual: float = FUNDING_RATE_WARNING_ANNUAL  # 资金费率警告阈值（年化%，停止开仓）
-    funding_rate_danger_annual: float = FUNDING_RATE_DANGER_ANNUAL  # 资金费率危险阈值（年化%，开始清仓）
+    funding_rate_warning_annual: float = (
+        FUNDING_RATE_WARNING_ANNUAL  # 资金费率警告阈值（年化%，停止开仓）
+    )
+    funding_rate_danger_annual: float = (
+        FUNDING_RATE_DANGER_ANNUAL  # 资金费率危险阈值（年化%，开始清仓）
+    )
     enable_btc_dominance_filter: bool = False  # 是否启用 BTC Dominance 过滤器（需要额外数据源）
-    btc_dominance_change_threshold: float = BTC_DOMINANCE_CHANGE_THRESHOLD  # BTC Dominance 变化阈值（%）
+    btc_dominance_change_threshold: float = (
+        BTC_DOMINANCE_CHANGE_THRESHOLD  # BTC Dominance 变化阈值（%）
+    )
     btc_dominance_lookback_days: int = BTC_DOMINANCE_LOOKBACK_DAYS  # BTC Dominance 回溯天数
     euphoria_reduce_position_pct: float = EUPHORIA_REDUCE_POSITION_PCT  # 狂热状态下减仓比例（50%）
 
@@ -222,7 +228,9 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
         self.btc_price_history = OrderedDict()  # {timestamp: price}
 
         # BTC 市场状态指标
-        self.btc_closes = deque(maxlen=max(config.btc_regime_sma_period, config.btc_regime_atr_period) + 1)
+        self.btc_closes = deque(
+            maxlen=max(config.btc_regime_sma_period, config.btc_regime_atr_period) + 1
+        )
         self.btc_trs = deque(maxlen=config.btc_regime_atr_period)
         self.btc_sma = None
         self.btc_atr = None
@@ -232,7 +240,9 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
         self.funding_rate_annual: float | None = None  # 年化资金费率
         self.market_euphoria_level: str = "NORMAL"  # 市场狂热度等级：NORMAL, WARNING, DANGER
         self.euphoria_reduced: bool = False  # 是否已执行狂热减仓（防止重复触发）
-        self.btc_dominance_history = deque(maxlen=config.btc_dominance_lookback_days)  # BTC 市占率历史
+        self.btc_dominance_history = deque(
+            maxlen=config.btc_dominance_lookback_days
+        )  # BTC 市占率历史
 
         # Squeeze 状态历史
         self.squeeze_history = deque(maxlen=config.squeeze_memory_days)
@@ -244,8 +254,8 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
         self.highest_high = None
         # 风险控制
         ## status variables
-        self.breakeven_active = False # 默认情况下为否，直到代码满足条件并调整为正
-        self.rsi_watcher = False # RSI 超买观察者，在 rsi 大于阈值之后开始监控价格
+        self.breakeven_active = False  # 默认情况下为否，直到代码满足条件并调整为正
+        self.rsi_watcher = False  # RSI 超买观察者，在 rsi 大于阈值之后开始监控价格
 
         # 订单状态跟踪
         self._pending_entry_order = False
@@ -262,7 +272,12 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
             self.log.warning("未配置 universe_top_n，不使用 Universe 过滤")
             return
 
-        universe_file = get_project_root() / "data" / "universe" / f"universe_{self.config.universe_top_n}_{self.config.universe_freq}.json"
+        universe_file = (
+            get_project_root()
+            / "data"
+            / "universe"
+            / f"universe_{self.config.universe_top_n}_{self.config.universe_freq}.json"
+        )
         if not universe_file.exists():
             self.log.warning(f"Universe 文件不存在: {universe_file}")
             return
@@ -272,8 +287,12 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
                 raw_data = json.load(f)
                 # 转换符号格式：BTCUSDT:USDT -> BTCUSDT
                 for period, symbols in raw_data.items():
-                    self.universe_data[period] = [s.split(":")[0] if ":" in s else s for s in symbols]
-            self.log.info(f"成功加载 Universe 文件: {universe_file}, 共 {len(self.universe_data)} 个周期")
+                    self.universe_data[period] = [
+                        s.split(":")[0] if ":" in s else s for s in symbols
+                    ]
+            self.log.info(
+                f"成功加载 Universe 文件: {universe_file}, 共 {len(self.universe_data)} 个周期"
+            )
         except Exception as e:
             self.log.error(f"加载 Universe 文件失败: {e}")
 
@@ -290,7 +309,9 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
         else:
             return dt.strftime("%Y-%m")
 
-    def _log_universe_change(self, old_period: str | None, period_str: str, old_symbols: set, new_symbols: set):
+    def _log_universe_change(
+        self, old_period: str | None, period_str: str, old_symbols: set, new_symbols: set
+    ):
         """记录Universe周期变化"""
         if old_period is not None:
             added = new_symbols - old_symbols
@@ -365,15 +386,16 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
         # 订阅 BTC Bar 数据（如果不是同一标的）
         if self.instrument.id != self.btc_instrument_id:
             btc_bar_type_str = self.config.bar_type.replace(
-                self.instrument.id.symbol.value,
-                self.btc_instrument_id.symbol.value
+                self.instrument.id.symbol.value, self.btc_instrument_id.symbol.value
             )
             btc_bar_type = BarType.from_str(btc_bar_type_str)
             self.subscribe_bars(btc_bar_type)
 
         # 订阅 Funding Rate 数据（如果启用市场狂热度过滤器）
         if self.config.enable_euphoria_filter:
-            funding_data_type = DataType(FundingRateData, metadata={"instrument_id": self.instrument.id})
+            funding_data_type = DataType(
+                FundingRateData, metadata={"instrument_id": self.instrument.id}
+            )
             self.subscribe_data(funding_data_type)
             self.log.info(f"已订阅 Funding Rate 数据: {self.instrument.id}")
 
@@ -386,15 +408,16 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
         # 取消订阅 BTC Bar 数据（如果不是同一标的）
         if self.instrument.id != self.btc_instrument_id:
             btc_bar_type_str = self.config.bar_type.replace(
-                self.instrument.id.symbol.value,
-                self.btc_instrument_id.symbol.value
+                self.instrument.id.symbol.value, self.btc_instrument_id.symbol.value
             )
             btc_bar_type = BarType.from_str(btc_bar_type_str)
             self.unsubscribe_bars(btc_bar_type)
 
         # 取消订阅 Funding Rate 数据
         if self.config.enable_euphoria_filter:
-            funding_data_type = DataType(FundingRateData, metadata={"instrument_id": self.instrument.id})
+            funding_data_type = DataType(
+                FundingRateData, metadata={"instrument_id": self.instrument.id}
+            )
             self.unsubscribe_data(funding_data_type)
 
     def on_data(self, data: CustomData) -> None:
@@ -427,11 +450,12 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
             )
 
         # 如果进入危险状态且有持仓，且尚未减仓，触发减仓逻辑
-        if (self.market_euphoria_level == "DANGER" and
-            self.quantity is not None and
-            not self.euphoria_reduced):
+        if (
+            self.market_euphoria_level == "DANGER"
+            and self.quantity is not None
+            and not self.euphoria_reduced
+        ):
             self._handle_euphoria_reduce_position()
-
 
     def _process_main_instrument_bar(self, bar: Bar) -> None:
         """处理主标的Bar数据"""
@@ -444,11 +468,7 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
         self.volumes.append(volume)
 
         if len(self.closes) > 1:
-            tr = max(
-                high - low,
-                abs(high - self.closes[-2]),
-                abs(low - self.closes[-2])
-            )
+            tr = max(high - low, abs(high - self.closes[-2]), abs(low - self.closes[-2]))
             self.trs.append(tr)
 
         if self.config.enable_rsi_stop_loss:
@@ -473,7 +493,7 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
             btc_tr = max(
                 btc_high - btc_low,
                 abs(btc_high - self.btc_closes[-2]),
-                abs(btc_low - self.btc_closes[-2])
+                abs(btc_low - self.btc_closes[-2]),
             )
             self.btc_trs.append(btc_tr)
 
@@ -574,7 +594,6 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
 
         return True
 
-
     def on_bar(self, bar: Bar) -> None:
         """处理 Bar 数据"""
         if bar.bar_type.instrument_id == self.instrument.id:
@@ -602,14 +621,13 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
             keltner_trigger_upper = self.ema + (self.config.keltner_trigger_multiplier * self.atr)
             self._handle_entry(bar, is_squeezing, keltner_trigger_upper)
 
-
     def _update_ema(self):
         """更新EMA指标"""
         if len(self.closes) < self.config.ema_period:
             return
 
         if self.ema is None:
-            self.ema = sum(list(self.closes)[-self.config.ema_period:]) / self.config.ema_period
+            self.ema = sum(list(self.closes)[-self.config.ema_period :]) / self.config.ema_period
         else:
             alpha = EMA_ALPHA_NUMERATOR / (self.config.ema_period + EMA_ALPHA_DENOMINATOR_OFFSET)
             self.ema = alpha * self.closes[-1] + (1 - alpha) * self.ema
@@ -620,7 +638,7 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
             return
 
         if self.atr is None:
-            self.atr = sum(list(self.trs)[-self.config.atr_period:]) / self.config.atr_period
+            self.atr = sum(list(self.trs)[-self.config.atr_period :]) / self.config.atr_period
         else:
             alpha = ATR_ALPHA_NUMERATOR / self.config.atr_period
             self.atr = alpha * self.trs[-1] + (1 - alpha) * self.atr
@@ -628,12 +646,12 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
     def _update_sma(self):
         """更新SMA指标"""
         if len(self.closes) >= self.config.sma_period:
-            self.sma = sum(list(self.closes)[-self.config.sma_period:]) / self.config.sma_period
+            self.sma = sum(list(self.closes)[-self.config.sma_period :]) / self.config.sma_period
 
     def _update_bollinger_bands(self):
         """更新Bollinger Bands指标"""
         if len(self.closes) >= self.config.bb_period:
-            bb_closes = np.array(list(self.closes)[-self.config.bb_period:])
+            bb_closes = np.array(list(self.closes)[-self.config.bb_period :])
             bb_mean = bb_closes.mean()
             bb_std = bb_closes.std()
             self.bb_upper = bb_mean + self.config.bb_std * bb_std
@@ -642,7 +660,9 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
     def _update_volume_sma(self):
         """更新Volume SMA指标"""
         if len(self.volumes) >= self.config.volume_period:
-            self.volume_sma = sum(list(self.volumes)[-self.config.volume_period:]) / self.config.volume_period
+            self.volume_sma = (
+                sum(list(self.volumes)[-self.config.volume_period :]) / self.config.volume_period
+            )
 
     def _update_indicators(self) -> None:
         """更新所有指标"""
@@ -656,17 +676,21 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
         """更新 BTC 市场状态指标"""
         # BTC SMA(200)
         if len(self.btc_closes) >= self.config.btc_regime_sma_period:
-            self.btc_sma = sum(list(self.btc_closes)[-self.config.btc_regime_sma_period:]) / self.config.btc_regime_sma_period
+            self.btc_sma = (
+                sum(list(self.btc_closes)[-self.config.btc_regime_sma_period :])
+                / self.config.btc_regime_sma_period
+            )
 
         # BTC ATR(14) - Wilder's Smoothing
         if len(self.btc_trs) >= self.config.btc_regime_atr_period:
             if self.btc_atr is None:
-                self.btc_atr = sum(list(self.btc_trs)[-self.config.btc_regime_atr_period:]) / self.config.btc_regime_atr_period
+                self.btc_atr = (
+                    sum(list(self.btc_trs)[-self.config.btc_regime_atr_period :])
+                    / self.config.btc_regime_atr_period
+                )
             else:
                 alpha = 1.0 / self.config.btc_regime_atr_period
                 self.btc_atr = alpha * self.btc_trs[-1] + (1 - alpha) * self.btc_atr
-
-
 
     def _get_funding_rate(self) -> float | None:
         """获取当前 Funding Rate"""
@@ -715,8 +739,7 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
     def _get_btc_bar_and_update_history(self) -> tuple[Bar | None, float | None]:
         """获取BTC bar并更新历史价格"""
         btc_bar_type_str = self.config.bar_type.replace(
-            self.instrument.id.symbol.value,
-            self.btc_instrument_id.symbol.value
+            self.instrument.id.symbol.value, self.btc_instrument_id.symbol.value
         )
         btc_bar_type = BarType.from_str(btc_bar_type_str)
         btc_bar = self.cache.bar(btc_bar_type)
@@ -737,7 +760,9 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
         if len(self.btc_price_history) < max_lookback + 1:
             return None
 
-        common_timestamps = sorted(set(self.price_history.keys()) & set(self.btc_price_history.keys()))
+        common_timestamps = sorted(
+            set(self.price_history.keys()) & set(self.btc_price_history.keys())
+        )
         if len(common_timestamps) < max_lookback + 1:
             return None
 
@@ -745,7 +770,7 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
 
     def _calculate_period_rs(self, common_timestamps: list, lookback_days: int) -> float | None:
         """计算指定周期的RS值"""
-        period_ts = common_timestamps[-(lookback_days + 1):]
+        period_ts = common_timestamps[-(lookback_days + 1) :]
         symbol_prices = [self.price_history[ts] for ts in period_ts]
         btc_prices = [self.btc_price_history[ts] for ts in period_ts]
 
@@ -805,7 +830,7 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
             return
 
         # 下单
-        order = self.order_factory.market( # 市价下单
+        order = self.order_factory.market(  # 市价下单
             instrument_id=self.instrument.id,
             order_side=OrderSide.BUY,
             # 使用基类的仓位计算方法进行标准化
@@ -818,7 +843,9 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
         self.entry_price = Decimal(close).quantize(TARGET_PRECISION, ROUND_HALF_UP)
         # 这里实际上应该是在确定 tick 的那一瞬间进行记录，
         # 但是我们这里既然做的是是中低频趋势跟踪策略，那么这个小差距也是可以接受的（1D bar timeframe）
-        self.quantity = qty.quantize(TARGET_PRECISION, ROUND_HALF_UP)  # 记录仓位数量（转换为 Decimal）
+        self.quantity = qty.quantize(
+            TARGET_PRECISION, ROUND_HALF_UP
+        )  # 记录仓位数量（转换为 Decimal）
 
         self.entry_bar_count = 0  # 重置 K 线计数
         self.highest_high = float(bar.high)
@@ -851,10 +878,13 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
 
     def _get_risk_percent(self, high_conviction: bool) -> Decimal:
         """获取风险百分比"""
-        return Decimal(str(
-            self.config.high_conviction_risk_pct if high_conviction
-            else self.config.base_risk_pct
-        ))
+        return Decimal(
+            str(
+                self.config.high_conviction_risk_pct
+                if high_conviction
+                else self.config.base_risk_pct
+            )
+        )
 
     def _calculate_stop_distance(self, bar: Bar) -> Decimal:
         """计算止损距离
@@ -867,8 +897,7 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
 
         if safe_atr > Decimal(str(self.atr)):
             self.log.warning(
-                f"⚠️ ATR过小({self.atr:.6f})，使用下限保护{ATR_FLOOR:.6f} "
-                f"(当前价格: {bar.close})"
+                f"⚠️ ATR过小({self.atr:.6f})，使用下限保护{ATR_FLOOR:.6f} (当前价格: {bar.close})"
             )
 
         stop_distance = Decimal(str(self.config.stop_loss_atr_multiplier)) * safe_atr
@@ -883,7 +912,9 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
 
         return stop_distance
 
-    def _calculate_qty_by_atr(self, equity: Decimal, stop_distance: Decimal, high_conviction: bool) -> Decimal:
+    def _calculate_qty_by_atr(
+        self, equity: Decimal, stop_distance: Decimal, high_conviction: bool
+    ) -> Decimal:
         """使用ATR风险模式计算仓位
 
         添加仓位上限保护，防止异常大仓位导致爆仓风险
@@ -895,7 +926,12 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
         # ✅ P0修复: 添加仓位上限检查（防止异常大仓位）
         # 最大仓位 = 账户权益 * 杠杆 * 最大仓位比例（默认50%）
         max_position_pct = Decimal("0.5")  # 最大50%仓位
-        max_qty = equity * Decimal(str(self.config.leverage)) * max_position_pct / Decimal(str(self.instrument.price_increment))
+        max_qty = (
+            equity
+            * Decimal(str(self.config.leverage))
+            * max_position_pct
+            / Decimal(str(self.instrument.price_increment))
+        )
 
         if qty > max_qty:
             self.log.warning(
@@ -940,9 +976,9 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
             return
 
         # 计算减仓数量（减仓配置比例的仓位）
-        reduce_quantity = (self.quantity * Decimal(str(self.config.euphoria_reduce_position_pct))).quantize(
-            TARGET_PRECISION, ROUND_DOWN
-        )
+        reduce_quantity = (
+            self.quantity * Decimal(str(self.config.euphoria_reduce_position_pct))
+        ).quantize(TARGET_PRECISION, ROUND_DOWN)
 
         if reduce_quantity <= 0:
             return
@@ -1022,9 +1058,7 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
             self.rsi_watcher = True
         elif self.rsi_watcher and self.rsi <= 85:
             self.close_all_positions(self.instrument.id)
-            self.log.info(
-                f"RSI 超买右侧平仓: price={close:.2f}, rsi={self.rsi:.2f}"
-            )
+            self.log.info(f"RSI 超买右侧平仓: price={close:.2f}, rsi={self.rsi:.2f}")
             self._reset_position_tracking()
             self.rsi_watcher = False
             return True
@@ -1035,7 +1069,9 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
         if self.atr is None or self.breakeven_active:
             return
 
-        breakeven_trigger_price = self.entry_price + Decimal(self.config.breakeven_multiplier * self.atr)
+        breakeven_trigger_price = self.entry_price + Decimal(
+            self.config.breakeven_multiplier * self.atr
+        )
         if close > breakeven_trigger_price:
             self.breakeven_active = True
             self.log.info(

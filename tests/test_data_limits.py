@@ -31,9 +31,7 @@ class TestDataLimits(unittest.TestCase):
         end_date = datetime.now().strftime("%Y-%m-%d")
         start_date = (datetime.now() - timedelta(days=10)).strftime("%Y-%m-%d")
 
-        is_available, warning = check_data_availability(
-            start_date, end_date, "binance", "oi"
-        )
+        is_available, warning = check_data_availability(start_date, end_date, "binance", "oi")
 
         self.assertTrue(is_available)
         self.assertIsNone(warning)
@@ -43,9 +41,7 @@ class TestDataLimits(unittest.TestCase):
         end_date = datetime.now().strftime("%Y-%m-%d")
         start_date = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
 
-        is_available, warning = check_data_availability(
-            start_date, end_date, "binance", "oi"
-        )
+        is_available, warning = check_data_availability(start_date, end_date, "binance", "oi")
 
         self.assertFalse(is_available)
         self.assertIsNotNone(warning)
@@ -56,9 +52,7 @@ class TestDataLimits(unittest.TestCase):
         end_date = (datetime.now() - timedelta(days=100)).strftime("%Y-%m-%d")
         start_date = (datetime.now() - timedelta(days=110)).strftime("%Y-%m-%d")
 
-        is_available, warning = check_data_availability(
-            start_date, end_date, "binance", "oi"
-        )
+        is_available, warning = check_data_availability(start_date, end_date, "binance", "oi")
 
         self.assertFalse(is_available)
         self.assertIsNotNone(warning)
@@ -105,12 +99,8 @@ class TestDataLimits(unittest.TestCase):
         end_date = datetime.now().strftime("%Y-%m-%d")
         start_date = (datetime.now() - timedelta(days=10)).strftime("%Y-%m-%d")
 
-        is_available1, _ = check_data_availability(
-            start_date, end_date, "BINANCE", "OI"
-        )
-        is_available2, _ = check_data_availability(
-            start_date, end_date, "binance", "oi"
-        )
+        is_available1, _ = check_data_availability(start_date, end_date, "BINANCE", "OI")
+        is_available2, _ = check_data_availability(start_date, end_date, "binance", "oi")
 
         self.assertEqual(is_available1, is_available2)
 
@@ -129,9 +119,7 @@ class TestDataLimits(unittest.TestCase):
     def test_get_recommended_date_range_custom_days(self):
         """测试获取推荐日期范围（自定义天数）"""
         custom_days = 10
-        start_date, end_date = get_recommended_date_range(
-            "binance", "oi", days=custom_days
-        )
+        start_date, end_date = get_recommended_date_range("binance", "oi", days=custom_days)
 
         start_dt = datetime.strptime(start_date, "%Y-%m-%d")
         end_dt = datetime.strptime(end_date, "%Y-%m-%d")
@@ -143,9 +131,7 @@ class TestDataLimits(unittest.TestCase):
     def test_get_recommended_date_range_exceeds_limit(self):
         """测试获取推荐日期范围（超过限制）"""
         excessive_days = 1000
-        start_date, end_date = get_recommended_date_range(
-            "binance", "oi", days=excessive_days
-        )
+        start_date, end_date = get_recommended_date_range("binance", "oi", days=excessive_days)
 
         start_dt = datetime.strptime(start_date, "%Y-%m-%d")
         end_dt = datetime.strptime(end_date, "%Y-%m-%d")
@@ -158,9 +144,7 @@ class TestDataLimits(unittest.TestCase):
 
     def test_get_recommended_date_range_unknown_exchange(self):
         """测试未知交易所的推荐日期范围"""
-        start_date, end_date = get_recommended_date_range(
-            "unknown_exchange", "oi"
-        )
+        start_date, end_date = get_recommended_date_range("unknown_exchange", "oi")
 
         start_dt = datetime.strptime(start_date, "%Y-%m-%d")
         end_dt = datetime.strptime(end_date, "%Y-%m-%d")
@@ -213,9 +197,7 @@ class TestDataLimits(unittest.TestCase):
         end_date = datetime.now().strftime("%Y-%m-%d")
         start_date = (datetime.now() - timedelta(days=10)).strftime("%Y-%m-%d")
 
-        results = validate_strategy_data_requirements(
-            start_date, end_date, "binance", []
-        )
+        results = validate_strategy_data_requirements(start_date, end_date, "binance", [])
 
         self.assertEqual(len(results), 0)
 

@@ -20,9 +20,7 @@ def load_strategy_class(module_path: str, class_name: str) -> Type[Strategy]:
     return getattr(module, class_name)
 
 
-def load_strategy_config_class(
-    module_path: str, class_name: str
-) -> Type[StrategyConfig]:
+def load_strategy_config_class(module_path: str, class_name: str) -> Type[StrategyConfig]:
     """
     动态加载策略配置类。
 
@@ -70,9 +68,7 @@ def get_config_fields(config_class: Type) -> Set[str]:
     return fields
 
 
-def filter_strategy_params(
-    params: Dict[str, Any], config_class: Type
-) -> Dict[str, Any]:
+def filter_strategy_params(params: Dict[str, Any], config_class: Type) -> Dict[str, Any]:
     """
     根据配置类的定义过滤参数字典，移除不属于该配置类的多余字段。
 

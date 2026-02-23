@@ -35,12 +35,7 @@ class BacktestProfiler:
         self.end_time = None
         self.stats = None
 
-    def profile_function(
-        self,
-        func: Callable,
-        *args,
-        **kwargs
-    ) -> tuple[Any, pstats.Stats]:
+    def profile_function(self, func: Callable, *args, **kwargs) -> tuple[Any, pstats.Stats]:
         """
         分析单个函数的性能
 
@@ -91,11 +86,7 @@ class BacktestProfiler:
 
         return filepath
 
-    def get_stats_string(
-        self,
-        sort_by: str = "cumulative",
-        top_n: int = 50
-    ) -> str:
+    def get_stats_string(self, sort_by: str = "cumulative", top_n: int = 50) -> str:
         """
         获取性能统计的字符串表示
 
@@ -140,16 +131,18 @@ class BacktestProfiler:
         for func, (cc, nc, tt, ct, callers) in list(self.stats.stats.items())[:top_n]:
             filename, line, func_name = func
 
-            function_stats.append({
-                "function": func_name,
-                "filename": filename,
-                "line": line,
-                "calls": nc,
-                "total_time": tt,
-                "cumulative_time": ct,
-                "time_per_call": tt / nc if nc > 0 else 0,
-                "cumulative_per_call": ct / nc if nc > 0 else 0,
-            })
+            function_stats.append(
+                {
+                    "function": func_name,
+                    "filename": filename,
+                    "line": line,
+                    "calls": nc,
+                    "total_time": tt,
+                    "cumulative_time": ct,
+                    "time_per_call": tt / nc if nc > 0 else 0,
+                    "cumulative_per_call": ct / nc if nc > 0 else 0,
+                }
+            )
 
         return function_stats
 

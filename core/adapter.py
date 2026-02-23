@@ -194,8 +194,10 @@ class ConfigAdapter:
         unit = timeframe[-1]
         period = int(timeframe[:-1]) if len(timeframe) > 1 else 1
         agg = (
-            BarAggregation.MINUTE if unit == "m"
-            else BarAggregation.HOUR if unit == "h"
+            BarAggregation.MINUTE
+            if unit == "m"
+            else BarAggregation.HOUR
+            if unit == "h"
             else BarAggregation.DAY
         )
 
@@ -220,7 +222,7 @@ class ConfigAdapter:
 
     def get_required_timeframes(self) -> List[str]:
         """获取策略声明的时间框架需求"""
-        timeframes = self.strategy_config.parameters.get('timeframes', [])
+        timeframes = self.strategy_config.parameters.get("timeframes", [])
         if not timeframes:
             return ["main"]
         return timeframes
@@ -238,11 +240,17 @@ class ConfigAdapter:
 
     def _get_universe_file_path(self, universe_top_n: int, universe_freq: str) -> Path:
         """获取universe文件路径"""
-        return project_root / "data" / "universe" / f"universe_{universe_top_n}_{universe_freq}.json"
+        return (
+            project_root / "data" / "universe" / f"universe_{universe_top_n}_{universe_freq}.json"
+        )
 
-    def _raise_universe_not_found_error(self, universe_file: Path, universe_top_n: int, universe_freq: str):
+    def _raise_universe_not_found_error(
+        self, universe_file: Path, universe_top_n: int, universe_freq: str
+    ):
         """抛出universe文件不存在错误"""
-        available_files = sorted([f.stem for f in (project_root / "data" / "universe").glob("universe_*.json")])
+        available_files = sorted(
+            [f.stem for f in (project_root / "data" / "universe").glob("universe_*.json")]
+        )
         available_configs = [f.replace("universe_", "") for f in available_files]
         raise ConfigValidationError(
             f"配置的 Universe 文件不存在: {universe_file}\n"
@@ -302,8 +310,9 @@ class ConfigAdapter:
         # 兼容旧的 universe_filename 参数
         return self._load_universe_by_filename(params)
 
-
-    def _create_data_feeds_for_symbol(self, symbol: str, inst_cfg: InstrumentConfig) -> List[DataConfig]:
+    def _create_data_feeds_for_symbol(
+        self, symbol: str, inst_cfg: InstrumentConfig
+    ) -> List[DataConfig]:
         """为单个标的创建数据流"""
         feeds = []
         raw_symbol = symbol.split(":")[0]
@@ -394,7 +403,9 @@ class ConfigAdapter:
 
             return f"{symbol}-PERP.{venue}"
 
-    def _restore_bar_type(self, symbol: str, timeframe: str, price_type: str = "LAST", origination: str = "EXTERNAL") -> str:
+    def _restore_bar_type(
+        self, symbol: str, timeframe: str, price_type: str = "LAST", origination: str = "EXTERNAL"
+    ) -> str:
         """从简化字段还原完整 bar_type
 
         Delegate to `utils.instrument_helpers.build_bar_type_from_timeframe`.
@@ -417,28 +428,30 @@ class ConfigAdapter:
             unit = timeframe[-1].lower()
             period = timeframe[:-1] if len(timeframe) > 1 else "1"
 
-            unit_map = {
-                "m": "MINUTE",
-                "h": "HOUR",
-                "d": "DAY"
-            }
+            unit_map = {"m": "MINUTE", "h": "HOUR", "d": "DAY"}
 
             bar_unit = unit_map.get(unit, "DAY")
             return f"{instrument_id}-{period}-{bar_unit}-{price_type.upper()}-{origination.upper()}"
 
-    def _restore_single_instrument(self, params_dict: dict, symbol_key: str, instrument_key: str) -> None:
+    def _restore_single_instrument(
+        self, params_dict: dict, symbol_key: str, instrument_key: str
+    ) -> None:
         """还原单个instrument_id"""
         if symbol_key in params_dict and not params_dict.get(instrument_key):
             params_dict[instrument_key] = self._restore_instrument_id(params_dict[symbol_key])
 
     def _restore_bar_type_if_needed(self, params_dict: dict, symbol_key: str) -> None:
         """如果需要，还原bar_type"""
-        if symbol_key in params_dict and "timeframe" in params_dict and not params_dict.get("bar_type"):
+        if (
+            symbol_key in params_dict
+            and "timeframe" in params_dict
+            and not params_dict.get("bar_type")
+        ):
             params_dict["bar_type"] = self._restore_bar_type(
                 params_dict[symbol_key],
                 params_dict["timeframe"],
                 params_dict.get("price_type", "LAST"),
-                params_dict.get("origination", "EXTERNAL")
+                params_dict.get("origination", "EXTERNAL"),
             )
 
     def _apply_strategy_overrides(self, params_dict: dict) -> None:
@@ -455,6 +468,7 @@ class ConfigAdapter:
 
         try:
             import importlib
+
             module = importlib.import_module(self.strategy_config.module_path)
             config_class = getattr(module, self.strategy_config.config_class)
             return config_class(**params_dict)
@@ -483,31 +497,26 @@ class ConfigAdapter:
         # 实例化配置类
         return self._instantiate_config_class(params_dict)
 
-
-
     def _check_data_limits(self):
         """检查数据限制"""
         import os
-        if os.environ.get('SKIP_DATA_LIMIT_CHECK') == '1':
+
+        if os.environ.get("SKIP_DATA_LIMIT_CHECK") == "1":
             return
 
-        data_types = self.strategy_config.parameters.get('data_types', [])
-        if 'oi' not in data_types:
+        data_types = self.strategy_config.parameters.get("data_types", [])
+        if "oi" not in data_types:
             return
 
         from utils.data_management.data_limits import check_data_availability
 
         is_available, warning = check_data_availability(
-            self.get_start_date(),
-            self.get_end_date(),
-            self.get_venue(),
-            "oi"
+            self.get_start_date(), self.get_end_date(), self.get_venue(), "oi"
         )
 
         if not is_available and warning:
             raise ConfigValidationError(
-                f"数据范围超出交易所限制\n\n{warning}\n\n"
-                f"请修改配置文件中的日期范围或切换交易所。"
+                f"数据范围超出交易所限制\n\n{warning}\n\n请修改配置文件中的日期范围或切换交易所。"
             )
 
     def build_backtest_config(self) -> BacktestConfig:
@@ -581,12 +590,8 @@ class ConfigAdapter:
     def reload(self):
         """重新加载所有配置文件并清除缓存"""
         self.active_config = self.loader.load_active_config()
-        self.env_config = self.loader.load_environment_config(
-            self.active_config.environment
-        )
-        self.strategy_config = self.loader.load_strategy_config(
-            self.active_config.strategy
-        )
+        self.env_config = self.loader.load_environment_config(self.active_config.environment)
+        self.strategy_config = self.loader.load_strategy_config(self.active_config.strategy)
         self._backtest_config_cache = None
 
 

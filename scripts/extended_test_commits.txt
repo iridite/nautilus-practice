@@ -1,0 +1,25 @@
+# 扩展测试计划 - 接下来的 16 个 commits
+
+## 批次 1 (commits 5-8)
+0bdc412|2026-02-22 13:50|feat: add local GitHub Actions verification script
+4839344|2026-02-22 13:34|fix: resolve instrument_id format mismatch and CI configuration issues
+6e5cc8c|2026-02-22 11:22|feat: add new modules and documentation
+4f8f478|2026-02-22 11:22|test: significantly expand test coverage for core modules
+
+## 批次 2 (commits 9-12)
+482ab55|2026-02-22 11:21|feat(engine): improve engine robustness and universe generation
+13ced80|2026-02-22 11:21|feat(data): add comprehensive data quality checking system
+492b775|2026-02-22 11:21|feat(core): enhance configuration system with comprehensive documentation
+a3e63a1|2026-02-22 11:21|chore: update project configuration and documentation
+
+## 批次 3 (commits 13-16)
+7f594f3|2026-02-22 11:05|fix(strategy): fix 4 critical P0 bugs in Keltner RS Breakout strategy
+ffc5feb|2026-02-20 21:56|style: fix code formatting and linting issues
+25bc90c|2026-02-20 21:45|docs: add repository privacy note to AGENTS.md
+3d87c4d|2026-02-20 21:44|feat: add examples and performance comparison scripts
+
+## 批次 4 (commits 17-20)
+4162f44|2026-02-20 21:44|test: add comprehensive tests for modular components and tools
+d1ebfd4|2026-02-20 21:43|feat: add performance analysis and profiling tools
+e4fef9c|2026-02-20 21:43|feat: add modular strategy components and refactored strategies
+e054bcd|2026-02-20 21:43|docs: add architecture analysis and refactoring documentation

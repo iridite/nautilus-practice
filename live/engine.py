@@ -88,13 +88,9 @@ def load_strategy_instance(strategy_config, instrument_ids):
 
     # 验证类是否存在
     if not hasattr(module, strategy_name):
-        raise ValueError(
-            f"Strategy class '{strategy_name}' not found in module '{module_path}'"
-        )
+        raise ValueError(f"Strategy class '{strategy_name}' not found in module '{module_path}'")
     if not hasattr(module, config_class_name):
-        raise ValueError(
-            f"Config class '{config_class_name}' not found in module '{module_path}'"
-        )
+        raise ValueError(f"Config class '{config_class_name}' not found in module '{module_path}'")
 
     StrategyClass = getattr(module, strategy_name)
     ConfigClass = getattr(module, config_class_name)
@@ -104,15 +100,23 @@ def load_strategy_instance(strategy_config, instrument_ids):
     if len(instrument_ids) == 1:
         params["instrument_id"] = instrument_ids[0]
     else:
-        raise ValueError(f"Live trading currently only supports single instrument, got {len(instrument_ids)}")
+        raise ValueError(
+            f"Live trading currently only supports single instrument, got {len(instrument_ids)}"
+        )
 
-    if "btc_symbol" in params and (not params.get("btc_instrument_id") or params.get("btc_instrument_id") == ""):
+    if "btc_symbol" in params and (
+        not params.get("btc_instrument_id") or params.get("btc_instrument_id") == ""
+    ):
         inst_id = params["instrument_id"]
         try:
             # Derive btc_instrument_id by inheriting contract type and venue from the template inst_id
-            params["btc_instrument_id"] = format_aux_instrument_id(params["btc_symbol"], template_inst_id=inst_id)
+            params["btc_instrument_id"] = format_aux_instrument_id(
+                params["btc_symbol"], template_inst_id=inst_id
+            )
         except Exception as e:
-            raise ValueError(f"Failed to format btc_instrument_id for template {inst_id}, btc_symbol={params.get('btc_symbol')}: {e}")
+            raise ValueError(
+                f"Failed to format btc_instrument_id for template {inst_id}, btc_symbol={params.get('btc_symbol')}: {e}"
+            )
 
     config = ConfigClass(**params)
     return StrategyClass(config=config)
@@ -209,6 +213,7 @@ def _load_configs(env_name: Optional[str]):
         return load_config(env_name)
 
     from core.loader import create_default_loader
+
     loader = create_default_loader()
     active_config = loader.load_active_config()
     env_config, strategy_config, _ = load_config(active_config.environment)
@@ -217,7 +222,7 @@ def _load_configs(env_name: Optional[str]):
 
 def _validate_live_config(env_config):
     """验证实盘配置"""
-    if not hasattr(env_config, 'live') or not env_config.live:
+    if not hasattr(env_config, "live") or not env_config.live:
         raise ValueError("Environment does not have live trading configuration")
 
 
@@ -248,7 +253,7 @@ def _build_venue_configs(live_cfg, instrument_ids):
             "data_clients": {BINANCE: data_config},
             "exec_clients": {BINANCE: exec_config},
             "data_factory": {BINANCE: BinanceLiveDataClientFactory},
-            "exec_factory": {BINANCE: BinanceLiveExecClientFactory}
+            "exec_factory": {BINANCE: BinanceLiveExecClientFactory},
         }
     elif live_cfg.venue == "OKX":
         data_config, exec_config = build_okx_config(live_cfg, instrument_ids)
@@ -256,7 +261,7 @@ def _build_venue_configs(live_cfg, instrument_ids):
             "data_clients": {OKX: data_config},
             "exec_clients": {OKX: exec_config},
             "data_factory": {OKX: OKXLiveDataClientFactory},
-            "exec_factory": {OKX: OKXLiveExecClientFactory}
+            "exec_factory": {OKX: OKXLiveExecClientFactory},
         }
     else:
         raise ValueError(f"Unsupported venue: {live_cfg.venue}")
@@ -304,7 +309,9 @@ def _load_instruments(node, instrument_ids):
     """加载标的信息"""
     for inst_id_str in instrument_ids:
         venue_str = inst_id_str.split(".")[-1]
-        inst_file = BASE_DIR / "data" / "instrument" / venue_str / f"{inst_id_str.split('.')[0]}.json"
+        inst_file = (
+            BASE_DIR / "data" / "instrument" / venue_str / f"{inst_id_str.split('.')[0]}.json"
+        )
 
         if inst_file.exists():
             inst = load_instrument(inst_file)

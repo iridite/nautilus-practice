@@ -136,7 +136,6 @@ def resolve_symbol_and_type(input_symbol: str) -> Tuple[str, str]:
     return _parse_simplified_format(normalized_symbol)
 
 
-
 def _get_unit_mapping() -> dict:
     """获取时间单位映射"""
     return {
@@ -416,7 +415,9 @@ def convert_timeframe_to_seconds(timeframe: str) -> int:
     }
 
     if aggregation not in base_seconds:
-        raise TimeframeParsingError(f"Unsupported aggregation for seconds conversion: {aggregation}")
+        raise TimeframeParsingError(
+            f"Unsupported aggregation for seconds conversion: {aggregation}"
+        )
 
     return base_seconds[aggregation] * period
 
@@ -480,8 +481,41 @@ def get_supported_timeframes(exchange: str) -> list[str]:
     """
     # 常见交易所支持的时间周期
     exchange_timeframes = {
-        "binance": ["1m", "3m", "5m", "15m", "30m", "1h", "2h", "4h", "6h", "8h", "12h", "1d", "3d", "1w", "1M"],
-        "okx": ["1m", "3m", "5m", "15m", "30m", "1h", "2h", "4h", "6h", "12h", "1d", "2d", "3d", "1w", "1M", "3M"],
+        "binance": [
+            "1m",
+            "3m",
+            "5m",
+            "15m",
+            "30m",
+            "1h",
+            "2h",
+            "4h",
+            "6h",
+            "8h",
+            "12h",
+            "1d",
+            "3d",
+            "1w",
+            "1M",
+        ],
+        "okx": [
+            "1m",
+            "3m",
+            "5m",
+            "15m",
+            "30m",
+            "1h",
+            "2h",
+            "4h",
+            "6h",
+            "12h",
+            "1d",
+            "2d",
+            "3d",
+            "1w",
+            "1M",
+            "3M",
+        ],
         "bybit": ["1m", "3m", "5m", "15m", "30m", "1h", "2h", "4h", "6h", "12h", "1d", "1w", "1M"],
         "huobi": ["1m", "5m", "15m", "30m", "1h", "4h", "1d", "1w", "1M"],
     }
