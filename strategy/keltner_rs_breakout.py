@@ -265,6 +265,9 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
             f"SMA={self.config.sma_period}, BTC={self.config.btc_instrument_id}"
         )
 
+        # 解析 base symbol（用于缓存机制）
+        self._parse_base_symbol()
+
         # 初始化 RSI 指标
         if self.rsi_indicator:
             self.rsi_indicator.update_raw(0.0)
