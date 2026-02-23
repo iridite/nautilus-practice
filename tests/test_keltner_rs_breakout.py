@@ -117,7 +117,8 @@ class TestSymbolActiveCache(unittest.TestCase):
         mock_universe_file.write_text('{"2024-01": ["ETHUSDT", "BTCUSDT"]}')
 
         mock_universe = MagicMock()
-        mock_universe.get_current_period.side_effect = [202401, 202402]
+        mock_universe.update.side_effect = [True, True]  # 周期变化返回 True
+        mock_universe.get_current_period.side_effect = ["2024-01", "2024-02"]
         mock_universe.is_active.side_effect = [True, False]
         mock_universe_cls.return_value = mock_universe
 
@@ -126,12 +127,12 @@ class TestSymbolActiveCache(unittest.TestCase):
 
         # 第一次更新
         strategy._update_active_cache(1000000)
-        self.assertEqual(strategy._last_universe_period, 202401)
+        self.assertEqual(strategy._last_universe_period, "2024-01")
         self.assertTrue(strategy._is_active_cache)
 
         # 第二次更新（周期变化）
         strategy._update_active_cache(2000000)
-        self.assertEqual(strategy._last_universe_period, 202402)
+        self.assertEqual(strategy._last_universe_period, "2024-02")
         self.assertFalse(strategy._is_active_cache)
 
         mock_universe_file.unlink(missing_ok=True)
@@ -146,7 +147,8 @@ class TestSymbolActiveCache(unittest.TestCase):
         mock_universe_file.write_text('{"2024-01": ["ETHUSDT", "BTCUSDT"]}')
 
         mock_universe = MagicMock()
-        mock_universe.get_current_period.return_value = 202401
+        mock_universe.update.side_effect = [True, False]  # 第一次变化，第二次不变化
+        mock_universe.get_current_period.return_value = "2024-01"
         mock_universe.is_active.return_value = True
         mock_universe_cls.return_value = mock_universe
 
@@ -155,15 +157,15 @@ class TestSymbolActiveCache(unittest.TestCase):
 
         # 第一次更新
         strategy._update_active_cache(1000000)
-        self.assertEqual(strategy._last_universe_period, 202401)
+        self.assertEqual(strategy._last_universe_period, "2024-01")
         self.assertTrue(strategy._is_active_cache)
 
         # 第二次更新（周期未变化）
         strategy._update_active_cache(1500000)
-        self.assertEqual(strategy._last_universe_period, 202401)
+        self.assertEqual(strategy._last_universe_period, "2024-01")
         self.assertTrue(strategy._is_active_cache)
 
-        # is_active 应该只被调用一次
+        # is_active 应该只被调用一次（因为第二次 update 返回 False）
         mock_universe.is_active.assert_called_once_with("ETHUSDT")
 
         mock_universe_file.unlink(missing_ok=True)
@@ -204,7 +206,9 @@ class TestSymbolActiveCache(unittest.TestCase):
         mock_universe_file.write_text('{"2024-01": ["ETHUSDT", "BTCUSDT"]}')
 
         mock_universe = MagicMock()
-        mock_universe.get_current_period.side_effect = [202401, 202401, 202402]
+        # update() 返回值：True 表示周期变化，False 表示周期未变化
+        mock_universe.update.side_effect = [True, False, True]
+        mock_universe.get_current_period.side_effect = ["2024-01", "2024-02"]
         mock_universe.is_active.side_effect = [True, False]
         mock_universe_cls.return_value = mock_universe
 
@@ -212,9 +216,9 @@ class TestSymbolActiveCache(unittest.TestCase):
         strategy._base_symbol = "ETHUSDT"
 
         # 模拟 3 次 bar 更新
-        strategy._update_active_cache(1000000)  # 周期 202401，缓存 True
-        strategy._update_active_cache(1500000)  # 周期 202401，不更新
-        strategy._update_active_cache(2000000)  # 周期 202402，缓存 False
+        strategy._update_active_cache(1000000)  # 周期变化，缓存 True
+        strategy._update_active_cache(1500000)  # 周期未变化，不更新
+        strategy._update_active_cache(2000000)  # 周期变化，缓存 False
 
         # is_active 应该只被调用 2 次（周期变化时）
         self.assertEqual(mock_universe.is_active.call_count, 2)
