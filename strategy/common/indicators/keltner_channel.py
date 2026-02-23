@@ -6,7 +6,7 @@ Keltner Channel 是一个基于 EMA 和 ATR 的波动率通道指标。
 """
 
 from collections import deque
-import numpy as np
+from nautilus_trader.indicators.volatility import BollingerBands
 from config.constants import (
     EMA_ALPHA_NUMERATOR,
     EMA_ALPHA_DENOMINATOR_OFFSET,
@@ -65,12 +65,13 @@ class KeltnerChannel:
         self.volumes = deque(maxlen=volume_period + 1)
         self.trs = deque(maxlen=atr_period)
 
+        # NautilusTrader BollingerBands 指标
+        self.bb = BollingerBands(period=bb_period, k=bb_std)
+
         # 指标值
         self.ema: float | None = None
         self.atr: float | None = None
         self.sma: float | None = None
-        self.bb_upper: float | None = None
-        self.bb_lower: float | None = None
         self.volume_sma: float | None = None
 
     def update(self, high: float, low: float, close: float, volume: float) -> None:
@@ -86,6 +87,9 @@ class KeltnerChannel:
         self.closes.append(close)
         self.volumes.append(volume)
 
+        # 更新 BollingerBands
+        self.bb.update_raw(high, low, close)
+
         # 计算 True Range
         if len(self.closes) > 1:
             tr = max(high - low, abs(high - self.closes[-2]), abs(low - self.closes[-2]))
@@ -95,7 +99,6 @@ class KeltnerChannel:
         self._update_ema()
         self._update_atr()
         self._update_sma()
-        self._update_bollinger_bands()
         self._update_volume_sma()
 
     def _update_ema(self) -> None:
@@ -124,15 +127,6 @@ class KeltnerChannel:
         """更新 SMA 指标"""
         if len(self.closes) >= self.sma_period:
             self.sma = sum(list(self.closes)[-self.sma_period :]) / self.sma_period
-
-    def _update_bollinger_bands(self) -> None:
-        """更新 Bollinger Bands 指标"""
-        if len(self.closes) >= self.bb_period:
-            bb_closes = np.array(list(self.closes)[-self.bb_period :])
-            bb_mean = bb_closes.mean()
-            bb_std = bb_closes.std()
-            self.bb_upper = bb_mean + self.bb_std * bb_std
-            self.bb_lower = bb_mean - self.bb_std * bb_std
 
     def _update_volume_sma(self) -> None:
         """更新 Volume SMA 指标"""
@@ -176,14 +170,17 @@ class KeltnerChannel:
         Returns:
             True 表示处于 Squeeze 状态
         """
-        if self.bb_upper is None or self.bb_lower is None:
+        if not self.bb.initialized:
             return False
+
+        bb_upper = self.bb.upper
+        bb_lower = self.bb.lower
 
         keltner_upper, keltner_lower = self.get_keltner_base_bands()
         if keltner_upper is None or keltner_lower is None:
             return False
 
-        return self.bb_upper < keltner_upper and self.bb_lower > keltner_lower
+        return bb_upper < keltner_upper and bb_lower > keltner_lower
 
     def is_ready(self) -> bool:
         """
@@ -196,7 +193,6 @@ class KeltnerChannel:
             self.ema is not None
             and self.atr is not None
             and self.sma is not None
-            and self.bb_upper is not None
-            and self.bb_lower is not None
+            and self.bb.initialized
             and self.volume_sma is not None
         )
