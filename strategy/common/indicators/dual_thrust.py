@@ -83,9 +83,9 @@ class DualThrustIndicator:
 
         # 计算关键价格
         hh = max(lookback_highs)  # 最高价
-        ll = min(lookback_lows)   # 最低价
-        hc = max(lookback_closes) # 最高收盘价
-        lc = min(lookback_closes) # 最低收盘价
+        ll = min(lookback_lows)  # 最低价
+        hc = max(lookback_closes)  # 最高收盘价
+        lc = min(lookback_closes)  # 最低收盘价
 
         # 计算 Range
         self.range_value = max(hh - lc, hc - ll)
@@ -102,9 +102,9 @@ class DualThrustIndicator:
             True 表示数据足够，可以使用指标
         """
         return (
-            len(self.highs) > self.lookback_period and
-            self.upper_band is not None and
-            self.lower_band is not None
+            len(self.highs) > self.lookback_period
+            and self.upper_band is not None
+            and self.lower_band is not None
         )
 
     def get_bands(self) -> tuple[float | None, float | None]:

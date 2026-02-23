@@ -1,6 +1,7 @@
 """
 Tests for Config Loader
 """
+
 import unittest
 
 from core.loader import ConfigLoader

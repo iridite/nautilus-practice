@@ -95,4 +95,3 @@ def load_instrument(
     _set_default_fees(data)
 
     return cls.from_dict(data)
-

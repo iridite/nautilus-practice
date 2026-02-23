@@ -1,6 +1,7 @@
 """
 Tests for Keltner RS Breakout Strategy
 """
+
 import unittest
 
 from strategy.keltner_rs_breakout import KeltnerRSBreakoutConfig
@@ -16,10 +17,7 @@ class TestKeltnerRSBreakoutConfig(unittest.TestCase):
 
     def test_custom_config(self):
         config = KeltnerRSBreakoutConfig(
-            symbol="ETHUSDT",
-            timeframe="1h",
-            ema_period=30,
-            base_risk_pct=0.02
+            symbol="ETHUSDT", timeframe="1h", ema_period=30, base_risk_pct=0.02
         )
         self.assertEqual(config.symbol, "ETHUSDT")
         self.assertEqual(config.ema_period, 30)

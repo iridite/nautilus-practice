@@ -73,7 +73,9 @@ def get_ns_timestamp(date_str: str) -> int:
     return millis_to_nanos(ms_timestamp)
 
 
-def format_timestamp(timestamp: int, format_str: str = "%Y-%m-%d %H:%M:%S", is_ms: bool = True) -> str:
+def format_timestamp(
+    timestamp: int, format_str: str = "%Y-%m-%d %H:%M:%S", is_ms: bool = True
+) -> str:
     """
     将时间戳格式化为字符串
 
@@ -155,8 +157,8 @@ def parse_datetime_range(start_date: str, end_date: str) -> Tuple[pd.Timestamp, 
     --------
     >>> start_ts, end_ts = parse_datetime_range("2024-01-01", "2024-01-31")
     """
-    start_ts = pd.Timestamp(start_date).tz_localize('UTC')
-    end_ts = pd.Timestamp(end_date).tz_localize('UTC')
+    start_ts = pd.Timestamp(start_date).tz_localize("UTC")
+    end_ts = pd.Timestamp(end_date).tz_localize("UTC")
 
     if start_ts > end_ts:
         raise ValueError(f"Start date ({start_date}) cannot be later than end date ({end_date})")

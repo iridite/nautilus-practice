@@ -25,7 +25,7 @@ def load_universe_symbols(adapter, base_dir: Path) -> set:
     """加载 Universe 符号"""
     try:
         cfg = adapter.build_backtest_config()
-        params = cfg.strategy.params if hasattr(cfg.strategy, 'params') else {}
+        params = cfg.strategy.params if hasattr(cfg.strategy, "params") else {}
 
         universe_file = params.get("universe_filename") or params.get("universe_filepath")
         if not universe_file:
@@ -58,11 +58,15 @@ def parse_arguments():
     backtest_parser.add_argument("--skip-data-check", action="store_true")
     backtest_parser.add_argument("--skip-oi-data", action="store_true")
     backtest_parser.add_argument("--force-oi-fetch", action="store_true")
-    backtest_parser.add_argument("--oi-exchange", choices=["binance", "okx", "auto"], default="auto")
+    backtest_parser.add_argument(
+        "--oi-exchange", choices=["binance", "okx", "auto"], default="auto"
+    )
     backtest_parser.add_argument("--max-retries", type=int, default=3)
 
     sandbox_parser = subparsers.add_parser("sandbox", help="Run sandbox trading")
-    sandbox_parser.add_argument("--env", type=str, help="Environment name (default: from active.yaml)")
+    sandbox_parser.add_argument(
+        "--env", type=str, help="Environment name (default: from active.yaml)"
+    )
 
     live_parser = subparsers.add_parser("live", help="Run live trading")
     live_parser.add_argument("--env", type=str, help="Environment name (default: from active.yaml)")
@@ -87,9 +91,9 @@ def main():
         update_instrument_definitions(adapter, BASE_DIR, universe_symbols)
         run_backtest(args, adapter, BASE_DIR)
     elif args.command == "sandbox":
-        run_sandbox(args, getattr(args, 'env', None))
+        run_sandbox(args, getattr(args, "env", None))
     elif args.command == "live":
-        run_live(args, getattr(args, 'env', None))
+        run_live(args, getattr(args, "env", None))
 
 
 if __name__ == "__main__":

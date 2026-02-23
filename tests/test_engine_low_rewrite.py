@@ -35,6 +35,7 @@ class TestEngineLowRewrite(unittest.TestCase):
         """测试 engine_low 模块能正常导入"""
         try:
             import backtest.engine_low
+
             self.assertTrue(True, "engine_low 模块导入成功")
         except ImportError as e:
             self.fail(f"engine_low 模块导入失败: {e}")
@@ -48,6 +49,7 @@ class TestEngineLowRewrite(unittest.TestCase):
                 _process_backtest_results,
                 run_low_level,
             )
+
             self.assertTrue(True, "所有函数导入成功")
         except ImportError as e:
             self.fail(f"函数导入失败: {e}")
@@ -76,22 +78,27 @@ class TestEngineLowRewrite(unittest.TestCase):
 
         # 检查函数参数
         sig = inspect.signature(_load_data_for_feed)
-        expected_params = ['engine', 'base_dir', 'cfg', 'data_cfg', 'loaded_instruments']
+        expected_params = ["engine", "base_dir", "cfg", "data_cfg", "loaded_instruments"]
         actual_params = list(sig.parameters.keys())
-        self.assertEqual(actual_params, expected_params,
-                        f"_load_data_for_feed 参数不匹配: {actual_params}")
+        self.assertEqual(
+            actual_params, expected_params, f"_load_data_for_feed 参数不匹配: {actual_params}"
+        )
 
         sig = inspect.signature(_load_custom_data_to_engine)
-        expected_params = ['cfg', 'base_dir', 'engine', 'loaded_instruments']
+        expected_params = ["cfg", "base_dir", "engine", "loaded_instruments"]
         actual_params = list(sig.parameters.keys())
-        self.assertEqual(actual_params, expected_params,
-                        f"_load_custom_data_to_engine 参数不匹配: {actual_params}")
+        self.assertEqual(
+            actual_params,
+            expected_params,
+            f"_load_custom_data_to_engine 参数不匹配: {actual_params}",
+        )
 
         sig = inspect.signature(run_low_level)
-        expected_params = ['cfg', 'base_dir']
+        expected_params = ["cfg", "base_dir"]
         actual_params = list(sig.parameters.keys())
-        self.assertEqual(actual_params, expected_params,
-                        f"run_low_level 参数不匹配: {actual_params}")
+        self.assertEqual(
+            actual_params, expected_params, f"run_low_level 参数不匹配: {actual_params}"
+        )
 
     def test_data_load_error_with_file_path(self):
         """测试 DataLoadError 是否支持文件路径"""
@@ -120,7 +127,7 @@ class TestEngineLowRewrite(unittest.TestCase):
         self.assertIn(test_type, str(error))
         self.assertIn("Test error message", str(error))
 
-    @patch('utils.data_management.data_loader.load_ohlcv_csv')
+    @patch("utils.data_management.data_loader.load_ohlcv_csv")
     def test_load_data_for_feed_time_column_detection(self, mock_load_csv):
         """测试数据加载函数的时间列检测功能"""
 
@@ -139,27 +146,27 @@ class TestEngineLowRewrite(unittest.TestCase):
         mock_data_cfg.full_path = mock_path
         mock_data_cfg.label = "main"
 
-        mock_loaded_instruments = {
-            "BTCUSDT.BINANCE": Mock()
-        }
+        mock_loaded_instruments = {"BTCUSDT.BINANCE": Mock()}
         mock_loaded_instruments["BTCUSDT.BINANCE"].id = "BTCUSDT.BINANCE"
 
         # Mock CSV 样本数据 (包含 datetime 列)
         import pandas as pd
-        sample_df = pd.DataFrame({
-            'datetime': ['2023-01-01 00:00:00'],
-            'open': [50000],
-            'high': [50100],
-            'low': [49900],
-            'close': [50050],
-            'volume': [100]
-        })
+
+        sample_df = pd.DataFrame(
+            {
+                "datetime": ["2023-01-01 00:00:00"],
+                "open": [50000],
+                "high": [50100],
+                "low": [49900],
+                "close": [50050],
+                "volume": [100],
+            }
+        )
         mock_load_csv.return_value = sample_df
 
         try:
             _load_data_for_feed(
-                mock_engine, mock_base_dir, mock_cfg,
-                mock_data_cfg, mock_loaded_instruments
+                mock_engine, mock_base_dir, mock_cfg, mock_data_cfg, mock_loaded_instruments
             )
             # 如果没有抛出异常就是成功的
             self.assertTrue(True, "时间列检测功能工作正常")
@@ -210,5 +217,5 @@ class TestEngineImportIntegration(unittest.TestCase):
             self.fail(f"关键导入失败: {e}")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

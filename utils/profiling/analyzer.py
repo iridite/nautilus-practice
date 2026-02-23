@@ -46,20 +46,24 @@ class ProfileAnalyzer:
         for func, (cc, nc, tt, ct, callers) in list(self.stats.stats.items())[:top_n]:
             filename, line, func_name = func
 
-            hotspots.append({
-                "function": func_name,
-                "filename": filename,
-                "line": line,
-                "calls": nc,
-                "total_time": tt,
-                "cumulative_time": ct,
-                "percentage": 0,  # 稍后计算
-            })
+            hotspots.append(
+                {
+                    "function": func_name,
+                    "filename": filename,
+                    "line": line,
+                    "calls": nc,
+                    "total_time": tt,
+                    "cumulative_time": ct,
+                    "percentage": 0,  # 稍后计算
+                }
+            )
 
         # 计算百分比
         total_time = sum(h["cumulative_time"] for h in hotspots)
         for hotspot in hotspots:
-            hotspot["percentage"] = (hotspot["cumulative_time"] / total_time * 100) if total_time > 0 else 0
+            hotspot["percentage"] = (
+                (hotspot["cumulative_time"] / total_time * 100) if total_time > 0 else 0
+            )
 
         return hotspots
 
@@ -75,10 +79,7 @@ class ProfileAnalyzer:
             调用树字典
         """
         # 查找匹配的函数
-        matching_funcs = [
-            func for func in self.stats.stats.keys()
-            if func[2] == func_name
-        ]
+        matching_funcs = [func for func in self.stats.stats.keys() if func[2] == func_name]
 
         if not matching_funcs:
             return {"error": f"Function '{func_name}' not found"}
@@ -131,14 +132,16 @@ class ProfileAnalyzer:
             if percentage >= threshold_pct:
                 filename, line, func_name = func
 
-                bottlenecks.append({
-                    "function": func_name,
-                    "filename": filename,
-                    "line": line,
-                    "calls": nc,
-                    "cumulative_time": ct,
-                    "percentage": percentage,
-                })
+                bottlenecks.append(
+                    {
+                        "function": func_name,
+                        "filename": filename,
+                        "line": line,
+                        "calls": nc,
+                        "cumulative_time": ct,
+                        "percentage": percentage,
+                    }
+                )
 
         # 按百分比排序
         bottlenecks.sort(key=lambda x: x["percentage"], reverse=True)
@@ -168,17 +171,21 @@ class ProfileAnalyzer:
             b = hotspots_b[func_name]
 
             time_diff = b["cumulative_time"] - a["cumulative_time"]
-            time_diff_pct = (time_diff / a["cumulative_time"] * 100) if a["cumulative_time"] > 0 else 0
+            time_diff_pct = (
+                (time_diff / a["cumulative_time"] * 100) if a["cumulative_time"] > 0 else 0
+            )
 
-            comparison.append({
-                "function": func_name,
-                "time_before": a["cumulative_time"],
-                "time_after": b["cumulative_time"],
-                "time_diff": time_diff,
-                "time_diff_pct": time_diff_pct,
-                "calls_before": a["calls"],
-                "calls_after": b["calls"],
-            })
+            comparison.append(
+                {
+                    "function": func_name,
+                    "time_before": a["cumulative_time"],
+                    "time_after": b["cumulative_time"],
+                    "time_diff": time_diff,
+                    "time_diff_pct": time_diff_pct,
+                    "calls_before": a["calls"],
+                    "calls_after": b["calls"],
+                }
+            )
 
         # 按时间差异排序
         comparison.sort(key=lambda x: abs(x["time_diff"]), reverse=True)
@@ -203,13 +210,15 @@ class ProfileAnalyzer:
 
             # 检查函数名是否包含 I/O 关键字
             if any(keyword in func_name.lower() for keyword in io_keywords):
-                io_operations.append({
-                    "function": func_name,
-                    "filename": filename,
-                    "line": line,
-                    "calls": nc,
-                    "cumulative_time": ct,
-                })
+                io_operations.append(
+                    {
+                        "function": func_name,
+                        "filename": filename,
+                        "line": line,
+                        "calls": nc,
+                        "cumulative_time": ct,
+                    }
+                )
 
         # 按累计时间排序
         io_operations.sort(key=lambda x: x["cumulative_time"], reverse=True)
@@ -283,11 +292,7 @@ class ProfileAnalyzer:
         io_ops = self.get_io_operations()[:10]
         if io_ops:
             for op in io_ops:
-                print(
-                    f"  {op['function']:<40} "
-                    f"{op['calls']:>6} 次 "
-                    f"({op['cumulative_time']:.4f}s)"
-                )
+                print(f"  {op['function']:<40} {op['calls']:>6} 次 ({op['cumulative_time']:.4f}s)")
         else:
             print("  未发现明显的 I/O 操作")
 

@@ -57,9 +57,7 @@ class ReportGenerator:
         trading_days: int,
     ) -> str:
         """生成单个策略的详细报告"""
-        metrics = self.analyzer.calculate_metrics(
-            strategy_name, risk_free_rate, trading_days
-        )
+        metrics = self.analyzer.calculate_metrics(strategy_name, risk_free_rate, trading_days)
 
         report_lines = [
             "=" * 80,
@@ -142,9 +140,7 @@ class ReportGenerator:
         ]
 
         # 格式化对比表格
-        display_comparison = comparison[
-            [m for m in key_metrics if m in comparison.columns]
-        ].copy()
+        display_comparison = comparison[[m for m in key_metrics if m in comparison.columns]].copy()
 
         # 重命名列以便显示
         column_names = {
@@ -164,20 +160,20 @@ class ReportGenerator:
         report_lines.append("")
 
         # 添加排名信息
-        report_lines.extend([
-            "",
-            "🏆 策略排名",
-            "-" * 120,
-        ])
+        report_lines.extend(
+            [
+                "",
+                "🏆 策略排名",
+                "-" * 120,
+            ]
+        )
 
         # 按夏普率排名
         if "sharpe_ratio" in comparison.columns:
             ranked = comparison.sort_values("sharpe_ratio", ascending=False)
             report_lines.append("\n按夏普比率排名:")
             for i, (name, row) in enumerate(ranked.iterrows(), 1):
-                report_lines.append(
-                    f"  {i}. {name:<30} (夏普率: {row['sharpe_ratio']:>6.2f})"
-                )
+                report_lines.append(f"  {i}. {name:<30} (夏普率: {row['sharpe_ratio']:>6.2f})")
 
         # 按年化收益排名
         if "annualized_return" in comparison.columns:
@@ -191,18 +187,22 @@ class ReportGenerator:
         # 添加相关性分析
         correlation = self.analyzer.get_correlation_matrix()
         if len(correlation) > 1:
-            report_lines.extend([
-                "",
-                "",
-                "🔗 策略收益率相关性矩阵",
-                "-" * 120,
-                correlation.to_string(),
-            ])
+            report_lines.extend(
+                [
+                    "",
+                    "",
+                    "🔗 策略收益率相关性矩阵",
+                    "-" * 120,
+                    correlation.to_string(),
+                ]
+            )
 
-        report_lines.extend([
-            "",
-            "=" * 120,
-        ])
+        report_lines.extend(
+            [
+                "",
+                "=" * 120,
+            ]
+        )
 
         return "\n".join(report_lines)
 
@@ -318,9 +318,7 @@ class ReportGenerator:
         trading_days: int,
     ) -> str:
         """生成单个策略的 Markdown 报告"""
-        metrics = self.analyzer.calculate_metrics(
-            strategy_name, risk_free_rate, trading_days
-        )
+        metrics = self.analyzer.calculate_metrics(strategy_name, risk_free_rate, trading_days)
 
         md_lines = [
             f"# 策略分析报告: {strategy_name}",
@@ -397,41 +395,39 @@ class ReportGenerator:
             "total_trades",
         ]
 
-        display_comparison = comparison[
-            [m for m in key_metrics if m in comparison.columns]
-        ].copy()
+        display_comparison = comparison[[m for m in key_metrics if m in comparison.columns]].copy()
 
         # 转换为 Markdown 表格
         md_lines.append(display_comparison.to_markdown())
         md_lines.append("")
 
         # 添加排名
-        md_lines.extend([
-            "## 🏆 策略排名",
-            "",
-            "### 按夏普比率排名",
-            "",
-        ])
+        md_lines.extend(
+            [
+                "## 🏆 策略排名",
+                "",
+                "### 按夏普比率排名",
+                "",
+            ]
+        )
 
         if "sharpe_ratio" in comparison.columns:
             ranked = comparison.sort_values("sharpe_ratio", ascending=False)
             for i, (name, row) in enumerate(ranked.iterrows(), 1):
-                md_lines.append(
-                    f"{i}. **{name}** (夏普率: {row['sharpe_ratio']:.2f})"
-                )
+                md_lines.append(f"{i}. **{name}** (夏普率: {row['sharpe_ratio']:.2f})")
 
-        md_lines.extend([
-            "",
-            "### 按年化收益率排名",
-            "",
-        ])
+        md_lines.extend(
+            [
+                "",
+                "### 按年化收益率排名",
+                "",
+            ]
+        )
 
         if "annualized_return" in comparison.columns:
             ranked = comparison.sort_values("annualized_return", ascending=False)
             for i, (name, row) in enumerate(ranked.iterrows(), 1):
-                md_lines.append(
-                    f"{i}. **{name}** (年化收益: {row['annualized_return']:.2f}%)"
-                )
+                md_lines.append(f"{i}. **{name}** (年化收益: {row['annualized_return']:.2f}%)")
 
         md_lines.append("")
 

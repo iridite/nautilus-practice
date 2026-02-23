@@ -56,7 +56,7 @@ class TestDualThrustIndicator:
 
         # 模拟 6 根 K 线（需要 lookback_period + 1 = 5 根才能计算）
         test_data = [
-            (102, 98, 100, 100),   # Day 1
+            (102, 98, 100, 100),  # Day 1
             (104, 100, 102, 102),  # Day 2
             (106, 102, 104, 104),  # Day 3
             (108, 104, 106, 106),  # Day 4
@@ -85,7 +85,7 @@ class TestDualThrustIndicator:
 
         # 简单的测试数据
         test_data = [
-            (105, 95, 103, 100),   # Day 1
+            (105, 95, 103, 100),  # Day 1
             (110, 100, 108, 105),  # Day 2
             (115, 105, 113, 110),  # Day 3 (现在可以计算)
         ]

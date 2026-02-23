@@ -35,7 +35,11 @@ from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import InstrumentId
 
 from strategy.core.base import BaseStrategy, BaseStrategyConfig
-from strategy.common.indicators import KeltnerChannel, RelativeStrengthCalculator, MarketRegimeFilter
+from strategy.common.indicators import (
+    KeltnerChannel,
+    RelativeStrengthCalculator,
+    MarketRegimeFilter,
+)
 from strategy.common.signals import EntrySignalGenerator, ExitSignalGenerator, SqueezeDetector
 from strategy.common.universe import DynamicUniverseManager
 from utils import get_project_root
@@ -215,7 +219,12 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
         # Universe 管理器
         self.universe_manager: DynamicUniverseManager | None = None
         if config.universe_top_n is not None:
-            universe_file = get_project_root() / "data" / "universe" / f"universe_{config.universe_top_n}_{config.universe_freq}.json"
+            universe_file = (
+                get_project_root()
+                / "data"
+                / "universe"
+                / f"universe_{config.universe_top_n}_{config.universe_freq}.json"
+            )
             if universe_file.exists():
                 self.universe_manager = DynamicUniverseManager(
                     universe_file=universe_file,
@@ -226,7 +235,9 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
                 self.log.warning(f"Universe 文件不存在: {universe_file}")
 
         # RSI 指标（可选）
-        self.rsi_indicator = RelativeStrengthIndex(period=config.rsi_period) if config.enable_rsi_stop_loss else None
+        self.rsi_indicator = (
+            RelativeStrengthIndex(period=config.rsi_period) if config.enable_rsi_stop_loss else None
+        )
         self.rsi: float | None = None
 
         # 市场狂热度监控
@@ -265,15 +276,16 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
         # 订阅 BTC Bar 数据
         if self.instrument.id != self.btc_instrument_id:
             btc_bar_type_str = self.config.bar_type.replace(
-                self.instrument.id.symbol.value,
-                self.btc_instrument_id.symbol.value
+                self.instrument.id.symbol.value, self.btc_instrument_id.symbol.value
             )
             btc_bar_type = BarType.from_str(btc_bar_type_str)
             self.subscribe_bars(btc_bar_type)
 
         # 订阅 Funding Rate 数据
         if self.config.enable_euphoria_filter:
-            funding_data_type = DataType(FundingRateData, metadata={"instrument_id": self.instrument.id})
+            funding_data_type = DataType(
+                FundingRateData, metadata={"instrument_id": self.instrument.id}
+            )
             self.subscribe_data(funding_data_type)
             self.log.info(f"已订阅 Funding Rate 数据: {self.instrument.id}")
 
@@ -284,14 +296,15 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
 
         if self.instrument.id != self.btc_instrument_id:
             btc_bar_type_str = self.config.bar_type.replace(
-                self.instrument.id.symbol.value,
-                self.btc_instrument_id.symbol.value
+                self.instrument.id.symbol.value, self.btc_instrument_id.symbol.value
             )
             btc_bar_type = BarType.from_str(btc_bar_type_str)
             self.unsubscribe_bars(btc_bar_type)
 
         if self.config.enable_euphoria_filter:
-            funding_data_type = DataType(FundingRateData, metadata={"instrument_id": self.instrument.id})
+            funding_data_type = DataType(
+                FundingRateData, metadata={"instrument_id": self.instrument.id}
+            )
             self.unsubscribe_data(funding_data_type)
 
     def on_data(self, data: CustomData) -> None:
@@ -320,9 +333,11 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
                 f"年化: {self.funding_rate_annual:.2f}%"
             )
 
-        if (self.market_euphoria_level == "DANGER" and
-            self.quantity is not None and
-            not self.euphoria_reduced):
+        if (
+            self.market_euphoria_level == "DANGER"
+            and self.quantity is not None
+            and not self.euphoria_reduced
+        ):
             self._handle_euphoria_reduce_position()
 
     def _process_main_instrument_bar(self, bar: Bar) -> None:
@@ -372,6 +387,7 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
 
         try:
             from utils.instrument_helpers import parse_instrument_id
+
             symbol, _, _ = parse_instrument_id(str(self.instrument.id))
             base_symbol = symbol.replace("-", "") if symbol else ""
         except Exception:
@@ -524,25 +540,30 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
         if self.keltner.atr is None:
             return Decimal("0")
 
-        stop_distance = Decimal(str(self.config.stop_loss_atr_multiplier)) * Decimal(str(self.keltner.atr))
+        stop_distance = Decimal(str(self.config.stop_loss_atr_multiplier)) * Decimal(
+            str(self.keltner.atr)
+        )
         min_stop_distance = bar.close.as_decimal() * Decimal(str(self.config.min_stop_distance_pct))
 
         if stop_distance < min_stop_distance:
-            self.log.warning(f"ATR过小({self.keltner.atr:.6f})，使用最小止损距离{min_stop_distance}")
+            self.log.warning(
+                f"ATR过小({self.keltner.atr:.6f})，使用最小止损距离{min_stop_distance}"
+            )
             stop_distance = min_stop_distance
 
-        risk_pct = Decimal(str(
-            self.config.high_conviction_risk_pct if high_conviction
-            else self.config.base_risk_pct
-        ))
+        risk_pct = Decimal(
+            str(
+                self.config.high_conviction_risk_pct
+                if high_conviction
+                else self.config.base_risk_pct
+            )
+        )
         risk_amount = equity_decimal * risk_pct * Decimal(str(self.config.leverage))
         qty = risk_amount / stop_distance
 
         min_qty = Decimal(str(self.instrument.size_increment))
         if qty < min_qty:
-            self.log.warning(
-                f"计算的仓位数量过小: raw_qty={qty}, min_qty={min_qty}"
-            )
+            self.log.warning(f"计算的仓位数量过小: raw_qty={qty}, min_qty={min_qty}")
             return Decimal("0")
 
         return qty
@@ -552,7 +573,9 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
         close = float(bar.close)
 
         # 1. 时间止损
-        if self.exit_signals.check_time_stop(self.entry_bar_count, self.highest_high, self.entry_price):
+        if self.exit_signals.check_time_stop(
+            self.entry_bar_count, self.highest_high, self.entry_price
+        ):
             self.close_all_positions(self.instrument.id)
             self.log.info(
                 f"时间止损平仓: bars={self.entry_bar_count}, "
@@ -563,7 +586,9 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
 
         # 2. Chandelier Exit
         if self.exit_signals.check_chandelier_exit(close, self.highest_high, self.keltner.atr):
-            trailing_stop = self.highest_high - (self.config.stop_loss_atr_multiplier * self.keltner.atr)
+            trailing_stop = self.highest_high - (
+                self.config.stop_loss_atr_multiplier * self.keltner.atr
+            )
             self.close_all_positions(self.instrument.id)
             self.log.info(
                 f"Chandelier Exit 平仓: "
@@ -576,18 +601,14 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
         # 3. 抛物线止盈
         if self.exit_signals.check_parabolic_profit(close, self.keltner.ema):
             self.close_all_positions(self.instrument.id)
-            self.log.info(
-                f"抛物线止盈平仓: price={close:.2f}, ema={self.keltner.ema:.2f}"
-            )
+            self.log.info(f"抛物线止盈平仓: price={close:.2f}, ema={self.keltner.ema:.2f}")
             self._reset_position_tracking()
             return
 
         # 4. RSI 超买止盈
         if self.exit_signals.check_rsi_overbought(self.rsi):
             self.close_all_positions(self.instrument.id)
-            self.log.info(
-                f"RSI 超买右侧平仓: price={close:.2f}, rsi={self.rsi:.2f}"
-            )
+            self.log.info(f"RSI 超买右侧平仓: price={close:.2f}, rsi={self.rsi:.2f}")
             self._reset_position_tracking()
             return
 
@@ -610,9 +631,9 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
         if self.quantity is None or self.entry_price is None:
             return
 
-        reduce_quantity = (self.quantity * Decimal(str(self.config.euphoria_reduce_position_pct))).quantize(
-            TARGET_PRECISION, ROUND_DOWN
-        )
+        reduce_quantity = (
+            self.quantity * Decimal(str(self.config.euphoria_reduce_position_pct))
+        ).quantize(TARGET_PRECISION, ROUND_DOWN)
 
         if reduce_quantity <= 0:
             return

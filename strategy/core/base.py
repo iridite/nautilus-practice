@@ -19,7 +19,9 @@ class BaseStrategyConfig(StrategyConfig):  # pyright: ignore[reportGeneralTypeIs
     Provides unified interface for position sizing, risk management, and data dependencies.
     """
 
-    oms_type: str = "NETTING"  # 持仓模式：NETTING（净持仓）或 HEDGING（对冲持仓），默认从环境配置读取
+    oms_type: str = (
+        "NETTING"  # 持仓模式：NETTING（净持仓）或 HEDGING（对冲持仓），默认从环境配置读取
+    )
 
     # 简化配置字段（推荐使用）
     symbol: str = ""  # 简化标的名称，如 "ETHUSDT"（永续）或 "ETH"（现货）
@@ -71,7 +73,9 @@ class BaseStrategyConfig(StrategyConfig):  # pyright: ignore[reportGeneralTypeIs
     # ATR参数（用于模式3：ATR风险仓位计算）
     atr_period: int = DEFAULT_ATR_PERIOD  # ATR计算周期
     atr_stop_multiplier: float = 2.0  # ATR止损倍数 (2.0 = 2× ATR)
-    max_position_risk_pct: float = DEFAULT_RISK_PER_TRADE  # 单笔交易最大风险百分比 (2% of account equity)
+    max_position_risk_pct: float = (
+        DEFAULT_RISK_PER_TRADE  # 单笔交易最大风险百分比 (2% of account equity)
+    )
 
 
 class BaseStrategy(Strategy):
@@ -115,8 +119,6 @@ class BaseStrategy(Strategy):
                         f"Instrument has non-standard multiplier: {self.instrument.multiplier}"
                     )
 
-
-
     def on_bar(self, bar):
         """
         Base lifecycle for bar processing.
@@ -139,8 +141,10 @@ class BaseStrategy(Strategy):
             return
 
         # 如果已有止损单，跳过
-        if any(o.order_type in (OrderType.STOP_MARKET, OrderType.STOP_LIMIT)
-               for o in self.cache.orders_open(instrument_id=instrument.id)):
+        if any(
+            o.order_type in (OrderType.STOP_MARKET, OrderType.STOP_LIMIT)
+            for o in self.cache.orders_open(instrument_id=instrument.id)
+        ):
             return
 
         sl_pct = Decimal(str(self.base_config.stop_loss_pct))
@@ -198,9 +202,7 @@ class BaseStrategy(Strategy):
                 instrument_id = InstrumentId.from_str(instrument_id)
             self.instrument = self.cache.instrument(instrument_id)
         if not self.instrument:
-            raise ValueError(
-                "Instrument not initialized. Ensure super().on_start() was called."
-            )
+            raise ValueError("Instrument not initialized. Ensure super().on_start() was called.")
         return self.instrument
 
     def _validate_price(self, price: float | Decimal) -> Decimal | None:
@@ -221,20 +223,15 @@ class BaseStrategy(Strategy):
 
     def _should_use_atr_sizing(self, atr_value: Optional[Decimal]) -> bool:
         """判断是否应该使用ATR风险模式"""
-        return (
-            self.base_config.use_atr_position_sizing
-            and atr_value is not None
-            and atr_value > 0
-        )
+        return self.base_config.use_atr_position_sizing and atr_value is not None and atr_value > 0
 
     def _should_use_percent_sizing(self) -> bool:
         """判断是否应该使用百分比模式"""
-        return (
-            self.base_config.qty_percent is not None
-            and self.base_config.qty_percent > 0
-        )
+        return self.base_config.qty_percent is not None and self.base_config.qty_percent > 0
 
-    def calculate_order_qty(self, price: float | Decimal, atr_value: Optional[Decimal] = None) -> Quantity:
+    def calculate_order_qty(
+        self, price: float | Decimal, atr_value: Optional[Decimal] = None
+    ) -> Quantity:
         """
         计算下单数量（仓位大小）
 
@@ -302,9 +299,15 @@ class BaseStrategy(Strategy):
             leverage = min(leverage, Decimal(instrument.max_leverage))
         return leverage
 
-    def _calculate_raw_quantity(self, equity: Decimal, leverage: Decimal, price: Decimal, instrument: Instrument) -> Decimal:
+    def _calculate_raw_quantity(
+        self, equity: Decimal, leverage: Decimal, price: Decimal, instrument: Instrument
+    ) -> Decimal:
         """计算原始数量（考虑合约乘数）"""
-        qty_percent = Decimal(str(self.base_config.qty_percent)) if isinstance(self.base_config.qty_percent, float) else self.base_config.qty_percent
+        qty_percent = (
+            Decimal(str(self.base_config.qty_percent))
+            if isinstance(self.base_config.qty_percent, float)
+            else self.base_config.qty_percent
+        )
         target_notional = equity * qty_percent * leverage
         raw_qty = target_notional / price
 
@@ -323,9 +326,7 @@ class BaseStrategy(Strategy):
                 return False
         return True
 
-    def _calculate_dynamic_qty(
-        self, instrument: Instrument, price: Decimal
-    ) -> Quantity:
+    def _calculate_dynamic_qty(self, instrument: Instrument, price: Decimal) -> Quantity:
         try:
             equity = self._get_account_equity(instrument)
             if equity is None:
@@ -342,7 +343,9 @@ class BaseStrategy(Strategy):
             self.log.error(f"Dynamic qty calculation error: {e}")
             return Quantity.from_int(0)
 
-    def _get_instrument_for_balance_check(self, instrument: Optional[Instrument]) -> Optional[Instrument]:
+    def _get_instrument_for_balance_check(
+        self, instrument: Optional[Instrument]
+    ) -> Optional[Instrument]:
         """获取用于余额检查的标的"""
         if instrument is None:
             instrument = self.get_instrument()
@@ -359,9 +362,7 @@ class BaseStrategy(Strategy):
             self.log.warning("无法获取账户信息")
             return None
 
-        return next(
-            (a for a in accounts if a.balance(quote_currency)), accounts[0]
-        )
+        return next((a for a in accounts if a.balance(quote_currency)), accounts[0])
 
     def _get_available_balance(self, account, quote_currency) -> Optional[Decimal]:
         """获取可用余额"""
@@ -375,9 +376,7 @@ class BaseStrategy(Strategy):
     def _check_balance_sufficient(self, available: Decimal, notional_value: Decimal) -> bool:
         """检查余额是否充足"""
         if available < notional_value:
-            self.log.warning(
-                f"余额不足: 需要{notional_value:.2f}, 可用{available:.2f}"
-            )
+            self.log.warning(f"余额不足: 需要{notional_value:.2f}, 可用{available:.2f}")
             return False
         return True
 
@@ -430,9 +429,7 @@ class BaseStrategy(Strategy):
             return
 
         if order.quantity <= 0:
-            self.log.warn(
-                f"Order quantity invalid: {order.quantity}. Order not submitted."
-            )
+            self.log.warn(f"Order quantity invalid: {order.quantity}. Order not submitted.")
             return
 
         self.submit_order(order)
@@ -478,20 +475,20 @@ class BaseStrategy(Strategy):
             pos_id = pos.id
             if pos_id not in self._positions_tracker:
                 # 恢复持仓跟踪（策略重启场景）
-                side_str = 'LONG' if pos.side == PositionSide.LONG else 'SHORT'
+                side_str = "LONG" if pos.side == PositionSide.LONG else "SHORT"
                 self._positions_tracker[pos_id] = {
-                    'side': side_str,
-                    'entry_price': float(pos.avg_px_open),
-                    'extreme_price': float(bar.high if side_str == 'LONG' else bar.low),
-                    'entry_time': pos.ts_opened
+                    "side": side_str,
+                    "entry_price": float(pos.avg_px_open),
+                    "extreme_price": float(bar.high if side_str == "LONG" else bar.low),
+                    "entry_time": pos.ts_opened,
                 }
             else:
                 # 更新极值价格（多头跟踪最高价，空头跟踪最低价）
                 tracker = self._positions_tracker[pos_id]
-                if tracker['side'] == 'LONG':
-                    tracker['extreme_price'] = max(tracker['extreme_price'], float(bar.high))
+                if tracker["side"] == "LONG":
+                    tracker["extreme_price"] = max(tracker["extreme_price"], float(bar.high))
                 else:  # SHORT
-                    tracker['extreme_price'] = min(tracker['extreme_price'], float(bar.low))
+                    tracker["extreme_price"] = min(tracker["extreme_price"], float(bar.low))
 
     def track_order_for_position(self, order_id, side: OrderSide, bar, **metadata):
         """记录订单元数据，等待成交后关联持仓
@@ -503,11 +500,11 @@ class BaseStrategy(Strategy):
             **metadata: 额外的元数据（如 high_conviction 等）
         """
         self._pending_orders[order_id] = {
-            'side': side.name,
-            'entry_price': float(bar.close),
-            'extreme_price': float(bar.high if side == OrderSide.BUY else bar.low),
-            'entry_time': bar.ts_event,
-            **metadata
+            "side": side.name,
+            "entry_price": float(bar.close),
+            "extreme_price": float(bar.high if side == OrderSide.BUY else bar.low),
+            "entry_time": bar.ts_event,
+            **metadata,
         }
 
     def on_order_filled(self, event):
@@ -543,8 +540,6 @@ class BaseStrategy(Strategy):
     # ATR-Based Risk Management Methods
     # ========================================================================
 
-
-
     def _get_account_equity_for_atr(self, instrument: Instrument) -> Decimal | None:
         """获取账户权益（ATR计算专用）"""
         accounts = self.cache.accounts()
@@ -575,7 +570,9 @@ class BaseStrategy(Strategy):
         """计算最大风险金额"""
         return equity * Decimal(str(self.base_config.max_position_risk_pct))
 
-    def _calculate_atr_raw_quantity(self, max_risk_amount: Decimal, stop_distance: Decimal, instrument: Instrument) -> Decimal:
+    def _calculate_atr_raw_quantity(
+        self, max_risk_amount: Decimal, stop_distance: Decimal, instrument: Instrument
+    ) -> Decimal:
         """计算ATR原始数量（含杠杆和乘数调整）"""
         # 基础数量: 风险金额 / 止损距离
         raw_qty = max_risk_amount / stop_distance
@@ -599,9 +596,7 @@ class BaseStrategy(Strategy):
         if instrument.size_increment:
             min_size = instrument.size_increment.as_decimal()
             if raw_qty < min_size:
-                self.log.warning(
-                    f"ATR仓位计算: 计算数量{raw_qty}小于最小数量{min_size}"
-                )
+                self.log.warning(f"ATR仓位计算: 计算数量{raw_qty}小于最小数量{min_size}")
                 return False
         return True
 

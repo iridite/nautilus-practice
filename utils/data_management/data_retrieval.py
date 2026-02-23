@@ -23,6 +23,7 @@ logger = logging.getLogger(__name__)
 # 网络请求配置
 MAX_ITERATIONS = 1000  # 最大迭代次数，防止无限循环
 
+
 def fetch_ohlcv_data(exchange, symbol, timeframe, since, limit_ms, source="auto"):
     """
     获取OHLCV数据，支持多数据源
@@ -36,6 +37,7 @@ def fetch_ohlcv_data(exchange, symbol, timeframe, since, limit_ms, source="auto"
         except (IOError, ValueError, KeyError, ConnectionError) as e:
             logger.warning(f"CCXT fetch failed for {symbol}, falling back to DataFetcher: {e}")
             from .data_fetcher import DataFetcher
+
             fetcher = DataFetcher()
             df = fetcher.fetch_ohlcv(symbol, timeframe, since, limit_ms, source="auto")
             return df[df["timestamp"] < limit_ms] if not df.empty else df
@@ -57,9 +59,7 @@ def _convert_ohlcv_to_dataframe(all_ohlcv: list, limit_ms: int) -> pd.DataFrame:
     """将OHLCV数据列表转换为DataFrame并过滤时间范围"""
     if not all_ohlcv:
         return pd.DataFrame()
-    df = pd.DataFrame(
-        all_ohlcv, columns=["timestamp", "open", "high", "low", "close", "volume"]
-    )
+    df = pd.DataFrame(all_ohlcv, columns=["timestamp", "open", "high", "low", "close", "volume"])
     return df[df["timestamp"] < limit_ms]
 
 
@@ -112,9 +112,7 @@ def batch_fetch_ohlcv(
 ) -> List[DataConfig]:
     """批量抓取 OHLCV 数据并返回 DataConfig 列表"""
     exchange_class = getattr(ccxt, exchange_id.lower())
-    exchange = exchange_class(
-        {"enableRateLimit": True, "options": {"defaultType": "future"}}
-    )
+    exchange = exchange_class({"enableRateLimit": True, "options": {"defaultType": "future"}})
     exchange.load_markets()
 
     start_ms = get_ms_timestamp(start_date)
@@ -143,9 +141,7 @@ def batch_fetch_ohlcv(
 
             safe_symbol = raw_symbol.replace("/", "")
 
-            filename = (
-                f"{exchange.id}-{safe_symbol}-{timeframe}-{start_date}_{end_date}.csv"
-            )
+            filename = f"{exchange.id}-{safe_symbol}-{timeframe}-{start_date}_{end_date}.csv"
             relative_path = f"{safe_symbol}/{filename}"
             output_path = base_dir / "data" / "raw" / relative_path
 
@@ -212,13 +208,13 @@ def _log_binance_oi_data_range(all_data: list, start_ms: int):
 
     logger.info(
         f"ℹ️  Binance OI: Got {len(all_data)} records from "
-        f"{datetime.fromtimestamp(oldest_ts/1000).date()} to "
-        f"{datetime.fromtimestamp(newest_ts/1000).date()}"
+        f"{datetime.fromtimestamp(oldest_ts / 1000).date()} to "
+        f"{datetime.fromtimestamp(newest_ts / 1000).date()}"
     )
 
     if oldest_ts > start_ms:
         logger.warning(
-            f"⚠️  Warning: Requested data from {datetime.fromtimestamp(start_ms/1000).date()}, "
+            f"⚠️  Warning: Requested data from {datetime.fromtimestamp(start_ms / 1000).date()}, "
             f"but API only provides recent ~21 days"
         )
 
@@ -508,11 +504,11 @@ def fetch_okx_funding_rate_history(
         iteration_count += 1
         try:
             params = _build_okx_funding_params(inst_id, current_end)
-            response = retry_fetch(
-                exchange.publicGetPublicFundingRateHistory, params=params
-            )
+            response = retry_fetch(exchange.publicGetPublicFundingRateHistory, params=params)
 
-            parsed_data, should_continue, next_end = _process_okx_funding_response(response, start_ms)
+            parsed_data, should_continue, next_end = _process_okx_funding_response(
+                response, start_ms
+            )
             all_data.extend(parsed_data)
 
             if not should_continue:
@@ -534,14 +530,14 @@ def fetch_okx_funding_rate_history(
 def _initialize_exchange(exchange_id: str):
     """初始化交易所连接"""
     exchange_class = getattr(ccxt, exchange_id.lower())
-    exchange = exchange_class(
-        {"enableRateLimit": True, "options": {"defaultType": "swap"}}
-    )
+    exchange = exchange_class({"enableRateLimit": True, "options": {"defaultType": "swap"}})
     exchange.load_markets()
     return exchange
 
 
-def _resolve_and_validate_symbol(raw_symbol: str, exchange, exchange_id: str) -> tuple[str, str, str] | None:
+def _resolve_and_validate_symbol(
+    raw_symbol: str, exchange, exchange_id: str
+) -> tuple[str, str, str] | None:
     """解析并验证交易对符号"""
     try:
         ccxt_symbol, market_type = resolve_symbol_and_type(raw_symbol)
@@ -557,7 +553,9 @@ def _resolve_and_validate_symbol(raw_symbol: str, exchange, exchange_id: str) ->
     return ccxt_symbol, market_type, safe_symbol
 
 
-def _fetch_oi_data(exchange_id: str, exchange, ccxt_symbol: str, start_ms: int, end_ms: int, oi_period: str):
+def _fetch_oi_data(
+    exchange_id: str, exchange, ccxt_symbol: str, start_ms: int, end_ms: int, oi_period: str
+):
     """获取OI数据"""
     if exchange_id == "binance":
         return fetch_binance_oi_history(exchange, ccxt_symbol, start_ms, end_ms, oi_period)
@@ -600,7 +598,7 @@ def _process_oi_data(
     oi_period: str,
     base_dir: Path,
     results: dict,
-    enable_oi: bool
+    enable_oi: bool,
 ):
     """处理OI数据获取"""
     if not enable_oi:
@@ -625,7 +623,7 @@ def _process_funding_data(
     start_ms: int,
     end_ms: int,
     base_dir: Path,
-    results: dict
+    results: dict,
 ):
     """处理Funding Rate数据获取"""
     funding_filename = f"{exchange_id}-{safe_symbol}-funding-{start_date}_{end_date}.csv"
@@ -675,7 +673,11 @@ def batch_fetch_oi_and_funding(
     end_ms = get_ms_timestamp(end_date)
     results = {"oi_files": [], "funding_files": []}
 
-    desc = f"📊 Fetching Funding from {exchange_id.upper()}" if not ENABLE_OI_FETCH else f"📊 Fetching OI/Funding from {exchange_id.upper()}"
+    desc = (
+        f"📊 Fetching Funding from {exchange_id.upper()}"
+        if not ENABLE_OI_FETCH
+        else f"📊 Fetching OI/Funding from {exchange_id.upper()}"
+    )
 
     with tqdm(symbols, desc=desc, unit="symbol") as pbar:
         for raw_symbol in pbar:
@@ -688,19 +690,34 @@ def batch_fetch_oi_and_funding(
             ccxt_symbol, market_type, safe_symbol = symbol_info
 
             _process_oi_data(
-                exchange_id, exchange, ccxt_symbol, safe_symbol,
-                start_date, end_date, start_ms, end_ms, oi_period,
-                base_dir, results, ENABLE_OI_FETCH
+                exchange_id,
+                exchange,
+                ccxt_symbol,
+                safe_symbol,
+                start_date,
+                end_date,
+                start_ms,
+                end_ms,
+                oi_period,
+                base_dir,
+                results,
+                ENABLE_OI_FETCH,
             )
 
             _process_funding_data(
-                exchange_id, exchange, ccxt_symbol, safe_symbol,
-                start_date, end_date, start_ms, end_ms,
-                base_dir, results
+                exchange_id,
+                exchange,
+                ccxt_symbol,
+                safe_symbol,
+                start_date,
+                end_date,
+                start_ms,
+                end_ms,
+                base_dir,
+                results,
             )
 
             time.sleep(0.2)
 
     _print_fetch_results(results, ENABLE_OI_FETCH)
     return results
-

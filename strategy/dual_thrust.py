@@ -4,7 +4,6 @@ Dual Thrust 突破策略
 经典的日内突破策略，基于前N天的价格范围计算动态通道。
 """
 
-
 from nautilus_trader.model.data import Bar, BarType
 from nautilus_trader.model.enums import OrderSide
 
@@ -55,7 +54,9 @@ class DualThrustStrategy(BaseStrategy):
 
     def on_start(self):
         super().on_start()
-        self.log.info(f"DualThrust 启动: lookback={self.lookback_period}, k1={self.k1}, k2={self.k2}")
+        self.log.info(
+            f"DualThrust 启动: lookback={self.lookback_period}, k1={self.k1}, k2={self.k2}"
+        )
         self.subscribe_bars(BarType.from_str(self.config.bar_type))
 
     def _update_price_history(self, bar: Bar):
@@ -100,7 +101,9 @@ class DualThrustStrategy(BaseStrategy):
                 )
                 self.submit_order(order)
                 self.position_opened = True
-                self.log.info(f"突破上轨做多: price={current_price:.2f}, upper={self.upper_band:.2f}")
+                self.log.info(
+                    f"突破上轨做多: price={current_price:.2f}, upper={self.upper_band:.2f}"
+                )
 
     def _try_open_short(self, current_price: float, bar: Bar):
         """尝试开空仓"""
@@ -114,7 +117,9 @@ class DualThrustStrategy(BaseStrategy):
                 )
                 self.submit_order(order)
                 self.position_opened = True
-                self.log.info(f"突破下轨做空: price={current_price:.2f}, lower={self.lower_band:.2f}")
+                self.log.info(
+                    f"突破下轨做空: price={current_price:.2f}, lower={self.lower_band:.2f}"
+                )
 
     def _check_long_exit(self, current_price: float):
         """检查多仓止损"""
@@ -142,7 +147,9 @@ class DualThrustStrategy(BaseStrategy):
 
         range_value = self._calculate_bands(bar)
 
-        self.log.debug(f"Bar {bar.ts_event}: price={current_price:.1f}, upper={self.upper_band:.1f}, lower={self.lower_band:.1f}, range={range_value:.1f}")
+        self.log.debug(
+            f"Bar {bar.ts_event}: price={current_price:.1f}, upper={self.upper_band:.1f}, lower={self.lower_band:.1f}, range={range_value:.1f}"
+        )
 
         if not self.position_opened:
             self._try_open_long(current_price, bar)
@@ -150,4 +157,3 @@ class DualThrustStrategy(BaseStrategy):
         else:
             self._check_long_exit(current_price)
             self._check_short_exit(current_price)
-

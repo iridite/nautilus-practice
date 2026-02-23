@@ -88,11 +88,7 @@ class KeltnerChannel:
 
         # 计算 True Range
         if len(self.closes) > 1:
-            tr = max(
-                high - low,
-                abs(high - self.closes[-2]),
-                abs(low - self.closes[-2])
-            )
+            tr = max(high - low, abs(high - self.closes[-2]), abs(low - self.closes[-2]))
             self.trs.append(tr)
 
         # 更新所有指标
@@ -108,7 +104,7 @@ class KeltnerChannel:
             return
 
         if self.ema is None:
-            self.ema = sum(list(self.closes)[-self.ema_period:]) / self.ema_period
+            self.ema = sum(list(self.closes)[-self.ema_period :]) / self.ema_period
         else:
             alpha = EMA_ALPHA_NUMERATOR / (self.ema_period + EMA_ALPHA_DENOMINATOR_OFFSET)
             self.ema = alpha * self.closes[-1] + (1 - alpha) * self.ema
@@ -119,7 +115,7 @@ class KeltnerChannel:
             return
 
         if self.atr is None:
-            self.atr = sum(list(self.trs)[-self.atr_period:]) / self.atr_period
+            self.atr = sum(list(self.trs)[-self.atr_period :]) / self.atr_period
         else:
             alpha = ATR_ALPHA_NUMERATOR / self.atr_period
             self.atr = alpha * self.trs[-1] + (1 - alpha) * self.atr
@@ -127,12 +123,12 @@ class KeltnerChannel:
     def _update_sma(self) -> None:
         """更新 SMA 指标"""
         if len(self.closes) >= self.sma_period:
-            self.sma = sum(list(self.closes)[-self.sma_period:]) / self.sma_period
+            self.sma = sum(list(self.closes)[-self.sma_period :]) / self.sma_period
 
     def _update_bollinger_bands(self) -> None:
         """更新 Bollinger Bands 指标"""
         if len(self.closes) >= self.bb_period:
-            bb_closes = np.array(list(self.closes)[-self.bb_period:])
+            bb_closes = np.array(list(self.closes)[-self.bb_period :])
             bb_mean = bb_closes.mean()
             bb_std = bb_closes.std()
             self.bb_upper = bb_mean + self.bb_std * bb_std
@@ -141,7 +137,7 @@ class KeltnerChannel:
     def _update_volume_sma(self) -> None:
         """更新 Volume SMA 指标"""
         if len(self.volumes) >= self.volume_period:
-            self.volume_sma = sum(list(self.volumes)[-self.volume_period:]) / self.volume_period
+            self.volume_sma = sum(list(self.volumes)[-self.volume_period :]) / self.volume_period
 
     def get_keltner_base_bands(self) -> tuple[float | None, float | None]:
         """
@@ -197,10 +193,10 @@ class KeltnerChannel:
             True 表示所有指标都已计算完成
         """
         return (
-            self.ema is not None and
-            self.atr is not None and
-            self.sma is not None and
-            self.bb_upper is not None and
-            self.bb_lower is not None and
-            self.volume_sma is not None
+            self.ema is not None
+            and self.atr is not None
+            and self.sma is not None
+            and self.bb_upper is not None
+            and self.bb_lower is not None
+            and self.volume_sma is not None
         )

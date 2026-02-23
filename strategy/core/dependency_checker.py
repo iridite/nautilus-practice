@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 def _extract_symbols_from_data_feeds(strategy_config) -> set:
     """从数据源提取符号"""
     symbols = set()
-    if hasattr(strategy_config, 'data_feeds') and strategy_config.data_feeds:
+    if hasattr(strategy_config, "data_feeds") and strategy_config.data_feeds:
         for feed in strategy_config.data_feeds:
             try:
                 symbols.add(feed.csv_file_name.split("/")[0])
@@ -30,9 +30,9 @@ def _extract_symbols_from_universe(universe_symbols: set | None) -> set:
 def _extract_symbol_from_instrument_id(strategy_config) -> set:
     """从instrument_id提取符号"""
     symbols = set()
-    if hasattr(strategy_config, 'instrument_id') and strategy_config.instrument_id:
+    if hasattr(strategy_config, "instrument_id") and strategy_config.instrument_id:
         try:
-            symbols.add(strategy_config.instrument_id.split('.')[1].split('-')[0])
+            symbols.add(strategy_config.instrument_id.split(".")[1].split("-")[0])
         except Exception:
             pass
     return symbols
@@ -50,7 +50,7 @@ def extract_strategy_symbols(strategy_config, universe_symbols: set | None = Non
 def _extract_symbol_from_path(file_path: str) -> str | None:
     """从文件路径提取符号"""
     try:
-        return file_path.split('/')[-2]
+        return file_path.split("/")[-2]
     except Exception:
         return None
 
@@ -81,7 +81,9 @@ def _add_missing_funding_tasks(tasks: dict, missing_files: list, start_date: str
             tasks["missing_count"] += 1
 
 
-def _check_oi_data(strategy_symbols: set, start_date: str, end_date: str, base_dir: Path, tasks: dict):
+def _check_oi_data(
+    strategy_symbols: set, start_date: str, end_date: str, base_dir: Path, tasks: dict
+):
     """检查OI数据"""
     exists, missing_files = check_oi_data_exists(
         list(strategy_symbols), start_date, end_date, "1h", "binance", base_dir
@@ -90,7 +92,9 @@ def _check_oi_data(strategy_symbols: set, start_date: str, end_date: str, base_d
         _add_missing_oi_tasks(tasks, missing_files, start_date, end_date)
 
 
-def _check_funding_data(strategy_symbols: set, start_date: str, end_date: str, base_dir: Path, tasks: dict):
+def _check_funding_data(
+    strategy_symbols: set, start_date: str, end_date: str, base_dir: Path, tasks: dict
+):
     """检查Funding数据"""
     exists, missing_files = check_funding_data_exists(
         list(strategy_symbols), start_date, end_date, "binance", base_dir
@@ -104,12 +108,12 @@ def check_strategy_data_dependencies(
     start_date: str,
     end_date: str,
     base_dir: Path,
-    universe_symbols: set | None = None
+    universe_symbols: set | None = None,
 ) -> dict:
     """检查策略数据依赖并返回缺失的数据任务"""
     tasks = {"oi_tasks": {}, "funding_tasks": {}, "missing_count": 0, "warnings": []}
 
-    data_types = getattr(strategy_config, 'data_types', [])
+    data_types = getattr(strategy_config, "data_types", [])
     if not data_types:
         return tasks
 
@@ -127,4 +131,3 @@ def check_strategy_data_dependencies(
             _check_funding_data(strategy_symbols, start_date, end_date, base_dir, tasks)
 
     return tasks
-

@@ -25,9 +25,10 @@ class TestCliCommands(unittest.TestCase):
     def tearDown(self):
         """清理临时文件"""
         import shutil
+
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
-    @patch('cli.commands.logger')
+    @patch("cli.commands.logger")
     def test_check_and_fetch_strategy_data_skip_oi(self, mock_logger):
         """测试跳过 OI 数据检查"""
         args = MagicMock()
@@ -38,9 +39,9 @@ class TestCliCommands(unittest.TestCase):
 
         mock_logger.info.assert_called_with("⏩ Skipping OI/Funding data check")
 
-    @patch('cli.commands.execute_oi_funding_data_fetch')
-    @patch('cli.commands.check_strategy_data_dependencies')
-    @patch('cli.commands.logger')
+    @patch("cli.commands.execute_oi_funding_data_fetch")
+    @patch("cli.commands.check_strategy_data_dependencies")
+    @patch("cli.commands.logger")
     def test_check_and_fetch_strategy_data_no_missing(
         self, mock_logger, mock_check_deps, mock_execute_fetch
     ):
@@ -62,9 +63,9 @@ class TestCliCommands(unittest.TestCase):
         mock_logger.info.assert_any_call("✅ All strategy data satisfied\n")
         mock_execute_fetch.assert_not_called()
 
-    @patch('cli.commands.execute_oi_funding_data_fetch')
-    @patch('cli.commands.check_strategy_data_dependencies')
-    @patch('cli.commands.logger')
+    @patch("cli.commands.execute_oi_funding_data_fetch")
+    @patch("cli.commands.check_strategy_data_dependencies")
+    @patch("cli.commands.logger")
     def test_check_and_fetch_strategy_data_with_missing(
         self, mock_logger, mock_check_deps, mock_execute_fetch
     ):
@@ -90,9 +91,9 @@ class TestCliCommands(unittest.TestCase):
         mock_logger.info.assert_any_call("✅ Downloaded 5 files")
         mock_execute_fetch.assert_called_once()
 
-    @patch('cli.commands.update_instruments')
-    @patch('cli.commands.parse_universe_symbols')
-    @patch('cli.commands.logger')
+    @patch("cli.commands.update_instruments")
+    @patch("cli.commands.parse_universe_symbols")
+    @patch("cli.commands.logger")
     def test_update_instrument_definitions_with_universe(
         self, mock_logger, mock_parse_symbols, mock_update_instruments
     ):
@@ -107,8 +108,7 @@ class TestCliCommands(unittest.TestCase):
         mock_feed.instrument_id = "BINANCE.ETHUSDT-SWAP"
 
         adapter.build_backtest_config.return_value = MagicMock(
-            instrument=mock_instrument,
-            data_feeds=[mock_feed]
+            instrument=mock_instrument, data_feeds=[mock_feed]
         )
 
         adapter.get_venue.return_value = "BINANCE"
@@ -128,8 +128,8 @@ class TestCliCommands(unittest.TestCase):
         self.assertIn("BINANCE.BTCUSDT-SWAP", instrument_ids)
         self.assertIn("BINANCE.ETHUSDT-SWAP", instrument_ids)
 
-    @patch('cli.commands.update_instruments')
-    @patch('cli.commands.logger')
+    @patch("cli.commands.update_instruments")
+    @patch("cli.commands.logger")
     def test_update_instrument_definitions_without_universe(
         self, mock_logger, mock_update_instruments
     ):
@@ -140,15 +140,14 @@ class TestCliCommands(unittest.TestCase):
         mock_instrument.instrument_id = "BINANCE.BTCUSDT-SWAP"
 
         adapter.build_backtest_config.return_value = MagicMock(
-            instrument=mock_instrument,
-            data_feeds=[]
+            instrument=mock_instrument, data_feeds=[]
         )
 
         update_instrument_definitions(adapter, self.base_dir, set())
 
         mock_update_instruments.assert_called_once()
 
-    @patch('cli.commands.logger')
+    @patch("cli.commands.logger")
     def test_update_instrument_definitions_error_handling(self, mock_logger):
         """测试更新 instrument 定义时的错误处理"""
         adapter = MagicMock()

@@ -147,9 +147,7 @@ def format_aux_instrument_id(
     # Decide venue: template venue takes precedence over explicit venue argument
     resolved_venue = tmpl_venue or (venue and venue.strip().upper())
     if not resolved_venue:
-        raise ValueError(
-            "venue is required when template_inst_id does not specify a venue"
-        )
+        raise ValueError("venue is required when template_inst_id does not specify a venue")
 
     # Venue-specific type normalization: BINANCE uses PERP for perpetual contracts
     if resolved_venue == "BINANCE" and resolved_inst_type in ("SWAP", "PERP"):

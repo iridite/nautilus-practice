@@ -19,9 +19,21 @@ class BinanceFetcher:
     BASE_URL = "https://api.binance.com"
 
     INTERVAL_MAP = {
-        "1m": "1m", "3m": "3m", "5m": "5m", "15m": "15m", "30m": "30m",
-        "1h": "1h", "2h": "2h", "4h": "4h", "6h": "6h", "8h": "8h", "12h": "12h",
-        "1d": "1d", "3d": "3d", "1w": "1w", "1M": "1M"
+        "1m": "1m",
+        "3m": "3m",
+        "5m": "5m",
+        "15m": "15m",
+        "30m": "30m",
+        "1h": "1h",
+        "2h": "2h",
+        "4h": "4h",
+        "6h": "6h",
+        "8h": "8h",
+        "12h": "12h",
+        "1d": "1d",
+        "3d": "3d",
+        "1w": "1w",
+        "1M": "1M",
     }
 
     def fetch_ohlcv(
@@ -30,7 +42,7 @@ class BinanceFetcher:
         timeframe: str = "1h",
         start_time: Optional[int] = None,
         end_time: Optional[int] = None,
-        limit: int = 1000
+        limit: int = 1000,
     ) -> pd.DataFrame:
         """
         获取OHLCV数据
@@ -47,7 +59,7 @@ class BinanceFetcher:
         params = {
             "symbol": symbol.replace("/", ""),
             "interval": interval,
-            "limit": min(limit, 1000)
+            "limit": min(limit, 1000),
         }
 
         if start_time:
@@ -59,11 +71,23 @@ class BinanceFetcher:
         resp.raise_for_status()
 
         data = resp.json()
-        df = pd.DataFrame(data, columns=[
-            "timestamp", "open", "high", "low", "close", "volume",
-            "close_time", "quote_volume", "trades", "taker_buy_base",
-            "taker_buy_quote", "ignore"
-        ])
+        df = pd.DataFrame(
+            data,
+            columns=[
+                "timestamp",
+                "open",
+                "high",
+                "low",
+                "close",
+                "volume",
+                "close_time",
+                "quote_volume",
+                "trades",
+                "taker_buy_base",
+                "taker_buy_quote",
+                "ignore",
+            ],
+        )
 
         df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms")
         for col in ["open", "high", "low", "close", "volume"]:
@@ -77,19 +101,9 @@ class CoinGeckoFetcher:
 
     BASE_URL = "https://api.coingecko.com/api/v3"
 
-    SYMBOL_MAP = {
-        "BTC": "bitcoin",
-        "ETH": "ethereum",
-        "SOL": "solana",
-        "BNB": "binancecoin"
-    }
+    SYMBOL_MAP = {"BTC": "bitcoin", "ETH": "ethereum", "SOL": "solana", "BNB": "binancecoin"}
 
-    def fetch_ohlcv(
-        self,
-        symbol: str,
-        timeframe: str = "1h",
-        days: int = 30
-    ) -> pd.DataFrame:
+    def fetch_ohlcv(self, symbol: str, timeframe: str = "1h", days: int = 30) -> pd.DataFrame:
         """
         获取OHLCV数据
 
@@ -104,16 +118,9 @@ class CoinGeckoFetcher:
         if not coin_id:
             raise ValueError(f"Unsupported symbol: {symbol}")
 
-        params = {
-            "vs_currency": "usd",
-            "days": days
-        }
+        params = {"vs_currency": "usd", "days": days}
 
-        resp = requests.get(
-            f"{self.BASE_URL}/coins/{coin_id}/ohlc",
-            params=params,
-            timeout=10
-        )
+        resp = requests.get(f"{self.BASE_URL}/coins/{coin_id}/ohlc", params=params, timeout=10)
         resp.raise_for_status()
 
         data = resp.json()
@@ -137,7 +144,7 @@ class DataFetcher:
         timeframe: str = "1h",
         start_time: Optional[int] = None,
         end_time: Optional[int] = None,
-        source: str = "binance"
+        source: str = "binance",
     ) -> pd.DataFrame:
         """
         获取OHLCV数据，支持多数据源切换

@@ -4,6 +4,7 @@ Unit tests for utils.instrument_helpers
 Run with:
     uv run python -m unittest discover -s tests -p "test_*.py" -v
 """
+
 import unittest
 
 from utils.instrument_helpers import (

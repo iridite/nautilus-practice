@@ -24,6 +24,7 @@ project_root: Path = Path(__file__).parent.parent.resolve()
 # 交易工具配置
 # ============================================================
 
+
 class InstrumentType(Enum):
     """
     交易工具类型枚举
@@ -35,6 +36,7 @@ class InstrumentType(Enum):
         PERP: 永续合约（别名）
         OPTION: 期权合约
     """
+
     SPOT = "SPOT"
     FUTURES = "FUTURES"
     SWAP = "SWAP"
@@ -55,6 +57,7 @@ class InstrumentConfig(BaseModel):
         quote_currency: 报价货币（BTC, ETH 等）
         leverage: 杠杆倍数（默认为 1）
     """
+
     type: InstrumentType = InstrumentType.SWAP
     venue_name: str = "OKX"
     base_currency: str = "USDT"
@@ -142,6 +145,7 @@ class InstrumentConfig(BaseModel):
 # 数据配置
 # ============================================================
 
+
 class DataConfig(BaseModel):
     """
     数据配置
@@ -157,6 +161,7 @@ class DataConfig(BaseModel):
         instrument_id: 交易标的 ID（可选）
         label: 数据标签（默认为 main）
     """
+
     csv_file_name: str
     bar_aggregation: BarAggregation = BarAggregation.HOUR
     bar_period: int = 1
@@ -182,6 +187,7 @@ class DataConfig(BaseModel):
 # 策略配置
 # ============================================================
 
+
 class LegacyStrategyConfig(BaseModel):
     """
     策略配置容器（遗留版本）
@@ -195,6 +201,7 @@ class LegacyStrategyConfig(BaseModel):
         params: 策略参数字典
         trade_pair_list: 交易对列表（可选）
     """
+
     name: str
     module_path: str
     config_class: str | None = None
@@ -226,6 +233,7 @@ class LegacyStrategyConfig(BaseModel):
 
         try:
             from msgspec import structs
+
             return structs.asdict(self.params)
         except (ImportError, TypeError):
             return {}
@@ -282,6 +290,7 @@ class LegacyStrategyConfig(BaseModel):
 # 回测配置
 # ============================================================
 
+
 class LogConfig(BaseModel):
     """
     日志配置
@@ -296,6 +305,7 @@ class LogConfig(BaseModel):
         log_component_levels: 组件级别的日志配置
         log_components_only: 是否仅记录指定组件的日志（默认 False）
     """
+
     log_level: str = "INFO"
     log_level_file: str = "DEBUG"
     log_colors: bool = True
@@ -323,15 +333,14 @@ class BacktestConfig(BaseModel):
         data: 主数据配置（可选）
         aux_data: 辅助数据配置（可选）
     """
+
     instrument: InstrumentConfig
     strategy: LegacyStrategyConfig
     instruments: List[InstrumentConfig] = Field(default_factory=list)
     data_feeds: List[DataConfig] = Field(default_factory=list)
     start_date: str | None = None
     end_date: str | None = None
-    initial_balances: List[Money] = Field(
-        default_factory=lambda: [Money("10_000", USDT)]
-    )
+    initial_balances: List[Money] = Field(default_factory=lambda: [Money("10_000", USDT)])
     output_html_report: bool = False
     logging: LogConfig | None = None
     data: DataConfig | None = None
@@ -384,6 +393,7 @@ class BacktestConfig(BaseModel):
 # ============================================================
 # 交易环境配置
 # ============================================================
+
 
 class TradingConfig(BaseModel):
     """交易环境配置"""
@@ -440,8 +450,6 @@ class TradingConfig(BaseModel):
         return v
 
 
-
-
 class BacktestPeriodConfig(BaseModel):
     """回测周期配置"""
 
@@ -477,6 +485,7 @@ class BacktestPeriodConfig(BaseModel):
 # ============================================================
 # 日志和文件管理配置
 # ============================================================
+
 
 class LoggingConfig(BaseModel):
     """日志配置"""
@@ -547,6 +556,7 @@ class FileCleanupConfig(BaseModel):
 # ============================================================
 # 其他配置类
 # ============================================================
+
 
 class StrategyConfig(BaseModel):
     """策略配置"""
@@ -677,10 +687,11 @@ class LiveConfig(BaseModel):
 # 环境和路径配置
 # ============================================================
 
+
 class EnvironmentConfig(BaseModel):
     """环境配置"""
 
-    model_config = ConfigDict(extra='allow')
+    model_config = ConfigDict(extra="allow")
 
     extends: Optional[str] = None  # 继承的父配置文件
     trading: TradingConfig = Field(default_factory=TradingConfig)
@@ -780,9 +791,6 @@ class ActiveConfig(BaseModel):
         if v.upper() not in valid_types:
             raise ValueError(f"Origination must be one of {valid_types}")
         return v.upper()
-
-
-
 
 
 class ConfigPaths:

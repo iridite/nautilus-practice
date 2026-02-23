@@ -27,7 +27,9 @@ class APIHealthChecker:
         self.timeout = timeout
         self.results: Dict[str, Dict] = {}
 
-    async def check_binance_api(self, base_url: str = "https://api.binance.com") -> Tuple[bool, str, Optional[float]]:
+    async def check_binance_api(
+        self, base_url: str = "https://api.binance.com"
+    ) -> Tuple[bool, str, Optional[float]]:
         """
         检查 Binance API 连接
 
@@ -57,7 +59,9 @@ class APIHealthChecker:
         except Exception as e:
             return False, f"未知错误: {type(e).__name__}: {str(e)}", None
 
-    async def check_binance_time_sync(self, base_url: str = "https://api.binance.com") -> Tuple[bool, str, Optional[int]]:
+    async def check_binance_time_sync(
+        self, base_url: str = "https://api.binance.com"
+    ) -> Tuple[bool, str, Optional[int]]:
         """
         检查本地时间与 Binance 服务器时间的同步情况
 
@@ -94,7 +98,7 @@ class APIHealthChecker:
         self,
         api_key: Optional[str] = None,
         api_secret: Optional[str] = None,
-        base_url: str = "https://api.binance.com"
+        base_url: str = "https://api.binance.com",
     ) -> Tuple[bool, str]:
         """
         检查 Binance API 认证
@@ -121,9 +125,7 @@ class APIHealthChecker:
             params = {"timestamp": timestamp}
             query_string = urlencode(params)
             signature = hmac.new(
-                api_secret.encode("utf-8"),
-                query_string.encode("utf-8"),
-                hashlib.sha256
+                api_secret.encode("utf-8"), query_string.encode("utf-8"), hashlib.sha256
             ).hexdigest()
 
             headers = {"X-MBX-APIKEY": api_key}
@@ -149,7 +151,7 @@ class APIHealthChecker:
         self,
         api_key: Optional[str] = None,
         api_secret: Optional[str] = None,
-        base_url: str = "https://api.binance.com"
+        base_url: str = "https://api.binance.com",
     ) -> Dict[str, Dict]:
         """
         运行所有健康检查
@@ -169,7 +171,7 @@ class APIHealthChecker:
         self.results["connectivity"] = {
             "success": success,
             "message": message,
-            "response_time_ms": response_time
+            "response_time_ms": response_time,
         }
 
         if not success:
@@ -183,7 +185,7 @@ class APIHealthChecker:
         self.results["time_sync"] = {
             "success": success,
             "message": message,
-            "time_diff_ms": time_diff
+            "time_diff_ms": time_diff,
         }
 
         if not success:
@@ -194,10 +196,7 @@ class APIHealthChecker:
         # 3. API 认证测试（如果提供了密钥）
         if api_key and api_secret:
             success, message = await self.check_binance_authenticated(api_key, api_secret, base_url)
-            self.results["authentication"] = {
-                "success": success,
-                "message": message
-            }
+            self.results["authentication"] = {"success": success, "message": message}
 
             if not success:
                 logger.error(f"❌ API 认证失败: {message}")
@@ -206,7 +205,7 @@ class APIHealthChecker:
         else:
             self.results["authentication"] = {
                 "success": True,
-                "message": "未配置 API Key，跳过认证检查"
+                "message": "未配置 API Key，跳过认证检查",
             }
             logger.info("⊘ 跳过 API 认证检查（未配置密钥）")
 
@@ -247,9 +246,9 @@ class APIHealthChecker:
         if not self.results:
             return "未执行健康检查"
 
-        lines = ["\n" + "="*60]
+        lines = ["\n" + "=" * 60]
         lines.append("API 健康检查结果")
-        lines.append("="*60)
+        lines.append("=" * 60)
 
         # 连接测试
         conn = self.results.get("connectivity", {})
@@ -269,14 +268,14 @@ class APIHealthChecker:
             status = "✓" if auth.get("success") else "✗"
             lines.append(f"{status} API 认证: {auth.get('message', 'N/A')}")
 
-        lines.append("="*60)
+        lines.append("=" * 60)
 
         if self.is_healthy():
             lines.append("✓ 所有检查通过，可以开始交易")
         else:
             lines.append("✗ 检查未通过，请修复上述问题后重试")
 
-        lines.append("="*60 + "\n")
+        lines.append("=" * 60 + "\n")
 
         return "\n".join(lines)
 
@@ -285,7 +284,7 @@ async def check_api_health(
     api_key: Optional[str] = None,
     api_secret: Optional[str] = None,
     base_url: str = "https://api.binance.com",
-    timeout: float = 10.0
+    timeout: float = 10.0,
 ) -> Tuple[bool, str]:
     """
     便捷函数：执行 API 健康检查

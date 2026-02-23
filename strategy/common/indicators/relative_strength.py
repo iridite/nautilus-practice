@@ -98,7 +98,9 @@ class RelativeStrengthCalculator:
 
         return common_timestamps
 
-    def _calculate_period_rs(self, common_timestamps: list[int], lookback_days: int) -> float | None:
+    def _calculate_period_rs(
+        self, common_timestamps: list[int], lookback_days: int
+    ) -> float | None:
         """
         计算指定周期的 RS 值
 
@@ -109,7 +111,7 @@ class RelativeStrengthCalculator:
         Returns:
             RS 值，如果数据不足或无效则返回 None
         """
-        period_ts = common_timestamps[-(lookback_days + 1):]
+        period_ts = common_timestamps[-(lookback_days + 1) :]
         symbol_prices = [self.symbol_price_history[ts] for ts in period_ts]
         benchmark_prices = [self.benchmark_price_history[ts] for ts in period_ts]
 

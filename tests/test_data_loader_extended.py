@@ -29,6 +29,7 @@ class TestDetectTimeColumnExtended(unittest.TestCase):
     def tearDown(self):
         """清理临时文件"""
         import shutil
+
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
     def test_detect_timestamp_column(self):
@@ -81,10 +82,7 @@ class TestDetectTimeColumnExtended(unittest.TestCase):
     def test_detect_no_time_column(self):
         """测试没有时间列的情况"""
         csv_file = self.temp_path / "data.csv"
-        csv_file.write_text(
-            "open,high,low,close,volume\n"
-            "100,110,90,105,1000\n"
-        )
+        csv_file.write_text("open,high,low,close,volume\n100,110,90,105,1000\n")
 
         with self.assertRaises(TimeColumnError) as ctx:
             detect_time_column(csv_file)
@@ -103,8 +101,7 @@ class TestDetectTimeColumnExtended(unittest.TestCase):
         """测试检测其他时间列名（time, date）"""
         csv_file = self.temp_path / "data.csv"
         csv_file.write_text(
-            "time,open,high,low,close,volume\n"
-            "2025-01-01 00:00:00,100,110,90,105,1000\n"
+            "time,open,high,low,close,volume\n2025-01-01 00:00:00,100,110,90,105,1000\n"
         )
 
         time_col = detect_time_column(csv_file)
@@ -190,10 +187,7 @@ class TestFilterByDateRangeExtended(unittest.TestCase):
     def setUp(self):
         """创建测试数据"""
         dates = pd.date_range("2025-01-01", "2025-01-10", freq="D")
-        self.df = pd.DataFrame(
-            {"value": range(10)},
-            index=dates
-        )
+        self.df = pd.DataFrame({"value": range(10)}, index=dates)
 
     def test_filter_with_start_date(self):
         """测试使用开始日期过滤"""

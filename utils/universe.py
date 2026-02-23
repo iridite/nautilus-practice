@@ -14,6 +14,7 @@ from core.schemas import InstrumentConfig, InstrumentType
 
 logger = logging.getLogger(__name__)
 
+
 def load_universe_file(universe_path: Union[str, Path]) -> Dict[str, List[str]]:
     """
     加载 Universe JSON 文件
@@ -61,8 +62,7 @@ def load_universe_file(universe_path: Union[str, Path]) -> Dict[str, List[str]]:
 
 
 def extract_universe_symbols(
-    universe_data: Dict[str, List[str]],
-    months: List[str] | None = None
+    universe_data: Dict[str, List[str]], months: List[str] | None = None
 ) -> Set[str]:
     """
     从 Universe 数据中提取符号集合
@@ -118,10 +118,10 @@ def load_universe_symbols_from_file(file_path: Union[str, Path]) -> List[str]:
         symbols = []
         seen = set()
 
-        with open(file_path, 'r', encoding='utf-8') as f:
+        with open(file_path, "r", encoding="utf-8") as f:
             for line in f:
-                if '#' in line:
-                    line = line[:line.index('#')]
+                if "#" in line:
+                    line = line[: line.index("#")]
                 line = line.strip()
 
                 if not line:
@@ -140,10 +140,7 @@ def load_universe_symbols_from_file(file_path: Union[str, Path]) -> List[str]:
 
 
 def parse_universe_symbols(
-    universe_symbols: Set[str],
-    venue: str,
-    base_currency: str,
-    inst_type: InstrumentType
+    universe_symbols: Set[str], venue: str, base_currency: str, inst_type: InstrumentType
 ) -> Set[str]:
     """
     将 Universe 符号转换为 Instrument ID
@@ -171,7 +168,9 @@ def parse_universe_symbols(
             raw_pair = symbol.split(":")[0]
 
             if not raw_pair.endswith(base_currency):
-                logger.warning(f"⚠️ Symbol '{symbol}' doesn't end with base currency '{base_currency}'")
+                logger.warning(
+                    f"⚠️ Symbol '{symbol}' doesn't end with base currency '{base_currency}'"
+                )
                 continue
 
             quote_currency = raw_pair.replace(base_currency, "")
@@ -195,10 +194,7 @@ def parse_universe_symbols(
     return instrument_ids
 
 
-def resolve_universe_path(
-    universe_name: str | None,
-    base_dir: Union[str, Path]
-) -> Path | None:
+def resolve_universe_path(universe_name: str | None, base_dir: Union[str, Path]) -> Path | None:
     """
     解析 universe 文件的完整路径
 

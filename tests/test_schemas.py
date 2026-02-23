@@ -52,7 +52,7 @@ class TestInstrumentConfig:
             venue_name="OKX",
             base_currency="USDT",
             quote_currency="BTC",
-            inst_type=InstrumentType.SWAP
+            inst_type=InstrumentType.SWAP,
         )
         assert inst_id == "BTC-USDT-SWAP.OKX"
 
@@ -62,7 +62,7 @@ class TestInstrumentConfig:
             venue_name="BINANCE",
             base_currency="USDT",
             quote_currency="ETH",
-            inst_type=InstrumentType.SPOT
+            inst_type=InstrumentType.SPOT,
         )
         assert inst_id == "ETHUSDT.BINANCE"
 
@@ -72,7 +72,7 @@ class TestInstrumentConfig:
             venue_name="BINANCE",
             base_currency="USDT",
             quote_currency="BTC",
-            inst_type=InstrumentType.SWAP
+            inst_type=InstrumentType.SWAP,
         )
         assert inst_id == "BTCUSDT-PERP.BINANCE"
 
@@ -82,7 +82,7 @@ class TestInstrumentConfig:
             venue_name="BINANCE",
             base_currency="USDT",
             quote_currency="BTC",
-            inst_type=InstrumentType.PERP
+            inst_type=InstrumentType.PERP,
         )
         assert inst_id == "BTCUSDT-PERP.BINANCE"
 
@@ -93,7 +93,7 @@ class TestInstrumentConfig:
                 venue_name="UNKNOWN",
                 base_currency="USDT",
                 quote_currency="BTC",
-                inst_type=InstrumentType.SWAP
+                inst_type=InstrumentType.SWAP,
             )
 
     def test_get_symbol(self):
@@ -104,10 +104,7 @@ class TestInstrumentConfig:
     def test_instrument_id_property(self):
         """测试 instrument_id 属性"""
         config = InstrumentConfig(
-            venue_name="OKX",
-            quote_currency="ETH",
-            base_currency="USDT",
-            type=InstrumentType.SWAP
+            venue_name="OKX", quote_currency="ETH", base_currency="USDT", type=InstrumentType.SWAP
         )
         assert config.instrument_id == "ETH-USDT-SWAP.OKX"
 
@@ -130,7 +127,7 @@ class TestDataConfig:
             csv_file_name="test.csv",
             bar_aggregation=BarAggregation.MINUTE,
             bar_period=5,
-            price_type=PriceType.MID
+            price_type=PriceType.MID,
         )
         assert config.bar_type_str == "5-MINUTE-MID-EXTERNAL"
 
@@ -189,28 +186,19 @@ class TestBacktestPeriodConfig:
 
     def test_valid_dates(self):
         """测试有效日期"""
-        config = BacktestPeriodConfig(
-            start_date="2024-01-01",
-            end_date="2024-12-31"
-        )
+        config = BacktestPeriodConfig(start_date="2024-01-01", end_date="2024-12-31")
         assert config.start_date == "2024-01-01"
         assert config.end_date == "2024-12-31"
 
     def test_invalid_date_format(self):
         """测试无效日期格式"""
         with pytest.raises(ValidationError, match="YYYY-MM-DD"):
-            BacktestPeriodConfig(
-                start_date="01/01/2024",
-                end_date="2024-12-31"
-            )
+            BacktestPeriodConfig(start_date="01/01/2024", end_date="2024-12-31")
 
     def test_start_after_end(self):
         """测试开始日期晚于结束日期"""
         with pytest.raises(ValidationError, match="start_date must be before end_date"):
-            BacktestPeriodConfig(
-                start_date="2024-12-31",
-                end_date="2024-01-01"
-            )
+            BacktestPeriodConfig(start_date="2024-12-31", end_date="2024-01-01")
 
 
 class TestLoggingConfig:
@@ -277,9 +265,7 @@ class TestStrategyConfig:
     def test_valid_config(self):
         """测试有效配置"""
         config = StrategyConfig(
-            name="TestStrategy",
-            module_path="strategy.test",
-            parameters={"param1": "value1"}
+            name="TestStrategy", module_path="strategy.test", parameters={"param1": "value1"}
         )
         assert config.name == "TestStrategy"
         assert config.module_path == "strategy.test"
@@ -350,11 +336,7 @@ class TestActiveConfig:
 
     def test_valid_config(self):
         """测试有效配置"""
-        config = ActiveConfig(
-            environment="dev",
-            strategy="test_strategy",
-            primary_symbol="BTCUSDT"
-        )
+        config = ActiveConfig(environment="dev", strategy="test_strategy", primary_symbol="BTCUSDT")
         assert config.environment == "dev"
         assert config.strategy == "test_strategy"
         assert config.primary_symbol == "BTCUSDT"
@@ -384,54 +366,36 @@ class TestActiveConfig:
     def test_validate_timeframe(self):
         """测试时间框架验证（可选）"""
         config = ActiveConfig(
-            environment="dev",
-            strategy="test",
-            primary_symbol="BTCUSDT",
-            timeframe="4h"
+            environment="dev", strategy="test", primary_symbol="BTCUSDT", timeframe="4h"
         )
         assert config.timeframe == "4h"
 
         # None 应该被接受
         config = ActiveConfig(
-            environment="dev",
-            strategy="test",
-            primary_symbol="BTCUSDT",
-            timeframe=None
+            environment="dev", strategy="test", primary_symbol="BTCUSDT", timeframe=None
         )
         assert config.timeframe is None
 
     def test_validate_price_type(self):
         """测试价格类型验证（可选）"""
         config = ActiveConfig(
-            environment="dev",
-            strategy="test",
-            primary_symbol="BTCUSDT",
-            price_type="mid"
+            environment="dev", strategy="test", primary_symbol="BTCUSDT", price_type="mid"
         )
         assert config.price_type == "MID"
 
         with pytest.raises(ValidationError):
             ActiveConfig(
-                environment="dev",
-                strategy="test",
-                primary_symbol="BTCUSDT",
-                price_type="INVALID"
+                environment="dev", strategy="test", primary_symbol="BTCUSDT", price_type="INVALID"
             )
 
     def test_validate_origination(self):
         """测试数据来源验证（可选）"""
         config = ActiveConfig(
-            environment="dev",
-            strategy="test",
-            primary_symbol="BTCUSDT",
-            origination="internal"
+            environment="dev", strategy="test", primary_symbol="BTCUSDT", origination="internal"
         )
         assert config.origination == "INTERNAL"
 
         with pytest.raises(ValidationError):
             ActiveConfig(
-                environment="dev",
-                strategy="test",
-                primary_symbol="BTCUSDT",
-                origination="INVALID"
+                environment="dev", strategy="test", primary_symbol="BTCUSDT", origination="INVALID"
             )

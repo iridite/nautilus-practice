@@ -57,9 +57,7 @@ class StrictConfigValidator:
         for yaml_key, yaml_value in yaml_data.items():
             if yaml_key not in model_fields:
                 # 字段不存在于模型中
-                suggestion = StrictConfigValidator._suggest_field_name(
-                    yaml_key, model_fields
-                )
+                suggestion = StrictConfigValidator._suggest_field_name(yaml_key, model_fields)
                 warnings.append(
                     ConfigValidationWarning(
                         field=yaml_key,
@@ -148,6 +146,7 @@ class StrictConfigValidator:
     @staticmethod
     def _suggest_field_name(wrong_name: str, valid_names: Set[str]) -> str:
         """使用编辑距离算法建议正确的字段名"""
+
         def levenshtein_distance(s1: str, s2: str) -> int:
             """计算两个字符串的编辑距离"""
             if len(s1) < len(s2):
@@ -203,16 +202,12 @@ class StrictConfigValidator:
         warnings.extend(StrictConfigValidator.find_unknown_fields(yaml_data, model))
 
         # 2. 查找缺失的必需字段
-        warnings.extend(
-            StrictConfigValidator.find_missing_required_fields(yaml_data, model)
-        )
+        warnings.extend(StrictConfigValidator.find_missing_required_fields(yaml_data, model))
 
         # 3. 查找使用默认值的重要字段
         if important_fields:
             warnings.extend(
-                StrictConfigValidator.find_fields_using_defaults(
-                    yaml_data, model, important_fields
-                )
+                StrictConfigValidator.find_fields_using_defaults(yaml_data, model, important_fields)
             )
 
         return warnings

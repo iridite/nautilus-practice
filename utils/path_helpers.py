@@ -44,6 +44,5 @@ def get_project_root(start_path: Optional[Union[str, Path]] = None) -> Path:
             return parent
 
     raise RuntimeError(
-        f"无法找到项目根目录。从 {current} 开始搜索，"
-        f"未找到标志文件：{', '.join(markers)}"
+        f"无法找到项目根目录。从 {current} 开始搜索，未找到标志文件：{', '.join(markers)}"
     )

@@ -141,7 +141,9 @@ def _compress_log_file(file_path: Path) -> bool:
         return False
 
 
-def _process_log_file(file_path: Path, age_days: int, keep_days: int, delete_days: int, stats: dict):
+def _process_log_file(
+    file_path: Path, age_days: int, keep_days: int, delete_days: int, stats: dict
+):
     """处理单个日志文件"""
     if age_days > delete_days:
         if _delete_old_file(file_path):
@@ -203,7 +205,6 @@ def cleanup_by_age(
         )
 
     return stats
-
 
 
 def auto_cleanup_by_age(

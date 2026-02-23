@@ -56,22 +56,26 @@ class ProfileReporter:
 
         # 添加摘要
         if summary:
-            lines.extend([
-                "📊 总体统计",
-                "-" * 80,
-                f"总耗时:           {summary.get('total_elapsed_time', 0):.4f} 秒",
-                f"总调用次数:       {summary.get('total_calls', 0):,}",
-                f"唯一函数数量:     {summary.get('unique_functions', 0):,}",
-                "",
-            ])
+            lines.extend(
+                [
+                    "📊 总体统计",
+                    "-" * 80,
+                    f"总耗时:           {summary.get('total_elapsed_time', 0):.4f} 秒",
+                    f"总调用次数:       {summary.get('total_calls', 0):,}",
+                    f"唯一函数数量:     {summary.get('unique_functions', 0):,}",
+                    "",
+                ]
+            )
 
         # 性能热点
-        lines.extend([
-            "🔥 性能热点（前 20 个最耗时的函数）",
-            "-" * 80,
-            f"{'函数名':<40} {'调用次数':>10} {'累计时间':>12} {'占比':>8}",
-            "-" * 80,
-        ])
+        lines.extend(
+            [
+                "🔥 性能热点（前 20 个最耗时的函数）",
+                "-" * 80,
+                f"{'函数名':<40} {'调用次数':>10} {'累计时间':>12} {'占比':>8}",
+                "-" * 80,
+            ]
+        )
 
         for hotspot in hotspots[:20]:
             lines.append(
@@ -84,10 +88,12 @@ class ProfileReporter:
         lines.append("")
 
         # 性能瓶颈
-        lines.extend([
-            "⚠️  性能瓶颈（占用时间 > 5%）",
-            "-" * 80,
-        ])
+        lines.extend(
+            [
+                "⚠️  性能瓶颈（占用时间 > 5%）",
+                "-" * 80,
+            ]
+        )
 
         if bottlenecks:
             for bottleneck in bottlenecks:
@@ -102,25 +108,27 @@ class ProfileReporter:
         lines.append("")
 
         # I/O 操作
-        lines.extend([
-            "💾 I/O 操作（前 10 个）",
-            "-" * 80,
-        ])
+        lines.extend(
+            [
+                "💾 I/O 操作（前 10 个）",
+                "-" * 80,
+            ]
+        )
 
         if io_operations:
             for op in io_operations[:10]:
                 lines.append(
-                    f"  {op['function']:<40} "
-                    f"{op['calls']:>6} 次 "
-                    f"({op['cumulative_time']:.4f}s)"
+                    f"  {op['function']:<40} {op['calls']:>6} 次 ({op['cumulative_time']:.4f}s)"
                 )
         else:
             lines.append("  未发现明显的 I/O 操作")
 
-        lines.extend([
-            "",
-            "=" * 80,
-        ])
+        lines.extend(
+            [
+                "",
+                "=" * 80,
+            ]
+        )
 
         return "\n".join(lines)
 
@@ -152,24 +160,28 @@ class ProfileReporter:
 
         # 添加摘要
         if summary:
-            lines.extend([
-                "## 📊 总体统计",
-                "",
-                f"- **总耗时**: {summary.get('total_elapsed_time', 0):.4f} 秒",
-                f"- **总调用次数**: {summary.get('total_calls', 0):,}",
-                f"- **唯一函数数量**: {summary.get('unique_functions', 0):,}",
-                "",
-            ])
+            lines.extend(
+                [
+                    "## 📊 总体统计",
+                    "",
+                    f"- **总耗时**: {summary.get('total_elapsed_time', 0):.4f} 秒",
+                    f"- **总调用次数**: {summary.get('total_calls', 0):,}",
+                    f"- **唯一函数数量**: {summary.get('unique_functions', 0):,}",
+                    "",
+                ]
+            )
 
         # 性能热点
-        lines.extend([
-            "## 🔥 性能热点",
-            "",
-            "前 20 个最耗时的函数：",
-            "",
-            "| 函数名 | 调用次数 | 累计时间 (s) | 占比 (%) |",
-            "|--------|----------|--------------|----------|",
-        ])
+        lines.extend(
+            [
+                "## 🔥 性能热点",
+                "",
+                "前 20 个最耗时的函数：",
+                "",
+                "| 函数名 | 调用次数 | 累计时间 (s) | 占比 (%) |",
+                "|--------|----------|--------------|----------|",
+            ]
+        )
 
         for hotspot in hotspots[:20]:
             lines.append(
@@ -182,12 +194,14 @@ class ProfileReporter:
         lines.append("")
 
         # 性能瓶颈
-        lines.extend([
-            "## ⚠️ 性能瓶颈",
-            "",
-            "占用时间超过 5% 的函数：",
-            "",
-        ])
+        lines.extend(
+            [
+                "## ⚠️ 性能瓶颈",
+                "",
+                "占用时间超过 5% 的函数：",
+                "",
+            ]
+        )
 
         if bottlenecks:
             for bottleneck in bottlenecks:
@@ -202,19 +216,19 @@ class ProfileReporter:
         lines.append("")
 
         # I/O 操作
-        lines.extend([
-            "## 💾 I/O 操作",
-            "",
-            "前 10 个 I/O 操作：",
-            "",
-        ])
+        lines.extend(
+            [
+                "## 💾 I/O 操作",
+                "",
+                "前 10 个 I/O 操作：",
+                "",
+            ]
+        )
 
         if io_operations:
             for op in io_operations[:10]:
                 lines.append(
-                    f"- **{op['function']}**: "
-                    f"{op['calls']} 次 "
-                    f"({op['cumulative_time']:.4f}s)"
+                    f"- **{op['function']}**: {op['calls']} 次 ({op['cumulative_time']:.4f}s)"
                 )
         else:
             lines.append("未发现明显的 I/O 操作")
@@ -223,12 +237,7 @@ class ProfileReporter:
 
         return "\n".join(lines)
 
-    def save_report(
-        self,
-        report_content: str,
-        filename: str,
-        format: str = "txt"
-    ) -> Path:
+    def save_report(self, report_content: str, filename: str, format: str = "txt") -> Path:
         """
         保存报告到文件
 
