@@ -1,5 +1,5 @@
 # 基础环境配置
-# 所有其他环境配置都可以继承这个基础配置
+# 所有其他环境配置都继承这个基础配置
 
 # 交易环境设置
 trading:
@@ -19,11 +19,6 @@ timeframes:
   main: "1h" # 主要时间框架
   trend: "4h" # 趋势分析时间框架
 
-# 回测默认设置
-backtest:
-  start_date: "2025-12-01"
-  end_date: "2025-12-07"
-
 # 日志配置
 logging:
   level: "INFO"
@@ -31,5 +26,16 @@ logging:
   components:
     BacktestEngine: "INFO"
     DataFeed: "INFO"
-    RSSqueezeStrategy: "INFO"
+    Strategy: "INFO"
   components_only: true
+
+# 文件清理配置
+file_cleanup:
+  enabled: true
+  use_time_rotation: true
+  keep_days: 7
+  delete_days: 30
+  max_files_per_dir: 50
+  target_dirs:
+    - "log"
+    - "output"

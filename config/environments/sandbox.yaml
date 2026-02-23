@@ -1,24 +1,24 @@
-# Sandbox实时交易环境配置
+# OKX 测试网环境配置
+# 用于连接 OKX 测试网进行模拟实盘交易
 
-extends: "prod.yaml"
+extends: "base.yaml"
 
-# Sandbox特定配置
+# 测试网特定配置
 sandbox:
   venue: "OKX"
-  is_testnet: true  # 使用测试网/模拟盘
+  is_testnet: true
 
-  # 交易标的列表（基于 active 策略 keltner_rs_breakout 的 symbols）
-  # 注意：BTCUSDT 会由代码自动添加（如果策略需要），无需手动配置
+  # 交易标的列表（根据策略动态调整）
   instrument_ids:
     - "ETH-USDT-SWAP.OKX"
     - "SOL-USDT-SWAP.OKX"
     - "BNB-USDT-SWAP.OKX"
     - "DOGE-USDT-SWAP.OKX"
 
-  # 允许本地缺失 instrument json 仅作为警告（便于开发/快速迭代）
+  # 允许本地缺失 instrument json（便于快速迭代）
   allow_missing_instruments: true
 
-  # API环境变量名称
+  # API 环境变量名称
   api_key_env: "OKX_API_KEY"
   api_secret_env: "OKX_API_SECRET"
   api_passphrase_env: "OKX_API_PASSPHRASE"
@@ -31,7 +31,14 @@ sandbox:
   # 缓存配置
   flush_cache_on_start: false
 
-# 日志配置
+# 交易配置（覆盖 base.yaml）
+trading:
+  venue: "OKX"
+  instrument_type: "SWAP"
+  initial_balance: 10000 # 测试网使用较大的虚拟资金
+  currency: "USDT"
+
+# 日志配置（测试网需要详细日志）
 logging:
   level: "INFO"
   file_level: "DEBUG"
@@ -41,9 +48,13 @@ logging:
     Strategy: "DEBUG"
   components_only: true
 
-# 交易配置
-trading:
-  venue: "OKX"
-  instrument_type: "SWAP"
-  initial_balance: 10000
-  currency: "USDT"
+# 文件清理配置（测试网保留较长时间）
+file_cleanup:
+  enabled: true
+  use_time_rotation: true
+  keep_days: 14
+  delete_days: 60
+  max_files_per_dir: 100
+  target_dirs:
+    - "log"
+    - "output"
