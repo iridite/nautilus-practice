@@ -7,8 +7,7 @@ config_class: "KeltnerRSBreakoutConfig"
 
 # 策略参数
 parameters:
-  # 多币种配置（策略负责交易对象）
-  symbols: ["ETHUSDT", "SOLUSDT", "BNBUSDT", "DOGEUSDT"]
+  # 交易标的由 Universe 动态管理（见 universe_top_n 参数）
   timeframe: "1d"
   price_type: "LAST"
   origination: "EXTERNAL"
@@ -81,8 +80,8 @@ parameters:
   # NETTING 模式（如需切换）：
   # - 每个币对最多1个仓位（多空会合并）
   # - max_positions 限制不同币对的数量
-  # - 例如：4个标的最多持有4个仓位
-  # - 建议设置为 symbols 列表长度
+  # - 例如：15个标的最多持有15个仓位
+  # - 建议设置为 universe_top_n 的值
   #
   # 我们采用的是 Hold until stop 模式，理论上拥有一个无限大的缓冲区，只要 inactive 的币对不触发任何的止损机制那么策略就不会主动发起平仓
   max_positions: 5
