@@ -19,6 +19,9 @@ This file provides comprehensive guidance for Claude Code (claude.ai/code) and A
 # 安装所有依赖
 uv sync
 
+# 安装 Git Hooks（阻止直接提交到 main 分支）
+./scripts/setup-hooks.sh
+
 # 激活虚拟环境（如需要）
 source .venv/bin/activate
 ```
