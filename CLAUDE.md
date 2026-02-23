@@ -121,6 +121,37 @@ strategy/
 3. 组合组件构建策略
 4. 添加策略特定测试
 
+**多标的策略实例化机制**:
+
+⚠️ **重要架构概念**: NautilusTrader 框架中，每个策略实例只能交易一个标的（symbol）。
+
+对于需要交易多个标的的策略（如 Keltner RS Breakout），系统会自动为每个标的创建一个独立的策略实例：
+
+```python
+# 配置: universe_top_n = 15
+# 系统行为: 创建 15 个独立的策略实例
+
+KeltnerRSBreakoutStrategy(symbol="ETHUSDT")   # 实例 1
+KeltnerRSBreakoutStrategy(symbol="BTCUSDT")   # 实例 2
+KeltnerRSBreakoutStrategy(symbol="SOLUSDT")   # 实例 3
+# ... 共 15 个实例
+```
+
+**关键特性**:
+- 每个实例独立运行，拥有独立的状态和持仓
+- 实例之间不共享数据（除非通过 common 组件）
+- `max_positions` 参数限制的是单个实例的持仓数（通常为 1）
+- 总持仓数 = 活跃实例数 × max_positions
+
+**配置示例**:
+```yaml
+universe_top_n: 15        # 创建 15 个策略实例
+max_positions: 1          # 每个实例最多持有 1 个仓位
+# 结果: 最多同时持有 15 个仓位（每个标的 1 个）
+```
+
+这是 NautilusTrader 的架构设计，不是我们的实现选择。理解这一点对于正确配置策略参数和理解回测结果至关重要。
+
 ### 3. 数据管理 (utils/data_management/)
 
 **统一数据管理模块**:
