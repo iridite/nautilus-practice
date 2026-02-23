@@ -2,8 +2,8 @@
 
 # Pre-push hook: 防止直接推送到 main 分支
 
-# 获取当前分支
-current_branch=$(git symbolic-ref HEAD | sed -e 's,.*/\(.*\),\1,')
+# 获取当前分支（正确处理包含斜杠的分支名）
+current_branch=$(git symbolic-ref --short HEAD)
 
 # 检查是否推送到 main
 while read local_ref local_sha remote_ref remote_sha
