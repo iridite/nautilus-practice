@@ -3,18 +3,18 @@ Tests for High-Level Backtest Engine
 """
 
 import unittest
-from unittest.mock import Mock, MagicMock, patch
-from pathlib import Path
 from datetime import datetime
+from pathlib import Path
+from unittest.mock import MagicMock, Mock, patch
 
 from backtest.engine_high import (
-    _check_if_needs_custom_data,
-    _extract_symbol_from_instrument_id,
     _build_timeframe_string,
-    _format_status_message,
     _check_csv_file_validity,
     _check_file_freshness,
+    _check_if_needs_custom_data,
     _count_csv_lines,
+    _extract_symbol_from_instrument_id,
+    _format_status_message,
 )
 from core.schemas import BacktestConfig
 
@@ -303,7 +303,7 @@ class TestEngineHighIntegration(unittest.TestCase):
 
     def test_exception_imports(self):
         """测试异常类可以正确导入"""
-        from backtest.exceptions import (
+        from core.exceptions import (
             BacktestEngineError,
             CatalogError,
             DataLoadError,

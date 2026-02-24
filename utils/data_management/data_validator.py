@@ -487,7 +487,11 @@ def prepare_data_feeds(args, adapter, base_dir, universe_symbols: set):
         logger.info(f"📥 {len(missing_symbols)} symbols need data")
         run_batch_data_retrieval(missing_symbols, start_date, end_date, timeframe, venue, base_dir)
     else:
-        logger.info("✅ All data files present\n")
+        logger.info("✅ All data files present")
+
+    # 检查多标的数据对齐（如果策略需要）
+    _check_multi_instrument_alignment(adapter, base_dir, venue, timeframe)
+    logger.info("")  # 空行分隔
 
 
 def _check_multi_instrument_alignment(adapter, base_dir: Path, venue: str, timeframe: str):
@@ -521,7 +525,7 @@ def _check_multi_instrument_alignment(adapter, base_dir: Path, venue: str, timef
         btc_csv = data_dir / f"{btc_symbol}_{timeframe}.csv"
 
         # 执行对齐检查
-        logger.debug(f"🔍 检查多标的数据对齐: {primary_symbol} vs {btc_symbol}")
+        logger.info(f"🔍 检查多标的数据对齐: {primary_symbol} vs {btc_symbol}")
         is_aligned, error_msg = validate_multi_instrument_alignment(
             primary_csv, btc_csv, min_alignment_rate=0.95, logger=logger
         )

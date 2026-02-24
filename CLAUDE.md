@@ -327,6 +327,84 @@ feature/xxx, fix/xxx, refactor/xxx, ci/xxx
 - 不要在未经明确授权的情况下创建或合并 PR
 - 推送到远程前获得明确许可
 
+### GitHub Copilot PR 审阅
+
+项目已配置 GitHub Copilot 自动审阅 PR。Copilot 会根据 `.github/copilot-instructions.md` 中的指导原则进行审阅。
+
+**审阅重点**:
+- 代码质量和最佳实践
+- 测试覆盖率（最低 28%）
+- 代码风格和格式化
+- 安全性和性能
+- NautilusTrader 特定规范
+- 架构设计和反过度工程化
+
+**使用方法**:
+1. 创建 PR 后，Copilot 会自动进行审阅
+2. 审阅结果会以评论形式出现在 PR 中
+3. 根据建议修改代码
+4. 推送更新后 Copilot 会重新审阅
+
+**注意**: Copilot 审阅是辅助工具，不替代人工审阅。最终合并决策仍需人工确认。
+
+### 自动合并工作流
+
+项目配置了自动合并工作流（`.github/workflows/auto-merge.yml`），满足条件的 PR 会自动合并。
+
+**触发条件**（满足任一即可）:
+- 分支名称匹配模式：`fix/*`, `feat/*`, `docs/*`, `chore/*`, `refactor/*`, `test/*`
+- PR 带有 `auto-merge` 标签
+- PR 由 bot 创建（dependabot, renovate）
+
+**合并条件**（必须全部满足）:
+- ✅ 所有 CI 检查通过（tests, lint, coverage）
+- ✅ PR 已被批准（至少 1 个 approval）或由 bot 创建
+- ✅ 没有合并冲突
+- ✅ 分支与 main 同步
+- ✅ 没有 `do-not-merge` 标签
+
+**合并策略**:
+- 使用 squash merge（压缩所有提交为一个）
+- 自动删除源分支
+- 添加合并日志和评论
+
+**使用示例**:
+
+```bash
+# 1. 创建符合命名规范的分支（自动触发）
+git checkout -b fix/bug-description
+
+# 2. 或者手动添加 auto-merge 标签
+gh pr create --label auto-merge
+
+# 3. 禁用自动合并（添加标签）
+gh pr edit <pr-number> --add-label do-not-merge
+
+# 4. 查看 PR 状态
+gh pr view <pr-number>
+```
+
+**工作流程**:
+1. 创建 PR → Copilot 自动审阅
+2. CI 检查运行（tests, lint, coverage）
+3. 获得人工批准（或 bot PR 自动批准）
+4. 所有检查通过 → 自动合并
+5. 源分支自动删除
+
+**安全措施**:
+- 不会合并直接推送到 main 的 PR
+- 不会合并有 `do-not-merge` 标签的 PR
+- 不会合并有冲突的 PR
+- 不会合并 CI 检查失败的 PR
+- 保留人工审阅的最终决定权
+
+**最佳实践**:
+- 保持 PR 小而专注（< 500 行净增加）
+- 确保测试覆盖率达标
+- 遵循代码规范（Ruff 检查通过）
+- 及时响应 Copilot 审阅建议
+- 对于重大变更，即使自动合并可用也建议人工审阅
+
 ## 数据依赖声明
 
 策略可以声明所需的数据类型:

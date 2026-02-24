@@ -59,7 +59,7 @@ parameters:
   btc_max_atr_pct: 0.03
 
   # 市场狂热度过滤器参数（基于 Funding Rate）
-  enable_euphoria_filter: true
+  enable_euphoria_filter: false
   funding_rate_warning_annual: 100.0 # 年化资金费率警告阈值（%）
   funding_rate_danger_annual: 200.0 # 年化资金费率危险阈值（%）
   euphoria_reduce_position_pct: 0.5 # 危险状态下的减仓比例（减仓50%，保留50%）

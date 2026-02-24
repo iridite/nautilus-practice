@@ -16,7 +16,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-from backtest.exceptions import (
+from core.exceptions import (
     BacktestEngineError,
     CustomDataError,
     DataLoadError,
@@ -201,7 +201,7 @@ class TestEngineImportIntegration(unittest.TestCase):
             from nautilus_trader.persistence.wranglers import BarDataWrangler
 
             # 测试本地模块导入
-            from backtest.exceptions import (
+            from core.exceptions import (
                 BacktestEngineError,
                 CustomDataError,
                 DataLoadError,

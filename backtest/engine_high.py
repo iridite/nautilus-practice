@@ -1,4 +1,5 @@
 import gc
+import hashlib
 import json
 import logging
 import sys
@@ -8,7 +9,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import pandas as pd
-import yaml
+import yaml  # type: ignore[import-untyped]
 from nautilus_trader.backtest.config import (
     BacktestDataConfig,
     BacktestRunConfig,
@@ -28,7 +29,7 @@ from nautilus_trader.persistence.catalog import ParquetDataCatalog
 from nautilus_trader.persistence.wranglers import BarDataWrangler
 from pandas import DataFrame
 
-from backtest.exceptions import (
+from core.exceptions import (
     BacktestEngineError,
     CatalogError,
     DataLoadError,
@@ -78,6 +79,10 @@ def _check_instrument_data_availability(
     """检查单个标的的数据可用性"""
     symbol = _extract_symbol_from_instrument_id(inst_id)
 
+    # 确保日期不为 None
+    if not cfg.start_date or not cfg.end_date:
+        return False
+
     has_data, _ = check_single_data_file(
         symbol=symbol,
         start_date=cfg.start_date,
@@ -94,7 +99,7 @@ def _check_instrument_data_availability(
 
 
 def _filter_instruments_with_data(
-    cfg: BacktestConfig, inst_cfg_map: Dict[str, any], base_dir: Path
+    cfg: BacktestConfig, inst_cfg_map: Dict[str, Any], base_dir: Path
 ) -> list[str]:
     """过滤有数据的标的"""
     if not cfg.start_date or not cfg.end_date:
@@ -161,27 +166,130 @@ def _load_instruments(cfg: BacktestConfig, base_dir: Path) -> Dict[str, Instrume
 # ============================================================
 
 
+def _parse_backtest_time_range(cfg: BacktestConfig) -> Tuple[int, int]:
+    """
+    解析回测时间范围为纳秒时间戳
+
+    Args:
+        cfg: 回测配置
+
+    Returns:
+        (start_ns, end_ns): 纳秒时间戳
+    """
+    from utils.time_helpers import get_ns_timestamp
+
+    start_ns = get_ns_timestamp(cfg.start_date)
+    end_ns = get_ns_timestamp(cfg.end_date)
+
+    return start_ns, end_ns
+
+
+def _calculate_coverage_percentage(
+    data_intervals: List[Tuple[int, int]],
+    required_start: int,
+    required_end: int
+) -> float:
+    """
+    计算数据覆盖率
+
+    Args:
+        data_intervals: Parquet 数据的时间间隔列表 [(start_ns, end_ns), ...]
+        required_start: 回测需要的开始时间（纳秒）
+        required_end: 回测需要的结束时间（纳秒）
+
+    Returns:
+        覆盖率百分比 (0.0 - 100.0)
+
+    算法：
+    1. 计算所需的总时间范围
+    2. 对于每个数据间隔，计算与所需范围的交集
+    3. 累加所有交集的长度
+    4. 覆盖率 = (交集总长度 / 所需总长度) * 100
+    """
+    if not data_intervals:
+        return 0.0
+
+    required_duration = required_end - required_start
+    if required_duration <= 0:
+        return 0.0
+
+    covered_duration = 0
+    for interval_start, interval_end in data_intervals:
+        # 计算交集
+        overlap_start = max(interval_start, required_start)
+        overlap_end = min(interval_end, required_end)
+
+        if overlap_start < overlap_end:
+            covered_duration += (overlap_end - overlap_start)
+
+    coverage_pct = (covered_duration / required_duration) * 100.0
+    return min(coverage_pct, 100.0)  # 限制在 100% 以内
+
+
 def _check_parquet_coverage(
     catalog: ParquetDataCatalog,
     bar_type: BarType,
     cfg: BacktestConfig,
 ) -> Tuple[bool, float]:
     """
-    检查Parquet数据覆盖率
+    检查 Parquet 数据覆盖率
+
+    计算 Parquet 数据对回测时间范围的覆盖率，确保数据完整性。
+
+    Args:
+        catalog: Parquet 数据目录
+        bar_type: Bar 类型标识
+        cfg: 回测配置（包含 start_date 和 end_date）
 
     Returns:
-        Tuple[bool, float]: (是否存在, 覆盖率百分比)
+        Tuple[bool, float]: (是否满足要求, 覆盖率百分比)
+        - 第一个值：覆盖率是否 >= 95%
+        - 第二个值：实际覆盖率百分比
+
+    Examples:
+        >>> is_ok, pct = _check_parquet_coverage(catalog, bar_type, cfg)
+        >>> if not is_ok:
+        ...     logger.warning(f"Coverage insufficient: {pct:.1f}%")
     """
     try:
-        existing_intervals = catalog.get_intervals(data_cls=Bar, identifier=str(bar_type))
+        # 1. 获取数据间隔
+        existing_intervals = catalog.get_intervals(
+            data_cls=Bar,
+            identifier=str(bar_type)
+        )
         if not existing_intervals:
             return False, 0.0
-    except (KeyError, AttributeError) as e:
-        logger.warning(f"Failed to get intervals for {bar_type}: {e}")
-        return False, 0.0
 
-    # 简化逻辑：如果 Parquet 数据存在则返回 True
-    return True, 100.0
+        # 2. 解析回测时间范围
+        required_start, required_end = _parse_backtest_time_range(cfg)
+
+        # 3. 计算覆盖率
+        coverage_pct = _calculate_coverage_percentage(
+            existing_intervals,
+            required_start,
+            required_end
+        )
+
+        # 4. 判断是否满足要求（阈值 95%）
+        COVERAGE_THRESHOLD = 95.0
+        is_sufficient = coverage_pct >= COVERAGE_THRESHOLD
+
+        # 5. 记录日志
+        if not is_sufficient:
+            logger.warning(
+                f"Parquet coverage insufficient for {bar_type}: "
+                f"{coverage_pct:.1f}% < {COVERAGE_THRESHOLD}%"
+            )
+        else:
+            logger.debug(
+                f"Parquet coverage OK for {bar_type}: {coverage_pct:.1f}%"
+            )
+
+        return is_sufficient, coverage_pct
+
+    except (KeyError, AttributeError) as e:
+        logger.warning(f"Failed to check coverage for {bar_type}: {e}")
+        return False, 0.0
 
 
 # ============================================================
@@ -429,7 +537,7 @@ def _auto_download_data(data_cfg, cfg: BacktestConfig) -> bool:
 
         if configs:
             csv_path = data_cfg.full_path
-            return csv_path.exists() and csv_path.stat().st_size > 1024
+            return bool(csv_path.exists() and csv_path.stat().st_size > 1024)
 
         return False
     except (IOError, ImportError) as e:
@@ -517,16 +625,16 @@ def _import_data_to_catalog(
     cfg: BacktestConfig,
     loaded_instruments: Dict[str, Instrument],
     catalog_path: Path,
-) -> Tuple[Dict[str, Dict], Dict[str, str], Dict]:
+) -> Tuple[Dict[str, Dict[str, Any]], Dict[str, str], Dict[str, List[str]]]:
     """
     将CSV数据导入Parquet目录，并组织数据流
 
     智能数据处理：检查Parquet覆盖率，按需导入CSV或下载数据
     """
     _catalog = ParquetDataCatalog(catalog_path)
-    data_config_by_inst = {}
-    feeds_by_inst = defaultdict(dict)
-    global_feeds = {}
+    data_config_by_inst: Dict[str, Dict[str, Any]] = {}
+    feeds_by_inst: Dict[str, List[str]] = defaultdict(list)
+    global_feeds: Dict[str, str] = {}
     total_feeds = len(cfg.data_feeds)
 
     for feed_idx, data_cfg in enumerate(cfg.data_feeds, 1):
@@ -541,11 +649,13 @@ def _import_data_to_catalog(
         sys.stdout.flush()
 
         # 归类数据流
-        _categorize_data_feed(inst_id, feed_bar_type_str, data_cfg, global_feeds, feeds_by_inst)
+        if feed_bar_type_str is not None:
+            _categorize_data_feed(inst_id, feed_bar_type_str, data_cfg, global_feeds, feeds_by_inst)
 
         # 更新数据配置
         inst = loaded_instruments[inst_id]
-        _update_data_config(str(inst.id), inst, bar_type_str, catalog_path, data_config_by_inst)
+        if bar_type_str is not None:
+            _update_data_config(str(inst.id), inst, bar_type_str, catalog_path, data_config_by_inst)
 
     logger.info(f"\n✅ Data import complete. Created {len(data_config_by_inst)} data configs.")
     return data_config_by_inst, global_feeds, feeds_by_inst
@@ -651,7 +761,7 @@ def _estimate_parquet_count(existing_intervals: list) -> int:
         return 0
     interval = existing_intervals[0]
     # 假设1小时数据，估算数据点数量
-    return (interval[1] - interval[0]) // (3600 * 1_000_000_000)  # 纳秒转小时
+    return int((interval[1] - interval[0]) // (3600 * 1_000_000_000))  # 纳秒转小时
 
 
 def _check_data_count_consistency(csv_line_count: int, estimated_parquet_count: int) -> bool:
@@ -662,57 +772,144 @@ def _check_data_count_consistency(csv_line_count: int, estimated_parquet_count: 
     return diff_ratio <= 0.2
 
 
+def _calculate_csv_hash(csv_path: Path) -> str:
+    """
+    计算 CSV 文件的 MD5 哈希值
+
+    使用分块读取以处理大文件，避免内存溢出。
+
+    Args:
+        csv_path: CSV 文件路径
+
+    Returns:
+        十六进制哈希字符串
+    """
+    hash_func = hashlib.md5()
+
+    with open(csv_path, "rb") as f:
+        while chunk := f.read(8192):  # 8KB 块
+            hash_func.update(chunk)
+
+    return hash_func.hexdigest()
+
+
+def _get_hash_cache_path(catalog: ParquetDataCatalog) -> Path:
+    """获取哈希缓存文件路径"""
+    catalog_root = Path(catalog.path)
+    return catalog_root / ".hash_cache.json"
+
+
+def _load_hash_cache(cache_path: Path) -> Dict[str, Dict[str, Any]]:
+    """加载哈希缓存"""
+    if not cache_path.exists():
+        return {}
+
+    try:
+        with open(cache_path, "r") as f:
+            return json.load(f)
+    except (IOError, json.JSONDecodeError) as e:
+        logger.warning(f"Failed to load hash cache: {e}")
+        return {}
+
+
+def _save_hash_cache(cache_path: Path, cache_data: Dict[str, Dict[str, Any]]) -> None:
+    """保存哈希缓存"""
+    try:
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(cache_path, "w") as f:
+            json.dump(cache_data, f, indent=2)
+    except IOError as e:
+        logger.warning(f"Failed to save hash cache: {e}")
+
+
+def _get_cached_hash(csv_path: Path, catalog: ParquetDataCatalog) -> Optional[str]:
+    """从缓存获取 CSV 文件的哈希值"""
+    cache_path = _get_hash_cache_path(catalog)
+    cache_data = _load_hash_cache(cache_path)
+
+    csv_key = str(csv_path.absolute())
+    if csv_key in cache_data:
+        return cache_data[csv_key].get("hash")
+
+    return None
+
+
+def _update_hash_cache(csv_path: Path, csv_hash: str, catalog: ParquetDataCatalog) -> None:
+    """更新缓存中的哈希值"""
+    cache_path = _get_hash_cache_path(catalog)
+    cache_data = _load_hash_cache(cache_path)
+
+    csv_key = str(csv_path.absolute())
+    cache_data[csv_key] = {
+        "hash": csv_hash,
+        "file_size": csv_path.stat().st_size,
+        "last_updated": datetime.now().isoformat(),
+    }
+
+    _save_hash_cache(cache_path, cache_data)
+
+
 def _verify_data_consistency(
     csv_path: Path, catalog: ParquetDataCatalog, bar_type: BarType
 ) -> bool:
     """
-    轻量级验证CSV和Parquet数据的一致性
+    验证 CSV 和 Parquet 数据的一致性（使用哈希校验）
 
-    简化检查策略（性能优先）：
-    1. 比较文件修改时间
-    2. 比较数据行数（快速估算）
-    3. 比较文件大小范围
+    使用 MD5 哈希值比较 CSV 文件内容，确保 Parquet 数据是从当前 CSV 导入的。
+
+    工作流程：
+    1. 检查 CSV 文件和 Parquet 数据是否存在
+    2. 计算当前 CSV 文件的哈希值
+    3. 从缓存获取上次导入时的哈希值
+    4. 比较哈希值判断是否一致
 
     Args:
-        csv_path: CSV文件路径
-        catalog: Parquet数据目录
+        csv_path: CSV 文件路径
+        catalog: Parquet 数据目录
         bar_type: 数据类型标识
 
     Returns:
         bool: 数据是否一致
+        - True: CSV 内容未变化，Parquet 数据可用
+        - False: CSV 已更新或首次导入，需要重新导入
     """
     try:
-        # 1. 检查CSV文件基本信息
+        # 1. 检查 CSV 文件基本信息
         if not _check_csv_file_validity(csv_path):
             return False
 
-        # 2. 快速检查Parquet数据是否存在
+        # 2. 检查 Parquet 数据是否存在
         existing_intervals = _get_parquet_intervals(catalog, bar_type)
         if not existing_intervals:
             return False
 
-        # 3. 比较文件修改时间
-        csv_mtime = csv_path.stat().st_mtime
-        parquet_mtime = _get_parquet_mtime(catalog, bar_type)
+        # 3. 计算当前 CSV 文件哈希
+        current_hash = _calculate_csv_hash(csv_path)
 
-        if not _check_file_freshness(csv_mtime, parquet_mtime):
+        # 4. 从缓存获取上次导入时的哈希
+        cached_hash = _get_cached_hash(csv_path, catalog)
+
+        # 5. 比较哈希值
+        if cached_hash is None:
+            # 首次导入，没有缓存
+            logger.debug(f"No cached hash for {csv_path.name}, will import")
             return False
 
-        # 4. 快速比较数据量
-        try:
-            csv_line_count = _count_csv_lines(csv_path)
-            estimated_parquet_count = _estimate_parquet_count(existing_intervals)
+        is_consistent = (current_hash == cached_hash)
 
-            if not _check_data_count_consistency(csv_line_count, estimated_parquet_count):
-                return False
-        except (IOError, ValueError) as e:
-            # 如果快速检查失败，默认认为一致（避免阻塞）
-            logger.debug(f"Quick check failed, assuming consistent: {e}")
+        if not is_consistent:
+            logger.info(
+                f"CSV data changed for {csv_path.name}: "
+                f"hash {cached_hash[:8]}... → {current_hash[:8]}..."
+            )
+        else:
+            logger.debug(f"CSV data unchanged for {csv_path.name}, using cached Parquet")
 
-        return True
+        return is_consistent
 
     except (IOError, OSError) as e:
-        logger.warning(f"Data consistency verification failed: {e}")
+        logger.warning(f"Hash verification failed for {csv_path.name}: {e}")
+        # 验证失败时，保守地返回 False，触发重新导入
         return False
 
 
@@ -858,7 +1055,7 @@ def _load_oms_type_from_config(strategies: List, base_dir: Path) -> str:
             with open(config_path, "r") as f:
                 strategy_config = yaml.safe_load(f)
                 if "parameters" in strategy_config and "oms_type" in strategy_config["parameters"]:
-                    return strategy_config["parameters"]["oms_type"]
+                    return str(strategy_config["parameters"]["oms_type"])
     except (IOError, yaml.YAMLError) as e:
         logger.debug(f"Failed to load OMS type from config, using default: {e}")
 
@@ -1098,7 +1295,7 @@ def _build_filter_stats(filter_stats: Optional[Dict[str, Dict[str, int]]]) -> Di
     if not filter_stats:
         return {}
 
-    total_stats = {}
+    total_stats: Dict[str, Any] = {}
     for inst_id, stats in filter_stats.items():
         for key, value in stats.items():
             total_stats[key] = total_stats.get(key, 0) + value
@@ -1249,7 +1446,7 @@ def _build_detailed_analysis(trade_metrics: List[Dict], analysis: Dict[str, Any]
 
 def _extract_returns_metrics(result: BacktestResult) -> Dict[str, Any]:
     """从stats_returns提取关键指标"""
-    metrics = {}
+    metrics: Dict[str, Any] = {}
 
     if not result.stats_returns:
         return metrics
@@ -1385,10 +1582,9 @@ def _build_result_dict(
 
     if trade_metrics:
         analysis = _calculate_trade_analysis(trade_metrics)
-        result_dict["trade_metrics"]["analysis"] = analysis
-        result_dict["trade_metrics"]["detailed_analysis"] = _build_detailed_analysis(
-            trade_metrics, analysis
-        )
+        tm_dict: Dict[str, Any] = result_dict["trade_metrics"]  # type: ignore[assignment]
+        tm_dict["analysis"] = analysis
+        tm_dict["detailed_analysis"] = _build_detailed_analysis(trade_metrics, analysis)
 
     result_dict["performance"] = _build_performance_summary(
         result, result_dict, trade_metrics, filter_stats
@@ -1527,6 +1723,15 @@ def catalog_loader(
     intervals = catalog.get_intervals(data_cls=Bar, identifier=str(bar_type))
     if not intervals:
         raise ValueError(f"❌ Failed to verify data in catalog for {instrument.id}")
+
+    # 5. 导入成功后，保存 CSV 文件哈希到缓存
+    try:
+        csv_hash = _calculate_csv_hash(csv_path)
+        _update_hash_cache(csv_path, csv_hash, catalog)
+        logger.debug(f"Saved hash for {csv_path.name}: {csv_hash[:8]}...")
+    except Exception as e:
+        logger.warning(f"Failed to save hash for {csv_path.name}: {e}")
+        # 不抛出异常，因为这不是致命错误
 
 
 # 注意：自定义数据（OI, Funding Rate）现在通过 OIFundingDataLoader 直接加载

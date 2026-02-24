@@ -4,7 +4,7 @@ import logging
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 from nautilus_trader.analysis.tearsheet import create_tearsheet
@@ -26,7 +26,7 @@ from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.persistence.wranglers import BarDataWrangler
 from pandas import DataFrame
 
-from backtest.exceptions import (
+from core.exceptions import (
     BacktestEngineError,
     CustomDataError,
     DataLoadError,
@@ -127,15 +127,17 @@ def _load_oi_data_for_symbol(
     oi_data_list = []
     if oi_files:
         for oi_file in oi_files:
-            oi_data_list.extend(
-                loader.load_oi_data(
-                    symbol=symbol,
-                    instrument_id=instrument_id,
-                    start_date=cfg.start_date,
-                    end_date=cfg.end_date,
-                    exchange=cfg.instrument.venue_name.lower() if cfg.instrument else "binance",
+            # 确保日期不为 None
+            if cfg.start_date and cfg.end_date:
+                oi_data_list.extend(
+                    loader.load_oi_data(
+                        symbol=symbol,
+                        instrument_id=instrument_id,
+                        start_date=cfg.start_date,
+                        end_date=cfg.end_date,
+                        exchange=cfg.instrument.venue_name.lower() if cfg.instrument else "binance",
+                    )
                 )
-            )
     return oi_data_list
 
 
@@ -150,15 +152,17 @@ def _load_funding_data_for_symbol(
     funding_data_list = []
     if funding_files:
         for funding_file in funding_files:
-            funding_data_list.extend(
-                loader.load_funding_data(
-                    symbol=symbol,
-                    instrument_id=instrument_id,
-                    start_date=cfg.start_date,
-                    end_date=cfg.end_date,
-                    exchange=cfg.instrument.venue_name.lower() if cfg.instrument else "binance",
+            # 确保日期不为 None
+            if cfg.start_date and cfg.end_date:
+                funding_data_list.extend(
+                    loader.load_funding_data(
+                        symbol=symbol,
+                        instrument_id=instrument_id,
+                        start_date=cfg.start_date,
+                        end_date=cfg.end_date,
+                        exchange=cfg.instrument.venue_name.lower() if cfg.instrument else "binance",
+                    )
                 )
-            )
     return funding_data_list
 
 
@@ -236,13 +240,13 @@ def _load_custom_data_to_engine(
         raise CustomDataError(f"Custom data loading failed: {e}", cause=e)
 
 
-def _extract_strategy_config(cfg: BacktestConfig) -> dict:
+def _extract_strategy_config(cfg: BacktestConfig) -> Dict[str, Any]:
     """提取策略配置"""
     strategy_params = cfg.strategy.params
     if hasattr(strategy_params, "model_dump"):
-        return strategy_params.model_dump()
+        return strategy_params.model_dump()  # type: ignore[no-any-return]
     elif hasattr(strategy_params, "dict"):
-        return strategy_params.dict()
+        return strategy_params.dict()  # type: ignore[no-any-return]
     elif isinstance(strategy_params, dict):
         return strategy_params
     return {}
@@ -359,7 +363,7 @@ def _calculate_returns_stats(realized_pnls) -> dict:
 
 def _extract_pnl_from_positions(positions_report) -> dict:
     """从持仓报告中提取PnL统计"""
-    stats_pnls = {}
+    stats_pnls: Dict[str, Any] = {}
 
     try:
         if (
@@ -424,10 +428,9 @@ def _build_result_dict(
     }
 
     if stats_pnls:
+        pnl_dict: Dict[str, Any] = result_dict["pnl"]  # type: ignore[assignment]
         for currency, metrics in stats_pnls.items():
-            result_dict["pnl"][str(currency)] = {
-                str(k): v if v == v else None for k, v in metrics.items()
-            }
+            pnl_dict[str(currency)] = {str(k): v if v == v else None for k, v in metrics.items()}
 
     return result_dict
 
