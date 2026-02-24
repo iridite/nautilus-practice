@@ -270,7 +270,7 @@ def _check_parquet_coverage(
         # 5. 记录日志
         if not is_sufficient:
             logger.warning(
-                f"Parquet coverage insufficient for {bar_type}: "
+                f"\nParquet coverage insufficient for {bar_type}: "
                 f"{coverage_pct:.1f}% < {COVERAGE_THRESHOLD}%"
             )
         else:
