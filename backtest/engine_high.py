@@ -616,7 +616,7 @@ def _import_data_to_catalog(
     cfg: BacktestConfig,
     loaded_instruments: Dict[str, Instrument],
     catalog_path: Path,
-) -> Tuple[Dict[str, Dict[str, Any]], Dict[str, str], Dict[str, List[str]]]:
+) -> Tuple[Dict[str, Dict[str, Any]], Dict[str, str], Dict[str, Dict[str, str]]]:
     """
     将CSV数据导入Parquet目录，并组织数据流
 
@@ -624,7 +624,7 @@ def _import_data_to_catalog(
     """
     _catalog = ParquetDataCatalog(catalog_path)
     data_config_by_inst: Dict[str, Dict[str, Any]] = {}
-    feeds_by_inst: Dict[str, List[str]] = defaultdict(list)
+    feeds_by_inst: Dict[str, Dict[str, str]] = defaultdict(dict)
     global_feeds: Dict[str, str] = {}
     total_feeds = len(cfg.data_feeds)
 
