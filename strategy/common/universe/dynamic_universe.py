@@ -6,7 +6,38 @@ Dynamic Universe Manager
 
 import json
 from datetime import datetime
+from functools import lru_cache
 from pathlib import Path
+
+
+# 全局缓存函数（避免实例方法缓存导致的内存泄漏）
+@lru_cache(maxsize=10000)
+def _cached_period_string(freq: str, year: int, month: int, day: int, weekday: int) -> str:
+    """
+    缓存的周期字符串计算函数
+
+    Args:
+        freq: 更新周期
+        year: 年份
+        month: 月份
+        day: 日期
+        weekday: 星期几
+
+    Returns:
+        周期字符串
+    """
+    dt = datetime(year, month, day)
+
+    if freq == "ME":
+        return dt.strftime("%Y-%m")
+    elif freq == "W-MON":
+        return dt.strftime("%Y-W%W")
+    elif freq == "2W-MON":
+        week_num = int(dt.strftime("%W"))
+        biweek_num = (week_num // 2) + 1
+        return f"{dt.year}-W{biweek_num:02d}"
+    else:
+        return dt.strftime("%Y-%m")
 
 
 class DynamicUniverseManager:
@@ -65,7 +96,7 @@ class DynamicUniverseManager:
 
     def _get_period_string(self, dt: datetime) -> str:
         """
-        根据 freq 生成周期字符串
+        根据 freq 生成周期字符串（使用全局缓存函数）
 
         Args:
             dt: 日期时间
@@ -73,16 +104,7 @@ class DynamicUniverseManager:
         Returns:
             周期字符串（如 "2020-02", "2020-W05"）
         """
-        if self.freq == "ME":
-            return dt.strftime("%Y-%m")
-        elif self.freq == "W-MON":
-            return dt.strftime("%Y-W%W")
-        elif self.freq == "2W-MON":
-            week_num = int(dt.strftime("%W"))
-            biweek_num = (week_num // 2) + 1
-            return f"{dt.year}-W{biweek_num:02d}"
-        else:
-            return dt.strftime("%Y-%m")
+        return _cached_period_string(self.freq, dt.year, dt.month, dt.day, dt.weekday())
 
     def update(self, timestamp: int) -> bool:
         """

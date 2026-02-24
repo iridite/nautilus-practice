@@ -481,7 +481,6 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
 
         # 更新 Universe 和活跃缓存
         if self.universe_manager:
-            self.universe_manager.update(bar.ts_event)
             self._update_active_cache(bar.ts_event)
 
         # 等待指标准备好
