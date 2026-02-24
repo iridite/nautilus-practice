@@ -50,7 +50,13 @@ class InstrumentFetcher:
         """Ensure the output directory exists"""
         if not self.output_dir.exists():
             self.output_dir.mkdir(parents=True, exist_ok=True)
-            logger.info(f"📁 Created directory: {self.output_dir}")
+            from backtest.tui_manager import get_tui, is_tui_enabled
+
+            tui = get_tui()
+            if is_tui_enabled():
+                tui.add_log(f"Created directory: {self.output_dir}", "INFO")
+            else:
+                logger.info(f"📁 Created directory: {self.output_dir}")
 
     def _get_binance_client(self, is_futures: bool) -> BinanceHttpClient:
         key = f"BINANCE_{'FUTURES' if is_futures else 'SPOT'}"
@@ -179,9 +185,18 @@ class InstrumentFetcher:
                 if attempt < retries:
                     sleep_time = 2.0 * attempt
                     if not silent:
-                        logger.warning(
-                            f"⚠️ Error fetching {instrument_id_str}: {e}. Retrying in {sleep_time}s..."
-                        )
+                        from backtest.tui_manager import get_tui, is_tui_enabled
+
+                        tui = get_tui()
+                        if is_tui_enabled():
+                            tui.add_log(
+                                f"Error fetching {instrument_id_str}: {e}. Retrying in {sleep_time}s...",
+                                "WARNING",
+                            )
+                        else:
+                            logger.warning(
+                                f"⚠️ Error fetching {instrument_id_str}: {e}. Retrying in {sleep_time}s..."
+                            )
                     await asyncio.sleep(sleep_time)
                 else:
                     return None, f"🔥 Final error fetching {instrument_id_str}: {e}"

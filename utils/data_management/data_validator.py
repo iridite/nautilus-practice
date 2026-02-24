@@ -7,8 +7,8 @@
 
 """数据验证模块 - 检查回测所需数据是否完整"""
 
-from decimal import Decimal
 import logging
+from decimal import Decimal
 from pathlib import Path
 from typing import Optional
 
@@ -466,7 +466,11 @@ def prepare_data_feeds(args, adapter, base_dir, universe_symbols: set):
     from .data_manager import run_batch_data_retrieval
 
     if args.skip_data_check:
-        logger.info("⏩ Skipping data validation")
+        tui = get_tui()
+        if is_tui_enabled():
+            tui.add_log("Skipping data validation", "INFO")
+        else:
+            logger.info("⏩ Skipping data validation")
         return
 
     tui = get_tui()
@@ -515,7 +519,6 @@ def prepare_data_feeds(args, adapter, base_dir, universe_symbols: set):
 
     # 检查多标的数据对齐（如果策略需要）
     _check_multi_instrument_alignment(adapter, base_dir, venue, timeframe)
-    logger.info("")  # 空行分隔
 
 
 def _check_multi_instrument_alignment(adapter, base_dir: Path, venue: str, timeframe: str):
@@ -549,16 +552,34 @@ def _check_multi_instrument_alignment(adapter, base_dir: Path, venue: str, timef
         btc_csv = data_dir / f"{btc_symbol}_{timeframe}.csv"
 
         # 执行对齐检查
-        logger.info(f"🔍 检查多标的数据对齐: {primary_symbol} vs {btc_symbol}")
+        tui = get_tui()
+        use_tui = is_tui_enabled()
+
+        if use_tui:
+            tui.add_log(f"检查多标的数据对齐: {primary_symbol} vs {btc_symbol}", "INFO")
+        else:
+            logger.info(f"🔍 检查多标的数据对齐: {primary_symbol} vs {btc_symbol}")
+
         is_aligned, error_msg = validate_multi_instrument_alignment(
             primary_csv, btc_csv, min_alignment_rate=0.95, logger=logger
         )
 
         if not is_aligned:
-            logger.error(f"⚠️  数据对齐警告: {error_msg}")
-            logger.info("   建议: 检查数据源或重新下载数据")
+            if use_tui:
+                tui.add_log(f"数据对齐警告: {error_msg}", "ERROR")
+                tui.add_log("建议: 检查数据源或重新下载数据", "INFO")
+            else:
+                logger.error(f"⚠️  数据对齐警告: {error_msg}")
+                logger.info("   建议: 检查数据源或重新下载数据")
         else:
-            logger.info("✅ 数据对齐验证通过")
+            if use_tui:
+                tui.add_log("数据对齐验证通过", "INFO")
+            else:
+                logger.info("✅ 数据对齐验证通过")
 
     except Exception as e:
-        logger.warning(f"多标的对齐检查失败: {e}")
+        tui = get_tui()
+        if is_tui_enabled():
+            tui.add_log(f"多标的对齐检查失败: {e}", "WARNING")
+        else:
+            logger.warning(f"多标的对齐检查失败: {e}")
