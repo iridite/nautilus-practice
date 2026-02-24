@@ -1,4 +1,5 @@
 import gc
+import hashlib
 import json
 import logging
 import sys
@@ -771,57 +772,144 @@ def _check_data_count_consistency(csv_line_count: int, estimated_parquet_count: 
     return diff_ratio <= 0.2
 
 
+def _calculate_csv_hash(csv_path: Path) -> str:
+    """
+    计算 CSV 文件的 MD5 哈希值
+    
+    使用分块读取以处理大文件，避免内存溢出。
+    
+    Args:
+        csv_path: CSV 文件路径
+    
+    Returns:
+        十六进制哈希字符串
+    """
+    hash_func = hashlib.md5()
+    
+    with open(csv_path, "rb") as f:
+        while chunk := f.read(8192):  # 8KB 块
+            hash_func.update(chunk)
+    
+    return hash_func.hexdigest()
+
+
+def _get_hash_cache_path(catalog: ParquetDataCatalog) -> Path:
+    """获取哈希缓存文件路径"""
+    catalog_root = Path(catalog.path)
+    return catalog_root / ".hash_cache.json"
+
+
+def _load_hash_cache(cache_path: Path) -> Dict[str, Dict[str, Any]]:
+    """加载哈希缓存"""
+    if not cache_path.exists():
+        return {}
+    
+    try:
+        with open(cache_path, "r") as f:
+            return json.load(f)
+    except (IOError, json.JSONDecodeError) as e:
+        logger.warning(f"Failed to load hash cache: {e}")
+        return {}
+
+
+def _save_hash_cache(cache_path: Path, cache_data: Dict[str, Dict[str, Any]]) -> None:
+    """保存哈希缓存"""
+    try:
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(cache_path, "w") as f:
+            json.dump(cache_data, f, indent=2)
+    except IOError as e:
+        logger.warning(f"Failed to save hash cache: {e}")
+
+
+def _get_cached_hash(csv_path: Path, catalog: ParquetDataCatalog) -> Optional[str]:
+    """从缓存获取 CSV 文件的哈希值"""
+    cache_path = _get_hash_cache_path(catalog)
+    cache_data = _load_hash_cache(cache_path)
+    
+    csv_key = str(csv_path.absolute())
+    if csv_key in cache_data:
+        return cache_data[csv_key].get("hash")
+    
+    return None
+
+
+def _update_hash_cache(csv_path: Path, csv_hash: str, catalog: ParquetDataCatalog) -> None:
+    """更新缓存中的哈希值"""
+    cache_path = _get_hash_cache_path(catalog)
+    cache_data = _load_hash_cache(cache_path)
+    
+    csv_key = str(csv_path.absolute())
+    cache_data[csv_key] = {
+        "hash": csv_hash,
+        "file_size": csv_path.stat().st_size,
+        "last_updated": datetime.now().isoformat(),
+    }
+    
+    _save_hash_cache(cache_path, cache_data)
+
+
 def _verify_data_consistency(
     csv_path: Path, catalog: ParquetDataCatalog, bar_type: BarType
 ) -> bool:
     """
-    轻量级验证CSV和Parquet数据的一致性
-
-    简化检查策略（性能优先）：
-    1. 比较文件修改时间
-    2. 比较数据行数（快速估算）
-    3. 比较文件大小范围
-
+    验证 CSV 和 Parquet 数据的一致性（使用哈希校验）
+    
+    使用 MD5 哈希值比较 CSV 文件内容，确保 Parquet 数据是从当前 CSV 导入的。
+    
+    工作流程：
+    1. 检查 CSV 文件和 Parquet 数据是否存在
+    2. 计算当前 CSV 文件的哈希值
+    3. 从缓存获取上次导入时的哈希值
+    4. 比较哈希值判断是否一致
+    
     Args:
-        csv_path: CSV文件路径
-        catalog: Parquet数据目录
+        csv_path: CSV 文件路径
+        catalog: Parquet 数据目录
         bar_type: 数据类型标识
-
+    
     Returns:
         bool: 数据是否一致
+        - True: CSV 内容未变化，Parquet 数据可用
+        - False: CSV 已更新或首次导入，需要重新导入
     """
     try:
-        # 1. 检查CSV文件基本信息
+        # 1. 检查 CSV 文件基本信息
         if not _check_csv_file_validity(csv_path):
             return False
-
-        # 2. 快速检查Parquet数据是否存在
+        
+        # 2. 检查 Parquet 数据是否存在
         existing_intervals = _get_parquet_intervals(catalog, bar_type)
         if not existing_intervals:
             return False
-
-        # 3. 比较文件修改时间
-        csv_mtime = csv_path.stat().st_mtime
-        parquet_mtime = _get_parquet_mtime(catalog, bar_type)
-
-        if not _check_file_freshness(csv_mtime, parquet_mtime):
+        
+        # 3. 计算当前 CSV 文件哈希
+        current_hash = _calculate_csv_hash(csv_path)
+        
+        # 4. 从缓存获取上次导入时的哈希
+        cached_hash = _get_cached_hash(csv_path, catalog)
+        
+        # 5. 比较哈希值
+        if cached_hash is None:
+            # 首次导入，没有缓存
+            logger.debug(f"No cached hash for {csv_path.name}, will import")
             return False
-
-        # 4. 快速比较数据量
-        try:
-            csv_line_count = _count_csv_lines(csv_path)
-            estimated_parquet_count = _estimate_parquet_count(existing_intervals)
-
-            if not _check_data_count_consistency(csv_line_count, estimated_parquet_count):
-                return False
-        except (IOError, ValueError) as e:
-            # 如果快速检查失败，默认认为一致（避免阻塞）
-            logger.debug(f"Quick check failed, assuming consistent: {e}")
-
-        return True
-
+        
+        is_consistent = (current_hash == cached_hash)
+        
+        if not is_consistent:
+            logger.info(
+                f"CSV data changed for {csv_path.name}: "
+                f"hash {cached_hash[:8]}... → {current_hash[:8]}..."
+            )
+        else:
+            logger.debug(f"CSV data unchanged for {csv_path.name}, using cached Parquet")
+        
+        return is_consistent
+        
     except (IOError, OSError) as e:
-        logger.warning(f"Data consistency verification failed: {e}")
+        logger.warning(f"Hash verification failed for {csv_path.name}: {e}")
+        # 验证失败时，保守地返回 False，触发重新导入
         return False
 
 
@@ -1635,6 +1723,15 @@ def catalog_loader(
     intervals = catalog.get_intervals(data_cls=Bar, identifier=str(bar_type))
     if not intervals:
         raise ValueError(f"❌ Failed to verify data in catalog for {instrument.id}")
+    
+    # 5. 导入成功后，保存 CSV 文件哈希到缓存
+    try:
+        csv_hash = _calculate_csv_hash(csv_path)
+        _update_hash_cache(csv_path, csv_hash, catalog)
+        logger.debug(f"Saved hash for {csv_path.name}: {csv_hash[:8]}...")
+    except Exception as e:
+        logger.warning(f"Failed to save hash for {csv_path.name}: {e}")
+        # 不抛出异常，因为这不是致命错误
 
 
 # 注意：自定义数据（OI, Funding Rate）现在通过 OIFundingDataLoader 直接加载

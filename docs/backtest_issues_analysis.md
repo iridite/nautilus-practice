@@ -120,7 +120,16 @@ def _check_parquet_coverage(...) -> Tuple[bool, float]:
 4. 提供严格模式和快速模式两种选项
 
 **优先级**: 中  
-**状态**: 待修复
+**状态**: ✅ 已修复 (2026-02-24)
+
+**修复内容**:
+1. 实现了 `_calculate_csv_hash()` 函数，使用 MD5 哈希计算 CSV 文件内容
+2. 实现了哈希缓存管理函数：`_get_cached_hash()`, `_update_hash_cache()`
+3. 重写了 `_verify_data_consistency()` 函数，使用哈希校验替代不可靠的文件时间比较
+4. 在 `catalog_loader()` 中添加了导入成功后保存哈希的逻辑
+5. 哈希缓存存储在 `data/parquet/.hash_cache.json`
+
+**修复位置**: `backtest/engine_high.py` 第 774-850 行
 
 ---
 
