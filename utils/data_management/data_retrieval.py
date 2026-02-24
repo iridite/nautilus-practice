@@ -5,7 +5,9 @@
 """
 
 import logging
+import os
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import List, Literal
 
@@ -22,6 +24,12 @@ logger = logging.getLogger(__name__)
 
 # 网络请求配置
 MAX_ITERATIONS = 1000  # 最大迭代次数，防止无限循环
+
+# 并发下载配置
+# 可通过环境变量 NAUTILUS_MAX_WORKERS 控制并发数量
+# 默认值: 10 (适合大多数网络环境)
+# 建议范围: 5-20 (过高可能触发交易所 API 限流)
+DEFAULT_MAX_WORKERS = int(os.getenv("NAUTILUS_MAX_WORKERS", "10"))
 
 
 def fetch_ohlcv_data(exchange, symbol, timeframe, since, limit_ms, source="auto"):
@@ -100,6 +108,74 @@ def _fetch_ohlcv_ccxt(exchange, symbol, timeframe, since, limit_ms):
     return _convert_ohlcv_to_dataframe(all_ohlcv, limit_ms)
 
 
+def _fetch_single_symbol(
+    raw_symbol: str,
+    exchange_id: str,
+    timeframe: str,
+    start_ms: int,
+    end_ms: int,
+    base_dir: Path,
+    start_date: str,
+    end_date: str,
+    agg,
+    period: int,
+    source: str,
+    is_single: bool,
+) -> tuple:
+    """
+    获取单个交易对的数据
+
+    Returns:
+        (DataConfig | None, status): DataConfig对象和状态信息
+        status: 'fetched', 'cached', 'skipped', 'error'
+    """
+    # 每个线程创建自己的 exchange 实例以避免线程安全问题
+    exchange_class = getattr(ccxt, exchange_id.lower())
+    exchange = exchange_class({"enableRateLimit": True, "options": {"defaultType": "future"}})
+
+    try:
+        ccxt_symbol, market_type = resolve_symbol_and_type(raw_symbol)
+    except Exception as e:
+        logger.warning(f"Failed to parse symbol {raw_symbol}: {e}, skipping")
+        return None, "skipped"
+
+    safe_symbol = raw_symbol.replace("/", "")
+    filename = f"{exchange.id}-{safe_symbol}-{timeframe}-{start_date}_{end_date}.csv"
+    relative_path = f"{safe_symbol}/{filename}"
+    output_path = base_dir / "data" / "raw" / relative_path
+
+    # 检查缓存
+    if output_path.exists() and output_path.stat().st_size > 10 * 1024:
+        config = DataConfig(
+            csv_file_name=relative_path,
+            bar_aggregation=agg,
+            bar_period=period,
+            label="main" if is_single else "universe",
+        )
+        return config, "cached"
+
+    # 下载数据
+    try:
+        df = fetch_ohlcv_data(exchange, ccxt_symbol, timeframe, start_ms, end_ms, source=source)
+        if not df.empty:
+            df["datetime"] = pd.to_datetime(df["timestamp"], unit="ms")
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            df.to_csv(output_path, index=False)
+
+            config = DataConfig(
+                csv_file_name=relative_path,
+                bar_aggregation=agg,
+                bar_period=period,
+                label="main" if is_single else "universe",
+            )
+            return config, "fetched"
+        else:
+            return None, "error"
+    except Exception as e:
+        logger.warning(f"Error fetching {raw_symbol}: {e}")
+        return None, "error"
+
+
 def batch_fetch_ohlcv(
     symbols: List[str],
     start_date: str,
@@ -109,11 +185,16 @@ def batch_fetch_ohlcv(
     base_dir: Path,
     extra: bool = False,
     source: str = "auto",
+    max_workers: int = None,
 ) -> List[DataConfig]:
-    """批量抓取 OHLCV 数据并返回 DataConfig 列表"""
-    exchange_class = getattr(ccxt, exchange_id.lower())
-    exchange = exchange_class({"enableRateLimit": True, "options": {"defaultType": "future"}})
-    exchange.load_markets()
+    """
+    批量抓取 OHLCV 数据并返回 DataConfig 列表
+
+    Args:
+        max_workers: 并发下载的最大线程数，默认从环境变量 NAUTILUS_MAX_WORKERS 读取（默认10）
+    """
+    if max_workers is None:
+        max_workers = DEFAULT_MAX_WORKERS
 
     start_ms = get_ms_timestamp(start_date)
     end_ms = get_ms_timestamp(end_date)
@@ -122,57 +203,63 @@ def batch_fetch_ohlcv(
     configs = []
     total = len(symbols)
     fetched_count = 0
+    cached_count = 0
     skipped_count = 0
+    is_single = len(symbols) == 1
 
     with tqdm(
-        symbols,
+        total=total,
         desc="📥 Fetching data",
         unit="symbol",
         ncols=80,
         bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]",
     ) as pbar:
-        for raw_symbol in pbar:
-            try:
-                ccxt_symbol, market_type = resolve_symbol_and_type(raw_symbol)
-            except Exception as e:
-                logger.warning(f"\n[WARNING] Failed to parse symbol {raw_symbol}: {e}, skipping")
-                skipped_count += 1
-                continue
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            # 提交所有下载任务
+            future_to_symbol = {
+                executor.submit(
+                    _fetch_single_symbol,
+                    raw_symbol,
+                    exchange_id,
+                    timeframe,
+                    start_ms,
+                    end_ms,
+                    base_dir,
+                    start_date,
+                    end_date,
+                    agg,
+                    period,
+                    source,
+                    is_single,
+                ): raw_symbol
+                for raw_symbol in symbols
+            }
 
-            safe_symbol = raw_symbol.replace("/", "")
+            # 处理完成的任务
+            for future in as_completed(future_to_symbol):
+                raw_symbol = future_to_symbol[future]
+                try:
+                    config, status = future.result()
+                    if config:
+                        configs.append(config)
 
-            filename = f"{exchange.id}-{safe_symbol}-{timeframe}-{start_date}_{end_date}.csv"
-            relative_path = f"{safe_symbol}/{filename}"
-            output_path = base_dir / "data" / "raw" / relative_path
+                    if status == "fetched":
+                        fetched_count += 1
+                    elif status == "cached":
+                        cached_count += 1
+                    elif status == "skipped":
+                        skipped_count += 1
 
-            pbar.set_postfix_str(f"{raw_symbol}", refresh=True)
-
-            if not (output_path.exists() and output_path.stat().st_size > 10 * 1024):
-                df = fetch_ohlcv_data(
-                    exchange, ccxt_symbol, timeframe, start_ms, end_ms, source=source
-                )
-                if not df.empty:
-                    df["datetime"] = pd.to_datetime(df["timestamp"], unit="ms")
-                    output_path.parent.mkdir(parents=True, exist_ok=True)
-                    df.to_csv(output_path, index=False)
-                    fetched_count += 1
-                else:
-                    continue
-            else:
-                skipped_count += 1
-
-            configs.append(
-                DataConfig(
-                    csv_file_name=relative_path,
-                    bar_aggregation=agg,
-                    bar_period=period,
-                    label="main" if len(symbols) == 1 else "universe",
-                )
-            )
+                    pbar.set_postfix_str(f"{raw_symbol}", refresh=True)
+                    pbar.update(1)
+                except Exception as e:
+                    logger.error(f"Error processing {raw_symbol}: {e}")
+                    skipped_count += 1
+                    pbar.update(1)
 
     logger.info(
         f"Data retrieval complete: {len(configs)}/{total} symbols "
-        f"(fetched: {fetched_count}, cached: {skipped_count})"
+        f"(fetched: {fetched_count}, cached: {cached_count}, skipped: {skipped_count})"
     )
 
     return configs
@@ -651,6 +738,67 @@ def _print_fetch_results(results: dict, enable_oi: bool):
         )
 
 
+def _fetch_single_symbol_oi_funding(
+    raw_symbol: str,
+    exchange_id: str,
+    start_date: str,
+    end_date: str,
+    start_ms: int,
+    end_ms: int,
+    oi_period: str,
+    base_dir: Path,
+    enable_oi: bool,
+) -> dict:
+    """
+    获取单个交易对的 OI 和 Funding Rate 数据
+
+    Returns:
+        dict: {"oi_files": [...], "funding_files": [...]}
+    """
+    # 每个线程创建自己的 exchange 实例
+    exchange = _initialize_exchange(exchange_id)
+    results = {"oi_files": [], "funding_files": []}
+
+    symbol_info = _resolve_and_validate_symbol(raw_symbol, exchange, exchange_id)
+    if symbol_info is None:
+        return results
+
+    ccxt_symbol, market_type, safe_symbol = symbol_info
+
+    try:
+        _process_oi_data(
+            exchange_id,
+            exchange,
+            ccxt_symbol,
+            safe_symbol,
+            start_date,
+            end_date,
+            start_ms,
+            end_ms,
+            oi_period,
+            base_dir,
+            results,
+            enable_oi,
+        )
+
+        _process_funding_data(
+            exchange_id,
+            exchange,
+            ccxt_symbol,
+            safe_symbol,
+            start_date,
+            end_date,
+            start_ms,
+            end_ms,
+            base_dir,
+            results,
+        )
+    except Exception as e:
+        logger.warning(f"Error fetching OI/Funding for {raw_symbol}: {e}")
+
+    return results
+
+
 def batch_fetch_oi_and_funding(
     symbols: List[str],
     start_date: str,
@@ -658,17 +806,23 @@ def batch_fetch_oi_and_funding(
     exchange_id: Literal["binance", "okx"] = "binance",
     base_dir: Path = Path("."),
     oi_period: str = "1h",
+    max_workers: int = None,
 ) -> dict:
     """
-    批量获取 OI 和 Funding Rate 数据
+    批量获取 OI 和 Funding Rate 数据（支持并发）
 
     注意：OI 数据获取已临时禁用
     原因：第三方 API 仅提供 21 天历史数据，不符合长期回测需求
     计划：将通过本地服务持续采集和存储 OI 数据
+
+    Args:
+        max_workers: 并发下载的最大线程数，默认从环境变量 NAUTILUS_MAX_WORKERS 读取（默认10）
     """
+    if max_workers is None:
+        max_workers = DEFAULT_MAX_WORKERS
+
     ENABLE_OI_FETCH = False
 
-    exchange = _initialize_exchange(exchange_id)
     start_ms = get_ms_timestamp(start_date)
     end_ms = get_ms_timestamp(end_date)
     results = {"oi_files": [], "funding_files": []}
@@ -679,45 +833,38 @@ def batch_fetch_oi_and_funding(
         else f"📊 Fetching OI/Funding from {exchange_id.upper()}"
     )
 
-    with tqdm(symbols, desc=desc, unit="symbol") as pbar:
-        for raw_symbol in pbar:
-            pbar.set_postfix_str(f"{raw_symbol}", refresh=True)
+    with tqdm(total=len(symbols), desc=desc, unit="symbol") as pbar:
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            # 提交所有下载任务
+            future_to_symbol = {
+                executor.submit(
+                    _fetch_single_symbol_oi_funding,
+                    raw_symbol,
+                    exchange_id,
+                    start_date,
+                    end_date,
+                    start_ms,
+                    end_ms,
+                    oi_period,
+                    base_dir,
+                    ENABLE_OI_FETCH,
+                ): raw_symbol
+                for raw_symbol in symbols
+            }
 
-            symbol_info = _resolve_and_validate_symbol(raw_symbol, exchange, exchange_id)
-            if symbol_info is None:
-                continue
+            # 处理完成的任务
+            for future in as_completed(future_to_symbol):
+                raw_symbol = future_to_symbol[future]
+                try:
+                    symbol_results = future.result()
+                    results["oi_files"].extend(symbol_results["oi_files"])
+                    results["funding_files"].extend(symbol_results["funding_files"])
 
-            ccxt_symbol, market_type, safe_symbol = symbol_info
-
-            _process_oi_data(
-                exchange_id,
-                exchange,
-                ccxt_symbol,
-                safe_symbol,
-                start_date,
-                end_date,
-                start_ms,
-                end_ms,
-                oi_period,
-                base_dir,
-                results,
-                ENABLE_OI_FETCH,
-            )
-
-            _process_funding_data(
-                exchange_id,
-                exchange,
-                ccxt_symbol,
-                safe_symbol,
-                start_date,
-                end_date,
-                start_ms,
-                end_ms,
-                base_dir,
-                results,
-            )
-
-            time.sleep(0.2)
+                    pbar.set_postfix_str(f"{raw_symbol}", refresh=True)
+                    pbar.update(1)
+                except Exception as e:
+                    logger.error(f"Error processing {raw_symbol}: {e}")
+                    pbar.update(1)
 
     _print_fetch_results(results, ENABLE_OI_FETCH)
     return results

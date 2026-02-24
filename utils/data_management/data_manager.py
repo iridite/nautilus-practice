@@ -450,7 +450,7 @@ class DataManager:
 
 
 def run_batch_data_retrieval(
-    symbols, start_date, end_date, timeframe, exchange, base_dir: Path
+    symbols, start_date, end_date, timeframe, exchange, base_dir: Path, max_workers: int = None
 ) -> list:
     """直接调用 Python 函数进行数据抓取"""
     if not symbols:
@@ -467,6 +467,7 @@ def run_batch_data_retrieval(
             timeframe=timeframe,
             exchange_id=exchange,
             base_dir=base_dir,
+            max_workers=max_workers,
         )
         return data_configs
     except Exception as e:
@@ -507,6 +508,7 @@ def fetch_data_with_retry(
     base_dir: Path,
     max_retries: int,
     supported_exchanges: list,
+    max_workers: int = None,
 ) -> tuple[int, int, int, str | None]:
     """带重试的数据获取"""
     files_count = 0
@@ -525,6 +527,7 @@ def fetch_data_with_retry(
                 exchange_id=current_exchange,
                 base_dir=base_dir,
                 oi_period=period,
+                max_workers=max_workers,
             )
 
             files_count = _extract_files_count(result, data_type)
