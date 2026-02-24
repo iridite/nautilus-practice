@@ -169,18 +169,18 @@ def _load_instruments(cfg: BacktestConfig, base_dir: Path) -> Dict[str, Instrume
 def _parse_backtest_time_range(cfg: BacktestConfig) -> Tuple[int, int]:
     """
     解析回测时间范围为纳秒时间戳
-    
+
     Args:
         cfg: 回测配置
-    
+
     Returns:
         (start_ns, end_ns): 纳秒时间戳
     """
     from utils.time_helpers import get_ns_timestamp
-    
+
     start_ns = get_ns_timestamp(cfg.start_date)
     end_ns = get_ns_timestamp(cfg.end_date)
-    
+
     return start_ns, end_ns
 
 
@@ -191,15 +191,15 @@ def _calculate_coverage_percentage(
 ) -> float:
     """
     计算数据覆盖率
-    
+
     Args:
         data_intervals: Parquet 数据的时间间隔列表 [(start_ns, end_ns), ...]
         required_start: 回测需要的开始时间（纳秒）
         required_end: 回测需要的结束时间（纳秒）
-    
+
     Returns:
         覆盖率百分比 (0.0 - 100.0)
-    
+
     算法：
     1. 计算所需的总时间范围
     2. 对于每个数据间隔，计算与所需范围的交集
@@ -208,20 +208,20 @@ def _calculate_coverage_percentage(
     """
     if not data_intervals:
         return 0.0
-    
+
     required_duration = required_end - required_start
     if required_duration <= 0:
         return 0.0
-    
+
     covered_duration = 0
     for interval_start, interval_end in data_intervals:
         # 计算交集
         overlap_start = max(interval_start, required_start)
         overlap_end = min(interval_end, required_end)
-        
+
         if overlap_start < overlap_end:
             covered_duration += (overlap_end - overlap_start)
-    
+
     coverage_pct = (covered_duration / required_duration) * 100.0
     return min(coverage_pct, 100.0)  # 限制在 100% 以内
 
@@ -233,19 +233,19 @@ def _check_parquet_coverage(
 ) -> Tuple[bool, float]:
     """
     检查 Parquet 数据覆盖率
-    
+
     计算 Parquet 数据对回测时间范围的覆盖率，确保数据完整性。
-    
+
     Args:
         catalog: Parquet 数据目录
         bar_type: Bar 类型标识
         cfg: 回测配置（包含 start_date 和 end_date）
-    
+
     Returns:
         Tuple[bool, float]: (是否满足要求, 覆盖率百分比)
         - 第一个值：覆盖率是否 >= 95%
         - 第二个值：实际覆盖率百分比
-    
+
     Examples:
         >>> is_ok, pct = _check_parquet_coverage(catalog, bar_type, cfg)
         >>> if not is_ok:
@@ -254,26 +254,26 @@ def _check_parquet_coverage(
     try:
         # 1. 获取数据间隔
         existing_intervals = catalog.get_intervals(
-            data_cls=Bar, 
+            data_cls=Bar,
             identifier=str(bar_type)
         )
         if not existing_intervals:
             return False, 0.0
-        
+
         # 2. 解析回测时间范围
         required_start, required_end = _parse_backtest_time_range(cfg)
-        
+
         # 3. 计算覆盖率
         coverage_pct = _calculate_coverage_percentage(
             existing_intervals,
             required_start,
             required_end
         )
-        
+
         # 4. 判断是否满足要求（阈值 95%）
         COVERAGE_THRESHOLD = 95.0
         is_sufficient = coverage_pct >= COVERAGE_THRESHOLD
-        
+
         # 5. 记录日志
         if not is_sufficient:
             logger.warning(
@@ -284,9 +284,9 @@ def _check_parquet_coverage(
             logger.debug(
                 f"Parquet coverage OK for {bar_type}: {coverage_pct:.1f}%"
             )
-        
+
         return is_sufficient, coverage_pct
-        
+
     except (KeyError, AttributeError) as e:
         logger.warning(f"Failed to check coverage for {bar_type}: {e}")
         return False, 0.0
@@ -775,21 +775,21 @@ def _check_data_count_consistency(csv_line_count: int, estimated_parquet_count: 
 def _calculate_csv_hash(csv_path: Path) -> str:
     """
     计算 CSV 文件的 MD5 哈希值
-    
+
     使用分块读取以处理大文件，避免内存溢出。
-    
+
     Args:
         csv_path: CSV 文件路径
-    
+
     Returns:
         十六进制哈希字符串
     """
     hash_func = hashlib.md5()
-    
+
     with open(csv_path, "rb") as f:
         while chunk := f.read(8192):  # 8KB 块
             hash_func.update(chunk)
-    
+
     return hash_func.hexdigest()
 
 
@@ -803,7 +803,7 @@ def _load_hash_cache(cache_path: Path) -> Dict[str, Dict[str, Any]]:
     """加载哈希缓存"""
     if not cache_path.exists():
         return {}
-    
+
     try:
         with open(cache_path, "r") as f:
             return json.load(f)
@@ -826,11 +826,11 @@ def _get_cached_hash(csv_path: Path, catalog: ParquetDataCatalog) -> Optional[st
     """从缓存获取 CSV 文件的哈希值"""
     cache_path = _get_hash_cache_path(catalog)
     cache_data = _load_hash_cache(cache_path)
-    
+
     csv_key = str(csv_path.absolute())
     if csv_key in cache_data:
         return cache_data[csv_key].get("hash")
-    
+
     return None
 
 
@@ -838,14 +838,14 @@ def _update_hash_cache(csv_path: Path, csv_hash: str, catalog: ParquetDataCatalo
     """更新缓存中的哈希值"""
     cache_path = _get_hash_cache_path(catalog)
     cache_data = _load_hash_cache(cache_path)
-    
+
     csv_key = str(csv_path.absolute())
     cache_data[csv_key] = {
         "hash": csv_hash,
         "file_size": csv_path.stat().st_size,
         "last_updated": datetime.now().isoformat(),
     }
-    
+
     _save_hash_cache(cache_path, cache_data)
 
 
@@ -854,20 +854,20 @@ def _verify_data_consistency(
 ) -> bool:
     """
     验证 CSV 和 Parquet 数据的一致性（使用哈希校验）
-    
+
     使用 MD5 哈希值比较 CSV 文件内容，确保 Parquet 数据是从当前 CSV 导入的。
-    
+
     工作流程：
     1. 检查 CSV 文件和 Parquet 数据是否存在
     2. 计算当前 CSV 文件的哈希值
     3. 从缓存获取上次导入时的哈希值
     4. 比较哈希值判断是否一致
-    
+
     Args:
         csv_path: CSV 文件路径
         catalog: Parquet 数据目录
         bar_type: 数据类型标识
-    
+
     Returns:
         bool: 数据是否一致
         - True: CSV 内容未变化，Parquet 数据可用
@@ -877,26 +877,26 @@ def _verify_data_consistency(
         # 1. 检查 CSV 文件基本信息
         if not _check_csv_file_validity(csv_path):
             return False
-        
+
         # 2. 检查 Parquet 数据是否存在
         existing_intervals = _get_parquet_intervals(catalog, bar_type)
         if not existing_intervals:
             return False
-        
+
         # 3. 计算当前 CSV 文件哈希
         current_hash = _calculate_csv_hash(csv_path)
-        
+
         # 4. 从缓存获取上次导入时的哈希
         cached_hash = _get_cached_hash(csv_path, catalog)
-        
+
         # 5. 比较哈希值
         if cached_hash is None:
             # 首次导入，没有缓存
             logger.debug(f"No cached hash for {csv_path.name}, will import")
             return False
-        
+
         is_consistent = (current_hash == cached_hash)
-        
+
         if not is_consistent:
             logger.info(
                 f"CSV data changed for {csv_path.name}: "
@@ -904,9 +904,9 @@ def _verify_data_consistency(
             )
         else:
             logger.debug(f"CSV data unchanged for {csv_path.name}, using cached Parquet")
-        
+
         return is_consistent
-        
+
     except (IOError, OSError) as e:
         logger.warning(f"Hash verification failed for {csv_path.name}: {e}")
         # 验证失败时，保守地返回 False，触发重新导入
@@ -1723,7 +1723,7 @@ def catalog_loader(
     intervals = catalog.get_intervals(data_cls=Bar, identifier=str(bar_type))
     if not intervals:
         raise ValueError(f"❌ Failed to verify data in catalog for {instrument.id}")
-    
+
     # 5. 导入成功后，保存 CSV 文件哈希到缓存
     try:
         csv_hash = _calculate_csv_hash(csv_path)
