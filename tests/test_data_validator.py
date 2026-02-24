@@ -6,9 +6,11 @@ import tempfile
 import unittest
 from decimal import Decimal
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 from utils.data_management.data_validator import (
     DataValidator,
+    prepare_data_feeds,
     validate_multi_instrument_alignment,
 )
 
@@ -282,6 +284,101 @@ class TestMultiInstrumentAlignment(unittest.TestCase):
         )
         self.assertTrue(is_aligned)
         self.assertIsNone(error)
+
+
+class TestPrepareDataFeeds(unittest.TestCase):
+    """测试 prepare_data_feeds 函数"""
+
+    def setUp(self):
+        """初始化测试"""
+        self.temp_dir = tempfile.mkdtemp()
+        self.base_dir = Path(self.temp_dir)
+
+    def tearDown(self):
+        """清理临时文件"""
+        import shutil
+
+        shutil.rmtree(self.temp_dir, ignore_errors=True)
+
+    @patch("utils.data_management.data_validator._check_multi_instrument_alignment")
+    @patch("utils.data_management.data_manager.run_batch_data_retrieval")
+    @patch("utils.data_file_checker.check_single_data_file")
+    def test_prepare_data_feeds_calls_alignment_check(
+        self, mock_check_file, mock_batch_retrieval, mock_alignment_check
+    ):
+        """测试 prepare_data_feeds 调用多标的对齐检查"""
+        # 准备 mock 对象
+        args = MagicMock()
+        args.skip_data_check = False
+
+        adapter = MagicMock()
+        adapter.get_venue.return_value = "BINANCE"
+        adapter.get_start_date.return_value = "2025-01-01"
+        adapter.get_end_date.return_value = "2025-01-31"
+        adapter.get_main_timeframe.return_value = "1-DAY"
+        adapter._get_trading_symbols.return_value = ["ETHUSDT-PERP:BINANCE"]
+
+        # Mock 数据文件存在
+        mock_check_file.return_value = (True, None)
+
+        universe_symbols = set()
+
+        # 调用函数
+        prepare_data_feeds(args, adapter, self.base_dir, universe_symbols)
+
+        # 验证多标的对齐检查被调用
+        mock_alignment_check.assert_called_once_with(adapter, self.base_dir, "binance", "1-DAY")
+
+    @patch("utils.data_management.data_validator._check_multi_instrument_alignment")
+    @patch("utils.data_management.data_manager.run_batch_data_retrieval")
+    @patch("utils.data_file_checker.check_single_data_file")
+    def test_prepare_data_feeds_skip_data_check(
+        self, mock_check_file, mock_batch_retrieval, mock_alignment_check
+    ):
+        """测试跳过数据检查时不调用对齐检查"""
+        args = MagicMock()
+        args.skip_data_check = True
+
+        adapter = MagicMock()
+        universe_symbols = set()
+
+        # 调用函数
+        prepare_data_feeds(args, adapter, self.base_dir, universe_symbols)
+
+        # 验证对齐检查未被调用
+        mock_alignment_check.assert_not_called()
+        mock_check_file.assert_not_called()
+
+    @patch("utils.data_management.data_validator._check_multi_instrument_alignment")
+    @patch("utils.data_management.data_manager.run_batch_data_retrieval")
+    @patch("utils.data_file_checker.check_single_data_file")
+    def test_prepare_data_feeds_with_missing_data(
+        self, mock_check_file, mock_batch_retrieval, mock_alignment_check
+    ):
+        """测试有缺失数据时仍然调用对齐检查"""
+        args = MagicMock()
+        args.skip_data_check = False
+
+        adapter = MagicMock()
+        adapter.get_venue.return_value = "BINANCE"
+        adapter.get_start_date.return_value = "2025-01-01"
+        adapter.get_end_date.return_value = "2025-01-31"
+        adapter.get_main_timeframe.return_value = "1-DAY"
+        adapter._get_trading_symbols.return_value = ["ETHUSDT-PERP:BINANCE"]
+
+        # Mock 数据文件不存在
+        mock_check_file.return_value = (False, "File not found")
+
+        universe_symbols = set()
+
+        # 调用函数
+        prepare_data_feeds(args, adapter, self.base_dir, universe_symbols)
+
+        # 验证批量数据获取被调用
+        mock_batch_retrieval.assert_called_once()
+
+        # 验证对齐检查仍然被调用（在数据获取之后）
+        mock_alignment_check.assert_called_once_with(adapter, self.base_dir, "binance", "1-DAY")
 
 
 if __name__ == "__main__":
