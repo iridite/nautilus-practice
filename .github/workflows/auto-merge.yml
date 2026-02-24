@@ -8,6 +8,11 @@ on:
   check_suite:
     types: [completed]
 
+permissions:
+  contents: write
+  pull-requests: write
+  checks: read
+
 jobs:
   auto-merge:
     name: Auto Merge PR

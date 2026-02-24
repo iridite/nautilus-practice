@@ -185,9 +185,7 @@ def _parse_backtest_time_range(cfg: BacktestConfig) -> Tuple[int, int]:
 
 
 def _calculate_coverage_percentage(
-    data_intervals: List[Tuple[int, int]],
-    required_start: int,
-    required_end: int
+    data_intervals: List[Tuple[int, int]], required_start: int, required_end: int
 ) -> float:
     """
     计算数据覆盖率
@@ -220,7 +218,7 @@ def _calculate_coverage_percentage(
         overlap_end = min(interval_end, required_end)
 
         if overlap_start < overlap_end:
-            covered_duration += (overlap_end - overlap_start)
+            covered_duration += overlap_end - overlap_start
 
     coverage_pct = (covered_duration / required_duration) * 100.0
     return min(coverage_pct, 100.0)  # 限制在 100% 以内
@@ -253,10 +251,7 @@ def _check_parquet_coverage(
     """
     try:
         # 1. 获取数据间隔
-        existing_intervals = catalog.get_intervals(
-            data_cls=Bar,
-            identifier=str(bar_type)
-        )
+        existing_intervals = catalog.get_intervals(data_cls=Bar, identifier=str(bar_type))
         if not existing_intervals:
             return False, 0.0
 
@@ -265,9 +260,7 @@ def _check_parquet_coverage(
 
         # 3. 计算覆盖率
         coverage_pct = _calculate_coverage_percentage(
-            existing_intervals,
-            required_start,
-            required_end
+            existing_intervals, required_start, required_end
         )
 
         # 4. 判断是否满足要求（阈值 95%）
@@ -281,9 +274,7 @@ def _check_parquet_coverage(
                 f"{coverage_pct:.1f}% < {COVERAGE_THRESHOLD}%"
             )
         else:
-            logger.debug(
-                f"Parquet coverage OK for {bar_type}: {coverage_pct:.1f}%"
-            )
+            logger.debug(f"Parquet coverage OK for {bar_type}: {coverage_pct:.1f}%")
 
         return is_sufficient, coverage_pct
 
@@ -895,7 +886,7 @@ def _verify_data_consistency(
             logger.debug(f"No cached hash for {csv_path.name}, will import")
             return False
 
-        is_consistent = (current_hash == cached_hash)
+        is_consistent = current_hash == cached_hash
 
         if not is_consistent:
             logger.info(
