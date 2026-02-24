@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import pandas as pd
-import yaml
+import yaml  # type: ignore[import-untyped]
 from nautilus_trader.backtest.config import (
     BacktestDataConfig,
     BacktestRunConfig,
@@ -78,6 +78,10 @@ def _check_instrument_data_availability(
     """检查单个标的的数据可用性"""
     symbol = _extract_symbol_from_instrument_id(inst_id)
 
+    # 确保日期不为 None
+    if not cfg.start_date or not cfg.end_date:
+        return False
+
     has_data, _ = check_single_data_file(
         symbol=symbol,
         start_date=cfg.start_date,
@@ -94,7 +98,7 @@ def _check_instrument_data_availability(
 
 
 def _filter_instruments_with_data(
-    cfg: BacktestConfig, inst_cfg_map: Dict[str, any], base_dir: Path
+    cfg: BacktestConfig, inst_cfg_map: Dict[str, Any], base_dir: Path
 ) -> list[str]:
     """过滤有数据的标的"""
     if not cfg.start_date or not cfg.end_date:
@@ -429,7 +433,7 @@ def _auto_download_data(data_cfg, cfg: BacktestConfig) -> bool:
 
         if configs:
             csv_path = data_cfg.full_path
-            return csv_path.exists() and csv_path.stat().st_size > 1024
+            return bool(csv_path.exists() and csv_path.stat().st_size > 1024)
 
         return False
     except (IOError, ImportError) as e:
@@ -517,16 +521,16 @@ def _import_data_to_catalog(
     cfg: BacktestConfig,
     loaded_instruments: Dict[str, Instrument],
     catalog_path: Path,
-) -> Tuple[Dict[str, Dict], Dict[str, str], Dict]:
+) -> Tuple[Dict[str, Dict[str, Any]], Dict[str, str], Dict[str, List[str]]]:
     """
     将CSV数据导入Parquet目录，并组织数据流
 
     智能数据处理：检查Parquet覆盖率，按需导入CSV或下载数据
     """
     _catalog = ParquetDataCatalog(catalog_path)
-    data_config_by_inst = {}
-    feeds_by_inst = defaultdict(dict)
-    global_feeds = {}
+    data_config_by_inst: Dict[str, Dict[str, Any]] = {}
+    feeds_by_inst: Dict[str, List[str]] = defaultdict(list)
+    global_feeds: Dict[str, str] = {}
     total_feeds = len(cfg.data_feeds)
 
     for feed_idx, data_cfg in enumerate(cfg.data_feeds, 1):
@@ -541,11 +545,13 @@ def _import_data_to_catalog(
         sys.stdout.flush()
 
         # 归类数据流
-        _categorize_data_feed(inst_id, feed_bar_type_str, data_cfg, global_feeds, feeds_by_inst)
+        if feed_bar_type_str is not None:
+            _categorize_data_feed(inst_id, feed_bar_type_str, data_cfg, global_feeds, feeds_by_inst)
 
         # 更新数据配置
         inst = loaded_instruments[inst_id]
-        _update_data_config(str(inst.id), inst, bar_type_str, catalog_path, data_config_by_inst)
+        if bar_type_str is not None:
+            _update_data_config(str(inst.id), inst, bar_type_str, catalog_path, data_config_by_inst)
 
     logger.info(f"\n✅ Data import complete. Created {len(data_config_by_inst)} data configs.")
     return data_config_by_inst, global_feeds, feeds_by_inst
@@ -651,7 +657,7 @@ def _estimate_parquet_count(existing_intervals: list) -> int:
         return 0
     interval = existing_intervals[0]
     # 假设1小时数据，估算数据点数量
-    return (interval[1] - interval[0]) // (3600 * 1_000_000_000)  # 纳秒转小时
+    return int((interval[1] - interval[0]) // (3600 * 1_000_000_000))  # 纳秒转小时
 
 
 def _check_data_count_consistency(csv_line_count: int, estimated_parquet_count: int) -> bool:
@@ -858,7 +864,7 @@ def _load_oms_type_from_config(strategies: List, base_dir: Path) -> str:
             with open(config_path, "r") as f:
                 strategy_config = yaml.safe_load(f)
                 if "parameters" in strategy_config and "oms_type" in strategy_config["parameters"]:
-                    return strategy_config["parameters"]["oms_type"]
+                    return str(strategy_config["parameters"]["oms_type"])
     except (IOError, yaml.YAMLError) as e:
         logger.debug(f"Failed to load OMS type from config, using default: {e}")
 
@@ -1098,7 +1104,7 @@ def _build_filter_stats(filter_stats: Optional[Dict[str, Dict[str, int]]]) -> Di
     if not filter_stats:
         return {}
 
-    total_stats = {}
+    total_stats: Dict[str, Any] = {}
     for inst_id, stats in filter_stats.items():
         for key, value in stats.items():
             total_stats[key] = total_stats.get(key, 0) + value
@@ -1249,7 +1255,7 @@ def _build_detailed_analysis(trade_metrics: List[Dict], analysis: Dict[str, Any]
 
 def _extract_returns_metrics(result: BacktestResult) -> Dict[str, Any]:
     """从stats_returns提取关键指标"""
-    metrics = {}
+    metrics: Dict[str, Any] = {}
 
     if not result.stats_returns:
         return metrics
@@ -1385,10 +1391,9 @@ def _build_result_dict(
 
     if trade_metrics:
         analysis = _calculate_trade_analysis(trade_metrics)
-        result_dict["trade_metrics"]["analysis"] = analysis
-        result_dict["trade_metrics"]["detailed_analysis"] = _build_detailed_analysis(
-            trade_metrics, analysis
-        )
+        tm_dict: Dict[str, Any] = result_dict["trade_metrics"]  # type: ignore[assignment]
+        tm_dict["analysis"] = analysis
+        tm_dict["detailed_analysis"] = _build_detailed_analysis(trade_metrics, analysis)
 
     result_dict["performance"] = _build_performance_summary(
         result, result_dict, trade_metrics, filter_stats
