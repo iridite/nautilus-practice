@@ -10,7 +10,7 @@ This file provides comprehensive guidance for Claude Code (claude.ai/code) and A
 - **Python 版本**: 3.12.12+ (严格要求 `>=3.12.12, <3.13`)
 - **包管理器**: `uv` (现代 Python 包管理器)
 - **主要交易所**: Binance, OKX
-- **测试覆盖率**: 84 个测试，100% 通过率
+- **测试覆盖率**: 386 个测试，99.7% 通过率（1 个已知失败）
 
 ## 常用命令
 
@@ -64,9 +64,16 @@ uv run python backtest/backtest_oi_divergence.py
 
 ### 代码质量检查
 ```bash
-# Ruff 格式化和 lint
+# 运行完整检查（推荐：分支验证 + lint + 格式化 + 测试 + PR 大小检查）
+./scripts/check.sh
+
+# 单独运行 Ruff lint
 uv run ruff check .
+uv run ruff check --fix .  # 自动修复
+
+# 单独运行 Ruff 格式化
 uv run ruff format .
+uv run ruff format --check .  # 仅检查不修改
 
 # 类型检查（如果配置了 mypy）
 uv run mypy .
@@ -107,10 +114,10 @@ strategy/
 │   ├── indicators/          # 技术指标（Keltner, RS, Market Regime）
 │   ├── signals/             # 入场/出场信号生成器
 │   └── universe/            # 动态 Universe 管理
-├── keltner_rs_breakout.py  # Keltner RS 突破策略（原始版本）
-├── keltner_rs_breakout_refactored.py  # Keltner RS 突破（模块化版本）
+├── keltner_rs_breakout.py  # Keltner RS 突破策略
 ├── dual_thrust.py          # Dual Thrust 突破策略
-└── kalman_pairs.py         # Kalman 滤波配对交易策略
+└── archived/               # 归档策略
+    └── kalman_pairs.py     # Kalman 滤波配对交易策略
 ```
 
 **关键成就**:
@@ -252,16 +259,28 @@ ignore = ["E501", "E402", "N803", "N805", "N806", "I001"]
 ## 测试策略
 
 ### 测试覆盖率要求
-- 最低覆盖率: 70% (`--cov-fail-under=70`)
-- 排除文件: `sandbox/`, `scripts/`, `main.py`, `profiling/`
+- 最低覆盖率: 55% (`--cov-fail-under=55`)
+- 排除文件: `sandbox/`, `scripts/`, `main.py`, `profiling/`, `examples/`
 
 ### 测试组织
 - 单元测试: `tests/test_*.py`
+- 集成测试: `tests/integration/`
 - 组件测试: `tests/test_common_components.py`
 - 逻辑验证: `tests/verify_refactoring.py`
 
 ### 运行测试后
 实现新功能或模块后，始终运行测试以验证功能，然后再提交。
+
+## 已知问题
+
+### 测试失败
+- **test_config_list_functions** (tests/integration/test_config_system.py:62)
+  - 错误: `AssertionError: 'prod' not found in ['base', 'dev', 'live', 'sandbox']`
+  - 原因: 测试期望 `prod` 环境但配置中不存在
+  - 状态: 待修复
+  - 解决方案:
+    - 选项 A: 添加 `config/environments/prod.yaml`
+    - 选项 B: 修改测试，移除 `prod` 断言
 
 ## 重要架构决策
 
@@ -529,12 +548,20 @@ gh pr merge <pr-number> --squash --delete-branch
 # 1. 创建新分支
 git checkout -b feat/your-feature-name
 
-# 2. 开发完成后检查
+# 2. 开发完成后运行完整检查
 ./scripts/check.sh
 
 # 3. 推送并创建 PR
 git push origin feat/your-feature-name
 ```
+
+**check.sh 脚本功能**:
+- ✅ 验证分支命名规范
+- ✅ 运行 Ruff lint 检查
+- ✅ 验证代码格式
+- ✅ 运行完整测试套件
+- ✅ 检查 PR 大小（警告 >500 行，拒绝 >1000 行）
+- ✅ 统计变更文件数（警告 >20 个文件）
 
 ### PR 大小限制
 
