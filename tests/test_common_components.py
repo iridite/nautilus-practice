@@ -184,7 +184,9 @@ class TestKeltnerChannel:
         """测试 NautilusTrader EMA 指标准确性"""
         import numpy as np
 
-        keltner = KeltnerChannel(ema_period=5, atr_period=5, sma_period=5, bb_period=5, volume_period=5)
+        keltner = KeltnerChannel(
+            ema_period=5, atr_period=5, sma_period=5, bb_period=5, volume_period=5
+        )
 
         # 使用固定数据
         closes = [100.0, 101.0, 102.0, 103.0, 104.0, 105.0, 106.0, 107.0, 108.0, 109.0]
@@ -204,7 +206,9 @@ class TestKeltnerChannel:
 
     def test_nautilus_atr_accuracy(self):
         """测试 NautilusTrader ATR 指标准确性"""
-        keltner = KeltnerChannel(ema_period=5, atr_period=5, sma_period=5, bb_period=5, volume_period=5)
+        keltner = KeltnerChannel(
+            ema_period=5, atr_period=5, sma_period=5, bb_period=5, volume_period=5
+        )
 
         # 使用固定数据
         data = [
@@ -237,7 +241,9 @@ class TestKeltnerChannel:
 
     def test_nautilus_sma_accuracy(self):
         """测试 NautilusTrader SMA 指标准确性"""
-        keltner = KeltnerChannel(ema_period=5, atr_period=5, sma_period=5, bb_period=5, volume_period=5)
+        keltner = KeltnerChannel(
+            ema_period=5, atr_period=5, sma_period=5, bb_period=5, volume_period=5
+        )
 
         # 使用固定数据
         closes = [100.0, 101.0, 102.0, 103.0, 104.0, 105.0]
@@ -254,7 +260,9 @@ class TestKeltnerChannel:
 
     def test_nautilus_volume_sma_accuracy(self):
         """测试 NautilusTrader Volume SMA 指标准确性"""
-        keltner = KeltnerChannel(ema_period=5, atr_period=5, sma_period=5, bb_period=5, volume_period=5)
+        keltner = KeltnerChannel(
+            ema_period=5, atr_period=5, sma_period=5, bb_period=5, volume_period=5
+        )
 
         # 使用固定数据
         volumes = [1000.0, 1100.0, 1200.0, 1300.0, 1400.0, 1500.0]
@@ -320,7 +328,9 @@ class TestKeltnerChannel:
 
     def test_nautilus_indicators_initialization_state(self):
         """测试 NautilusTrader 指标初始化状态"""
-        keltner = KeltnerChannel(ema_period=5, atr_period=5, sma_period=5, bb_period=5, volume_period=5)
+        keltner = KeltnerChannel(
+            ema_period=5, atr_period=5, sma_period=5, bb_period=5, volume_period=5
+        )
 
         # 初始状态：所有指标未初始化
         assert not keltner.ema_indicator.initialized
@@ -343,7 +353,9 @@ class TestKeltnerChannel:
 
     def test_nautilus_property_accessors(self):
         """测试 NautilusTrader 指标属性访问器"""
-        keltner = KeltnerChannel(ema_period=5, atr_period=5, sma_period=5, bb_period=5, volume_period=5)
+        keltner = KeltnerChannel(
+            ema_period=5, atr_period=5, sma_period=5, bb_period=5, volume_period=5
+        )
 
         # 初始状态：所有属性返回 None
         assert keltner.ema is None
@@ -400,7 +412,9 @@ class TestKeltnerChannel:
 
     def test_nautilus_indicators_consistency_across_updates(self):
         """测试 NautilusTrader 指标在多次更新中的一致性"""
-        keltner = KeltnerChannel(ema_period=5, atr_period=5, sma_period=5, bb_period=5, volume_period=5)
+        keltner = KeltnerChannel(
+            ema_period=5, atr_period=5, sma_period=5, bb_period=5, volume_period=5
+        )
 
         # 第一轮更新（使用变化的波动率）
         for i in range(10):
@@ -442,7 +456,9 @@ class TestKeltnerChannel:
 
     def test_nautilus_indicators_edge_cases(self):
         """测试 NautilusTrader 指标的边界情况"""
-        keltner = KeltnerChannel(ema_period=5, atr_period=5, sma_period=5, bb_period=5, volume_period=5)
+        keltner = KeltnerChannel(
+            ema_period=5, atr_period=5, sma_period=5, bb_period=5, volume_period=5
+        )
 
         # 边界情况 1：所有价格相同（零波动率）
         for i in range(10):
@@ -455,7 +471,9 @@ class TestKeltnerChannel:
         assert keltner.volume_sma == 1000.0
 
         # 边界情况 2：极端波动
-        keltner2 = KeltnerChannel(ema_period=5, atr_period=5, sma_period=5, bb_period=5, volume_period=5)
+        keltner2 = KeltnerChannel(
+            ema_period=5, atr_period=5, sma_period=5, bb_period=5, volume_period=5
+        )
         for i in range(10):
             high = 100.0 + i * 10
             low = 90.0 + i * 10
