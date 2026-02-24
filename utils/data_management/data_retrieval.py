@@ -137,7 +137,11 @@ def _fetch_single_symbol(
     try:
         ccxt_symbol, market_type = resolve_symbol_and_type(raw_symbol)
     except Exception as e:
-        logger.warning(f"Failed to parse symbol {raw_symbol}: {e}, skipping")
+        tui = get_tui()
+        if is_tui_enabled():
+            tui.add_log(f"Failed to parse symbol {raw_symbol}: {e}, skipping", "WARNING")
+        else:
+            logger.warning(f"Failed to parse symbol {raw_symbol}: {e}, skipping")
         return None, "skipped"
 
     safe_symbol = raw_symbol.replace("/", "")
@@ -682,7 +686,11 @@ def _resolve_and_validate_symbol(
     try:
         ccxt_symbol, market_type = resolve_symbol_and_type(raw_symbol)
     except Exception as e:
-        logger.warning(f"\n[WARNING] Failed to parse symbol {raw_symbol}: {e}, skipping")
+        tui = get_tui()
+        if is_tui_enabled():
+            tui.add_log(f"Failed to parse symbol {raw_symbol}: {e}, skipping", "WARNING")
+        else:
+            logger.warning(f"\n[WARNING] Failed to parse symbol {raw_symbol}: {e}, skipping")
         return None
 
     if ccxt_symbol not in exchange.markets:

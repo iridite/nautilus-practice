@@ -486,32 +486,6 @@ class DataManager:
         return {"passed": passed, "failed": failed}
 
 
-def run_batch_data_retrieval(
-    symbols, start_date, end_date, timeframe, exchange, base_dir: Path, max_workers: int = None
-) -> list:
-    """直接调用 Python 函数进行数据抓取"""
-    if not symbols:
-        return []
-
-    logger.info(
-        f"Fetching/Updating raw trade pair data for {len(symbols)} symbols via functional call..."
-    )
-    try:
-        data_configs = batch_fetch_ohlcv(
-            symbols=sorted(list(symbols)),
-            start_date=start_date,
-            end_date=end_date,
-            timeframe=timeframe,
-            exchange_id=exchange,
-            base_dir=base_dir,
-            max_workers=max_workers,
-        )
-        return data_configs
-    except Exception as e:
-        logger.error(f"❌ Error during data retrieval: {e}")
-        return []
-
-
 def _get_current_exchange(attempt: int, supported_exchanges: list) -> str:
     """获取当前尝试使用的交易所"""
     return supported_exchanges[min(attempt, len(supported_exchanges) - 1)]
