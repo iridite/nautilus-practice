@@ -5,12 +5,16 @@
 适用于 OI、Funding Rate、价格等市场数据的异常检测。
 """
 
-import logging
+"""数据验证模块 - 检查回测所需数据是否完整"""
+
 from decimal import Decimal
+import logging
 from pathlib import Path
 from typing import Optional
 
 import pandas as pd
+
+from backtest.tui_manager import get_tui, is_tui_enabled
 
 logger = logging.getLogger(__name__)
 
@@ -465,7 +469,13 @@ def prepare_data_feeds(args, adapter, base_dir, universe_symbols: set):
         logger.info("⏩ Skipping data validation")
         return
 
-    logger.info("📊 Data Validation")
+    tui = get_tui()
+    use_tui = is_tui_enabled()
+
+    if use_tui:
+        tui.start_phase("Data Validation", total=None)
+    else:
+        logger.info("📊 Data Validation")
 
     venue = adapter.get_venue().lower()
     start_date = adapter.get_start_date()
@@ -475,19 +485,33 @@ def prepare_data_feeds(args, adapter, base_dir, universe_symbols: set):
     # 从策略配置获取交易对象列表
     symbols_to_check = universe_symbols if universe_symbols else set(adapter._get_trading_symbols())
 
+    if use_tui:
+        tui.start_phase("Checking Data Files", total=len(symbols_to_check))
+
     missing_symbols = []
-    for symbol in symbols_to_check:
+    for idx, symbol in enumerate(symbols_to_check, 1):
         exists, _ = check_single_data_file(
             symbol.split(":")[0], start_date, end_date, timeframe, venue, base_dir
         )
         if not exists:
             missing_symbols.append(symbol.split(":")[0])
 
+        if use_tui:
+            tui.update_progress(description=f"Checking {symbol.split(':')[0]}...")
+
     if missing_symbols:
-        logger.info(f"📥 {len(missing_symbols)} symbols need data")
+        if use_tui:
+            tui.add_log(f"{len(missing_symbols)} symbols need data", "INFO")
+            tui.start_phase("Fetching Missing Data", total=len(missing_symbols))
+        else:
+            logger.info(f"📥 {len(missing_symbols)} symbols need data")
+
         run_batch_data_retrieval(missing_symbols, start_date, end_date, timeframe, venue, base_dir)
     else:
-        logger.info("✅ All data files present")
+        if use_tui:
+            tui.add_log("All data files present", "INFO")
+        else:
+            logger.info("✅ All data files present")
 
     # 检查多标的数据对齐（如果策略需要）
     _check_multi_instrument_alignment(adapter, base_dir, venue, timeframe)

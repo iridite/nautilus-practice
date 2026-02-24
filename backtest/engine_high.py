@@ -29,7 +29,10 @@ from nautilus_trader.persistence.catalog import ParquetDataCatalog
 from nautilus_trader.persistence.wranglers import BarDataWrangler
 from pandas import DataFrame
 from rich.console import Console
+from rich.live import Live
+from rich.panel import Panel
 from rich.progress import BarColumn, Progress, SpinnerColumn, TaskProgressColumn, TextColumn
+from rich.table import Table
 
 from core.exceptions import (
     BacktestEngineError,
@@ -230,6 +233,7 @@ def _check_parquet_coverage(
     catalog: ParquetDataCatalog,
     bar_type: BarType,
     cfg: BacktestConfig,
+    stats: Optional[Dict[str, int]] = None,
 ) -> Tuple[bool, float]:
     """
     检查 Parquet 数据覆盖率
@@ -378,7 +382,7 @@ def _handle_csv_missing(
 ) -> str:
     """处理CSV文件不存在的情况"""
     # 检查Parquet覆盖率
-    parquet_exists, coverage_pct = _check_parquet_coverage(catalog, bar_type, cfg)
+    is_sufficient, coverage_pct = _check_parquet_coverage(catalog, bar_type, cfg, stats)
 
     if parquet_exists and coverage_pct < 95.0:
         return _handle_incomplete_parquet(
@@ -431,7 +435,7 @@ def _import_csv_to_parquet(
     total_feeds: int,
 ) -> str:
     """导入CSV到Parquet"""
-    catalog_loader(catalog, csv_path, inst, bar_type)
+    catalog_loader(catalog, csv_path, inst, bar_type, stats)
     return f"\r📖 [{feed_idx:3d}/{total_feeds}] Imported: {str(bar_type.instrument_id):<32}"
 
 
@@ -641,23 +645,49 @@ def _import_data_to_catalog(
 
     use_progress = os.getenv("NAUTILUS_USE_TUI", "true").lower() != "false" and sys.stdout.isatty()
 
+    # 统计信息
+    stats = {
+        "low_coverage": 0,
+        "partial_coverage": 0,
+        "files_skipped": 0,
+        "files_written": 0,
+    }
+
+    def _make_stats_table() -> Table:
+        """创建统计信息表格"""
+        table = Table.grid(padding=(0, 2))
+        table.add_column(style="cyan", justify="right")
+        table.add_column(style="magenta")
+
+        table.add_row("Low Coverage:", str(stats["low_coverage"]))
+        table.add_row("Partial Coverage:", str(stats["partial_coverage"]))
+        table.add_row("Files Skipped:", str(stats["files_skipped"]))
+        table.add_row("Files Written:", str(stats["files_written"]))
+
+        return table
+
     if use_progress:
-        with Progress(
-            SpinnerColumn(),
-            TextColumn("[progress.description]{task.description}"),
-            BarColumn(),
-            TaskProgressColumn(),
-            console=Console(),
-        ) as progress:
+        console = Console()
+
+        with Live(console=console, refresh_per_second=4) as live:
+            progress = Progress(
+                SpinnerColumn(),
+                TextColumn("[progress.description]{task.description}"),
+                BarColumn(),
+                TaskProgressColumn(),
+                console=console,
+            )
             task = progress.add_task("Processing data feeds...", total=total_feeds)
 
             for feed_idx, data_cfg in enumerate(cfg.data_feeds, 1):
                 inst_id, feed_bar_type_str, bar_type_str, status_msg = _process_data_feed(
-                    feed_idx, total_feeds, data_cfg, cfg, loaded_instruments, _catalog
+                    feed_idx, total_feeds, data_cfg, cfg, loaded_instruments, _catalog, stats
                 )
 
                 if inst_id is None:
                     progress.advance(task)
+                    # 更新显示
+                    live.update(Panel.fit(progress, title="Data Preparation", border_style="green"))
                     continue
 
                 # 更新进度描述
@@ -668,6 +698,18 @@ def _import_data_to_catalog(
                 )
                 progress.update(task, description=f"Processing {symbol}...")
                 progress.advance(task)
+
+                # 更新显示：进度条 + 统计信息
+                from rich.layout import Layout
+
+                layout = Layout()
+                layout.split_column(
+                    Layout(progress, size=3),
+                    Layout(
+                        Panel(_make_stats_table(), title="Statistics", border_style="blue"), size=7
+                    ),
+                )
+                live.update(layout)
 
                 # 归类数据流
                 if feed_bar_type_str is not None:
@@ -682,10 +724,10 @@ def _import_data_to_catalog(
                         str(inst.id), inst, bar_type_str, catalog_path, data_config_by_inst
                     )
     else:
-        # 回退到传统日志模式
+        # 回退到传统日志模式（不使用 stats，直接输出日志）
         for feed_idx, data_cfg in enumerate(cfg.data_feeds, 1):
             inst_id, feed_bar_type_str, bar_type_str, status_msg = _process_data_feed(
-                feed_idx, total_feeds, data_cfg, cfg, loaded_instruments, _catalog
+                feed_idx, total_feeds, data_cfg, cfg, loaded_instruments, _catalog, None
             )
 
             if inst_id is None:
@@ -1731,6 +1773,7 @@ def catalog_loader(
     csv_path: Path,
     instrument: Instrument,
     bar_type: BarType,
+    stats: Optional[Dict[str, int]] = None,
 ) -> None:
     """
     将 CSV 数据导入 Catalog (Parquet)。

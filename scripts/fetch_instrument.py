@@ -17,6 +17,8 @@ from nautilus_trader.core.nautilus_pyo3 import OKXHttpClient, OKXInstrumentType
 from nautilus_trader.model.identifiers import InstrumentId
 from tqdm import tqdm
 
+from backtest.tui_manager import get_tui, is_tui_enabled
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -53,9 +55,7 @@ class InstrumentFetcher:
     def _get_binance_client(self, is_futures: bool) -> BinanceHttpClient:
         key = f"BINANCE_{'FUTURES' if is_futures else 'SPOT'}"
         if key not in self._clients:
-            base_url = (
-                "https://fapi.binance.com" if is_futures else "https://api.binance.com"
-            )
+            base_url = "https://fapi.binance.com" if is_futures else "https://api.binance.com"
             self._clients[key] = BinanceHttpClient(
                 clock=self.clock,
                 api_key=None,
@@ -104,7 +104,9 @@ class InstrumentFetcher:
             )
         return self._providers[key]
 
-    def _parse_instrument_id(self, instrument_id_str: str) -> Tuple[Optional[InstrumentId], Optional[str], Optional[str], Optional[str]]:
+    def _parse_instrument_id(
+        self, instrument_id_str: str
+    ) -> Tuple[Optional[InstrumentId], Optional[str], Optional[str], Optional[str]]:
         """
         解析 instrument ID 字符串
 
@@ -120,7 +122,9 @@ class InstrumentFetcher:
             error_msg = f"❌ Invalid instrument ID string '{instrument_id_str}': {e}"
             return None, None, None, error_msg
 
-    async def _fetch_instrument_from_provider(self, instrument_id: InstrumentId, venue: str, symbol: str):
+    async def _fetch_instrument_from_provider(
+        self, instrument_id: InstrumentId, venue: str, symbol: str
+    ):
         """从交易所提供商获取 instrument"""
         if venue == "BINANCE":
             is_futures = "-PERP" in symbol or "-DELIVERY" in symbol
@@ -153,13 +157,20 @@ class InstrumentFetcher:
         return f"✅ Saved: {venue}/{symbol} (Price Step: {instrument.price_increment})"
 
     async def _retry_fetch_instrument(
-        self, instrument_id: InstrumentId, venue: str, symbol: str,
-        instrument_id_str: str, retries: int, silent: bool
+        self,
+        instrument_id: InstrumentId,
+        venue: str,
+        symbol: str,
+        instrument_id_str: str,
+        retries: int,
+        silent: bool,
     ) -> Tuple[Optional[Any], Optional[str]]:
         """重试获取 instrument"""
         for attempt in range(1, retries + 1):
             try:
-                instrument = await self._fetch_instrument_from_provider(instrument_id, venue, symbol)
+                instrument = await self._fetch_instrument_from_provider(
+                    instrument_id, venue, symbol
+                )
                 if instrument:
                     return instrument, None
                 return None, f"⚠️ Instrument not found: {instrument_id_str}"
@@ -215,32 +226,32 @@ class InstrumentFetcher:
         return file_path, True, log_msg
 
     async def fetch_all(self, instrument_ids: List[str]):
-        """Batch fetch with shared clients using tqdm progress bar"""
+        """Batch fetch with shared clients using TUI or tqdm progress bar"""
         skipped_count = 0
         fetched_count = 0
         failed_count = 0
         log_messages: List[str] = []
 
-        with tqdm(
-            instrument_ids,
-            desc="🔄 Fetching instruments",
-            unit="inst",
-            ncols=80,
-            bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]",
-        ) as pbar:
-            for pid in pbar:
+        tui = get_tui()
+        use_tui = is_tui_enabled()
+
+        if use_tui:
+            # 使用 TUI 显示进度
+            for pid in instrument_ids:
                 # 提取 symbol 用于显示
                 try:
                     symbol_display = pid.split(".")[0]
                 except Exception:
                     symbol_display = pid
 
-                pbar.set_postfix_str(symbol_display, refresh=True)
+                tui.update_progress(description=f"Fetching {symbol_display}...")
 
                 path, was_fetched, log_msg = await self.fetch_one(pid, silent=True)
 
                 if path is None:
                     failed_count += 1
+                    if log_msg:
+                        tui.add_log(log_msg, "ERROR")
                 elif was_fetched:
                     fetched_count += 1
                     # Small delay between instruments to be polite to the API
@@ -248,23 +259,60 @@ class InstrumentFetcher:
                 else:
                     skipped_count += 1
 
-                # 收集日志消息，进度条结束后统一打印
-                if log_msg:
-                    log_messages.append(log_msg)
+                # 更新统计
+                tui.update_stat("instruments_new", fetched_count)
+                tui.update_stat("instruments_existed", skipped_count)
+                tui.update_stat("instruments_failed", failed_count)
 
-        # 进度条结束后打印收集到的日志
-        for msg in log_messages:
-            print(f"  {msg}")
+            # 添加完成日志
+            tui.add_log(
+                f"Instruments: {fetched_count} new, {skipped_count} existed, {failed_count} failed",
+                "INFO",
+            )
+        else:
+            # 使用 tqdm 进度条（传统模式）
+            with tqdm(
+                instrument_ids,
+                desc="🔄 Fetching instruments",
+                unit="inst",
+                ncols=80,
+                bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]",
+            ) as pbar:
+                for pid in pbar:
+                    # 提取 symbol 用于显示
+                    try:
+                        symbol_display = pid.split(".")[0]
+                    except Exception:
+                        symbol_display = pid
 
-        # 打印汇总信息
-        print(
-            f"📊 Instrument fetch complete: {fetched_count} new, {skipped_count} existed, {failed_count} failed"
-        )
+                    pbar.set_postfix_str(symbol_display, refresh=True)
+
+                    path, was_fetched, log_msg = await self.fetch_one(pid, silent=True)
+
+                    if path is None:
+                        failed_count += 1
+                    elif was_fetched:
+                        fetched_count += 1
+                        # Small delay between instruments to be polite to the API
+                        await asyncio.sleep(0.2)
+                    else:
+                        skipped_count += 1
+
+                    # 收集日志消息，进度条结束后统一打印
+                    if log_msg:
+                        log_messages.append(log_msg)
+
+            # 进度条结束后打印收集到的日志
+            for msg in log_messages:
+                print(f"  {msg}")
+
+            # 打印汇总信息
+            print(
+                f"📊 Instrument fetch complete: {fetched_count} new, {skipped_count} existed, {failed_count} failed"
+            )
 
 
-def update_instruments(
-    instrument_ids: List[str], output_dir: Path = DEFAULT_OUTPUT_DIR
-):
+def update_instruments(instrument_ids: List[str], output_dir: Path = DEFAULT_OUTPUT_DIR):
     """
     [Synchronous Entry Point] for main.py
     """
