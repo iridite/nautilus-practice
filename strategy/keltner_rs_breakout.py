@@ -34,50 +34,50 @@ from nautilus_trader.model.data import Bar, BarType, CustomData, DataType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import InstrumentId
 
-from strategy.core.base import BaseStrategy, BaseStrategyConfig
-from strategy.common.indicators import (
-    KeltnerChannel,
-    RelativeStrengthCalculator,
-    MarketRegimeFilter,
-)
-from strategy.common.signals import EntrySignalGenerator, ExitSignalGenerator, SqueezeDetector
-from strategy.common.universe import DynamicUniverseManager
-from utils import get_project_root
-from utils.custom_data import FundingRateData
 from config.constants import (
-    DEFAULT_EMA_PERIOD,
-    DEFAULT_SMA_PERIOD,
+    BASE_RISK_PCT,
+    BREAKEVEN_MULTIPLIER,
+    BTC_REGIME_ATR_PERIOD,
+    BTC_REGIME_SMA_PERIOD,
     DEFAULT_ATR_PERIOD_LONG,
     DEFAULT_BB_PERIOD,
     DEFAULT_BB_STD,
-    DEFAULT_RSI_PERIOD,
+    DEFAULT_EMA_PERIOD,
     DEFAULT_KELTNER_BASE_MULTIPLIER,
     DEFAULT_KELTNER_TRIGGER_MULTIPLIER,
+    DEFAULT_RSI_PERIOD,
+    DEFAULT_SMA_PERIOD,
     DEFAULT_VOLUME_MULTIPLIER,
-    RS_SHORT_PERIOD,
-    RS_LONG_PERIOD,
-    RS_SHORT_WEIGHT,
-    RS_LONG_WEIGHT,
-    RS_THRESHOLD,
-    BASE_RISK_PCT,
-    HIGH_CONVICTION_RISK_PCT,
-    STOP_LOSS_ATR_MULTIPLIER,
-    BREAKEVEN_MULTIPLIER,
-    MIN_STOP_DISTANCE_PCT,
-    TIME_STOP_BARS,
-    MOMENTUM_THRESHOLD,
     DEVIATION_THRESHOLD,
-    MAX_UPPER_WICK_RATIO,
-    BTC_REGIME_SMA_PERIOD,
-    BTC_REGIME_ATR_PERIOD,
-    VOLATILITY_THRESHOLD,
-    FUNDING_RATE_WARNING_ANNUAL,
-    FUNDING_RATE_DANGER_ANNUAL,
     EUPHORIA_REDUCE_POSITION_PCT,
-    SQUEEZE_MEMORY_DAYS,
+    FUNDING_RATE_DANGER_ANNUAL,
+    FUNDING_RATE_WARNING_ANNUAL,
+    HIGH_CONVICTION_RISK_PCT,
     MAX_HISTORY_SIZE,
+    MAX_UPPER_WICK_RATIO,
+    MIN_STOP_DISTANCE_PCT,
+    MOMENTUM_THRESHOLD,
+    RS_LONG_PERIOD,
+    RS_LONG_WEIGHT,
+    RS_SHORT_PERIOD,
+    RS_SHORT_WEIGHT,
+    RS_THRESHOLD,
+    SQUEEZE_MEMORY_DAYS,
+    STOP_LOSS_ATR_MULTIPLIER,
     TARGET_PRECISION_DECIMALS,
+    TIME_STOP_BARS,
+    VOLATILITY_THRESHOLD,
 )
+from strategy.common.indicators import (
+    KeltnerChannel,
+    MarketRegimeFilter,
+    RelativeStrengthCalculator,
+)
+from strategy.common.signals import EntrySignalGenerator, ExitSignalGenerator, SqueezeDetector
+from strategy.common.universe import DynamicUniverseManager
+from strategy.core.base import BaseStrategy, BaseStrategyConfig
+from utils import get_project_root
+from utils.custom_data import FundingRateData
 
 TARGET_PRECISION = Decimal("0." + "0" * TARGET_PRECISION_DECIMALS)
 
@@ -258,7 +258,7 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
         # 符号活跃缓存
         self._base_symbol: str | None = None
         self._is_active_cache: bool = True
-        self._last_universe_period: int | None = None
+        self._last_universe_period: str | None = None
 
     def on_start(self) -> None:
         """策略启动时初始化"""
