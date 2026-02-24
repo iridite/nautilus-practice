@@ -12,31 +12,24 @@ project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 from utils.profiling import BacktestProfiler, ProfileAnalyzer, ProfileReporter
-from core.schemas import BacktestConfig
+from core.adapter import get_adapter
 from backtest.engine_high import run_high_level
 from backtest.engine_low import run_low_level
 
 
-def create_test_config() -> BacktestConfig:
+def create_test_config():
     """
     创建测试用的回测配置
 
     使用较小的数据集和较短的时间范围，以便快速测试。
     """
-    # 这里需要根据实际情况创建配置
-    # 可以从 YAML 文件加载，或者手动创建
-
-    # 示例：从 YAML 加载
-    config_path = project_root / "config" / "strategies" / "keltner_rs_breakout.yaml"
-
-    if config_path.exists():
-        cfg = BacktestConfig.from_yaml(str(config_path))
-        return cfg
-    else:
-        raise FileNotFoundError(f"配置文件不存在: {config_path}")
+    # 使用 adapter 加载配置
+    adapter = get_adapter()
+    cfg = adapter.build_backtest_config()
+    return cfg
 
 
-def profile_high_level_engine(cfg: BacktestConfig, base_dir: Path) -> Path:
+def profile_high_level_engine(cfg, base_dir: Path) -> Path:
     """
     分析高级引擎性能
 
@@ -71,7 +64,7 @@ def profile_high_level_engine(cfg: BacktestConfig, base_dir: Path) -> Path:
         raise
 
 
-def profile_low_level_engine(cfg: BacktestConfig, base_dir: Path) -> Path:
+def profile_low_level_engine(cfg, base_dir: Path) -> Path:
     """
     分析低级引擎性能
 
@@ -122,13 +115,14 @@ def compare_engines(high_profile: Path, low_profile: Path):
     high_analyzer = ProfileAnalyzer(high_profile)
     low_analyzer = ProfileAnalyzer(low_profile)
 
-    # 获取摘要
-    high_summary = high_analyzer.stats.total_tt if hasattr(high_analyzer.stats, 'total_tt') else 0
-    low_summary = low_analyzer.stats.total_tt if hasattr(low_analyzer.stats, 'total_tt') else 0
-
-    # 获取热点
+    # 获取摘要 - 计算所有函数的累计时间总和
     high_hotspots = high_analyzer.get_hotspots(10)
     low_hotspots = low_analyzer.get_hotspots(10)
+
+    high_summary = sum(h["cumulative_time"] for h in high_hotspots) if high_hotspots else 0
+    low_summary = sum(h["cumulative_time"] for h in low_hotspots) if low_hotspots else 0
+
+    # 获取热点
 
     # 获取瓶颈
     high_bottlenecks = high_analyzer.find_bottlenecks(threshold_pct=5.0)
