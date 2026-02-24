@@ -180,6 +180,309 @@ class TestKeltnerChannel:
         # is_squeezing() 应该返回 False（因为 BB 未初始化）
         assert not keltner.is_squeezing()
 
+    def test_nautilus_ema_accuracy(self):
+        """测试 NautilusTrader EMA 指标准确性"""
+        import numpy as np
+
+        keltner = KeltnerChannel(
+            ema_period=5, atr_period=5, sma_period=5, bb_period=5, volume_period=5
+        )
+
+        # 使用固定数据
+        closes = [100.0, 101.0, 102.0, 103.0, 104.0, 105.0, 106.0, 107.0, 108.0, 109.0]
+
+        for i, close in enumerate(closes):
+            keltner.update(close + 1, close - 1, close, 1000.0)
+
+        # 手动计算 EMA (alpha = 2 / (period + 1) = 2 / 6 = 0.333...)
+        alpha = 2.0 / (5 + 1)
+        ema_manual = closes[0]
+        for close in closes[1:]:
+            ema_manual = alpha * close + (1 - alpha) * ema_manual
+
+        # 验证 EMA 值（允许 0.1% 容差）
+        assert keltner.ema is not None
+        assert abs(keltner.ema - ema_manual) / ema_manual < 0.001
+
+    def test_nautilus_atr_accuracy(self):
+        """测试 NautilusTrader ATR 指标准确性"""
+        keltner = KeltnerChannel(
+            ema_period=5, atr_period=5, sma_period=5, bb_period=5, volume_period=5
+        )
+
+        # 使用固定数据
+        data = [
+            (101.0, 99.0, 100.0),
+            (102.0, 100.0, 101.0),
+            (103.0, 101.0, 102.0),
+            (104.0, 102.0, 103.0),
+            (105.0, 103.0, 104.0),
+            (106.0, 104.0, 105.0),
+        ]
+
+        prev_close = None
+        trs = []
+        for high, low, close in data:
+            keltner.update(high, low, close, 1000.0)
+            if prev_close is not None:
+                tr = max(high - low, abs(high - prev_close), abs(low - prev_close))
+                trs.append(tr)
+            prev_close = close
+
+        # 手动计算 ATR (Wilder's smoothing: alpha = 1 / period)
+        alpha = 1.0 / 5
+        atr_manual = sum(trs[:5]) / 5
+        for tr in trs[5:]:
+            atr_manual = alpha * tr + (1 - alpha) * atr_manual
+
+        # 验证 ATR 值（允许 0.1% 容差）
+        assert keltner.atr is not None
+        assert abs(keltner.atr - atr_manual) / atr_manual < 0.001
+
+    def test_nautilus_sma_accuracy(self):
+        """测试 NautilusTrader SMA 指标准确性"""
+        keltner = KeltnerChannel(
+            ema_period=5, atr_period=5, sma_period=5, bb_period=5, volume_period=5
+        )
+
+        # 使用固定数据
+        closes = [100.0, 101.0, 102.0, 103.0, 104.0, 105.0]
+
+        for close in closes:
+            keltner.update(close + 1, close - 1, close, 1000.0)
+
+        # 手动计算 SMA（最近 5 个值）
+        sma_manual = sum(closes[-5:]) / 5
+
+        # 验证 SMA 值（允许 0.1% 容差）
+        assert keltner.sma is not None
+        assert abs(keltner.sma - sma_manual) / sma_manual < 0.001
+
+    def test_nautilus_volume_sma_accuracy(self):
+        """测试 NautilusTrader Volume SMA 指标准确性"""
+        keltner = KeltnerChannel(
+            ema_period=5, atr_period=5, sma_period=5, bb_period=5, volume_period=5
+        )
+
+        # 使用固定数据
+        volumes = [1000.0, 1100.0, 1200.0, 1300.0, 1400.0, 1500.0]
+
+        for i, volume in enumerate(volumes):
+            keltner.update(100.0 + i, 99.0 + i, 100.0 + i, volume)
+
+        # 手动计算 Volume SMA（最近 5 个值）
+        volume_sma_manual = sum(volumes[-5:]) / 5
+
+        # 验证 Volume SMA 值（允许 0.1% 容差）
+        assert keltner.volume_sma is not None
+        assert abs(keltner.volume_sma - volume_sma_manual) / volume_sma_manual < 0.001
+
+    def test_nautilus_keltner_bands_accuracy(self):
+        """测试 Keltner Bands 计算准确性"""
+        keltner = KeltnerChannel(
+            ema_period=5,
+            atr_period=5,
+            sma_period=5,
+            bb_period=5,
+            volume_period=5,
+            keltner_base_multiplier=1.5,
+            keltner_trigger_multiplier=2.25,
+        )
+
+        # 使用固定数据
+        data = [
+            (101.0, 99.0, 100.0),
+            (102.0, 100.0, 101.0),
+            (103.0, 101.0, 102.0),
+            (104.0, 102.0, 103.0),
+            (105.0, 103.0, 104.0),
+            (106.0, 104.0, 105.0),
+        ]
+
+        for high, low, close in data:
+            keltner.update(high, low, close, 1000.0)
+
+        # 获取 Keltner Bands
+        base_upper, base_lower = keltner.get_keltner_base_bands()
+        trigger_upper, trigger_lower = keltner.get_keltner_trigger_bands()
+
+        # 验证 Bands 存在
+        assert base_upper is not None
+        assert base_lower is not None
+        assert trigger_upper is not None
+        assert trigger_lower is not None
+
+        # 验证 Bands 关系
+        assert base_upper > base_lower
+        assert trigger_upper > trigger_lower
+        assert trigger_upper > base_upper
+        assert trigger_lower < base_lower
+
+        # 验证 Bands 计算（手动验证）
+        ema_value = keltner.ema
+        atr_value = keltner.atr
+        assert abs(base_upper - (ema_value + 1.5 * atr_value)) < 1e-6
+        assert abs(base_lower - (ema_value - 1.5 * atr_value)) < 1e-6
+        assert abs(trigger_upper - (ema_value + 2.25 * atr_value)) < 1e-6
+        assert abs(trigger_lower - (ema_value - 2.25 * atr_value)) < 1e-6
+
+    def test_nautilus_indicators_initialization_state(self):
+        """测试 NautilusTrader 指标初始化状态"""
+        keltner = KeltnerChannel(
+            ema_period=5, atr_period=5, sma_period=5, bb_period=5, volume_period=5
+        )
+
+        # 初始状态：所有指标未初始化
+        assert not keltner.ema_indicator.initialized
+        assert not keltner.atr_indicator.initialized
+        assert not keltner.sma_indicator.initialized
+        assert not keltner.bb.initialized
+        assert not keltner.volume_sma_indicator.initialized
+        assert not keltner.is_ready()
+
+        # 更新 5 根 K 线后，所有指标应该初始化
+        for i in range(5):
+            keltner.update(100.0 + i, 99.0 + i, 100.0 + i, 1000.0 + i)
+
+        assert keltner.ema_indicator.initialized
+        assert keltner.atr_indicator.initialized
+        assert keltner.sma_indicator.initialized
+        assert keltner.bb.initialized
+        assert keltner.volume_sma_indicator.initialized
+        assert keltner.is_ready()
+
+    def test_nautilus_property_accessors(self):
+        """测试 NautilusTrader 指标属性访问器"""
+        keltner = KeltnerChannel(
+            ema_period=5, atr_period=5, sma_period=5, bb_period=5, volume_period=5
+        )
+
+        # 初始状态：所有属性返回 None
+        assert keltner.ema is None
+        assert keltner.atr is None
+        assert keltner.sma is None
+        assert keltner.volume_sma is None
+
+        # 更新数据后，属性应该返回值
+        for i in range(6):
+            keltner.update(100.0 + i, 99.0 + i, 100.0 + i, 1000.0 + i)
+
+        assert keltner.ema is not None
+        assert keltner.atr is not None
+        assert keltner.sma is not None
+        assert keltner.volume_sma is not None
+
+        # 验证属性值与指标实例值一致
+        assert keltner.ema == keltner.ema_indicator.value
+        assert keltner.atr == keltner.atr_indicator.value
+        assert keltner.sma == keltner.sma_indicator.value
+        assert keltner.volume_sma == keltner.volume_sma_indicator.value
+
+    def test_nautilus_squeeze_detection_with_indicators(self):
+        """测试使用 NautilusTrader 指标的 Squeeze 检测"""
+        keltner = KeltnerChannel(
+            ema_period=5,
+            atr_period=5,
+            sma_period=5,
+            bb_period=5,
+            volume_period=5,
+            keltner_base_multiplier=2.0,  # 更大的倍数，更容易触发 Squeeze
+        )
+
+        # 模拟低波动率数据（Squeeze 状态）
+        for i in range(10):
+            high = 100.0 + 0.05 * i
+            low = 99.9 + 0.05 * i
+            close = 99.95 + 0.05 * i
+            keltner.update(high, low, close, 1000.0)
+
+        # 验证指标已初始化
+        assert keltner.is_ready()
+
+        # 验证 Squeeze 检测逻辑
+        bb_upper = keltner.bb.upper
+        bb_lower = keltner.bb.lower
+        keltner_upper, keltner_lower = keltner.get_keltner_base_bands()
+
+        # 如果 BB 在 Keltner 内，应该检测到 Squeeze
+        if bb_upper < keltner_upper and bb_lower > keltner_lower:
+            assert keltner.is_squeezing()
+        else:
+            assert not keltner.is_squeezing()
+
+    def test_nautilus_indicators_consistency_across_updates(self):
+        """测试 NautilusTrader 指标在多次更新中的一致性"""
+        keltner = KeltnerChannel(
+            ema_period=5, atr_period=5, sma_period=5, bb_period=5, volume_period=5
+        )
+
+        # 第一轮更新（使用变化的波动率）
+        for i in range(10):
+            high = 100.0 + i + (i % 3) * 0.5  # 添加波动
+            low = 99.0 + i - (i % 2) * 0.3
+            close = 100.0 + i
+            keltner.update(high, low, close, 1000.0 + i)
+
+        # 记录第一轮的值
+        ema_1 = keltner.ema
+        atr_1 = keltner.atr
+        sma_1 = keltner.sma
+        volume_sma_1 = keltner.volume_sma
+
+        # 第二轮更新（继续更新，波动率变化）
+        for i in range(10, 15):
+            high = 100.0 + i + (i % 4) * 0.8  # 不同的波动模式
+            low = 99.0 + i - (i % 3) * 0.5
+            close = 100.0 + i
+            keltner.update(high, low, close, 1000.0 + i)
+
+        # 记录第二轮的值
+        ema_2 = keltner.ema
+        atr_2 = keltner.atr
+        sma_2 = keltner.sma
+        volume_sma_2 = keltner.volume_sma
+
+        # 验证值已更新（不应该相同）
+        assert ema_2 != ema_1
+        assert atr_2 != atr_1  # 现在波动率会变化
+        assert sma_2 != sma_1
+        assert volume_sma_2 != volume_sma_1
+
+        # 验证值在合理范围内（应该接近最近的价格）
+        assert 105.0 <= ema_2 <= 115.0
+        assert 0.5 <= atr_2 <= 3.0  # 扩大范围以适应波动
+        assert 105.0 <= sma_2 <= 115.0
+        assert 1005.0 <= volume_sma_2 <= 1015.0
+
+    def test_nautilus_indicators_edge_cases(self):
+        """测试 NautilusTrader 指标的边界情况"""
+        keltner = KeltnerChannel(
+            ema_period=5, atr_period=5, sma_period=5, bb_period=5, volume_period=5
+        )
+
+        # 边界情况 1：所有价格相同（零波动率）
+        for i in range(10):
+            keltner.update(100.0, 100.0, 100.0, 1000.0)
+
+        assert keltner.is_ready()
+        assert keltner.ema == 100.0
+        assert keltner.atr == 0.0  # 零波动率
+        assert keltner.sma == 100.0
+        assert keltner.volume_sma == 1000.0
+
+        # 边界情况 2：极端波动
+        keltner2 = KeltnerChannel(
+            ema_period=5, atr_period=5, sma_period=5, bb_period=5, volume_period=5
+        )
+        for i in range(10):
+            high = 100.0 + i * 10
+            low = 90.0 + i * 10
+            close = 95.0 + i * 10
+            keltner2.update(high, low, close, 1000.0)
+
+        assert keltner2.is_ready()
+        assert keltner2.atr > 5.0  # 高波动率
+
 
 class TestRelativeStrengthCalculator:
     """测试相对强度计算器"""

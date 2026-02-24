@@ -70,6 +70,7 @@ addopts = [
 
 [tool.coverage.run]
 source = ["."]
+relative_files = true
 omit = [
     "*/tests/*",
     "*/test_*.py",
