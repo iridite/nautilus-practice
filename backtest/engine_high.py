@@ -265,14 +265,20 @@ def _check_parquet_coverage(
 
         # 4. 判断是否满足要求（阈值 95%）
         COVERAGE_THRESHOLD = 95.0
+        WARNING_THRESHOLD = 30.0
         is_sufficient = coverage_pct >= COVERAGE_THRESHOLD
 
-        # 5. 记录日志
-        if not is_sufficient:
+        # 5. 记录日志（分级处理）
+        # - < 30%: WARNING（数据严重不足，可能影响回测结果）
+        # - 30-95%: INFO（数据部分覆盖，新币种常见情况）
+        # - >= 95%: DEBUG（数据完整）
+        if coverage_pct < WARNING_THRESHOLD:
             logger.warning(
-                f"Parquet coverage insufficient for {bar_type}: "
-                f"{coverage_pct:.1f}% < {COVERAGE_THRESHOLD}%"
+                f"\nParquet coverage critically low for {bar_type}: "
+                f"{coverage_pct:.1f}% < {WARNING_THRESHOLD}%"
             )
+        elif coverage_pct < COVERAGE_THRESHOLD:
+            logger.info(f"Parquet coverage partial for {bar_type}: {coverage_pct:.1f}%")
         else:
             logger.debug(f"Parquet coverage OK for {bar_type}: {coverage_pct:.1f}%")
 
