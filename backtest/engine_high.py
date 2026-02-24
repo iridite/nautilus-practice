@@ -315,10 +315,11 @@ def _update_parquet_from_csv(
     feed_idx: int,
     total_feeds: int,
     action: str,
+    stats: Optional[Dict[str, int]] = None,
 ) -> str:
     """从CSV更新Parquet数据"""
     try:
-        catalog_loader(catalog, csv_path, inst, bar_type)
+        catalog_loader(catalog, csv_path, inst, bar_type, stats)
         return _format_status_message(feed_idx, total_feeds, "📖", bar_type.instrument_id, action)
     except (OSError, ValueError) as e:
         logger.warning(f"Failed to {action.lower()} Parquet for {bar_type.instrument_id}: {e}")
@@ -334,13 +335,14 @@ def _handle_csv_exists(
     bar_type: BarType,
     feed_idx: int,
     total_feeds: int,
+    stats: Optional[Dict[str, int]] = None,
 ) -> str:
     """处理CSV文件存在的情况"""
     is_consistent = _verify_data_consistency(csv_path, catalog, bar_type)
 
     if not is_consistent:
         return _update_parquet_from_csv(
-            catalog, csv_path, inst, bar_type, feed_idx, total_feeds, "Updated"
+            catalog, csv_path, inst, bar_type, feed_idx, total_feeds, "Updated", stats
         )
     else:
         return _format_status_message(
@@ -358,13 +360,14 @@ def _handle_incomplete_parquet(
     feed_idx: int,
     total_feeds: int,
     coverage_pct: float,
+    stats: Optional[Dict[str, int]] = None,
 ) -> str:
     """处理Parquet数据不完整的情况"""
     download_success = _auto_download_missing_data(data_cfg, cfg)
 
     if download_success and csv_path.exists():
         return _update_parquet_from_csv(
-            catalog, csv_path, inst, bar_type, feed_idx, total_feeds, "Completed"
+            catalog, csv_path, inst, bar_type, feed_idx, total_feeds, "Completed", stats
         )
     else:
         return f"\r⚠️  [{feed_idx:3d}/{total_feeds}] Partial Parquet: {str(bar_type.instrument_id):<25} ({coverage_pct:.1f}%)"
@@ -379,6 +382,7 @@ def _handle_csv_missing(
     cfg: BacktestConfig,
     feed_idx: int,
     total_feeds: int,
+    stats: Optional[Dict[str, int]] = None,
 ) -> str:
     """处理CSV文件不存在的情况"""
     # 检查Parquet覆盖率
@@ -386,7 +390,16 @@ def _handle_csv_missing(
 
     if parquet_exists and coverage_pct < 95.0:
         return _handle_incomplete_parquet(
-            catalog, csv_path, inst, bar_type, data_cfg, cfg, feed_idx, total_feeds, coverage_pct
+            catalog,
+            csv_path,
+            inst,
+            bar_type,
+            data_cfg,
+            cfg,
+            feed_idx,
+            total_feeds,
+            coverage_pct,
+            stats,
         )
     else:
         # 尝试常规下载
@@ -394,7 +407,7 @@ def _handle_csv_missing(
 
         if download_success and csv_path.exists():
             return _update_parquet_from_csv(
-                catalog, csv_path, inst, bar_type, feed_idx, total_feeds, "Imported"
+                catalog, csv_path, inst, bar_type, feed_idx, total_feeds, "Imported", stats
             )
         else:
             return f"\r⚠️  [{feed_idx:3d}/{total_feeds}] Partial Parquet: {str(bar_type.instrument_id):<25}"
@@ -409,6 +422,7 @@ def _handle_parquet_exists(
     cfg: BacktestConfig,
     feed_idx: int,
     total_feeds: int,
+    stats: Optional[Dict[str, int]] = None,
 ) -> str:
     """
     处理Parquet数据已存在的情况
@@ -419,10 +433,10 @@ def _handle_parquet_exists(
     csv_exists = csv_path.exists()
 
     if csv_exists:
-        return _handle_csv_exists(catalog, csv_path, inst, bar_type, feed_idx, total_feeds)
+        return _handle_csv_exists(catalog, csv_path, inst, bar_type, feed_idx, total_feeds, stats)
     else:
         return _handle_csv_missing(
-            catalog, csv_path, inst, bar_type, data_cfg, cfg, feed_idx, total_feeds
+            catalog, csv_path, inst, bar_type, data_cfg, cfg, feed_idx, total_feeds, stats
         )
 
 
@@ -433,6 +447,7 @@ def _import_csv_to_parquet(
     bar_type: BarType,
     feed_idx: int,
     total_feeds: int,
+    stats: Optional[Dict[str, int]] = None,
 ) -> str:
     """导入CSV到Parquet"""
     catalog_loader(catalog, csv_path, inst, bar_type, stats)
@@ -447,10 +462,13 @@ def _handle_csv_exists_for_missing_parquet(
     data_cfg,
     feed_idx: int,
     total_feeds: int,
+    stats: Optional[Dict[str, int]] = None,
 ) -> str:
     """处理CSV存在但Parquet缺失的情况"""
     try:
-        return _import_csv_to_parquet(catalog, csv_path, inst, bar_type, feed_idx, total_feeds)
+        return _import_csv_to_parquet(
+            catalog, csv_path, inst, bar_type, feed_idx, total_feeds, stats
+        )
     except Exception as e:
         raise DataLoadError(f"Error loading {data_cfg.csv_file_name}: {e}", str(csv_path), e)
 
@@ -464,13 +482,16 @@ def _handle_csv_missing_for_missing_parquet(
     cfg: BacktestConfig,
     feed_idx: int,
     total_feeds: int,
+    stats: Optional[Dict[str, int]] = None,
 ) -> str:
     """处理CSV和Parquet都缺失的情况"""
     download_success = _auto_download_missing_data(data_cfg, cfg)
 
     if download_success and csv_path.exists():
         try:
-            return _import_csv_to_parquet(catalog, csv_path, inst, bar_type, feed_idx, total_feeds)
+            return _import_csv_to_parquet(
+                catalog, csv_path, inst, bar_type, feed_idx, total_feeds, stats
+            )
         except (OSError, ValueError, KeyError) as e:
             logger.warning(f"Failed to import {bar_type.instrument_id}: {e}")
 
@@ -492,6 +513,7 @@ def _handle_parquet_missing(
     cfg: BacktestConfig,
     feed_idx: int,
     total_feeds: int,
+    stats: Optional[Dict[str, int]] = None,
 ) -> str:
     """
     处理Parquet数据不存在的情况
@@ -506,11 +528,11 @@ def _handle_parquet_missing(
 
     if csv_exists:
         return _handle_csv_exists_for_missing_parquet(
-            catalog, csv_path, inst, bar_type, data_cfg, feed_idx, total_feeds
+            catalog, csv_path, inst, bar_type, data_cfg, feed_idx, total_feeds, stats
         )
     else:
         return _handle_csv_missing_for_missing_parquet(
-            catalog, csv_path, inst, bar_type, data_cfg, cfg, feed_idx, total_feeds
+            catalog, csv_path, inst, bar_type, data_cfg, cfg, feed_idx, total_feeds, stats
         )
 
 
@@ -582,11 +604,11 @@ def _process_data_feed(
         status_msg = f"\r✅ [{feed_idx:3d}/{total_feeds}] Ready: {str(bar_type.instrument_id):<35}"
     elif parquet_exists:
         status_msg = _handle_parquet_exists(
-            _catalog, csv_path, inst, bar_type, data_cfg, cfg, feed_idx, total_feeds
+            _catalog, csv_path, inst, bar_type, data_cfg, cfg, feed_idx, total_feeds, stats
         )
     else:
         status_msg = _handle_parquet_missing(
-            _catalog, csv_path, inst, bar_type, data_cfg, cfg, feed_idx, total_feeds
+            _catalog, csv_path, inst, bar_type, data_cfg, cfg, feed_idx, total_feeds, stats
         )
 
     return inst_id, feed_bar_type_str, str(bar_type), status_msg
