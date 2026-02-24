@@ -165,27 +165,130 @@ def _load_instruments(cfg: BacktestConfig, base_dir: Path) -> Dict[str, Instrume
 # ============================================================
 
 
+def _parse_backtest_time_range(cfg: BacktestConfig) -> Tuple[int, int]:
+    """
+    解析回测时间范围为纳秒时间戳
+    
+    Args:
+        cfg: 回测配置
+    
+    Returns:
+        (start_ns, end_ns): 纳秒时间戳
+    """
+    from utils.time_helpers import get_ns_timestamp
+    
+    start_ns = get_ns_timestamp(cfg.start_date)
+    end_ns = get_ns_timestamp(cfg.end_date)
+    
+    return start_ns, end_ns
+
+
+def _calculate_coverage_percentage(
+    data_intervals: List[Tuple[int, int]],
+    required_start: int,
+    required_end: int
+) -> float:
+    """
+    计算数据覆盖率
+    
+    Args:
+        data_intervals: Parquet 数据的时间间隔列表 [(start_ns, end_ns), ...]
+        required_start: 回测需要的开始时间（纳秒）
+        required_end: 回测需要的结束时间（纳秒）
+    
+    Returns:
+        覆盖率百分比 (0.0 - 100.0)
+    
+    算法：
+    1. 计算所需的总时间范围
+    2. 对于每个数据间隔，计算与所需范围的交集
+    3. 累加所有交集的长度
+    4. 覆盖率 = (交集总长度 / 所需总长度) * 100
+    """
+    if not data_intervals:
+        return 0.0
+    
+    required_duration = required_end - required_start
+    if required_duration <= 0:
+        return 0.0
+    
+    covered_duration = 0
+    for interval_start, interval_end in data_intervals:
+        # 计算交集
+        overlap_start = max(interval_start, required_start)
+        overlap_end = min(interval_end, required_end)
+        
+        if overlap_start < overlap_end:
+            covered_duration += (overlap_end - overlap_start)
+    
+    coverage_pct = (covered_duration / required_duration) * 100.0
+    return min(coverage_pct, 100.0)  # 限制在 100% 以内
+
+
 def _check_parquet_coverage(
     catalog: ParquetDataCatalog,
     bar_type: BarType,
     cfg: BacktestConfig,
 ) -> Tuple[bool, float]:
     """
-    检查Parquet数据覆盖率
-
+    检查 Parquet 数据覆盖率
+    
+    计算 Parquet 数据对回测时间范围的覆盖率，确保数据完整性。
+    
+    Args:
+        catalog: Parquet 数据目录
+        bar_type: Bar 类型标识
+        cfg: 回测配置（包含 start_date 和 end_date）
+    
     Returns:
-        Tuple[bool, float]: (是否存在, 覆盖率百分比)
+        Tuple[bool, float]: (是否满足要求, 覆盖率百分比)
+        - 第一个值：覆盖率是否 >= 95%
+        - 第二个值：实际覆盖率百分比
+    
+    Examples:
+        >>> is_ok, pct = _check_parquet_coverage(catalog, bar_type, cfg)
+        >>> if not is_ok:
+        ...     logger.warning(f"Coverage insufficient: {pct:.1f}%")
     """
     try:
-        existing_intervals = catalog.get_intervals(data_cls=Bar, identifier=str(bar_type))
+        # 1. 获取数据间隔
+        existing_intervals = catalog.get_intervals(
+            data_cls=Bar, 
+            identifier=str(bar_type)
+        )
         if not existing_intervals:
             return False, 0.0
+        
+        # 2. 解析回测时间范围
+        required_start, required_end = _parse_backtest_time_range(cfg)
+        
+        # 3. 计算覆盖率
+        coverage_pct = _calculate_coverage_percentage(
+            existing_intervals,
+            required_start,
+            required_end
+        )
+        
+        # 4. 判断是否满足要求（阈值 95%）
+        COVERAGE_THRESHOLD = 95.0
+        is_sufficient = coverage_pct >= COVERAGE_THRESHOLD
+        
+        # 5. 记录日志
+        if not is_sufficient:
+            logger.warning(
+                f"Parquet coverage insufficient for {bar_type}: "
+                f"{coverage_pct:.1f}% < {COVERAGE_THRESHOLD}%"
+            )
+        else:
+            logger.debug(
+                f"Parquet coverage OK for {bar_type}: {coverage_pct:.1f}%"
+            )
+        
+        return is_sufficient, coverage_pct
+        
     except (KeyError, AttributeError) as e:
-        logger.warning(f"Failed to get intervals for {bar_type}: {e}")
+        logger.warning(f"Failed to check coverage for {bar_type}: {e}")
         return False, 0.0
-
-    # 简化逻辑：如果 Parquet 数据存在则返回 True
-    return True, 100.0
 
 
 # ============================================================
