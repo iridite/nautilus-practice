@@ -28,6 +28,8 @@ from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.persistence.catalog import ParquetDataCatalog
 from nautilus_trader.persistence.wranglers import BarDataWrangler
 from pandas import DataFrame
+from rich.console import Console
+from rich.progress import BarColumn, Progress, SpinnerColumn, TaskProgressColumn, TextColumn
 
 from core.exceptions import (
     BacktestEngineError,
@@ -634,25 +636,76 @@ def _import_data_to_catalog(
     global_feeds: Dict[str, str] = {}
     total_feeds = len(cfg.data_feeds)
 
-    for feed_idx, data_cfg in enumerate(cfg.data_feeds, 1):
-        inst_id, feed_bar_type_str, bar_type_str, status_msg = _process_data_feed(
-            feed_idx, total_feeds, data_cfg, cfg, loaded_instruments, _catalog
-        )
+    # 使用 Rich Progress 显示进度
+    import os
 
-        if inst_id is None:
-            continue
+    use_progress = os.getenv("NAUTILUS_USE_TUI", "true").lower() != "false" and sys.stdout.isatty()
 
-        sys.stdout.write(status_msg)
-        sys.stdout.flush()
+    if use_progress:
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            TaskProgressColumn(),
+            console=Console(),
+        ) as progress:
+            task = progress.add_task("Processing data feeds...", total=total_feeds)
 
-        # 归类数据流
-        if feed_bar_type_str is not None:
-            _categorize_data_feed(inst_id, feed_bar_type_str, data_cfg, global_feeds, feeds_by_inst)
+            for feed_idx, data_cfg in enumerate(cfg.data_feeds, 1):
+                inst_id, feed_bar_type_str, bar_type_str, status_msg = _process_data_feed(
+                    feed_idx, total_feeds, data_cfg, cfg, loaded_instruments, _catalog
+                )
 
-        # 更新数据配置
-        inst = loaded_instruments[inst_id]
-        if bar_type_str is not None:
-            _update_data_config(str(inst.id), inst, bar_type_str, catalog_path, data_config_by_inst)
+                if inst_id is None:
+                    progress.advance(task)
+                    continue
+
+                # 更新进度描述
+                symbol = (
+                    str(loaded_instruments[inst_id].id)
+                    if inst_id in loaded_instruments
+                    else "Unknown"
+                )
+                progress.update(task, description=f"Processing {symbol}...")
+                progress.advance(task)
+
+                # 归类数据流
+                if feed_bar_type_str is not None:
+                    _categorize_data_feed(
+                        inst_id, feed_bar_type_str, data_cfg, global_feeds, feeds_by_inst
+                    )
+
+                # 更新数据配置
+                inst = loaded_instruments[inst_id]
+                if bar_type_str is not None:
+                    _update_data_config(
+                        str(inst.id), inst, bar_type_str, catalog_path, data_config_by_inst
+                    )
+    else:
+        # 回退到传统日志模式
+        for feed_idx, data_cfg in enumerate(cfg.data_feeds, 1):
+            inst_id, feed_bar_type_str, bar_type_str, status_msg = _process_data_feed(
+                feed_idx, total_feeds, data_cfg, cfg, loaded_instruments, _catalog
+            )
+
+            if inst_id is None:
+                continue
+
+            sys.stdout.write(status_msg)
+            sys.stdout.flush()
+
+            # 归类数据流
+            if feed_bar_type_str is not None:
+                _categorize_data_feed(
+                    inst_id, feed_bar_type_str, data_cfg, global_feeds, feeds_by_inst
+                )
+
+            # 更新数据配置
+            inst = loaded_instruments[inst_id]
+            if bar_type_str is not None:
+                _update_data_config(
+                    str(inst.id), inst, bar_type_str, catalog_path, data_config_by_inst
+                )
 
     logger.info(f"\n✅ Data import complete. Created {len(data_config_by_inst)} data configs.")
     return data_config_by_inst, global_feeds, feeds_by_inst
