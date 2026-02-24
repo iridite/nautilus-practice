@@ -26,7 +26,7 @@ from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.persistence.wranglers import BarDataWrangler
 from pandas import DataFrame
 
-from backtest.exceptions import (
+from core.exceptions import (
     BacktestEngineError,
     CustomDataError,
     DataLoadError,

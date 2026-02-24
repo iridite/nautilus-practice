@@ -28,7 +28,7 @@ from nautilus_trader.persistence.catalog import ParquetDataCatalog
 from nautilus_trader.persistence.wranglers import BarDataWrangler
 from pandas import DataFrame
 
-from backtest.exceptions import (
+from core.exceptions import (
     BacktestEngineError,
     CatalogError,
     DataLoadError,
