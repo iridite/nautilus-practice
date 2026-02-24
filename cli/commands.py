@@ -146,10 +146,16 @@ def run_backtest(args, adapter, base_dir: Path):
     if use_tui:
         tui.start_phase("Starting Backtest")
         tui.add_log(f"Backtest Type: {args.type}", "INFO")
-        tui.add_log(f"Strategy: {cfg.strategy.strategy_id}", "INFO")
+        strategy_name = getattr(
+            cfg.strategy, "strategy_path", getattr(cfg.strategy, "class_name", "Unknown")
+        )
+        tui.add_log(f"Strategy: {strategy_name}", "INFO")
     else:
         logger.info(f"Starting backtest: {args.type}")
-        logger.info(f"Strategy: {cfg.strategy.strategy_id}")
+        strategy_name = getattr(
+            cfg.strategy, "strategy_path", getattr(cfg.strategy, "class_name", "Unknown")
+        )
+        logger.info(f"Strategy: {strategy_name}")
 
     if args.type == "high":
         run_high_level(cfg, base_dir)
