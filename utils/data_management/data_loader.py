@@ -30,10 +30,10 @@ from utils.time_helpers import parse_date_to_timestamp
 logger = logging.getLogger(__name__)
 
 # 导入缓存模块
-from .data_cache import get_cache
-
 # 导入统一异常
 from core.exceptions import DataLoadError, TimeColumnError
+
+from .data_cache import get_cache
 
 
 def detect_time_column(csv_path: Union[str, Path], sample_rows: int = 5) -> str:
@@ -373,7 +373,7 @@ def _validate_ohlcv_data(df: pd.DataFrame) -> None:
         if not pd.api.types.is_numeric_dtype(df[col]):
             raise DataLoadError(f"Column '{col}' must be numeric")
 
-    # 检查价格逻辑
+    # 检查价格逻辑并自动修复
     invalid_rows = (
         (df["high"] < df["low"])
         | (df["high"] < df["open"])
@@ -383,8 +383,38 @@ def _validate_ohlcv_data(df: pd.DataFrame) -> None:
     )
 
     if invalid_rows.any():
-        first_invalid = df[invalid_rows].index[0]
-        raise DataLoadError(f"Invalid OHLC data detected at {first_invalid}")
+        # 尝试自动修复
+        fixed_count = 0
+
+        # 修复 high 值（应该是 OHLC 中的最大值）
+        needs_fix = (df["high"] < df["close"]) | (df["high"] < df["open"])
+        if needs_fix.any():
+            df.loc[needs_fix, "high"] = df.loc[needs_fix, ["open", "high", "close"]].max(axis=1)
+            fixed_count += needs_fix.sum()
+
+        # 修复 low 值（应该是 OHLC 中的最小值）
+        needs_fix = (df["low"] > df["close"]) | (df["low"] > df["open"])
+        if needs_fix.any():
+            df.loc[needs_fix, "low"] = df.loc[needs_fix, ["open", "low", "close"]].min(axis=1)
+            fixed_count += needs_fix.sum()
+
+        # 再次检查是否还有问题
+        invalid_rows = (
+            (df["high"] < df["low"])
+            | (df["high"] < df["open"])
+            | (df["high"] < df["close"])
+            | (df["low"] > df["open"])
+            | (df["low"] > df["close"])
+        )
+
+        if invalid_rows.any():
+            first_invalid = df[invalid_rows].index[0]
+            raise DataLoadError(
+                f"Invalid OHLC data detected at {first_invalid} (could not auto-fix)"
+            )
+
+        if fixed_count > 0:
+            logger.warning(f"Auto-fixed {fixed_count} invalid OHLC rows")
 
 
 def create_nautilus_bars(df: pd.DataFrame, bar_type: Any, instrument: Any) -> List[Bar]:
