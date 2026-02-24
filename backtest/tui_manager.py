@@ -23,7 +23,7 @@ class BacktestTUIManager:
     """回测 TUI 管理器 - 单例模式"""
 
     _instance: Optional["BacktestTUIManager"] = None
-    _enabled: bool = False
+    _enabled: Optional[bool] = None
 
     def __init__(self):
         self.console = Console()
@@ -45,7 +45,7 @@ class BacktestTUIManager:
     @classmethod
     def is_enabled(cls) -> bool:
         """检查 TUI 是否启用"""
-        if not cls._enabled:
+        if cls._enabled is None:
             # 检查环境变量和 TTY
             use_tui = os.getenv("NAUTILUS_USE_TUI", "true").lower() != "false"
             cls._enabled = use_tui and sys.stdout.isatty()
