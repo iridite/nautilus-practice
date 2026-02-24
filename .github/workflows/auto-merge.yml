@@ -1,0 +1,300 @@
+name: Auto Merge PR
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled]
+  pull_request_review:
+    types: [submitted]
+  check_suite:
+    types: [completed]
+
+jobs:
+  auto-merge:
+    name: Auto Merge PR
+    runs-on: ubuntu-latest
+    # Only run if PR is not from main branch and doesn't have do-not-merge label
+    if: |
+      github.event.pull_request.head.ref != 'main' &&
+      !contains(github.event.pull_request.labels.*.name, 'do-not-merge')
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get PR details
+        id: pr
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = context.payload.pull_request || (
+              await github.rest.pulls.get({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: context.issue.number
+              })
+            ).data;
+
+            return {
+              number: pr.number,
+              head_ref: pr.head.ref,
+              base_ref: pr.base.ref,
+              mergeable: pr.mergeable,
+              mergeable_state: pr.mergeable_state,
+              user: pr.user.login,
+              labels: pr.labels.map(l => l.name)
+            };
+
+      - name: Check if auto-merge is enabled
+        id: check_auto_merge
+        run: |
+          BRANCH_NAME="${{ fromJson(steps.pr.outputs.result).head_ref }}"
+          LABELS="${{ join(fromJson(steps.pr.outputs.result).labels, ',') }}"
+          USER="${{ fromJson(steps.pr.outputs.result).user }}"
+
+          echo "Branch: $BRANCH_NAME"
+          echo "Labels: $LABELS"
+          echo "User: $USER"
+
+          # Enable auto-merge if:
+          # 1. Branch matches auto-merge patterns (fix/, feat/, docs/, chore/, refactor/, test/)
+          # 2. OR has 'auto-merge' label
+          # 3. OR created by dependabot/renovate
+
+          AUTO_MERGE=false
+
+          if [[ "$BRANCH_NAME" =~ ^(fix|feat|docs|chore|refactor|test)/.+ ]]; then
+            echo "✅ Branch matches auto-merge pattern"
+            AUTO_MERGE=true
+          fi
+
+          if [[ "$LABELS" == *"auto-merge"* ]]; then
+            echo "✅ Has auto-merge label"
+            AUTO_MERGE=true
+          fi
+
+          if [[ "$USER" == "dependabot[bot]" ]] || [[ "$USER" == "renovate[bot]" ]]; then
+            echo "✅ Created by bot"
+            AUTO_MERGE=true
+          fi
+
+          echo "auto_merge=$AUTO_MERGE" >> $GITHUB_OUTPUT
+
+      - name: Wait for CI checks
+        if: steps.check_auto_merge.outputs.auto_merge == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = context.payload.pull_request || (
+              await github.rest.pulls.get({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: context.issue.number
+              })
+            ).data;
+
+            // Wait for all required checks to complete
+            const maxAttempts = 30;
+            const delayMs = 10000; // 10 seconds
+
+            for (let i = 0; i < maxAttempts; i++) {
+              const { data: checks } = await github.rest.checks.listForRef({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                ref: pr.head.sha
+              });
+
+              const requiredChecks = checks.check_runs.filter(check =>
+                check.name.includes('Run Tests') ||
+                check.name.includes('Lint Check') ||
+                check.name.includes('Validate Branch')
+              );
+
+              const allCompleted = requiredChecks.every(check =>
+                check.status === 'completed'
+              );
+
+              const allPassed = requiredChecks.every(check =>
+                check.conclusion === 'success'
+              );
+
+              if (allCompleted) {
+                if (allPassed) {
+                  console.log('✅ All required checks passed');
+                  return true;
+                } else {
+                  console.log('❌ Some checks failed');
+                  const failed = requiredChecks.filter(c => c.conclusion !== 'success');
+                  failed.forEach(c => console.log(`  - ${c.name}: ${c.conclusion}`));
+                  throw new Error('Required checks failed');
+                }
+              }
+
+              console.log(`⏳ Waiting for checks to complete (${i + 1}/${maxAttempts})...`);
+              await new Promise(resolve => setTimeout(resolve, delayMs));
+            }
+
+            throw new Error('Timeout waiting for checks to complete');
+
+      - name: Check approval status
+        if: steps.check_auto_merge.outputs.auto_merge == 'true'
+        id: check_approval
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = context.payload.pull_request || (
+              await github.rest.pulls.get({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: context.issue.number
+              })
+            ).data;
+
+            const { data: reviews } = await github.rest.pulls.listReviews({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: pr.number
+            });
+
+            const approvals = reviews.filter(review => review.state === 'APPROVED');
+            const user = pr.user.login;
+
+            // Auto-approve if created by bot
+            if (user === 'dependabot[bot]' || user === 'renovate[bot]') {
+              console.log('✅ Bot PR - auto-approved');
+              return true;
+            }
+
+            // Require at least 1 approval for human PRs
+            if (approvals.length > 0) {
+              console.log(`✅ PR has ${approvals.length} approval(s)`);
+              return true;
+            }
+
+            console.log('⏸️  PR needs approval before auto-merge');
+            return false;
+
+      - name: Check merge conflicts
+        if: steps.check_auto_merge.outputs.auto_merge == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = context.payload.pull_request || (
+              await github.rest.pulls.get({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: context.issue.number
+              })
+            ).data;
+
+            if (pr.mergeable === false) {
+              throw new Error('❌ PR has merge conflicts');
+            }
+
+            if (pr.mergeable_state === 'dirty') {
+              throw new Error('❌ PR has merge conflicts');
+            }
+
+            console.log('✅ No merge conflicts');
+
+      - name: Update branch
+        if: steps.check_auto_merge.outputs.auto_merge == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = context.payload.pull_request || (
+              await github.rest.pulls.get({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: context.issue.number
+              })
+            ).data;
+
+            // Check if branch is behind base
+            const { data: comparison } = await github.rest.repos.compareCommits({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              base: pr.head.sha,
+              head: pr.base.ref
+            });
+
+            if (comparison.behind_by > 0) {
+              console.log(`⏫ Branch is ${comparison.behind_by} commit(s) behind, updating...`);
+
+              try {
+                await github.rest.pulls.updateBranch({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  pull_number: pr.number
+                });
+                console.log('✅ Branch updated successfully');
+
+                // Wait for checks to run again
+                await new Promise(resolve => setTimeout(resolve, 5000));
+              } catch (error) {
+                console.log('⚠️  Could not update branch automatically:', error.message);
+              }
+            } else {
+              console.log('✅ Branch is up to date');
+            }
+
+      - name: Merge PR
+        if: |
+          steps.check_auto_merge.outputs.auto_merge == 'true' &&
+          steps.check_approval.outputs.result == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = context.payload.pull_request || (
+              await github.rest.pulls.get({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: context.issue.number
+              })
+            ).data;
+
+            try {
+              await github.rest.pulls.merge({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: pr.number,
+                merge_method: 'squash',
+                commit_title: `${pr.title} (#${pr.number})`,
+                commit_message: `${pr.body || ''}\n\nAuto-merged by GitHub Actions`
+              });
+
+              console.log('✅ PR merged successfully');
+
+              // Delete branch
+              try {
+                await github.rest.git.deleteRef({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  ref: `heads/${pr.head.ref}`
+                });
+                console.log('✅ Branch deleted');
+              } catch (error) {
+                console.log('⚠️  Could not delete branch:', error.message);
+              }
+
+              // Add comment
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: pr.number,
+                body: '🤖 Auto-merged by GitHub Actions\n\n✅ All checks passed\n✅ PR approved\n✅ No merge conflicts'
+              });
+
+            } catch (error) {
+              console.error('❌ Failed to merge PR:', error.message);
+              throw error;
+            }
+
+      - name: Log merge skip reason
+        if: |
+          steps.check_auto_merge.outputs.auto_merge == 'true' &&
+          steps.check_approval.outputs.result != 'true'
+        run: |
+          echo "⏸️  Auto-merge skipped: PR needs approval"
+          echo "Add an approval review to trigger auto-merge"
