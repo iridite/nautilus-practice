@@ -555,6 +555,7 @@ def _process_data_feed(
     cfg: BacktestConfig,
     loaded_instruments: Dict[str, Instrument],
     _catalog,
+    stats: Optional[dict] = None,
 ) -> Tuple[Optional[str], Optional[str], Optional[str], str]:
     """
     处理单个数据流的导入
