@@ -26,6 +26,11 @@ from .data_management.data_loader import (
     load_ohlcv_csv,
 )
 
+# 数据获取
+from .data_management.data_retrieval import (
+    fetch_ohlcv_data,
+)
+
 # 异常类
 from .exceptions import (
     ConfigurationError,
@@ -77,6 +82,7 @@ __all__ = [
     "parse_timeframe",
     "load_ohlcv_csv",
     "detect_time_column",
+    "fetch_ohlcv_data",
     "get_project_root",
     "load_universe_file",
     "extract_universe_symbols",

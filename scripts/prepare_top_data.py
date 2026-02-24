@@ -1,3 +1,4 @@
+import argparse
 import time
 from datetime import datetime
 
@@ -29,18 +30,86 @@ def get_all_binance_usdt_spot_symbols():
 
 
 def main():
+    parser = argparse.ArgumentParser(
+        description="Download OHLCV data for Binance USDT perpetual contracts",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  # Download all symbols (skip existing files)
+  python scripts/prepare_top_data.py
+
+  # Force overwrite all existing 1d data
+  python scripts/prepare_top_data.py --force
+
+  # Download specific symbols only
+  python scripts/prepare_top_data.py --symbols BTC/USDT:USDT ETH/USDT:USDT
+
+  # Download with custom timeframe
+  python scripts/prepare_top_data.py --timeframe 4h --force
+
+  # Download with custom date range
+  python scripts/prepare_top_data.py --start-date 2023-01-01 --end-date 2024-01-01
+        """,
+    )
+
+    parser.add_argument(
+        "--force",
+        "-f",
+        action="store_true",
+        help="Force overwrite existing data files",
+    )
+
+    parser.add_argument(
+        "--symbols",
+        "-s",
+        nargs="+",
+        help="Specific symbols to download (e.g., BTC/USDT:USDT ETH/USDT:USDT). If not specified, downloads all symbols.",
+    )
+
+    parser.add_argument(
+        "--timeframe",
+        "-t",
+        default="1d",
+        help="Timeframe for OHLCV data (default: 1d)",
+    )
+
+    parser.add_argument(
+        "--start-date",
+        default="2020-01-01",
+        help="Start date in YYYY-MM-DD format (default: 2020-01-01)",
+    )
+
+    parser.add_argument(
+        "--end-date",
+        default=None,
+        help="End date in YYYY-MM-DD format (default: today)",
+    )
+
+    parser.add_argument(
+        "--exchange",
+        "-e",
+        default="binance",
+        help="Exchange ID (default: binance)",
+    )
+
+    args = parser.parse_args()
+
     # 配置
-    exchange_id = "binance"
-    timeframe = "1d"
-    start_date = "2020-01-01"
-    end_date = datetime.now().strftime("%Y-%m-%d")
+    exchange_id = args.exchange
+    timeframe = args.timeframe
+    start_date = args.start_date
+    end_date = args.end_date or datetime.now().strftime("%Y-%m-%d")
 
     # 根目录数据文件夹
     data_root = PROJECT_ROOT / "data" / "top"
     data_root.mkdir(parents=True, exist_ok=True)
 
-    # 1. 获取所有币种
-    all_symbols = get_all_binance_usdt_spot_symbols()
+    # 1. 获取交易对列表
+    if args.symbols:
+        all_symbols = args.symbols
+        print(f"[*] Using specified symbols: {len(all_symbols)} symbols")
+    else:
+        all_symbols = get_all_binance_usdt_spot_symbols()
 
     # 初始化交易所用于下载
     exchange_class = getattr(ccxt, exchange_id)
@@ -57,19 +126,21 @@ def main():
     # 2. 循环下载
     success_count = 0
     fail_count = 0
+    skip_count = 0
 
     total = len(all_symbols)
     for i, symbol in enumerate(all_symbols):
         safe_symbol = symbol.replace("/", "")
         file_path = data_root / f"{safe_symbol}_{timeframe}.csv"
 
-        # 如果文件已存在且大小不为0，可以跳过（或者根据需要重新下载）
-        if file_path.exists() and file_path.stat().st_size > 0:
+        # 如果文件已存在且大小不为0，根据 --force 参数决定是否跳过
+        if file_path.exists() and file_path.stat().st_size > 0 and not args.force:
             print(f"[{i + 1}/{total}] Skip {symbol}, file already exists.")
-            success_count += 1
+            skip_count += 1
             continue
 
-        print(f"\n[{i + 1}/{total}] Processing {symbol}...")
+        status = "Overwriting" if file_path.exists() else "Processing"
+        print(f"\n[{i + 1}/{total}] {status} {symbol}...")
 
         try:
             # 使用 data_retrival.py 中的核心逻辑，启用自动数据源切换
@@ -92,13 +163,14 @@ def main():
         # 适当休眠，尊重频率限制
         time.sleep(exchange.rateLimit / 1000)
 
-    print("\n" + "=" * 30)
+    print("\n" + "=" * 50)
     print("Task Completed.")
     print(f"Total Symbols: {total}")
     print(f"Success: {success_count}")
+    print(f"Skipped: {skip_count}")
     print(f"Failed: {fail_count}")
     print(f"Data saved in: {data_root}")
-    print("=" * 30)
+    print("=" * 50)
 
 
 if __name__ == "__main__":
