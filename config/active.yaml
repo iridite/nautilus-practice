@@ -10,7 +10,7 @@ strategy: "keltner_rs_breakout"
 # 运行时覆盖配置 (可选)
 # 这里的设置会覆盖环境和策略配置中的对应项
 overrides:
-  # update: 这里的时间周期设定貌似是无效的，晚点修一下
+  # 回测时间范围在 config/environments/{env}.yaml 中配置
   # backtest:
   #   start_date: "2022-01-01"
   #   end_date: "2026-01-01"
