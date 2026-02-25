@@ -19,6 +19,7 @@ from typing import List, Tuple
 
 import pandas as pd
 
+from backtest.tui_manager import get_tui, is_tui_enabled
 from core.exceptions import DataValidationError
 from utils.data_file_checker import check_single_data_file
 from utils.symbol_parser import convert_timeframe_to_seconds
@@ -26,6 +27,42 @@ from utils.symbol_parser import convert_timeframe_to_seconds
 from .data_retrieval import batch_fetch_ohlcv, batch_fetch_oi_and_funding
 
 logger = logging.getLogger(__name__)
+
+
+def run_batch_data_retrieval(
+    symbols, start_date, end_date, timeframe, exchange, base_dir: Path, max_workers: int = None
+) -> list:
+    """直接调用 Python 函数进行数据抓取"""
+    if not symbols:
+        return []
+
+    tui = get_tui()
+    use_tui = is_tui_enabled()
+
+    if use_tui:
+        tui.add_log(f"Fetching data for {len(symbols)} symbols", "INFO")
+    else:
+        logger.info(
+            f"Fetching/Updating raw trade pair data for {len(symbols)} symbols via functional call..."
+        )
+
+    try:
+        data_configs = batch_fetch_ohlcv(
+            symbols=sorted(list(symbols)),
+            start_date=start_date,
+            end_date=end_date,
+            timeframe=timeframe,
+            exchange_id=exchange,
+            base_dir=base_dir,
+            max_workers=max_workers,
+        )
+        return data_configs
+    except Exception as e:
+        if use_tui:
+            tui.add_log(f"Error during data retrieval: {e}", "ERROR")
+        else:
+            logger.error(f"❌ Error during data retrieval: {e}")
+        return []
 
 
 class DataQualityChecker:
@@ -447,32 +484,6 @@ class DataManager:
             logger.info(f"数据质量检查: 全部通过 ({len(passed)}/{len(symbols)})")
 
         return {"passed": passed, "failed": failed}
-
-
-def run_batch_data_retrieval(
-    symbols, start_date, end_date, timeframe, exchange, base_dir: Path, max_workers: int = None
-) -> list:
-    """直接调用 Python 函数进行数据抓取"""
-    if not symbols:
-        return []
-
-    logger.info(
-        f"Fetching/Updating raw trade pair data for {len(symbols)} symbols via functional call..."
-    )
-    try:
-        data_configs = batch_fetch_ohlcv(
-            symbols=sorted(list(symbols)),
-            start_date=start_date,
-            end_date=end_date,
-            timeframe=timeframe,
-            exchange_id=exchange,
-            base_dir=base_dir,
-            max_workers=max_workers,
-        )
-        return data_configs
-    except Exception as e:
-        logger.error(f"❌ Error during data retrieval: {e}")
-        return []
 
 
 def _get_current_exchange(attempt: int, supported_exchanges: list) -> str:

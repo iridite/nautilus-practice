@@ -10,6 +10,7 @@ logger = logging.getLogger(__name__)
 BASE_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(BASE_DIR))
 
+from backtest.tui_manager import get_tui, is_tui_enabled
 from cli.commands import (
     check_and_fetch_strategy_data,
     run_backtest,
@@ -86,10 +87,21 @@ def main():
     universe_symbols = load_universe_symbols(adapter, BASE_DIR)
 
     if args.command == "backtest":
-        prepare_data_feeds(args, adapter, BASE_DIR, universe_symbols)
-        check_and_fetch_strategy_data(args, adapter, BASE_DIR, universe_symbols)
-        update_instrument_definitions(adapter, BASE_DIR, universe_symbols)
-        run_backtest(args, adapter, BASE_DIR)
+        # 启动全局 TUI（如果启用）
+        tui = get_tui()
+        if is_tui_enabled():
+            with tui:
+                tui.start_phase("Backtest Initialization")
+                prepare_data_feeds(args, adapter, BASE_DIR, universe_symbols)
+                check_and_fetch_strategy_data(args, adapter, BASE_DIR, universe_symbols)
+                update_instrument_definitions(adapter, BASE_DIR, universe_symbols)
+                run_backtest(args, adapter, BASE_DIR)
+        else:
+            # 传统模式（无 TUI）
+            prepare_data_feeds(args, adapter, BASE_DIR, universe_symbols)
+            check_and_fetch_strategy_data(args, adapter, BASE_DIR, universe_symbols)
+            update_instrument_definitions(adapter, BASE_DIR, universe_symbols)
+            run_backtest(args, adapter, BASE_DIR)
     elif args.command == "sandbox":
         run_sandbox(args, getattr(args, "env", None))
     elif args.command == "live":

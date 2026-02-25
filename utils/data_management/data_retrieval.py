@@ -15,6 +15,7 @@ import ccxt
 import pandas as pd
 from tqdm import tqdm
 
+from backtest.tui_manager import get_tui, is_tui_enabled
 from core.adapter import DataConfig
 from utils.network import retry_fetch
 from utils.symbol_parser import parse_timeframe, resolve_symbol_and_type
@@ -136,7 +137,11 @@ def _fetch_single_symbol(
     try:
         ccxt_symbol, market_type = resolve_symbol_and_type(raw_symbol)
     except Exception as e:
-        logger.warning(f"Failed to parse symbol {raw_symbol}: {e}, skipping")
+        tui = get_tui()
+        if is_tui_enabled():
+            tui.add_log(f"Failed to parse symbol {raw_symbol}: {e}, skipping", "WARNING")
+        else:
+            logger.warning(f"Failed to parse symbol {raw_symbol}: {e}, skipping")
         return None, "skipped"
 
     safe_symbol = raw_symbol.replace("/", "")
@@ -207,13 +212,11 @@ def batch_fetch_ohlcv(
     skipped_count = 0
     is_single = len(symbols) == 1
 
-    with tqdm(
-        total=total,
-        desc="📥 Fetching data",
-        unit="symbol",
-        ncols=80,
-        bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]",
-    ) as pbar:
+    tui = get_tui()
+    use_tui = is_tui_enabled()
+
+    if use_tui:
+        # 使用 TUI 显示进度
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             # 提交所有下载任务
             future_to_symbol = {
@@ -250,12 +253,66 @@ def batch_fetch_ohlcv(
                     elif status == "skipped":
                         skipped_count += 1
 
-                    pbar.set_postfix_str(f"{raw_symbol}", refresh=True)
-                    pbar.update(1)
+                    tui.update_progress(description=f"Downloading {raw_symbol}...")
+                    tui.update_stat("fetched", fetched_count)
+                    tui.update_stat("cached", cached_count)
+                    tui.update_stat("skipped", skipped_count)
                 except Exception as e:
                     logger.error(f"Error processing {raw_symbol}: {e}")
+                    tui.add_log(f"Error: {raw_symbol}", "ERROR")
                     skipped_count += 1
-                    pbar.update(1)
+                    tui.update_stat("skipped", skipped_count)
+    else:
+        # 使用 tqdm 进度条（传统模式）
+        with tqdm(
+            total=total,
+            desc="📥 Fetching data",
+            unit="symbol",
+            ncols=80,
+            bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]",
+        ) as pbar:
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                # 提交所有下载任务
+                future_to_symbol = {
+                    executor.submit(
+                        _fetch_single_symbol,
+                        raw_symbol,
+                        exchange_id,
+                        timeframe,
+                        start_ms,
+                        end_ms,
+                        base_dir,
+                        start_date,
+                        end_date,
+                        agg,
+                        period,
+                        source,
+                        is_single,
+                    ): raw_symbol
+                    for raw_symbol in symbols
+                }
+
+                # 处理完成的任务
+                for future in as_completed(future_to_symbol):
+                    raw_symbol = future_to_symbol[future]
+                    try:
+                        config, status = future.result()
+                        if config:
+                            configs.append(config)
+
+                        if status == "fetched":
+                            fetched_count += 1
+                        elif status == "cached":
+                            cached_count += 1
+                        elif status == "skipped":
+                            skipped_count += 1
+
+                        pbar.set_postfix_str(f"{raw_symbol}", refresh=True)
+                        pbar.update(1)
+                    except Exception as e:
+                        logger.error(f"Error processing {raw_symbol}: {e}")
+                        skipped_count += 1
+                        pbar.update(1)
 
     logger.info(
         f"Data retrieval complete: {len(configs)}/{total} symbols "
@@ -629,7 +686,11 @@ def _resolve_and_validate_symbol(
     try:
         ccxt_symbol, market_type = resolve_symbol_and_type(raw_symbol)
     except Exception as e:
-        logger.warning(f"\n[WARNING] Failed to parse symbol {raw_symbol}: {e}, skipping")
+        tui = get_tui()
+        if is_tui_enabled():
+            tui.add_log(f"Failed to parse symbol {raw_symbol}: {e}, skipping", "WARNING")
+        else:
+            logger.warning(f"\n[WARNING] Failed to parse symbol {raw_symbol}: {e}, skipping")
         return None
 
     if ccxt_symbol not in exchange.markets:

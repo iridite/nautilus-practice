@@ -28,6 +28,11 @@ from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.persistence.catalog import ParquetDataCatalog
 from nautilus_trader.persistence.wranglers import BarDataWrangler
 from pandas import DataFrame
+from rich.console import Console
+from rich.live import Live
+from rich.panel import Panel
+from rich.progress import BarColumn, Progress, SpinnerColumn, TaskProgressColumn, TextColumn
+from rich.table import Table
 
 from core.exceptions import (
     BacktestEngineError,
@@ -228,6 +233,7 @@ def _check_parquet_coverage(
     catalog: ParquetDataCatalog,
     bar_type: BarType,
     cfg: BacktestConfig,
+    stats: Optional[Dict[str, int]] = None,
 ) -> Tuple[bool, float]:
     """
     检查 Parquet 数据覆盖率
@@ -309,10 +315,11 @@ def _update_parquet_from_csv(
     feed_idx: int,
     total_feeds: int,
     action: str,
+    stats: Optional[Dict[str, int]] = None,
 ) -> str:
     """从CSV更新Parquet数据"""
     try:
-        catalog_loader(catalog, csv_path, inst, bar_type)
+        catalog_loader(catalog, csv_path, inst, bar_type, stats)
         return _format_status_message(feed_idx, total_feeds, "📖", bar_type.instrument_id, action)
     except (OSError, ValueError) as e:
         logger.warning(f"Failed to {action.lower()} Parquet for {bar_type.instrument_id}: {e}")
@@ -328,13 +335,14 @@ def _handle_csv_exists(
     bar_type: BarType,
     feed_idx: int,
     total_feeds: int,
+    stats: Optional[Dict[str, int]] = None,
 ) -> str:
     """处理CSV文件存在的情况"""
     is_consistent = _verify_data_consistency(csv_path, catalog, bar_type)
 
     if not is_consistent:
         return _update_parquet_from_csv(
-            catalog, csv_path, inst, bar_type, feed_idx, total_feeds, "Updated"
+            catalog, csv_path, inst, bar_type, feed_idx, total_feeds, "Updated", stats
         )
     else:
         return _format_status_message(
@@ -352,13 +360,14 @@ def _handle_incomplete_parquet(
     feed_idx: int,
     total_feeds: int,
     coverage_pct: float,
+    stats: Optional[Dict[str, int]] = None,
 ) -> str:
     """处理Parquet数据不完整的情况"""
     download_success = _auto_download_missing_data(data_cfg, cfg)
 
     if download_success and csv_path.exists():
         return _update_parquet_from_csv(
-            catalog, csv_path, inst, bar_type, feed_idx, total_feeds, "Completed"
+            catalog, csv_path, inst, bar_type, feed_idx, total_feeds, "Completed", stats
         )
     else:
         return f"\r⚠️  [{feed_idx:3d}/{total_feeds}] Partial Parquet: {str(bar_type.instrument_id):<25} ({coverage_pct:.1f}%)"
@@ -373,14 +382,24 @@ def _handle_csv_missing(
     cfg: BacktestConfig,
     feed_idx: int,
     total_feeds: int,
+    stats: Optional[Dict[str, int]] = None,
 ) -> str:
     """处理CSV文件不存在的情况"""
     # 检查Parquet覆盖率
-    parquet_exists, coverage_pct = _check_parquet_coverage(catalog, bar_type, cfg)
+    is_sufficient, coverage_pct = _check_parquet_coverage(catalog, bar_type, cfg, stats)
 
-    if parquet_exists and coverage_pct < 95.0:
+    if coverage_pct > 0.0 and coverage_pct < 95.0:
         return _handle_incomplete_parquet(
-            catalog, csv_path, inst, bar_type, data_cfg, cfg, feed_idx, total_feeds, coverage_pct
+            catalog,
+            csv_path,
+            inst,
+            bar_type,
+            data_cfg,
+            cfg,
+            feed_idx,
+            total_feeds,
+            coverage_pct,
+            stats,
         )
     else:
         # 尝试常规下载
@@ -388,7 +407,7 @@ def _handle_csv_missing(
 
         if download_success and csv_path.exists():
             return _update_parquet_from_csv(
-                catalog, csv_path, inst, bar_type, feed_idx, total_feeds, "Imported"
+                catalog, csv_path, inst, bar_type, feed_idx, total_feeds, "Imported", stats
             )
         else:
             return f"\r⚠️  [{feed_idx:3d}/{total_feeds}] Partial Parquet: {str(bar_type.instrument_id):<25}"
@@ -403,6 +422,7 @@ def _handle_parquet_exists(
     cfg: BacktestConfig,
     feed_idx: int,
     total_feeds: int,
+    stats: Optional[Dict[str, int]] = None,
 ) -> str:
     """
     处理Parquet数据已存在的情况
@@ -413,10 +433,10 @@ def _handle_parquet_exists(
     csv_exists = csv_path.exists()
 
     if csv_exists:
-        return _handle_csv_exists(catalog, csv_path, inst, bar_type, feed_idx, total_feeds)
+        return _handle_csv_exists(catalog, csv_path, inst, bar_type, feed_idx, total_feeds, stats)
     else:
         return _handle_csv_missing(
-            catalog, csv_path, inst, bar_type, data_cfg, cfg, feed_idx, total_feeds
+            catalog, csv_path, inst, bar_type, data_cfg, cfg, feed_idx, total_feeds, stats
         )
 
 
@@ -427,9 +447,10 @@ def _import_csv_to_parquet(
     bar_type: BarType,
     feed_idx: int,
     total_feeds: int,
+    stats: Optional[Dict[str, int]] = None,
 ) -> str:
     """导入CSV到Parquet"""
-    catalog_loader(catalog, csv_path, inst, bar_type)
+    catalog_loader(catalog, csv_path, inst, bar_type, stats)
     return f"\r📖 [{feed_idx:3d}/{total_feeds}] Imported: {str(bar_type.instrument_id):<32}"
 
 
@@ -441,10 +462,13 @@ def _handle_csv_exists_for_missing_parquet(
     data_cfg,
     feed_idx: int,
     total_feeds: int,
+    stats: Optional[Dict[str, int]] = None,
 ) -> str:
     """处理CSV存在但Parquet缺失的情况"""
     try:
-        return _import_csv_to_parquet(catalog, csv_path, inst, bar_type, feed_idx, total_feeds)
+        return _import_csv_to_parquet(
+            catalog, csv_path, inst, bar_type, feed_idx, total_feeds, stats
+        )
     except Exception as e:
         raise DataLoadError(f"Error loading {data_cfg.csv_file_name}: {e}", str(csv_path), e)
 
@@ -458,13 +482,16 @@ def _handle_csv_missing_for_missing_parquet(
     cfg: BacktestConfig,
     feed_idx: int,
     total_feeds: int,
+    stats: Optional[Dict[str, int]] = None,
 ) -> str:
     """处理CSV和Parquet都缺失的情况"""
     download_success = _auto_download_missing_data(data_cfg, cfg)
 
     if download_success and csv_path.exists():
         try:
-            return _import_csv_to_parquet(catalog, csv_path, inst, bar_type, feed_idx, total_feeds)
+            return _import_csv_to_parquet(
+                catalog, csv_path, inst, bar_type, feed_idx, total_feeds, stats
+            )
         except (OSError, ValueError, KeyError) as e:
             logger.warning(f"Failed to import {bar_type.instrument_id}: {e}")
 
@@ -486,6 +513,7 @@ def _handle_parquet_missing(
     cfg: BacktestConfig,
     feed_idx: int,
     total_feeds: int,
+    stats: Optional[Dict[str, int]] = None,
 ) -> str:
     """
     处理Parquet数据不存在的情况
@@ -500,11 +528,11 @@ def _handle_parquet_missing(
 
     if csv_exists:
         return _handle_csv_exists_for_missing_parquet(
-            catalog, csv_path, inst, bar_type, data_cfg, feed_idx, total_feeds
+            catalog, csv_path, inst, bar_type, data_cfg, feed_idx, total_feeds, stats
         )
     else:
         return _handle_csv_missing_for_missing_parquet(
-            catalog, csv_path, inst, bar_type, data_cfg, cfg, feed_idx, total_feeds
+            catalog, csv_path, inst, bar_type, data_cfg, cfg, feed_idx, total_feeds, stats
         )
 
 
@@ -549,6 +577,7 @@ def _process_data_feed(
     cfg: BacktestConfig,
     loaded_instruments: Dict[str, Instrument],
     _catalog,
+    stats: Optional[dict] = None,
 ) -> Tuple[Optional[str], Optional[str], Optional[str], str]:
     """
     处理单个数据流的导入
@@ -575,11 +604,11 @@ def _process_data_feed(
         status_msg = f"\r✅ [{feed_idx:3d}/{total_feeds}] Ready: {str(bar_type.instrument_id):<35}"
     elif parquet_exists:
         status_msg = _handle_parquet_exists(
-            _catalog, csv_path, inst, bar_type, data_cfg, cfg, feed_idx, total_feeds
+            _catalog, csv_path, inst, bar_type, data_cfg, cfg, feed_idx, total_feeds, stats
         )
     else:
         status_msg = _handle_parquet_missing(
-            _catalog, csv_path, inst, bar_type, data_cfg, cfg, feed_idx, total_feeds
+            _catalog, csv_path, inst, bar_type, data_cfg, cfg, feed_idx, total_feeds, stats
         )
 
     return inst_id, feed_bar_type_str, str(bar_type), status_msg
@@ -634,25 +663,114 @@ def _import_data_to_catalog(
     global_feeds: Dict[str, str] = {}
     total_feeds = len(cfg.data_feeds)
 
-    for feed_idx, data_cfg in enumerate(cfg.data_feeds, 1):
-        inst_id, feed_bar_type_str, bar_type_str, status_msg = _process_data_feed(
-            feed_idx, total_feeds, data_cfg, cfg, loaded_instruments, _catalog
-        )
+    # 使用 Rich Progress 显示进度
+    import os
 
-        if inst_id is None:
-            continue
+    use_progress = os.getenv("NAUTILUS_USE_TUI", "true").lower() != "false" and sys.stdout.isatty()
 
-        sys.stdout.write(status_msg)
-        sys.stdout.flush()
+    # 统计信息
+    stats = {
+        "low_coverage": 0,
+        "partial_coverage": 0,
+        "files_skipped": 0,
+        "files_written": 0,
+    }
 
-        # 归类数据流
-        if feed_bar_type_str is not None:
-            _categorize_data_feed(inst_id, feed_bar_type_str, data_cfg, global_feeds, feeds_by_inst)
+    def _make_stats_table() -> Table:
+        """创建统计信息表格"""
+        table = Table.grid(padding=(0, 2))
+        table.add_column(style="cyan", justify="right")
+        table.add_column(style="magenta")
 
-        # 更新数据配置
-        inst = loaded_instruments[inst_id]
-        if bar_type_str is not None:
-            _update_data_config(str(inst.id), inst, bar_type_str, catalog_path, data_config_by_inst)
+        table.add_row("Low Coverage:", str(stats["low_coverage"]))
+        table.add_row("Partial Coverage:", str(stats["partial_coverage"]))
+        table.add_row("Files Skipped:", str(stats["files_skipped"]))
+        table.add_row("Files Written:", str(stats["files_written"]))
+
+        return table
+
+    if use_progress:
+        console = Console()
+
+        with Live(console=console, refresh_per_second=4) as live:
+            progress = Progress(
+                SpinnerColumn(),
+                TextColumn("[progress.description]{task.description}"),
+                BarColumn(),
+                TaskProgressColumn(),
+                console=console,
+            )
+            task = progress.add_task("Processing data feeds...", total=total_feeds)
+
+            for feed_idx, data_cfg in enumerate(cfg.data_feeds, 1):
+                inst_id, feed_bar_type_str, bar_type_str, status_msg = _process_data_feed(
+                    feed_idx, total_feeds, data_cfg, cfg, loaded_instruments, _catalog, stats
+                )
+
+                if inst_id is None:
+                    progress.advance(task)
+                    # 更新显示
+                    live.update(Panel.fit(progress, title="Data Preparation", border_style="green"))
+                    continue
+
+                # 更新进度描述
+                symbol = (
+                    str(loaded_instruments[inst_id].id)
+                    if inst_id in loaded_instruments
+                    else "Unknown"
+                )
+                progress.update(task, description=f"Processing {symbol}...")
+                progress.advance(task)
+
+                # 更新显示：进度条 + 统计信息
+                from rich.layout import Layout
+
+                layout = Layout()
+                layout.split_column(
+                    Layout(progress, size=3),
+                    Layout(
+                        Panel(_make_stats_table(), title="Statistics", border_style="blue"), size=7
+                    ),
+                )
+                live.update(layout)
+
+                # 归类数据流
+                if feed_bar_type_str is not None:
+                    _categorize_data_feed(
+                        inst_id, feed_bar_type_str, data_cfg, global_feeds, feeds_by_inst
+                    )
+
+                # 更新数据配置
+                inst = loaded_instruments[inst_id]
+                if bar_type_str is not None:
+                    _update_data_config(
+                        str(inst.id), inst, bar_type_str, catalog_path, data_config_by_inst
+                    )
+    else:
+        # 回退到传统日志模式（不使用 stats，直接输出日志）
+        for feed_idx, data_cfg in enumerate(cfg.data_feeds, 1):
+            inst_id, feed_bar_type_str, bar_type_str, status_msg = _process_data_feed(
+                feed_idx, total_feeds, data_cfg, cfg, loaded_instruments, _catalog, None
+            )
+
+            if inst_id is None:
+                continue
+
+            sys.stdout.write(status_msg)
+            sys.stdout.flush()
+
+            # 归类数据流
+            if feed_bar_type_str is not None:
+                _categorize_data_feed(
+                    inst_id, feed_bar_type_str, data_cfg, global_feeds, feeds_by_inst
+                )
+
+            # 更新数据配置
+            inst = loaded_instruments[inst_id]
+            if bar_type_str is not None:
+                _update_data_config(
+                    str(inst.id), inst, bar_type_str, catalog_path, data_config_by_inst
+                )
 
     logger.info(f"\n✅ Data import complete. Created {len(data_config_by_inst)} data configs.")
     return data_config_by_inst, global_feeds, feeds_by_inst
@@ -1678,6 +1796,7 @@ def catalog_loader(
     csv_path: Path,
     instrument: Instrument,
     bar_type: BarType,
+    stats: Optional[Dict[str, int]] = None,
 ) -> None:
     """
     将 CSV 数据导入 Catalog (Parquet)。

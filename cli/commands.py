@@ -10,6 +10,7 @@ project_root = Path(__file__).resolve().parent.parent
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
+from backtest.tui_manager import get_tui, is_tui_enabled
 from scripts.fetch_instrument import update_instruments
 from strategy.core.dependency_checker import check_strategy_data_dependencies
 from utils.oi_funding_adapter import execute_oi_funding_data_fetch
@@ -20,11 +21,20 @@ logger = logging.getLogger(__name__)
 
 def check_and_fetch_strategy_data(args, adapter, base_dir: Path, universe_symbols: set):
     """检查并获取策略所需数据"""
+    tui = get_tui()
+    use_tui = is_tui_enabled()
+
     if args.skip_oi_data:
-        logger.info("⏩ Skipping OI/Funding data check")
+        if use_tui:
+            tui.add_log("Skipping OI/Funding data check", "INFO")
+        else:
+            logger.info("⏩ Skipping OI/Funding data check")
         return
 
-    logger.info("📊 Strategy Data Dependencies Check")
+    if use_tui:
+        tui.start_phase("Strategy Data Dependencies Check")
+    else:
+        logger.info("📊 Strategy Data Dependencies Check")
 
     current_config = adapter.build_backtest_config()
     strategy_tasks = check_strategy_data_dependencies(
@@ -38,7 +48,11 @@ def check_and_fetch_strategy_data(args, adapter, base_dir: Path, universe_symbol
     )
 
     if strategy_tasks["missing_count"] > 0:
-        logger.info(f"📊 {strategy_tasks['missing_count']} missing data files")
+        if use_tui:
+            tui.add_log(f"{strategy_tasks['missing_count']} missing data files", "INFO")
+            tui.start_phase("Fetching Strategy Data")
+        else:
+            logger.info(f"📊 {strategy_tasks['missing_count']} missing data files")
 
         fetch_results = execute_oi_funding_data_fetch(
             strategy_tasks,
@@ -49,9 +63,16 @@ def check_and_fetch_strategy_data(args, adapter, base_dir: Path, universe_symbol
 
         total_files = fetch_results["oi_files"] + fetch_results["funding_files"]
         if total_files > 0:
-            logger.info(f"✅ Downloaded {total_files} files")
+            if use_tui:
+                tui.add_log(f"Downloaded {total_files} files", "INFO")
+                tui.update_stat("strategy_data_files", total_files)
+            else:
+                logger.info(f"✅ Downloaded {total_files} files")
     else:
-        logger.info("✅ All strategy data satisfied\n")
+        if use_tui:
+            tui.add_log("All strategy data satisfied", "INFO")
+        else:
+            logger.info("✅ All strategy data satisfied\n")
 
 
 def update_instrument_definitions(adapter, base_dir: Path, universe_symbols: set):
@@ -76,10 +97,22 @@ def update_instrument_definitions(adapter, base_dir: Path, universe_symbols: set
             instrument_ids.update(universe_inst_ids)
 
         if instrument_ids:
-            logger.info(f"🔄 Updating {len(instrument_ids)} instruments")
+            tui = get_tui()
+            use_tui = is_tui_enabled()
+
+            if use_tui:
+                tui.start_phase("Updating Instruments", total=len(instrument_ids))
+                tui.add_log(f"Updating {len(instrument_ids)} instruments", "INFO")
+            else:
+                logger.info(f"🔄 Updating {len(instrument_ids)} instruments")
+
             update_instruments(list(instrument_ids), base_dir / "data" / "instrument")
     except Exception as e:
-        logger.error(f"⚠️ Error updating instruments: {e}")
+        tui = get_tui()
+        if is_tui_enabled():
+            tui.add_log(f"Error updating instruments: {e}", "ERROR")
+        else:
+            logger.error(f"⚠️ Error updating instruments: {e}")
 
 
 def run_live(args, env_name=None):
@@ -107,10 +140,33 @@ def run_backtest(args, adapter, base_dir: Path):
 
     cfg = adapter.build_backtest_config()
 
+    tui = get_tui()
+    use_tui = is_tui_enabled()
+
+    if use_tui:
+        tui.start_phase("Starting Backtest")
+        tui.add_log(f"Backtest Type: {args.type}", "INFO")
+        strategy_name = getattr(
+            cfg.strategy, "strategy_path", getattr(cfg.strategy, "class_name", "Unknown")
+        )
+        tui.add_log(f"Strategy: {strategy_name}", "INFO")
+    else:
+        logger.info(f"Starting backtest: {args.type}")
+        strategy_name = getattr(
+            cfg.strategy, "strategy_path", getattr(cfg.strategy, "class_name", "Unknown")
+        )
+        logger.info(f"Strategy: {strategy_name}")
+
     if args.type == "high":
         run_high_level(cfg, base_dir)
     else:
         run_low_level(cfg, base_dir)
+
+    # Cleanup
+    if use_tui:
+        tui.start_phase("Cleanup")
+    else:
+        logger.info("Running cleanup...")
 
     fc = adapter.env_config.file_cleanup
     if fc.use_time_rotation:
@@ -128,3 +184,8 @@ def run_backtest(args, adapter, base_dir: Path):
             enabled=fc.enabled,
             target_dirs=fc.target_dirs,
         )
+
+    if use_tui:
+        tui.start_phase("Backtest Complete")
+    else:
+        logger.info("Backtest complete")
