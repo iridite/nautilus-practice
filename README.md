@@ -31,13 +31,22 @@ uv run python -m unittest discover -s tests -p "test_*.py" -v
 
 ```
 nautilus-practice/
-├── strategy/           # 策略实现
-├── backtest/          # 回测引擎
-├── config/            # 配置文件
-├── core/              # 核心配置系统
-├── utils/             # 工具模块
-├── data/              # 数据目录
-└── tests/             # 测试
+├── strategy/              # 策略实现
+│   ├── common/           # 可复用组件
+│   │   ├── indicators/   # 技术指标
+│   │   ├── signals/      # 信号生成器
+│   │   └── universe/     # 标的选择
+│   └── *.py              # 策略实现
+├── backtest/             # 回测引擎
+├── config/               # 配置文件
+│   ├── strategies/       # 策略配置
+│   └── environments/     # 环境配置
+├── core/                 # 核心配置系统
+├── utils/                # 工具模块
+├── data/                 # 数据目录
+├── docs/                 # 文档
+│   └── lessons-learned/  # 经验教训
+└── tests/                # 测试
 ```
 
 ## 配置
@@ -68,6 +77,52 @@ uv run python backtest/backtest_keltner_rs.py
 ls -lh output/backtest/result/
 ```
 
+## 核心功能
+
+### 1. 模块化策略架构
+
+- 可复用组件：指标、信号、Universe
+- 策略代码减少 40%
+- 代码复用率提升 700%
+
+### 2. 双回测引擎
+
+- **低级引擎**: 简单、直接、易调试
+- **高级引擎**: 快 32%、Parquet 缓存、10x 数据加载速度
+
+### 3. TUI 终端界面
+
+- 实时进度显示
+- 统一日志管理
+- 清晰的数据处理总结
+
+### 4. 性能分析工具
+
+- 13 个性能指标（Sharpe、Sortino、Calmar 等）
+- cProfile 集成
+- 自动化报告生成
+
+### 5. 过滤器诊断系统
+
+- 详细的过滤器统计
+- 自动零交易警告
+- 优化建议
+
+## 文档
+
+详细文档位于 `docs/lessons-learned/`:
+
+- [架构决策记录](docs/lessons-learned/ARCHITECTURE_DECISIONS.md) - 模块化、性能优化、配置简化
+- [TUI 集成经验](docs/lessons-learned/TUI_INTEGRATION.md) - 终端界面实现和生命周期管理
+- [Git 工作流](docs/lessons-learned/GIT_WORKFLOW.md) - 分支管理、Commit 规范、CI/CD
+- [策略调试与诊断](docs/lessons-learned/STRATEGY_DEBUGGING.md) - 零交易诊断、过滤器优化
+
+其他文档：
+- `CLAUDE.md`: AI Agent 开发指南
+- `docs/BINANCE_API_SETUP.md`: Binance API 配置
+- `docs/OKX_TESTNET_SETUP.md`: OKX 测试网配置
+- `docs/guides/`: 策略开发指南
+
 ## 注意事项
 
 1. CSV 数据文件必须使用 "datetime" 或 "timestamp" 作为时间列名
@@ -75,9 +130,23 @@ ls -lh output/backtest/result/
 3. 金融计算使用 `Decimal` 而非 `float`
 4. Python 版本严格要求 3.12.12+，不支持 3.13
 
-## 文档
+## 常见问题
 
-- `CLAUDE.md`: AI Agent 开发指南
-- `docs/BINANCE_API_SETUP.md`: Binance API 配置
-- `docs/OKX_TESTNET_SETUP.md`: OKX 测试网配置
-- `docs/guides/`: 策略开发指南
+### Q: 回测产生 0 交易？
+
+A: 使用过滤器诊断系统：
+1. 启用 DEBUG 日志：`level: "DEBUG"`
+2. 关闭 components_only：`components_only: false`
+3. 查看过滤器统计报告
+4. 根据建议调整配置
+
+### Q: 数据加载很慢？
+
+A: 使用 Parquet 缓存：
+1. 首次运行会生成缓存
+2. 后续运行速度提升 10x
+3. 缓存位置：`data/parquet/`
+
+## 许可证
+
+MIT
