@@ -52,17 +52,17 @@ class TestConfigAdapter(unittest.TestCase):
         adapter = ConfigAdapter()
         adapter.active_config = Mock()
         adapter.active_config.timeframe = None
+        adapter.strategy_config = Mock()
+        adapter.strategy_config.parameters = {}
         adapter.env_config = Mock()
-        adapter.env_config.trading = Mock()
-        adapter.env_config.trading.main_timeframe = "1h"
+        adapter.env_config.timeframes = {"main": "1h"}
         self.assertEqual(adapter.get_main_timeframe(), "1h")
 
     @patch("core.adapter.ConfigLoader")
     def test_get_trend_timeframe(self, mock_loader):
         adapter = ConfigAdapter()
         adapter.env_config = Mock()
-        adapter.env_config.trading = Mock()
-        adapter.env_config.trading.trend_timeframe = "4h"
+        adapter.env_config.timeframes = {"trend": "4h"}
         self.assertEqual(adapter.get_trend_timeframe(), "4h")
 
     @patch("core.adapter.ConfigLoader")
