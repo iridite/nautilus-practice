@@ -177,7 +177,11 @@ def _fetch_single_symbol(
         else:
             return None, "error"
     except Exception as e:
-        logger.warning(f"Error fetching {raw_symbol}: {e}")
+        tui = get_tui()
+        if is_tui_enabled():
+            tui.add_log(f"Error fetching {raw_symbol}: {e}", "WARNING")
+        else:
+            logger.warning(f"Error fetching {raw_symbol}: {e}")
         return None, "error"
 
 
@@ -258,8 +262,7 @@ def batch_fetch_ohlcv(
                     tui.update_stat("cached", cached_count)
                     tui.update_stat("skipped", skipped_count)
                 except Exception as e:
-                    logger.error(f"Error processing {raw_symbol}: {e}")
-                    tui.add_log(f"Error: {raw_symbol}", "ERROR")
+                    tui.add_log(f"Error: {raw_symbol} - {e}", "ERROR")
                     skipped_count += 1
                     tui.update_stat("skipped", skipped_count)
     else:
@@ -314,10 +317,18 @@ def batch_fetch_ohlcv(
                         skipped_count += 1
                         pbar.update(1)
 
-    logger.info(
-        f"Data retrieval complete: {len(configs)}/{total} symbols "
-        f"(fetched: {fetched_count}, cached: {cached_count}, skipped: {skipped_count})"
-    )
+    # 输出完成信息
+    if use_tui:
+        tui.add_log(
+            f"Complete: {len(configs)}/{total} symbols "
+            f"(fetched: {fetched_count}, cached: {cached_count}, skipped: {skipped_count})",
+            "INFO",
+        )
+    else:
+        logger.info(
+            f"Data retrieval complete: {len(configs)}/{total} symbols "
+            f"(fetched: {fetched_count}, cached: {cached_count}, skipped: {skipped_count})"
+        )
 
     return configs
 

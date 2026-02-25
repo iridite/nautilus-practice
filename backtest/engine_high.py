@@ -234,7 +234,8 @@ def _check_parquet_coverage(
     bar_type: BarType,
     cfg: BacktestConfig,
     stats: Optional[Dict[str, int]] = None,
-) -> Tuple[bool, float]:
+    silent: bool = False,
+) -> Tuple[bool, float, Optional[str]]:
     """
     检查 Parquet 数据覆盖率
 
@@ -244,22 +245,25 @@ def _check_parquet_coverage(
         catalog: Parquet 数据目录
         bar_type: Bar 类型标识
         cfg: 回测配置（包含 start_date 和 end_date）
+        stats: 统计信息字典（可选）
+        silent: 是否静默模式（不输出日志，仅返回警告信息）
 
     Returns:
-        Tuple[bool, float]: (是否满足要求, 覆盖率百分比)
+        Tuple[bool, float, Optional[str]]: (是否满足要求, 覆盖率百分比, 警告信息)
         - 第一个值：覆盖率是否 >= 95%
         - 第二个值：实际覆盖率百分比
+        - 第三个值：警告信息（仅当 coverage < 95% 且 silent=True 时返回）
 
     Examples:
-        >>> is_ok, pct = _check_parquet_coverage(catalog, bar_type, cfg)
-        >>> if not is_ok:
-        ...     logger.warning(f"Coverage insufficient: {pct:.1f}%")
+        >>> is_ok, pct, warning = _check_parquet_coverage(catalog, bar_type, cfg, silent=True)
+        >>> if warning:
+        ...     print(warning)
     """
     try:
         # 1. 获取数据间隔
         existing_intervals = catalog.get_intervals(data_cls=Bar, identifier=str(bar_type))
         if not existing_intervals:
-            return False, 0.0
+            return False, 0.0, None
 
         # 2. 解析回测时间范围
         required_start, required_end = _parse_backtest_time_range(cfg)
@@ -274,25 +278,31 @@ def _check_parquet_coverage(
         WARNING_THRESHOLD = 30.0
         is_sufficient = coverage_pct >= COVERAGE_THRESHOLD
 
-        # 5. 记录日志（分级处理）
-        # - < 30%: WARNING（数据严重不足，可能影响回测结果）
-        # - 30-95%: INFO（数据部分覆盖，新币种常见情况）
-        # - >= 95%: DEBUG（数据完整）
-        if coverage_pct < WARNING_THRESHOLD:
-            logger.warning(
-                f"\nParquet coverage critically low for {bar_type}: "
-                f"{coverage_pct:.1f}% < {WARNING_THRESHOLD}%"
-            )
-        elif coverage_pct < COVERAGE_THRESHOLD:
-            logger.info(f"Parquet coverage partial for {bar_type}: {coverage_pct:.1f}%")
+        # 5. 记录日志或返回警告信息
+        warning_msg = None
+        if not silent:
+            # 立即输出日志（传统模式）
+            if coverage_pct < WARNING_THRESHOLD:
+                logger.warning(
+                    f"\nParquet coverage critically low for {bar_type}: "
+                    f"{coverage_pct:.1f}% < {WARNING_THRESHOLD}%"
+                )
+            elif coverage_pct < COVERAGE_THRESHOLD:
+                logger.info(f"Parquet coverage partial for {bar_type}: {coverage_pct:.1f}%")
+            else:
+                logger.debug(f"Parquet coverage OK for {bar_type}: {coverage_pct:.1f}%")
         else:
-            logger.debug(f"Parquet coverage OK for {bar_type}: {coverage_pct:.1f}%")
+            # 静默模式：返回警告信息供收集
+            if coverage_pct < COVERAGE_THRESHOLD:
+                level = "critically low" if coverage_pct < WARNING_THRESHOLD else "partial"
+                warning_msg = f"{bar_type}: {coverage_pct:.1f}% ({level})"
 
-        return is_sufficient, coverage_pct
+        return is_sufficient, coverage_pct, warning_msg
 
     except (KeyError, AttributeError) as e:
-        logger.warning(f"Failed to check coverage for {bar_type}: {e}")
-        return False, 0.0
+        if not silent:
+            logger.warning(f"Failed to check coverage for {bar_type}: {e}")
+        return False, 0.0, None
 
 
 # ============================================================
@@ -386,7 +396,7 @@ def _handle_csv_missing(
 ) -> str:
     """处理CSV文件不存在的情况"""
     # 检查Parquet覆盖率
-    is_sufficient, coverage_pct = _check_parquet_coverage(catalog, bar_type, cfg, stats)
+    is_sufficient, coverage_pct, _ = _check_parquet_coverage(catalog, bar_type, cfg, stats)
 
     if coverage_pct > 0.0 and coverage_pct < 95.0:
         return _handle_incomplete_parquet(
@@ -578,18 +588,22 @@ def _process_data_feed(
     loaded_instruments: Dict[str, Instrument],
     _catalog,
     stats: Optional[dict] = None,
-) -> Tuple[Optional[str], Optional[str], Optional[str], str]:
+    silent: bool = False,
+) -> Tuple[Optional[str], Optional[str], Optional[str], str, Optional[str]]:
     """
     处理单个数据流的导入
 
+    Args:
+        silent: 是否静默模式（收集警告而不是立即输出）
+
     Returns
     -------
-    Tuple[Optional[str], Optional[str], Optional[str], str]
-        (inst_id, feed_bar_type_str, bar_type_str, status_msg)
+    Tuple[Optional[str], Optional[str], Optional[str], str, Optional[str]]
+        (inst_id, feed_bar_type_str, bar_type_str, status_msg, coverage_warning)
     """
     inst_id = data_cfg.instrument_id or (cfg.instrument.instrument_id if cfg.instrument else None)
     if inst_id not in loaded_instruments:
-        return None, None, None, ""
+        return None, None, None, "", None
 
     inst = loaded_instruments[inst_id]
     csv_path = data_cfg.full_path
@@ -597,7 +611,9 @@ def _process_data_feed(
     bar_type = BarType.from_str(feed_bar_type_str)
 
     # 检查Parquet数据覆盖率
-    parquet_exists, coverage_pct = _check_parquet_coverage(_catalog, bar_type, cfg)
+    parquet_exists, coverage_pct, coverage_warning = _check_parquet_coverage(
+        _catalog, bar_type, cfg, stats, silent=silent
+    )
 
     # 处理数据导入
     if parquet_exists and coverage_pct >= 80:
@@ -611,7 +627,7 @@ def _process_data_feed(
             _catalog, csv_path, inst, bar_type, data_cfg, cfg, feed_idx, total_feeds, stats
         )
 
-    return inst_id, feed_bar_type_str, str(bar_type), status_msg
+    return inst_id, feed_bar_type_str, str(bar_type), status_msg, coverage_warning
 
 
 def _categorize_data_feed(
@@ -663,10 +679,16 @@ def _import_data_to_catalog(
     global_feeds: Dict[str, str] = {}
     total_feeds = len(cfg.data_feeds)
 
-    # 使用 Rich Progress 显示进度
+    # 使用 Rich Progress 显示进度（仅当 TUI 活跃时）
     import os
+    from backtest.tui_manager import get_tui
 
-    use_progress = os.getenv("NAUTILUS_USE_TUI", "true").lower() != "false" and sys.stdout.isatty()
+    tui = get_tui()
+    use_progress = (
+        os.getenv("NAUTILUS_USE_TUI", "true").lower() != "false"
+        and sys.stdout.isatty()
+        and tui.is_active()
+    )
 
     # 统计信息
     stats = {
@@ -692,47 +714,111 @@ def _import_data_to_catalog(
     if use_progress:
         console = Console()
 
-        with Live(console=console, refresh_per_second=4) as live:
-            progress = Progress(
-                SpinnerColumn(),
-                TextColumn("[progress.description]{task.description}"),
-                BarColumn(),
-                TaskProgressColumn(),
-                console=console,
-            )
-            task = progress.add_task("Processing data feeds...", total=total_feeds)
+        # 重定向 sys.stdout 以抑制 NautilusTrader 的 print() 输出
+        import io
 
+        original_stdout = sys.stdout
+        sys.stdout = io.StringIO()
+
+        try:
+            with Live(console=console, refresh_per_second=4) as live:
+                progress = Progress(
+                    SpinnerColumn(),
+                    TextColumn("[progress.description]{task.description}"),
+                    BarColumn(),
+                    TaskProgressColumn(),
+                    console=console,
+                )
+                task = progress.add_task("Processing data feeds...", total=total_feeds)
+
+                for feed_idx, data_cfg in enumerate(cfg.data_feeds, 1):
+                    inst_id, feed_bar_type_str, bar_type_str, status_msg, _ = _process_data_feed(
+                        feed_idx, total_feeds, data_cfg, cfg, loaded_instruments, _catalog, stats
+                    )
+
+                    if inst_id is None:
+                        progress.advance(task)
+                        # 更新显示
+                        live.update(
+                            Panel.fit(progress, title="Data Preparation", border_style="green")
+                        )
+                        continue
+
+                    # 更新进度描述
+                    symbol = (
+                        str(loaded_instruments[inst_id].id)
+                        if inst_id in loaded_instruments
+                        else "Unknown"
+                    )
+                    progress.update(task, description=f"Processing {symbol}...")
+                    progress.advance(task)
+
+                    # 更新显示：进度条 + 统计信息
+                    from rich.layout import Layout
+
+                    layout = Layout()
+                    layout.split_column(
+                        Layout(progress, size=3),
+                        Layout(
+                            Panel(_make_stats_table(), title="Statistics", border_style="blue"),
+                            size=7,
+                        ),
+                    )
+                    live.update(layout)
+
+                    # 归类数据流
+                    if feed_bar_type_str is not None:
+                        _categorize_data_feed(
+                            inst_id, feed_bar_type_str, data_cfg, global_feeds, feeds_by_inst
+                        )
+
+                    # 更新数据配置
+                    inst = loaded_instruments[inst_id]
+                    if bar_type_str is not None:
+                        _update_data_config(
+                            str(inst.id), inst, bar_type_str, catalog_path, data_config_by_inst
+                        )
+        finally:
+            # 恢复 sys.stdout
+            sys.stdout = original_stdout
+    else:
+        # 回退到传统日志模式
+        # 统一重定向 sys.stdout 以抑制 NautilusTrader 的 print() 输出
+        import io
+
+        original_stdout = sys.stdout
+        sys.stdout = io.StringIO()
+
+        coverage_warnings = []  # 收集 coverage 警告
+
+        try:
             for feed_idx, data_cfg in enumerate(cfg.data_feeds, 1):
-                inst_id, feed_bar_type_str, bar_type_str, status_msg = _process_data_feed(
-                    feed_idx, total_feeds, data_cfg, cfg, loaded_instruments, _catalog, stats
+                inst_id, feed_bar_type_str, bar_type_str, status_msg, coverage_warning = (
+                    _process_data_feed(
+                        feed_idx,
+                        total_feeds,
+                        data_cfg,
+                        cfg,
+                        loaded_instruments,
+                        _catalog,
+                        None,
+                        silent=True,
+                    )
                 )
 
                 if inst_id is None:
-                    progress.advance(task)
-                    # 更新显示
-                    live.update(Panel.fit(progress, title="Data Preparation", border_style="green"))
                     continue
 
-                # 更新进度描述
-                symbol = (
-                    str(loaded_instruments[inst_id].id)
-                    if inst_id in loaded_instruments
-                    else "Unknown"
-                )
-                progress.update(task, description=f"Processing {symbol}...")
-                progress.advance(task)
+                # 收集 coverage 警告
+                if coverage_warning:
+                    coverage_warnings.append(coverage_warning)
 
-                # 更新显示：进度条 + 统计信息
-                from rich.layout import Layout
-
-                layout = Layout()
-                layout.split_column(
-                    Layout(progress, size=3),
-                    Layout(
-                        Panel(_make_stats_table(), title="Statistics", border_style="blue"), size=7
-                    ),
+                # Flush 形式的进度输出（覆盖同一行）
+                percentage = (feed_idx / total_feeds) * 100
+                sys.stderr.write(
+                    f"\rProcessing data feeds: {feed_idx}/{total_feeds} ({percentage:.1f}%)"
                 )
-                live.update(layout)
+                sys.stderr.flush()
 
                 # 归类数据流
                 if feed_bar_type_str is not None:
@@ -746,31 +832,21 @@ def _import_data_to_catalog(
                     _update_data_config(
                         str(inst.id), inst, bar_type_str, catalog_path, data_config_by_inst
                     )
-    else:
-        # 回退到传统日志模式（不使用 stats，直接输出日志）
-        for feed_idx, data_cfg in enumerate(cfg.data_feeds, 1):
-            inst_id, feed_bar_type_str, bar_type_str, status_msg = _process_data_feed(
-                feed_idx, total_feeds, data_cfg, cfg, loaded_instruments, _catalog, None
-            )
 
-            if inst_id is None:
-                continue
+            # 换行，结束进度输出
+            sys.stderr.write("\n")
 
-            sys.stdout.write(status_msg)
-            sys.stdout.flush()
+            # 统一输出 coverage 警告
+            if coverage_warnings:
+                logger.warning("=" * 80)
+                logger.warning("⚠️  Data Coverage Issues:")
+                for warning in coverage_warnings:
+                    logger.warning(f"  - {warning}")
+                logger.warning("=" * 80)
 
-            # 归类数据流
-            if feed_bar_type_str is not None:
-                _categorize_data_feed(
-                    inst_id, feed_bar_type_str, data_cfg, global_feeds, feeds_by_inst
-                )
-
-            # 更新数据配置
-            inst = loaded_instruments[inst_id]
-            if bar_type_str is not None:
-                _update_data_config(
-                    str(inst.id), inst, bar_type_str, catalog_path, data_config_by_inst
-                )
+        finally:
+            # 恢复 sys.stdout
+            sys.stdout = original_stdout
 
     logger.info(f"\n✅ Data import complete. Created {len(data_config_by_inst)} data configs.")
     return data_config_by_inst, global_feeds, feeds_by_inst

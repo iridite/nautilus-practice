@@ -78,6 +78,16 @@ class BacktestTUIManager:
         if self.live and self._is_active:
             self.live.stop()
             self._is_active = False
+            # 清空终端，避免 TUI 界面被后续输出推上去
+            self.console.clear()
+
+    def get_stats_summary(self) -> dict:
+        """获取统计信息摘要"""
+        return self.stats.copy()
+
+    def is_active(self) -> bool:
+        """检查 TUI 是否活跃"""
+        return self._is_active
 
     def start_phase(self, phase_name: str, total: Optional[int] = None):
         """开始新阶段"""

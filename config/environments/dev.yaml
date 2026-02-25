@@ -10,14 +10,14 @@ backtest:
 
 # 开发环境使用更详细的日志便于调试
 logging:
-  level: "INFO"
+  level: "DEBUG"
   file_level: "DEBUG"
   components:
     BacktestEngine: "INFO"
     DataFeed: "DEBUG"
     Strategy: "DEBUG"
     # not OrderMatchingEngine: "DEBUG"
-  components_only: true
+  components_only: false
 
 # 开发环境使用较小的初始资金进行快速测试
 trading:

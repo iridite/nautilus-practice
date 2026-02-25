@@ -260,6 +260,19 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
         self._is_active_cache: bool = True
         self._last_universe_period: str | None = None
 
+        # 过滤器统计（用于调试）
+        self.filter_stats = {
+            "total_bars": 0,
+            "not_in_universe": 0,
+            "btc_regime": 0,
+            "price_below_sma": 0,
+            "rs_weak": 0,
+            "volume_low": 0,
+            "keltner_no_breakout": 0,
+            "wick_ratio": 0,
+            "passed_all": 0,
+        }
+
     def on_start(self) -> None:
         """策略启动时初始化"""
         super().on_start()
@@ -299,6 +312,9 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
 
     def on_stop(self) -> None:
         """策略停止时清理资源"""
+        # 输出过滤器统计
+        self._log_filter_statistics()
+
         bar_type = BarType.from_str(self.config.bar_type)
         self.unsubscribe_bars(bar_type)
 
@@ -314,6 +330,63 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
                 FundingRateData, metadata={"instrument_id": self.instrument.id}
             )
             self.unsubscribe_data(funding_data_type)
+
+    def _log_filter_statistics(self) -> None:
+        """输出过滤器统计信息"""
+        symbol = self.instrument.id.symbol.value
+        total = self.filter_stats["total_bars"]
+
+        if total == 0:
+            self.log.info(f"[{symbol}] No bars processed")
+            return
+
+        self.log.info(f"\n{'=' * 60}")
+        self.log.info(f"Filter Statistics for {symbol}")
+        self.log.info(f"{'=' * 60}")
+        self.log.info(f"Total bars processed: {total}")
+        self.log.info(f"{'-' * 60}")
+
+        # 计算每个过滤器的拦截率
+        filters = [
+            ("Not in Universe", "not_in_universe"),
+            ("BTC Regime", "btc_regime"),
+            ("Price < SMA(200)", "price_below_sma"),
+            ("RS Weak", "rs_weak"),
+            ("Volume Low", "volume_low"),
+            ("Keltner No Breakout", "keltner_no_breakout"),
+            ("Wick Ratio", "wick_ratio"),
+        ]
+
+        for name, key in filters:
+            count = self.filter_stats[key]
+            pct = (count / total * 100) if total > 0 else 0
+            self.log.info(f"{name:25s}: {count:6d} ({pct:5.2f}%)")
+
+        passed = self.filter_stats["passed_all"]
+        passed_pct = (passed / total * 100) if total > 0 else 0
+        self.log.info(f"{'-' * 60}")
+        self.log.info(f"{'Passed All Filters':25s}: {passed:6d} ({passed_pct:5.2f}%)")
+        self.log.info(f"{'=' * 60}\n")
+
+        # 警告：如果所有信号都被拦截（使用 ERROR 级别确保始终显示）
+        if passed == 0 and total > 0:
+            self.log.error(
+                f"⚠️  [{symbol}] 100% of signals blocked by filters - no trades generated"
+            )
+
+            # 识别主要拦截器
+            top_blockers = []
+            for name, key in filters:
+                count = self.filter_stats[key]
+                pct = (count / total * 100) if total > 0 else 0
+                if pct > 10:  # 拦截率超过 10% 的过滤器
+                    top_blockers.append(f"{name} ({pct:.1f}%)")
+
+            if top_blockers:
+                self.log.error(f"   Main blockers: {', '.join(top_blockers)}")
+                self.log.error(
+                    "   Consider: adjusting filter thresholds or increasing universe_top_n"
+                )
 
     def _parse_base_symbol(self) -> None:
         """解析并缓存 base symbol（仅在启动时执行一次）"""
@@ -430,43 +503,68 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
         """检查入场条件"""
         close = float(bar.close)
         volume = float(bar.volume)
+        symbol = self.instrument.id.symbol.value
+
+        self.filter_stats["total_bars"] += 1
 
         # 基本条件
         if self._pending_entry_order:
+            self.log.debug(f"[{symbol}] ❌ Pending entry order exists")
             return False
 
         if not self._is_symbol_active():
+            self.filter_stats["not_in_universe"] += 1
+            self.log.debug(f"[{symbol}] ❌ Not in Universe")
             return False
 
         # 市场过滤器
         if self.config.enable_btc_regime_filter:
             if not self.btc_regime_filter.is_favorable_for_altcoins():
+                self.filter_stats["btc_regime"] += 1
+                self.log.debug(f"[{symbol}] ❌ BTC regime unfavorable")
                 return False
 
         if self.config.enable_euphoria_filter:
             if self.market_euphoria_level in ("DANGER", "WARNING"):
+                self.log.debug(f"[{symbol}] ❌ Market euphoria: {self.market_euphoria_level}")
                 return False
 
         # 价格和相对强度
         if self.keltner.sma is None or close < self.keltner.sma:
+            self.filter_stats["price_below_sma"] += 1
+            self.log.debug(f"[{symbol}] ❌ Price < SMA(200): {close:.2f} < {self.keltner.sma}")
             return False
 
+        rs_value = self.rs_calculator.calculate_rs()
         if not self.rs_calculator.is_strong(threshold=RS_THRESHOLD):
+            self.filter_stats["rs_weak"] += 1
+            self.log.debug(f"[{symbol}] ❌ RS not strong: {rs_value}")
             return False
 
         # 成交量
         if not self.entry_signals.check_volume_surge(volume, self.keltner.volume_sma):
+            self.filter_stats["volume_low"] += 1
+            vol_ratio = volume / self.keltner.volume_sma if self.keltner.volume_sma else 0
+            self.log.debug(f"[{symbol}] ❌ Volume surge failed: {vol_ratio:.2f}x")
             return False
 
         # Keltner 突破
         keltner_trigger_upper, _ = self.keltner.get_keltner_trigger_bands()
         if not self.entry_signals.check_keltner_breakout(close, keltner_trigger_upper):
+            self.filter_stats["keltner_no_breakout"] += 1
+            self.log.debug(
+                f"[{symbol}] ❌ Keltner breakout failed: {close:.2f} vs {keltner_trigger_upper:.2f}"
+            )
             return False
 
         # 上影线比例
         if not self.entry_signals.check_wick_ratio(float(bar.high), float(bar.low), close):
+            self.filter_stats["wick_ratio"] += 1
+            self.log.debug(f"[{symbol}] ❌ Wick ratio check failed")
             return False
 
+        self.filter_stats["passed_all"] += 1
+        self.log.info(f"[{symbol}] ✅ All entry conditions passed at {bar.ts_event}!")
         return True
 
     def on_bar(self, bar: Bar) -> None:
