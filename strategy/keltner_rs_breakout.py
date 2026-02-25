@@ -295,12 +295,23 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
         self.subscribe_bars(bar_type)
 
         # 订阅 BTC Bar 数据
-        if self.instrument.id != self.btc_instrument_id:
-            btc_bar_type_str = self.config.bar_type.replace(
-                self.instrument.id.symbol.value, self.btc_instrument_id.symbol.value
-            )
-            btc_bar_type = BarType.from_str(btc_bar_type_str)
+        # 注意：即使主标的是 BTC，也需要订阅（用于 RS 计算的 benchmark）
+        btc_bar_type_str = self.config.bar_type.replace(
+            self.instrument.id.symbol.value, self.btc_instrument_id.symbol.value
+        )
+        btc_bar_type = BarType.from_str(btc_bar_type_str)
+
+        self.log.info(
+            f"[{self.instrument.symbol}] Subscribing to BTC bar: "
+            f"main_bar={bar_type}, btc_bar={btc_bar_type}, same={btc_bar_type == bar_type}"
+        )
+
+        # 只有当 bar_type 不同时才订阅（避免重复订阅）
+        if btc_bar_type != bar_type:
             self.subscribe_bars(btc_bar_type)
+            self.log.info(f"[{self.instrument.symbol}] ✅ Subscribed to BTC bar")
+        else:
+            self.log.info(f"[{self.instrument.symbol}] ⚠️ Skipped BTC subscription (same as main)")
 
         # 订阅 Funding Rate 数据
         if self.config.enable_euphoria_filter:
@@ -479,6 +490,10 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
         low = float(bar.low)
         close = float(bar.close)
 
+        self.log.debug(
+            f"[{self.instrument.symbol}] Processing BTC bar: ts={bar.ts_event}, close={close}"
+        )
+
         # 更新 BTC 市场状态过滤器
         self.btc_regime_filter.update(high, low, close)
 
@@ -535,8 +550,13 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
             self.log.debug(f"[{symbol}] ❌ Price < SMA(200): {close:.2f} < {self.keltner.sma}")
             return False
 
-        rs_value = self.rs_calculator.calculate_rs()
-        if not self.rs_calculator.is_strong(threshold=RS_THRESHOLD):
+        # RS 计算（短路优化：避免重复��算）
+        # 特殊情况：如果主标的就是 BTC，RS 视为 0（不强于自己）
+        if self.instrument.id == self.btc_instrument_id:
+            rs_value = 0.0
+        else:
+            rs_value = self.rs_calculator.calculate_rs()
+        if rs_value is None or rs_value <= RS_THRESHOLD:
             self.filter_stats["rs_weak"] += 1
             self.log.debug(f"[{symbol}] ❌ RS not strong: {rs_value}")
             return False
@@ -569,12 +589,29 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
 
     def on_bar(self, bar: Bar) -> None:
         """处理 Bar 数据"""
-        if bar.bar_type.instrument_id == self.instrument.id:
-            self._process_main_instrument_bar(bar)
-        elif bar.bar_type.instrument_id == self.btc_instrument_id:
+        is_main_instrument = bar.bar_type.instrument_id == self.instrument.id
+        is_btc_instrument = bar.bar_type.instrument_id == self.btc_instrument_id
+
+        # DEBUG: 记录 bar 接收情况
+        if self.instrument.symbol.value == "BTCUSDT-PERP":
+            self.log.debug(
+                f"[{self.instrument.symbol}] Received bar: "
+                f"bar_instrument={bar.bar_type.instrument_id}, "
+                f"is_main={is_main_instrument}, is_btc={is_btc_instrument}"
+            )
+
+        # 先处理 BTC benchmark bar（如果是）
+        if is_btc_instrument:
             self._process_btc_bar(bar)
+
+        # 处理主标的 bar
+        if is_main_instrument:
+            self._process_main_instrument_bar(bar)
+        elif not is_btc_instrument:
+            # 既不是主标的也不是 BTC，忽略
             return
         else:
+            # 是 BTC 但不是主标的，已处理完毕
             return
 
         # 更新 Universe 和活跃缓存

@@ -1,104 +1,48 @@
-# Keltner RS Breakout 策略配置
-# Keltner RS Breakout - 中低频趋势跟踪策略
-
-name: "KeltnerRSBreakoutStrategy"
-module_path: "strategy.keltner_rs_breakout"
-config_class: "KeltnerRSBreakoutConfig"
-
-# 策略参数
+config_class: KeltnerRSBreakoutConfig
+module_path: strategy.keltner_rs_breakout
+name: KeltnerRSBreakoutStrategy
 parameters:
-  # 交易标的由 Universe 动态管理（见 universe_top_n 参数）
-  timeframe: "1d"
-  price_type: "LAST"
-  origination: "EXTERNAL"
-  btc_symbol: "BTCUSDT"
-
-  # 时间框架依赖
-  timeframes: ["main"]
-
-  # 数据依赖声明
-  data_types: ["funding"]
-
-  # 指标参数
-  ema_period: 20
   atr_period: 20
-  sma_period: 200
+  base_risk_pct: 0.01
   bb_period: 20
   bb_std: 1.5
-  volume_period: 20
-
-  # 通道参数
-  keltner_base_multiplier: 1.5
-  keltner_trigger_multiplier: 2.8
-
-  # 风控参数
-  base_risk_pct: 0.01
-  high_conviction_risk_pct: 0.015
-  stop_loss_atr_multiplier: 2.6
+  breakeven_multiplier: 2.0
+  btc_max_atr_pct: 0.03
+  btc_regime_atr_period: 14
+  btc_regime_sma_period: 200
+  btc_symbol: BTCUSDT
+  data_types:
+  - funding
+  deviation_threshold: 0.25
+  ema_period: 20
+  enable_btc_regime_filter: false
+  enable_euphoria_filter: false
+  enable_rsi_stop_loss: false
   enable_time_stop: false
+  euphoria_reduce_position_pct: 0.5
+  funding_rate_danger_annual: 200.0
+  funding_rate_warning_annual: 100.0
+  high_conviction_risk_pct: 0.015
+  keltner_base_multiplier: 1.5
+  keltner_trigger_multiplier: 1.5
+  leverage: 2
+  max_positions: 5
+  max_upper_wick_ratio: 0.3
+  origination: EXTERNAL
+  price_type: LAST
+  rs_long_lookback_days: 20
+  rs_long_weight: 0.3
+  rs_short_lookback_days: 5
+  rs_short_weight: 0.7
+  sma_period: 200
+  squeeze_memory_days: 1
+  stop_loss_atr_multiplier: 2.6
   time_stop_bars: 3
   time_stop_momentum_threshold: 0.01
-  breakeven_multiplier: 2.0
-  # 只有当浮盈已经很厚（比如赚了 5% - 8%）时，才把 breakeven 止损激活。这时候价格通常已经脱离了成本区，回踩也很难踩到你的开仓价了。
-  deviation_threshold: 0.45
-  enable_rsi_stop_loss: false # RSI 止损
-  max_upper_wick_ratio: 0.3
-
-  # 过滤器参数
-  volume_multiplier: 2
-  rs_short_lookback_days: 5
-  rs_long_lookback_days: 20
-  rs_short_weight: 0.7
-  rs_long_weight: 0.3
-  squeeze_memory_days: 1
-
-  # BTC 市场状态过滤器参数
-  enable_btc_regime_filter: true
-  btc_regime_sma_period: 200
-  btc_regime_atr_period: 14
-  btc_max_atr_pct: 0.03
-
-  # 市场狂热度过滤器参数（基于 Funding Rate）
-  enable_euphoria_filter: false
-  funding_rate_warning_annual: 100.0 # 年化资金费率警告阈值（%）
-  funding_rate_danger_annual: 200.0 # 年化资金费率危险阈值（%）
-  euphoria_reduce_position_pct: 0.5 # 危险状态下的减仓比例（减仓50%，保留50%）
-
-  # Universe 参数
+  timeframe: 1d
+  timeframes:
+  - main
+  universe_freq: W-MON
   universe_top_n: 15
-  universe_freq: W-MON # Universe 更新周期（ME=月度, W-MON=周度, 2W-MON=双周）
-
-  # 最大持仓数量限制
-  # 说明（根据 oms_type 不同而不同）：
-  #
-  # HEDGING 模式（当前配置）：
-  # - 支持对同一币对开多个仓位（多空独立）
-  # - max_positions 限制所有币对的总持仓数
-  # - 例如：max_positions=10 可以是 ETH 3个 + SOL 2个 + BNB 3个 + DOGE 2个
-  # - 每个持仓独立管理止损
-  #
-  # NETTING 模式（如需切换）：
-  # - 每个币对最多1个仓位（多空会合并）
-  # - max_positions 限制不同币对的数量
-  # - 例如：15个标的最多持有15个仓位
-  # - 建议设置为 universe_top_n 的值
-  #
-  # 我们采用的是 Hold until stop 模式，理论上拥有一个无限大的缓冲区，只要 inactive 的币对不触发任何的止损机制那么策略就不会主动发起平仓
-  max_positions: 5
-
-  # 仓位管理
-  # 推荐使用 ATR 风险模式（注释掉 qty_percent）
-  #
-  # ATR 模式根据波动率动态调整仓位，回测收益提升约 5 倍（+61.78% vs +10.34%）
-  # 固定百分比模式（qty_percent: 0.1）收益较低但更保守
-
-  # 模式选择（二选一）：
-  # 1. 固定百分比模式
-  # qty_percent: 0.1
-
-  # 2. ATR 风险模式（推荐）
-  # use_atr_position_sizing: true
-  # max_position_risk_pct: 0.02  # 单笔交易最大风险 2%
-  # atr_stop_multiplier: 2.6     # 使用策略中已定义的 stop_loss_atr_multiplier
-
-  leverage: 2
+  volume_multiplier: 2
+  volume_period: 20
