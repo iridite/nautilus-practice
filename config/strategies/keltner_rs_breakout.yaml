@@ -88,9 +88,17 @@ parameters:
 
   # 仓位管理
   # 推荐使用 ATR 风险模式（注释掉 qty_percent）
-  # TODO: ATR 风险模式怎么缺少了对应的参数？
   #
   # ATR 模式根据波动率动态调整仓位，回测收益提升约 5 倍（+61.78% vs +10.34%）
   # 固定百分比模式（qty_percent: 0.1）收益较低但更保守
+
+  # 模式选择（二选一）：
+  # 1. 固定百分比模式
   # qty_percent: 0.1
+
+  # 2. ATR 风险模式（推荐）
+  # use_atr_position_sizing: true
+  # max_position_risk_pct: 0.02  # 单笔交易最大风险 2%
+  # atr_stop_multiplier: 2.6     # 使用策略中已定义的 stop_loss_atr_multiplier
+
   leverage: 2
