@@ -388,7 +388,7 @@ def _handle_csv_missing(
     # 检查Parquet覆盖率
     is_sufficient, coverage_pct = _check_parquet_coverage(catalog, bar_type, cfg, stats)
 
-    if parquet_exists and coverage_pct < 95.0:
+    if coverage_pct > 0.0 and coverage_pct < 95.0:
         return _handle_incomplete_parquet(
             catalog,
             csv_path,
