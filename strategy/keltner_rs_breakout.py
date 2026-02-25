@@ -382,7 +382,7 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
 
             if top_blockers:
                 self.log.error(f"   Main blockers: {', '.join(top_blockers)}")
-                self.log.error(f"   Consider: adjusting filter thresholds or increasing universe_top_n")
+                self.log.error("   Consider: adjusting filter thresholds or increasing universe_top_n")
 
     def _parse_base_symbol(self) -> None:
         """解析并缓存 base symbol（仅在启动时执行一次）"""
