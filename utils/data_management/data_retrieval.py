@@ -322,7 +322,7 @@ def batch_fetch_ohlcv(
         tui.add_log(
             f"Complete: {len(configs)}/{total} symbols "
             f"(fetched: {fetched_count}, cached: {cached_count}, skipped: {skipped_count})",
-            "INFO"
+            "INFO",
         )
     else:
         logger.info(

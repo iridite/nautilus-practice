@@ -340,11 +340,11 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
             self.log.info(f"[{symbol}] No bars processed")
             return
 
-        self.log.info(f"\n{'='*60}")
+        self.log.info(f"\n{'=' * 60}")
         self.log.info(f"Filter Statistics for {symbol}")
-        self.log.info(f"{'='*60}")
+        self.log.info(f"{'=' * 60}")
         self.log.info(f"Total bars processed: {total}")
-        self.log.info(f"{'-'*60}")
+        self.log.info(f"{'-' * 60}")
 
         # 计算每个过滤器的拦截率
         filters = [
@@ -364,13 +364,15 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
 
         passed = self.filter_stats["passed_all"]
         passed_pct = (passed / total * 100) if total > 0 else 0
-        self.log.info(f"{'-'*60}")
+        self.log.info(f"{'-' * 60}")
         self.log.info(f"{'Passed All Filters':25s}: {passed:6d} ({passed_pct:5.2f}%)")
-        self.log.info(f"{'='*60}\n")
+        self.log.info(f"{'=' * 60}\n")
 
         # 警告：如果所有信号都被拦截（使用 ERROR 级别确保始终显示）
         if passed == 0 and total > 0:
-            self.log.error(f"⚠️  [{symbol}] 100% of signals blocked by filters - no trades generated")
+            self.log.error(
+                f"⚠️  [{symbol}] 100% of signals blocked by filters - no trades generated"
+            )
 
             # 识别主要拦截器
             top_blockers = []
@@ -382,7 +384,9 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
 
             if top_blockers:
                 self.log.error(f"   Main blockers: {', '.join(top_blockers)}")
-                self.log.error("   Consider: adjusting filter thresholds or increasing universe_top_n")
+                self.log.error(
+                    "   Consider: adjusting filter thresholds or increasing universe_top_n"
+                )
 
     def _parse_base_symbol(self) -> None:
         """解析并缓存 base symbol（仅在启动时执行一次）"""
@@ -548,7 +552,9 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
         keltner_trigger_upper, _ = self.keltner.get_keltner_trigger_bands()
         if not self.entry_signals.check_keltner_breakout(close, keltner_trigger_upper):
             self.filter_stats["keltner_no_breakout"] += 1
-            self.log.debug(f"[{symbol}] ❌ Keltner breakout failed: {close:.2f} vs {keltner_trigger_upper:.2f}")
+            self.log.debug(
+                f"[{symbol}] ❌ Keltner breakout failed: {close:.2f} vs {keltner_trigger_upper:.2f}"
+            )
             return False
 
         # 上影线比例

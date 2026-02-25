@@ -716,6 +716,7 @@ def _import_data_to_catalog(
 
         # 重定向 sys.stdout 以抑制 NautilusTrader 的 print() 输出
         import io
+
         original_stdout = sys.stdout
         sys.stdout = io.StringIO()
 
@@ -738,7 +739,9 @@ def _import_data_to_catalog(
                     if inst_id is None:
                         progress.advance(task)
                         # 更新显示
-                        live.update(Panel.fit(progress, title="Data Preparation", border_style="green"))
+                        live.update(
+                            Panel.fit(progress, title="Data Preparation", border_style="green")
+                        )
                         continue
 
                     # 更新进度描述
@@ -757,7 +760,8 @@ def _import_data_to_catalog(
                     layout.split_column(
                         Layout(progress, size=3),
                         Layout(
-                            Panel(_make_stats_table(), title="Statistics", border_style="blue"), size=7
+                            Panel(_make_stats_table(), title="Statistics", border_style="blue"),
+                            size=7,
                         ),
                     )
                     live.update(layout)
@@ -781,6 +785,7 @@ def _import_data_to_catalog(
         # 回退到传统日志模式
         # 统一重定向 sys.stdout 以抑制 NautilusTrader 的 print() 输出
         import io
+
         original_stdout = sys.stdout
         sys.stdout = io.StringIO()
 
@@ -788,8 +793,17 @@ def _import_data_to_catalog(
 
         try:
             for feed_idx, data_cfg in enumerate(cfg.data_feeds, 1):
-                inst_id, feed_bar_type_str, bar_type_str, status_msg, coverage_warning = _process_data_feed(
-                    feed_idx, total_feeds, data_cfg, cfg, loaded_instruments, _catalog, None, silent=True
+                inst_id, feed_bar_type_str, bar_type_str, status_msg, coverage_warning = (
+                    _process_data_feed(
+                        feed_idx,
+                        total_feeds,
+                        data_cfg,
+                        cfg,
+                        loaded_instruments,
+                        _catalog,
+                        None,
+                        silent=True,
+                    )
                 )
 
                 if inst_id is None:
@@ -801,7 +815,9 @@ def _import_data_to_catalog(
 
                 # Flush 形式的进度输出（覆盖同一行）
                 percentage = (feed_idx / total_feeds) * 100
-                sys.stderr.write(f"\rProcessing data feeds: {feed_idx}/{total_feeds} ({percentage:.1f}%)")
+                sys.stderr.write(
+                    f"\rProcessing data feeds: {feed_idx}/{total_feeds} ({percentage:.1f}%)"
+                )
                 sys.stderr.flush()
 
                 # 归类数据流
