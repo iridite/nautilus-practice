@@ -99,13 +99,31 @@ class ConfigAdapter:
         """
         获取主时间框架
 
-        active.yaml 的 timeframe 优先覆盖环境配置。
+        优先级：active.yaml > 策略配置 > 环境配置
 
         Returns:
             时间框架字符串（如 1h, 4h, 1d）
         """
-        # active.yaml 的 timeframe 优先覆盖环境配置
-        return self.active_config.timeframe or self.env_config.trading.main_timeframe
+        # 优先级：active.yaml > 策略配置 > 环境配置
+        if self.active_config.timeframe:
+            return self.active_config.timeframe
+
+        strategy_timeframe = self.strategy_config.parameters.get("timeframe")
+        if strategy_timeframe:
+            return strategy_timeframe
+
+        # 回退到环境配置（timeframes 是动态字段，可能是字典或对象）
+        timeframes = getattr(self.env_config, "timeframes", None)
+        if timeframes:
+            if isinstance(timeframes, dict):
+                main_tf = timeframes.get("main")
+                if main_tf:
+                    return main_tf
+            elif hasattr(timeframes, "main"):
+                return timeframes.main
+
+        # 最终回退值
+        return "1h"
 
     def get_trend_timeframe(self) -> str:
         """
@@ -114,7 +132,18 @@ class ConfigAdapter:
         Returns:
             时间框架字符串（如 1d, 1w）
         """
-        return self.env_config.trading.trend_timeframe
+        # timeframes 是动态字段，可能是字典或对象
+        timeframes = getattr(self.env_config, "timeframes", None)
+        if timeframes:
+            if isinstance(timeframes, dict):
+                trend_tf = timeframes.get("trend")
+                if trend_tf:
+                    return trend_tf
+            elif hasattr(timeframes, "trend"):
+                return timeframes.trend
+
+        # 最终回退值
+        return "4h"
 
     def get_primary_symbol(self) -> str:
         """
