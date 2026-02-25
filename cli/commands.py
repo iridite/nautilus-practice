@@ -3,6 +3,7 @@
 import asyncio
 import logging
 import sys
+import time
 from pathlib import Path
 
 # 添加项目根目录到 Python 路径
@@ -150,6 +151,40 @@ def run_backtest(args, adapter, base_dir: Path):
             cfg.strategy, "strategy_path", getattr(cfg.strategy, "class_name", "Unknown")
         )
         tui.add_log(f"Strategy: {strategy_name}", "INFO")
+
+        # 停止 TUI 并切换到标准 logging
+        time.sleep(0.5)  # 短暂延迟，让用户看到最后的状态
+        stats = tui.get_stats_summary()
+        tui.stop()
+
+        # 重新配置 logging 使用标准输出
+        from utils.logging_config import setup_logging
+        setup_logging(level=logging.INFO, force_standard=True)
+
+        # 输出数据处理总结
+        logger.info("=" * 80)
+        logger.info("✅ Data preparation complete")
+        logger.info("-" * 80)
+
+        if stats:
+            fetched = stats.get("fetched", 0)
+            cached = stats.get("cached", 0)
+            skipped = stats.get("skipped", 0)
+            if fetched or cached or skipped:
+                logger.info(f"Data retrieval: {fetched} fetched, {cached} cached, {skipped} skipped")
+
+            inst_new = stats.get("instruments_new", 0)
+            inst_existed = stats.get("instruments_existed", 0)
+            inst_failed = stats.get("instruments_failed", 0)
+            if inst_new or inst_existed or inst_failed:
+                logger.info(f"Instruments: {inst_new} new, {inst_existed} existed, {inst_failed} failed")
+
+        logger.info("-" * 80)
+        logger.info(f"🚀 Starting backtest engine ({args.type} level)...")
+        logger.info("=" * 80)
+
+        # 暂停 1.5 秒，让用户阅读数据处理总结
+        time.sleep(1.5)
     else:
         logger.info(f"Starting backtest: {args.type}")
         strategy_name = getattr(
@@ -162,11 +197,8 @@ def run_backtest(args, adapter, base_dir: Path):
     else:
         run_low_level(cfg, base_dir)
 
-    # Cleanup
-    if use_tui:
-        tui.start_phase("Cleanup")
-    else:
-        logger.info("Running cleanup...")
+    # Cleanup（TUI 已停止，使用普通 logging）
+    logger.info("Running cleanup...")
 
     fc = adapter.env_config.file_cleanup
     if fc.use_time_rotation:
@@ -185,7 +217,4 @@ def run_backtest(args, adapter, base_dir: Path):
             target_dirs=fc.target_dirs,
         )
 
-    if use_tui:
-        tui.start_phase("Backtest Complete")
-    else:
-        logger.info("Backtest complete")
+    logger.info("✅ Backtest complete")

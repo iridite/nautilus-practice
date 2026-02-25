@@ -663,10 +663,16 @@ def _import_data_to_catalog(
     global_feeds: Dict[str, str] = {}
     total_feeds = len(cfg.data_feeds)
 
-    # 使用 Rich Progress 显示进度
+    # 使用 Rich Progress 显示进度（仅当 TUI 活跃时）
     import os
+    from backtest.tui_manager import get_tui
 
-    use_progress = os.getenv("NAUTILUS_USE_TUI", "true").lower() != "false" and sys.stdout.isatty()
+    tui = get_tui()
+    use_progress = (
+        os.getenv("NAUTILUS_USE_TUI", "true").lower() != "false"
+        and sys.stdout.isatty()
+        and tui.is_active()
+    )
 
     # 统计信息
     stats = {
@@ -692,60 +698,69 @@ def _import_data_to_catalog(
     if use_progress:
         console = Console()
 
-        with Live(console=console, refresh_per_second=4) as live:
-            progress = Progress(
-                SpinnerColumn(),
-                TextColumn("[progress.description]{task.description}"),
-                BarColumn(),
-                TaskProgressColumn(),
-                console=console,
-            )
-            task = progress.add_task("Processing data feeds...", total=total_feeds)
+        # 重定向 sys.stdout 以抑制 NautilusTrader 的 print() 输出
+        import io
+        original_stdout = sys.stdout
+        sys.stdout = io.StringIO()
 
-            for feed_idx, data_cfg in enumerate(cfg.data_feeds, 1):
-                inst_id, feed_bar_type_str, bar_type_str, status_msg = _process_data_feed(
-                    feed_idx, total_feeds, data_cfg, cfg, loaded_instruments, _catalog, stats
+        try:
+            with Live(console=console, refresh_per_second=4) as live:
+                progress = Progress(
+                    SpinnerColumn(),
+                    TextColumn("[progress.description]{task.description}"),
+                    BarColumn(),
+                    TaskProgressColumn(),
+                    console=console,
                 )
+                task = progress.add_task("Processing data feeds...", total=total_feeds)
 
-                if inst_id is None:
+                for feed_idx, data_cfg in enumerate(cfg.data_feeds, 1):
+                    inst_id, feed_bar_type_str, bar_type_str, status_msg = _process_data_feed(
+                        feed_idx, total_feeds, data_cfg, cfg, loaded_instruments, _catalog, stats
+                    )
+
+                    if inst_id is None:
+                        progress.advance(task)
+                        # 更新显示
+                        live.update(Panel.fit(progress, title="Data Preparation", border_style="green"))
+                        continue
+
+                    # 更新进度描述
+                    symbol = (
+                        str(loaded_instruments[inst_id].id)
+                        if inst_id in loaded_instruments
+                        else "Unknown"
+                    )
+                    progress.update(task, description=f"Processing {symbol}...")
                     progress.advance(task)
-                    # 更新显示
-                    live.update(Panel.fit(progress, title="Data Preparation", border_style="green"))
-                    continue
 
-                # 更新进度描述
-                symbol = (
-                    str(loaded_instruments[inst_id].id)
-                    if inst_id in loaded_instruments
-                    else "Unknown"
-                )
-                progress.update(task, description=f"Processing {symbol}...")
-                progress.advance(task)
+                    # 更新显示：进度条 + 统计信息
+                    from rich.layout import Layout
 
-                # 更新显示：进度条 + 统计信息
-                from rich.layout import Layout
-
-                layout = Layout()
-                layout.split_column(
-                    Layout(progress, size=3),
-                    Layout(
-                        Panel(_make_stats_table(), title="Statistics", border_style="blue"), size=7
-                    ),
-                )
-                live.update(layout)
-
-                # 归类数据流
-                if feed_bar_type_str is not None:
-                    _categorize_data_feed(
-                        inst_id, feed_bar_type_str, data_cfg, global_feeds, feeds_by_inst
+                    layout = Layout()
+                    layout.split_column(
+                        Layout(progress, size=3),
+                        Layout(
+                            Panel(_make_stats_table(), title="Statistics", border_style="blue"), size=7
+                        ),
                     )
+                    live.update(layout)
 
-                # 更新数据配置
-                inst = loaded_instruments[inst_id]
-                if bar_type_str is not None:
-                    _update_data_config(
-                        str(inst.id), inst, bar_type_str, catalog_path, data_config_by_inst
-                    )
+                    # 归类数据流
+                    if feed_bar_type_str is not None:
+                        _categorize_data_feed(
+                            inst_id, feed_bar_type_str, data_cfg, global_feeds, feeds_by_inst
+                        )
+
+                    # 更新数据配置
+                    inst = loaded_instruments[inst_id]
+                    if bar_type_str is not None:
+                        _update_data_config(
+                            str(inst.id), inst, bar_type_str, catalog_path, data_config_by_inst
+                        )
+        finally:
+            # 恢复 sys.stdout
+            sys.stdout = original_stdout
     else:
         # 回退到传统日志模式（不使用 stats，直接输出日志）
         for feed_idx, data_cfg in enumerate(cfg.data_feeds, 1):

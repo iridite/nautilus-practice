@@ -4,13 +4,14 @@ import logging
 import sys
 from pathlib import Path
 
-logger = logging.getLogger(__name__)
-
 # Add workspace root to sys.path
 BASE_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(BASE_DIR))
 
 from backtest.tui_manager import get_tui, is_tui_enabled
+from utils.logging_config import setup_logging
+
+logger = logging.getLogger(__name__)
 from cli.commands import (
     check_and_fetch_strategy_data,
     run_backtest,
@@ -77,6 +78,9 @@ def parse_arguments():
 
 def main():
     """主入口"""
+    # 配置 logging（必须在任何 logger 调用之前）
+    setup_logging(level=logging.INFO)
+
     args = parse_arguments()
 
     if not args.command:
