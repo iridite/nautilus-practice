@@ -13,7 +13,7 @@ parameters:
   btc_symbol: BTCUSDT
   data_types:
   - funding
-  deviation_threshold: 0.25
+  deviation_threshold: 0.38
   ema_period: 20
   enable_btc_regime_filter: false
   enable_euphoria_filter: false
@@ -24,7 +24,7 @@ parameters:
   funding_rate_warning_annual: 100.0
   high_conviction_risk_pct: 0.015
   keltner_base_multiplier: 1.5
-  keltner_trigger_multiplier: 1.5
+  keltner_trigger_multiplier: 2.3
   leverage: 2
   max_positions: 5
   max_upper_wick_ratio: 0.3
