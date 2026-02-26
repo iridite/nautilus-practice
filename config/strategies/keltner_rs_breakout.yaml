@@ -3,17 +3,17 @@ module_path: strategy.keltner_rs_breakout
 name: KeltnerRSBreakoutStrategy
 parameters:
   atr_period: 20
-  base_risk_pct: 0.01
+  base_risk_pct: 0.05
   bb_period: 20
   bb_std: 1.5
-  breakeven_multiplier: 2.0
+  breakeven_multiplier: 1.5
   btc_max_atr_pct: 0.03
   btc_regime_atr_period: 14
   btc_regime_sma_period: 200
   btc_symbol: BTCUSDT
   data_types:
   - funding
-  deviation_threshold: 0.38
+  deviation_threshold: 0.35
   ema_period: 20
   enable_btc_regime_filter: false
   enable_euphoria_filter: false
@@ -22,12 +22,12 @@ parameters:
   euphoria_reduce_position_pct: 0.5
   funding_rate_danger_annual: 200.0
   funding_rate_warning_annual: 100.0
-  high_conviction_risk_pct: 0.015
+  high_conviction_risk_pct: 0.075
   keltner_base_multiplier: 1.5
   keltner_trigger_multiplier: 2.3
   leverage: 2
   max_positions: 5
-  max_upper_wick_ratio: 0.3
+  max_upper_wick_ratio: 0.4
   origination: EXTERNAL
   price_type: LAST
   rs_long_lookback_days: 20
@@ -44,5 +44,5 @@ parameters:
   - main
   universe_freq: W-MON
   universe_top_n: 15
-  volume_multiplier: 2
+  volume_multiplier: 1.2
   volume_period: 20
