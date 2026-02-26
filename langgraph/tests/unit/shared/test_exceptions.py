@@ -7,8 +7,8 @@ from langgraph.shared.exceptions import (
     LangGraphError,
     LLMError,
     OptimizationError,
+    ParameterValidationError,
     StrategyError,
-    ValidationError,
 )
 
 
@@ -100,19 +100,19 @@ class TestLLMError:
         assert error.context == context
 
 
-class TestValidationError:
-    """Test validation-related exceptions."""
+class TestParameterValidationError:
+    """Test parameter validation-related exceptions."""
 
-    def test_validation_error(self):
-        """Test validation error creation."""
-        error = ValidationError("Invalid configuration")
+    def test_parameter_validation_error(self):
+        """Test parameter validation error creation."""
+        error = ParameterValidationError("Invalid configuration")
         assert str(error) == "Invalid configuration"
         assert isinstance(error, LangGraphError)
 
-    def test_validation_error_with_context(self):
-        """Test validation error with context."""
+    def test_parameter_validation_error_with_context(self):
+        """Test parameter validation error with context."""
         context = {"field": "atr_period", "value": -1, "constraint": "must be positive"}
-        error = ValidationError("Validation failed", context=context)
+        error = ParameterValidationError("Validation failed", context=context)
         assert error.context == context
 
 
@@ -126,7 +126,7 @@ class TestExceptionHierarchy:
             OptimizationError("test"),
             BacktestError("test"),
             LLMError("test"),
-            ValidationError("test"),
+            ParameterValidationError("test"),
         ]
         for exc in exceptions:
             assert isinstance(exc, LangGraphError)

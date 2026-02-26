@@ -76,13 +76,17 @@ class LLMError(LangGraphError):
     pass
 
 
-class ValidationError(LangGraphError):
-    """Exception raised for validation errors.
+class ParameterValidationError(LangGraphError):
+    """Exception raised for parameter validation errors.
+
+    This exception is raised when strategy parameters, optimization parameters,
+    or other configuration values fail validation checks.
 
     Examples:
-        - Configuration validation failures
-        - Parameter constraint violations
-        - Schema validation errors
+        >>> raise ParameterValidationError(
+        ...     "ATR period must be positive",
+        ...     context={"param": "atr_period", "value": -1}
+        ... )
     """
 
     pass
