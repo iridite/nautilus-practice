@@ -51,3 +51,7 @@ parameters:
   universe_top_n: 15
   volume_multiplier: 1.2
   volume_period: 20
+  enable_short: true
+  short_trigger_multiplier: 2.8
+  short_stop_atr_multiplier: 2.0
+  short_body_position_threshold: 0.3

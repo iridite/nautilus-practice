@@ -33,6 +33,8 @@ from nautilus_trader.indicators import RelativeStrengthIndex
 from nautilus_trader.model.data import Bar, BarType, CustomData, DataType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import InstrumentId
+from ta.trend import ADXIndicator
+import pandas as pd
 
 from config.constants import (
     BASE_RISK_PCT,
@@ -78,6 +80,7 @@ from strategy.common.universe import DynamicUniverseManager
 from strategy.core.base import BaseStrategy, BaseStrategyConfig
 from utils import get_project_root
 from utils.custom_data import FundingRateData
+from indicators.choppiness_index import ChoppinessIndex
 
 TARGET_PRECISION = Decimal("0." + "0" * TARGET_PRECISION_DECIMALS)
 
@@ -150,6 +153,19 @@ class KeltnerRSBreakoutConfig(BaseStrategyConfig):
     min_stop_distance_pct: float = MIN_STOP_DISTANCE_PCT
     max_history_size: int = MAX_HISTORY_SIZE
 
+    # 市场状态机参数
+    adx_period: int = 14
+    chop_period: int = 14
+    adx_threshold: float = 20.0
+    chop_threshold: float = 61.8
+    min_squeeze_duration: int = 5
+
+    # 做空参数
+    enable_short: bool = False
+    short_trigger_multiplier: float = 2.8
+    short_stop_atr_multiplier: float = 2.0
+    short_body_position_threshold: float = 0.3
+
 
 class KeltnerRSBreakoutStrategy(BaseStrategy):
     """
@@ -216,6 +232,14 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
             memory_days=config.squeeze_memory_days,
         )
 
+        # 市场状态机指标
+        self.chop_indicator = ChoppinessIndex(period=config.chop_period)
+        self.adx_highs = []
+        self.adx_lows = []
+        self.adx_closes = []
+        self.adx_value: float | None = None
+        self.squeeze_duration = 0  # Squeeze 持续 K 线数
+
         # Universe 管理器
         self.universe_manager: DynamicUniverseManager | None = None
         if config.universe_top_n is not None:
@@ -246,11 +270,17 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
         self.market_euphoria_level: str = "NORMAL"
         self.euphoria_reduced: bool = False
 
-        # 持仓跟踪
+        # 持仓跟踪（做多）
         self.entry_price: Decimal | None = None
         self.quantity: Decimal | None = None
         self.entry_bar_count = 0
         self.highest_high: float | None = None
+
+        # 持仓跟踪（做空）
+        self.short_entry_price: Decimal | None = None
+        self.short_quantity: Decimal | None = None
+        self.short_entry_bar_count = 0
+        self.lowest_low: float | None = None
 
         # 订单状态跟踪
         self._pending_entry_order = False
@@ -270,6 +300,8 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
             "volume_low": 0,
             "keltner_no_breakout": 0,
             "wick_ratio": 0,
+            "choppy_regime": 0,
+            "squeeze_duration_short": 0,
             "passed_all": 0,
         }
 
@@ -484,6 +516,43 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
             self.rsi_indicator.handle_bar(bar)
             self.rsi = self.rsi_indicator.value
 
+        # 更新 CHOP 指标
+        self.chop_indicator.handle_bar(bar)
+
+        # 更新 ADX 指标（使用 pandas）
+        self.adx_highs.append(high)
+        self.adx_lows.append(low)
+        self.adx_closes.append(close)
+
+        # 保持窗口大小
+        max_window = self.config.adx_period + 50  # 留一些余量
+        if len(self.adx_highs) > max_window:
+            self.adx_highs.pop(0)
+            self.adx_lows.pop(0)
+            self.adx_closes.pop(0)
+
+        # 计算 ADX (需要至少 2*period 的数据才能稳定计算)
+        min_data_points = self.config.adx_period * 2
+        if len(self.adx_highs) >= min_data_points:
+            import pandas as pd
+            from ta.trend import ADXIndicator
+
+            df = pd.DataFrame({
+                'high': self.adx_highs,
+                'low': self.adx_lows,
+                'close': self.adx_closes
+            })
+            adx_indicator = ADXIndicator(
+                high=df['high'],
+                low=df['low'],
+                close=df['close'],
+                window=self.config.adx_period
+            )
+            adx_series = adx_indicator.adx()
+            # 只有当 ADX 计算完成时才更新值
+            if not adx_series.empty and not pd.isna(adx_series.iloc[-1]):
+                self.adx_value = adx_series.iloc[-1]
+
     def _process_btc_bar(self, bar: Bar) -> None:
         """处理 BTC Bar 数据"""
         high = float(bar.high)
@@ -500,15 +569,47 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
         # 更新 RS 计算器
         self.rs_calculator.update_benchmark_price(bar.ts_event, close)
 
-    def _handle_position_management(self, bar: Bar) -> None:
-        """处理持仓管理"""
+    def get_market_regime(self) -> str:
+        """
+        获取市场状态
+
+        Returns:
+            "BEAR": BTC < SMA(200)
+            "CHOPPY": ADX < 20 or CHOP > 61.8
+            "BULL": 其他情况
+        """
+        # 检查 BTC 市场状态
+        if not self.btc_regime_filter.is_bullish_regime():
+            return "BEAR"
+
+        # 检查震荡状态
+        if self.adx_value is not None and self.adx_value < self.config.adx_threshold:
+            return "CHOPPY"
+
+        if self.chop_indicator.initialized and self.chop_indicator.value > self.config.chop_threshold:
+            return "CHOPPY"
+
+        return "BULL"
+
+    def _handle_long_position_management(self, bar: Bar) -> None:
+        """处理做多持仓管理"""
         if self.highest_high is None:
             self.highest_high = float(bar.high)
         else:
             self.highest_high = max(self.highest_high, float(bar.high))
 
         self.entry_bar_count += 1
-        self._handle_exit(bar)
+        self._handle_long_exit(bar)
+
+    def _handle_short_position_management(self, bar: Bar) -> None:
+        """处理做空持仓管理"""
+        if self.lowest_low is None:
+            self.lowest_low = float(bar.low)
+        else:
+            self.lowest_low = min(self.lowest_low, float(bar.low))
+
+        self.short_entry_bar_count += 1
+        self._handle_short_exit(bar)
 
     def _is_symbol_active(self) -> bool:
         """判断当前币种是否活跃（使用缓存）"""
@@ -583,8 +684,92 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
             self.log.debug(f"[{symbol}] ❌ Wick ratio check failed")
             return False
 
+        # 市场状态机过滤：只在非震荡市场交易
+        market_regime = self.get_market_regime()
+        if market_regime == "CHOPPY":
+            self.filter_stats["choppy_regime"] += 1
+            self.log.debug(
+                f"[{symbol}] ❌ Market is choppy: ADX={self.adx_value}, CHOP={self.chop_indicator.value}"
+            )
+            return False
+
+        # Squeeze 持续时间检查
+        # 注意：这里需要在 on_bar 中更新 squeeze_duration
+        if self.squeeze_duration < self.config.min_squeeze_duration:
+            self.filter_stats["squeeze_duration_short"] += 1
+            self.log.debug(
+                f"[{symbol}] ❌ Squeeze duration too short: {self.squeeze_duration} < {self.config.min_squeeze_duration}"
+            )
+            return False
+
         self.filter_stats["passed_all"] += 1
         self.log.info(f"[{symbol}] ✅ All entry conditions passed at {bar.ts_event}!")
+        return True
+
+    def _check_short_entry_conditions(self, bar: Bar) -> bool:
+        """检查做空入场条件"""
+        close = float(bar.close)
+        high = float(bar.high)
+        low = float(bar.low)
+        volume = float(bar.volume)
+        symbol = self.instrument.id.symbol.value
+
+        # 基本条件
+        if self._pending_entry_order:
+            self.log.debug(f"[{symbol}] ❌ SHORT: Pending entry order exists")
+            return False
+
+        if not self._is_symbol_active():
+            self.log.debug(f"[{symbol}] ❌ SHORT: Not in Universe")
+            return False
+
+        # 市场过滤器：只在熊市做空
+        market_regime = self.get_market_regime()
+        if market_regime != "BEAR":
+            self.log.debug(f"[{symbol}] ❌ SHORT: Not in BEAR regime (current: {market_regime})")
+            return False
+
+        # 价格必须低于 SMA(200)
+        if self.keltner.sma is None or close > self.keltner.sma:
+            self.log.debug(f"[{symbol}] ❌ SHORT: Price > SMA(200): {close:.2f} > {self.keltner.sma}")
+            return False
+
+        # 成交量检查
+        if not self.entry_signals.check_volume_surge(volume, self.keltner.volume_sma):
+            vol_ratio = volume / self.keltner.volume_sma if self.keltner.volume_sma else 0
+            self.log.debug(f"[{symbol}] ❌ SHORT: Volume surge failed: {vol_ratio:.2f}x")
+            return False
+
+        # Keltner 下轨突破（使用做空专用倍数）
+        # 计算做空触发下轨
+        if self.keltner.ema is None or self.keltner.atr is None:
+            return False
+
+        short_trigger_lower = self.keltner.ema - (self.config.short_trigger_multiplier * self.keltner.atr)
+        if close > short_trigger_lower:
+            self.log.debug(
+                f"[{symbol}] ❌ SHORT: No breakdown: {close:.2f} > {short_trigger_lower:.2f}"
+            )
+            return False
+
+        # 实体位置过滤：收盘价必须在 K 线底部 30% 区域
+        bar_range = high - low
+        if bar_range > 0:
+            body_position = (close - low) / bar_range
+            if body_position > self.config.short_body_position_threshold:
+                self.log.debug(
+                    f"[{symbol}] ❌ SHORT: Body position too high: {body_position:.2%} > {self.config.short_body_position_threshold:.2%}"
+                )
+                return False
+
+        # Squeeze 持续时间检查
+        if self.squeeze_duration < self.config.min_squeeze_duration:
+            self.log.debug(
+                f"[{symbol}] ❌ SHORT: Squeeze duration too short: {self.squeeze_duration} < {self.config.min_squeeze_duration}"
+            )
+            return False
+
+        self.log.info(f"[{symbol}] ✅ SHORT: All entry conditions passed at {bar.ts_event}!")
         return True
 
     def on_bar(self, bar: Bar) -> None:
@@ -631,14 +816,29 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
             keltner_lower,
         )
 
+        # 更新 Squeeze 持续时间计数器
+        if is_squeezing:
+            self.squeeze_duration += 1
+        else:
+            self.squeeze_duration = 0
+
         # 持仓管理
         if self.portfolio.is_net_long(self.instrument.id):
-            self._handle_position_management(bar)
+            self._handle_long_position_management(bar)
+            return
+
+        if self.portfolio.is_net_short(self.instrument.id):
+            self._handle_short_position_management(bar)
             return
 
         # 入场检查
         if self._check_entry_conditions(bar):
             self._handle_entry(bar, is_squeezing)
+
+        # 做空入场检查（仅在熊市且启用做空时）
+        if self.config.enable_short and self.get_market_regime() == "BEAR":
+            if self._check_short_entry_conditions(bar):
+                self._handle_short_entry(bar, is_squeezing)
 
     def _handle_entry(self, bar: Bar, is_squeezing: bool) -> None:
         """处理开仓逻辑"""
@@ -678,6 +878,47 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
         self.log.info(
             f"开仓做多 ({conviction_type}): "
             f"price={close:.2f}, trigger={keltner_trigger_upper:.2f}, "
+            f"qty={qty}, squeeze={is_squeezing}"
+        )
+
+    def _handle_short_entry(self, bar: Bar, is_squeezing: bool) -> None:
+        """处理做空开仓逻辑"""
+        close = float(bar.close)
+
+        # 检查持仓数量限制
+        total_positions = len(self.cache.positions_open())
+        if total_positions >= self.config.max_positions:
+            return
+
+        # 判断是否为高确信度设置
+        high_conviction = self.squeeze_detector.is_high_conviction(is_squeezing)
+
+        # 计算仓位（使用做空专用止损倍数）
+        qty = self._calculate_short_position_size(bar, high_conviction)
+        if not qty or qty <= 0:
+            return
+
+        # 下单
+        order = self.order_factory.market(
+            instrument_id=self.instrument.id,
+            order_side=OrderSide.SELL,
+            quantity=self.instrument.make_qty(qty),
+        )
+        self.submit_order(order)
+        self._pending_entry_order = True
+
+        # 记录持仓信息
+        self.short_entry_price = Decimal(close).quantize(TARGET_PRECISION, ROUND_HALF_UP)
+        self.short_quantity = qty.quantize(TARGET_PRECISION, ROUND_HALF_UP)
+        self.short_entry_bar_count = 0
+        self.lowest_low = float(bar.low)
+
+        # 计算做空触发下轨
+        short_trigger_lower = self.keltner.ema - (self.config.short_trigger_multiplier * self.keltner.atr)
+        conviction_type = "高确信度" if high_conviction else "普通"
+        self.log.info(
+            f"开仓做空 ({conviction_type}): "
+            f"price={close:.2f}, trigger={short_trigger_lower:.2f}, "
             f"qty={qty}, squeeze={is_squeezing}"
         )
 
@@ -733,8 +974,60 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
 
         return qty
 
-    def _handle_exit(self, bar: Bar) -> None:
-        """处理出场逻辑"""
+    def _calculate_short_position_size(self, bar: Bar, high_conviction: bool) -> Decimal:
+        """计算做空仓位大小（使用做空专用止损倍数）"""
+        account = self.portfolio.account(self.instrument.id.venue)
+        if not account:
+            return Decimal("0")
+
+        equity = account.balance_total(self.instrument.quote_currency)
+        if not equity or equity.as_decimal() <= 0:
+            return Decimal("0")
+
+        equity_decimal = equity.as_decimal()
+
+        # 百分比模式
+        if self.config.qty_percent is not None:
+            qty_pct = Decimal(str(self.config.qty_percent))
+            leverage = Decimal(str(self.config.leverage))
+            price = bar.close.as_decimal()
+            qty = (equity_decimal * qty_pct * leverage) / price
+            return self.instrument.make_qty(qty)
+
+        # ATR 风险模式（使用做空专用止损倍数）
+        if self.keltner.atr is None:
+            return Decimal("0")
+
+        stop_distance = Decimal(str(self.config.short_stop_atr_multiplier)) * Decimal(
+            str(self.keltner.atr)
+        )
+        min_stop_distance = bar.close.as_decimal() * Decimal(str(self.config.min_stop_distance_pct))
+
+        if stop_distance < min_stop_distance:
+            self.log.warning(
+                f"SHORT: ATR过小({self.keltner.atr:.6f})，使用最小止损距离{min_stop_distance}"
+            )
+            stop_distance = min_stop_distance
+
+        risk_pct = Decimal(
+            str(
+                self.config.high_conviction_risk_pct
+                if high_conviction
+                else self.config.base_risk_pct
+            )
+        )
+        risk_amount = equity_decimal * risk_pct * Decimal(str(self.config.leverage))
+        qty = risk_amount / stop_distance
+
+        min_qty = Decimal(str(self.instrument.size_increment))
+        if qty < min_qty:
+            self.log.warning(f"SHORT: 计算的仓位数量过小: raw_qty={qty}, min_qty={min_qty}")
+            return Decimal("0")
+
+        return qty
+
+    def _handle_long_exit(self, bar: Bar) -> None:
+        """处理做多出场逻辑"""
         close = float(bar.close)
 
         # 1. 时间止损
@@ -778,18 +1071,73 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
             return
 
         # 5. 保本止损
-        self.exit_signals.update_breakeven_status(close, self.entry_price, self.keltner.atr)
+        if self.entry_price is not None:
+            self.exit_signals.update_breakeven_status(close, self.entry_price, self.keltner.atr)
 
-        if self.exit_signals.check_breakeven_stop(close, self.entry_price):
-            breakeven_stop_price = float(self.entry_price) * 1.002
+            if self.exit_signals.check_breakeven_stop(close, self.entry_price):
+                breakeven_stop_price = float(self.entry_price) * 1.002
+                self.close_all_positions(self.instrument.id)
+                self.log.info(
+                    f"🛡️ 保本止损平仓: price={close:.2f}, "
+                    f"breakeven_stop={breakeven_stop_price:.2f}, "
+                    f"entry={self.entry_price:.2f}"
+                )
+                self._reset_position_tracking()
+                return
+
+    def _handle_short_exit(self, bar: Bar) -> None:
+        """处理做空出场逻辑"""
+        close = float(bar.close)
+
+        # 1. 时间止损（做空版本）
+        if self.exit_signals.check_time_stop(
+            self.short_entry_bar_count, self.lowest_low, self.short_entry_price
+        ):
             self.close_all_positions(self.instrument.id)
             self.log.info(
-                f"🛡️ 保本止损平仓: price={close:.2f}, "
-                f"breakeven_stop={breakeven_stop_price:.2f}, "
-                f"entry={self.entry_price:.2f}"
+                f"SHORT: 时间止损平仓: bars={self.short_entry_bar_count}, "
+                f"lowest={self.lowest_low:.2f}, entry={self.short_entry_price:.2f}"
             )
-            self._reset_position_tracking()
+            self._reset_short_position_tracking()
             return
+
+        # 2. Chandelier Exit（做空版本：使用 lowest_low）
+        if self.keltner.atr is not None and self.lowest_low is not None:
+            trailing_stop = self.lowest_low + (
+                self.config.short_stop_atr_multiplier * self.keltner.atr
+            )
+            if close >= trailing_stop:
+                self.close_all_positions(self.instrument.id)
+                self.log.info(
+                    f"SHORT: Chandelier Exit 平仓: "
+                    f"price={close:.2f}, stop={trailing_stop:.2f}, "
+                    f"lowest={self.lowest_low:.2f}"
+                )
+                self._reset_short_position_tracking()
+                return
+
+        # 3. 抛物线止盈（做空版本：价格上穿 EMA）
+        if self.keltner.ema is not None and close > self.keltner.ema:
+            self.close_all_positions(self.instrument.id)
+            self.log.info(f"SHORT: 抛物线止盈平仓: price={close:.2f}, ema={self.keltner.ema:.2f}")
+            self._reset_short_position_tracking()
+            return
+
+        # 4. 保本止损（做空版本）
+        if self.short_entry_price is not None and self.keltner.atr is not None:
+            # 当价格下跌超过 1.5 ATR 时，移动止损到入场价附近
+            price_move = float(self.short_entry_price) - close
+            if price_move > self.config.breakeven_multiplier * self.keltner.atr:
+                breakeven_stop_price = float(self.short_entry_price) * 0.998  # 略低于入场价
+                if close >= breakeven_stop_price:
+                    self.close_all_positions(self.instrument.id)
+                    self.log.info(
+                        f"SHORT: 🛡️ 保本止损平仓: price={close:.2f}, "
+                        f"breakeven_stop={breakeven_stop_price:.2f}, "
+                        f"entry={self.short_entry_price:.2f}"
+                    )
+                    self._reset_short_position_tracking()
+                    return
 
     def _handle_euphoria_reduce_position(self) -> None:
         """处理市场狂热状态下的减仓逻辑"""
@@ -824,6 +1172,13 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
         self.entry_bar_count = 0
         self.highest_high = None
         self.exit_signals.reset()
+
+    def _reset_short_position_tracking(self) -> None:
+        """重置做空持仓跟踪变量"""
+        self.short_entry_price = None
+        self.short_quantity = None
+        self.short_entry_bar_count = 0
+        self.lowest_low = None
 
     def on_order_filled(self, event) -> None:
         """订单成交回调"""
