@@ -1,5 +1,6 @@
 """Unit tests for Optimization domain model."""
 
+import math
 from datetime import datetime, timezone
 from uuid import UUID
 
@@ -79,7 +80,9 @@ class TestOptimization:
         assert optimization.best_params is None
         assert optimization.best_score is None
         assert optimization.trials == []
+        assert optimization.error_message is None
         assert isinstance(optimization.created_at, datetime)
+        assert isinstance(optimization.updated_at, datetime)
         assert optimization.started_at is None
         assert optimization.completed_at is None
 
@@ -108,6 +111,7 @@ class TestOptimization:
 
         assert optimization.status == OptimizationStatus.RUNNING
         assert isinstance(optimization.started_at, datetime)
+        assert isinstance(optimization.updated_at, datetime)
 
     def test_start_already_running(self):
         """Test starting an already running optimization raises error."""
@@ -117,7 +121,7 @@ class TestOptimization:
         )
         optimization.start()
 
-        with pytest.raises(ValueError, match="already running"):
+        with pytest.raises(ValueError, match="PENDING"):
             optimization.start()
 
     def test_complete_optimization(self):
@@ -160,7 +164,9 @@ class TestOptimization:
         optimization.fail(error_message=error_message)
 
         assert optimization.status == OptimizationStatus.FAILED
+        assert optimization.error_message == error_message
         assert isinstance(optimization.completed_at, datetime)
+        assert isinstance(optimization.updated_at, datetime)
 
     def test_fail_not_running(self):
         """Test failing a non-running optimization raises error."""
@@ -272,5 +278,90 @@ class TestOptimization:
         optimization.fail(error_message="Timeout exceeded")
 
         assert optimization.status == OptimizationStatus.FAILED
+        assert optimization.error_message == "Timeout exceeded"
         assert len(optimization.trials) == 1
         assert optimization.completed_at is not None
+
+    def test_start_from_completed_status(self):
+        """Test starting a completed optimization raises error."""
+        optimization = Optimization(
+            strategy_id="strategy-123",
+            parameter_space={"param1": [1, 2, 3]},
+        )
+        optimization.start()
+        optimization.complete(best_params={"param1": 2}, best_score=0.9)
+
+        with pytest.raises(ValueError, match="PENDING"):
+            optimization.start()
+
+    def test_start_from_failed_status(self):
+        """Test starting a failed optimization raises error."""
+        optimization = Optimization(
+            strategy_id="strategy-123",
+            parameter_space={"param1": [1, 2, 3]},
+        )
+        optimization.start()
+        optimization.fail("Test error")
+
+        with pytest.raises(ValueError, match="PENDING"):
+            optimization.start()
+
+    def test_complete_with_nan_score(self):
+        """Test completing with NaN score raises error."""
+        optimization = Optimization(
+            strategy_id="strategy-123",
+            parameter_space={"param1": [1, 2, 3]},
+        )
+        optimization.start()
+
+        with pytest.raises(ValueError, match="Invalid best_score"):
+            optimization.complete(best_params={"param1": 1}, best_score=float("nan"))
+
+    def test_complete_with_invalid_params(self):
+        """Test completing with params not in parameter_space raises error."""
+        optimization = Optimization(
+            strategy_id="strategy-123",
+            parameter_space={"param1": [1, 2, 3]},
+        )
+        optimization.start()
+
+        with pytest.raises(ValueError, match="not in parameter_space"):
+            optimization.complete(best_params={"invalid_param": 1}, best_score=0.9)
+
+    def test_fail_stores_error_message(self):
+        """Test that fail() stores the error message."""
+        optimization = Optimization(
+            strategy_id="strategy-123",
+            parameter_space={"param1": [1, 2, 3]},
+        )
+        optimization.start()
+
+        error_msg = "Connection timeout"
+        optimization.fail(error_msg)
+
+        assert optimization.error_message == error_msg
+        assert optimization.status == OptimizationStatus.FAILED
+
+    def test_updated_at_changes_on_state_transitions(self):
+        """Test that updated_at is updated on all state transitions."""
+        optimization = Optimization(
+            strategy_id="strategy-123",
+            parameter_space={"param1": [1, 2, 3]},
+        )
+
+        created_time = optimization.updated_at
+
+        # Start should update updated_at
+        optimization.start()
+        start_time = optimization.updated_at
+        assert start_time > created_time
+
+        # Add trial should update updated_at
+        optimization.add_trial(params={"param1": 1}, score=0.5)
+        trial_time = optimization.updated_at
+        assert trial_time >= start_time
+
+        # Complete should update updated_at
+        optimization.complete(best_params={"param1": 2}, best_score=0.9)
+        complete_time = optimization.updated_at
+        assert complete_time >= trial_time
