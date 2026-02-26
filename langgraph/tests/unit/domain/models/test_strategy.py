@@ -126,8 +126,23 @@ class TestStrategyValidation:
             config={},
         )
 
-        # Should not raise exception for empty config
-        strategy.validate_config()
+        # Should raise exception for empty config
+        with pytest.raises(ValueError, match="cannot be empty"):
+            strategy.validate_config()
+
+    def test_validate_code_requires_class_definition(self):
+        """Test that validate_code requires at least one class."""
+        from langgraph.domain.models.strategy import Strategy
+
+        strategy = Strategy(
+            name="TestStrategy",
+            description="A test strategy",
+            code="x = 1\ny = 2",  # No class definition
+            config={"param": "value"},
+        )
+
+        with pytest.raises(ValueError, match="must define at least one class"):
+            strategy.validate_code()
 
 
 class TestStrategyStatusTransitions:
@@ -158,12 +173,30 @@ class TestStrategyStatusTransitions:
             name="TestStrategy",
             description="A test strategy",
             code="class TestStrategy(Strategy): pass",
-            config={},
+            config={"param": "value"},
         )
 
         strategy.mark_as_validated()
         strategy.mark_as_tested()
 
+        assert strategy.status == StrategyStatus.TESTED
+
+    def test_mark_as_tested_idempotent(self):
+        """Test that mark_as_tested is idempotent."""
+        from langgraph.domain.models.strategy import Strategy, StrategyStatus
+
+        strategy = Strategy(
+            name="TestStrategy",
+            description="A test strategy",
+            code="class TestStrategy(Strategy): pass",
+            config={"param": "value"},
+        )
+
+        strategy.mark_as_validated()
+        strategy.mark_as_tested()
+
+        # Should not raise error when called again
+        strategy.mark_as_tested()
         assert strategy.status == StrategyStatus.TESTED
 
     def test_mark_as_deployed(self):
@@ -174,13 +207,32 @@ class TestStrategyStatusTransitions:
             name="TestStrategy",
             description="A test strategy",
             code="class TestStrategy(Strategy): pass",
-            config={},
+            config={"param": "value"},
         )
 
         strategy.mark_as_validated()
         strategy.mark_as_tested()
         strategy.mark_as_deployed()
 
+        assert strategy.status == StrategyStatus.DEPLOYED
+
+    def test_mark_as_deployed_idempotent(self):
+        """Test that mark_as_deployed is idempotent."""
+        from langgraph.domain.models.strategy import Strategy, StrategyStatus
+
+        strategy = Strategy(
+            name="TestStrategy",
+            description="A test strategy",
+            code="class TestStrategy(Strategy): pass",
+            config={"param": "value"},
+        )
+
+        strategy.mark_as_validated()
+        strategy.mark_as_tested()
+        strategy.mark_as_deployed()
+
+        # Should not raise error when called again
+        strategy.mark_as_deployed()
         assert strategy.status == StrategyStatus.DEPLOYED
 
     def test_invalid_status_transition(self):
@@ -216,17 +268,70 @@ class TestStrategyVersioning:
         assert strategy.version == 1
 
     def test_version_increments_on_update(self):
-        """Test that version increments when strategy is updated."""
+        """Test that version increments when strategy code/config is updated."""
         from langgraph.domain.models.strategy import Strategy
 
         strategy = Strategy(
             name="TestStrategy",
             description="A test strategy",
             code="class TestStrategy(Strategy): pass",
-            config={},
+            config={"param": "value"},
+        )
+
+        initial_version = strategy.version
+        strategy.update_code("class NewStrategy(Strategy): pass")
+
+        assert strategy.version == initial_version + 1
+
+    def test_version_not_incremented_on_status_change(self):
+        """Test that version does not change on status transitions."""
+        from langgraph.domain.models.strategy import Strategy
+
+        strategy = Strategy(
+            name="TestStrategy",
+            description="A test strategy",
+            code="class TestStrategy(Strategy): pass",
+            config={"param": "value"},
         )
 
         initial_version = strategy.version
         strategy.mark_as_validated()
+        assert strategy.version == initial_version
 
-        assert strategy.version == initial_version + 1
+        strategy.mark_as_tested()
+        assert strategy.version == initial_version
+
+        strategy.mark_as_deployed()
+        assert strategy.version == initial_version
+
+    def test_update_code_resets_status_to_draft(self):
+        """Test that updating code resets status to DRAFT."""
+        from langgraph.domain.models.strategy import Strategy, StrategyStatus
+
+        strategy = Strategy(
+            name="TestStrategy",
+            description="A test strategy",
+            code="class TestStrategy(Strategy): pass",
+            config={"param": "value"},
+        )
+
+        strategy.mark_as_validated()
+        strategy.update_code("class NewStrategy(Strategy): pass")
+
+        assert strategy.status == StrategyStatus.DRAFT
+
+    def test_update_config_resets_status_to_draft(self):
+        """Test that updating config resets status to DRAFT."""
+        from langgraph.domain.models.strategy import Strategy, StrategyStatus
+
+        strategy = Strategy(
+            name="TestStrategy",
+            description="A test strategy",
+            code="class TestStrategy(Strategy): pass",
+            config={"param": "value"},
+        )
+
+        strategy.mark_as_validated()
+        strategy.update_config({"new_param": "new_value"})
+
+        assert strategy.status == StrategyStatus.DRAFT
