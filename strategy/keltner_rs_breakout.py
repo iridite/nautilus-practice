@@ -166,6 +166,12 @@ class KeltnerRSBreakoutConfig(BaseStrategyConfig):
     short_stop_atr_multiplier: float = 2.0
     short_body_position_threshold: float = 0.3
 
+    # 动态风险管理参数
+    enable_dynamic_risk: bool = True
+    losing_streak_risk_pct: float = 0.01  # 连败时的风险 (1%)
+    bear_market_risk_multiplier: float = 0.5  # 熊市风险倍数 (减半)
+    recent_trades_window: int = 3  # 追踪最近 N 笔交易
+
 
 class KeltnerRSBreakoutStrategy(BaseStrategy):
     """
@@ -304,6 +310,9 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
             "squeeze_duration_short": 0,
             "passed_all": 0,
         }
+
+        # 动态风险管理：交易历史追踪
+        self.recent_trades: list[float] = []  # 存储最近 N 笔交易的 PnL (正数=盈利, 负数=亏损)
 
     def on_start(self) -> None:
         """策略启动时初始化"""
@@ -957,13 +966,14 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
             )
             stop_distance = min_stop_distance
 
-        risk_pct = Decimal(
-            str(
-                self.config.high_conviction_risk_pct
-                if high_conviction
-                else self.config.base_risk_pct
-            )
-        )
+        # 动态风险管理：根据市场环境和交易历史调整风险
+        if high_conviction:
+            risk_pct = Decimal(str(self.config.high_conviction_risk_pct))
+        else:
+            # 使用动态风险计算
+            dynamic_risk = self.get_dynamic_risk()
+            risk_pct = Decimal(str(dynamic_risk))
+
         risk_amount = equity_decimal * risk_pct * Decimal(str(self.config.leverage))
         qty = risk_amount / stop_distance
 
@@ -1009,13 +1019,14 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
             )
             stop_distance = min_stop_distance
 
-        risk_pct = Decimal(
-            str(
-                self.config.high_conviction_risk_pct
-                if high_conviction
-                else self.config.base_risk_pct
-            )
-        )
+        # 动态风险管理：根据市场环境和交易历史调整风险
+        if high_conviction:
+            risk_pct = Decimal(str(self.config.high_conviction_risk_pct))
+        else:
+            # 使用动态风险计算
+            dynamic_risk = self.get_dynamic_risk()
+            risk_pct = Decimal(str(dynamic_risk))
+
         risk_amount = equity_decimal * risk_pct * Decimal(str(self.config.leverage))
         qty = risk_amount / stop_distance
 
@@ -1190,3 +1201,68 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
         super().on_order_rejected(event)
         self._pending_entry_order = False
         self.log.error(f"订单被拒绝: {event.reason}")
+
+    def on_position_closed(self, event) -> None:
+        """持仓平仓回调 - 记录交易结果用于动态风险管理"""
+        super().on_position_closed(event)
+
+        if not self.config.enable_dynamic_risk:
+            return
+
+        # 从 PositionClosed 事件中直接获取 realized_pnl
+        pnl = float(event.realized_pnl.as_double())
+
+        # 添加到交易历史
+        self.recent_trades.append(pnl)
+
+        # 只保留最近 N 笔交易
+        if len(self.recent_trades) > self.config.recent_trades_window:
+            self.recent_trades.pop(0)
+
+        # 日志记录
+        trades_str = ", ".join([f"{t:+.2f}" for t in self.recent_trades])
+        self.log.info(
+            f"[Dynamic Risk] Trade closed: PnL={pnl:+.2f}, "
+            f"Recent {len(self.recent_trades)} trades: [{trades_str}]"
+        )
+
+    def get_dynamic_risk(self) -> float:
+        """
+        计算动态风险百分比
+
+        逻辑:
+        1. 连败保护: 最近 3 笔交易全部亏损 → 风险降至 1%
+        2. 熊市降权: 市场状态为 BEAR → 风险减半
+        3. 正常情况: 使用 base_risk_pct (5%)
+
+        Returns:
+            调整后的风险百分比 (0.01 = 1%)
+        """
+        if not self.config.enable_dynamic_risk:
+            return self.config.base_risk_pct
+
+        base_risk = self.config.base_risk_pct
+
+        # 检查连败情况
+        if len(self.recent_trades) >= self.config.recent_trades_window:
+            # 如果最近 N 笔交易全部亏损
+            if all(pnl < 0 for pnl in self.recent_trades):
+                self.log.warning(
+                    f"[Dynamic Risk] Losing streak detected! "
+                    f"Recent {len(self.recent_trades)} trades all negative. "
+                    f"Risk reduced to {self.config.losing_streak_risk_pct:.1%}"
+                )
+                return self.config.losing_streak_risk_pct
+
+        # 检查市场环境
+        market_regime = self.get_market_regime()
+        if market_regime == "BEAR":
+            adjusted_risk = base_risk * self.config.bear_market_risk_multiplier
+            self.log.info(
+                f"[Dynamic Risk] BEAR market detected. "
+                f"Risk reduced: {base_risk:.1%} → {adjusted_risk:.1%}"
+            )
+            return adjusted_risk
+
+        # 正常情况
+        return base_risk

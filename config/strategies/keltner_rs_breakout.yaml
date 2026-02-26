@@ -17,11 +17,12 @@ parameters:
   chop_threshold: 61.8
   data_types:
   - funding
-  deviation_threshold: 0.38
+  deviation_threshold: 0.35
   ema_period: 20
   enable_btc_regime_filter: false
   enable_euphoria_filter: false
   enable_rsi_stop_loss: false
+  enable_short: true
   enable_time_stop: false
   euphoria_reduce_position_pct: 0.5
   funding_rate_danger_annual: 200.0
@@ -39,6 +40,9 @@ parameters:
   rs_long_weight: 0.3
   rs_short_lookback_days: 5
   rs_short_weight: 0.7
+  short_body_position_threshold: 0.3
+  short_stop_atr_multiplier: 2.0
+  short_trigger_multiplier: 2.8
   sma_period: 200
   squeeze_memory_days: 1
   stop_loss_atr_multiplier: 2.8
@@ -51,7 +55,8 @@ parameters:
   universe_top_n: 15
   volume_multiplier: 1.2
   volume_period: 20
-  enable_short: true
-  short_trigger_multiplier: 2.8
-  short_stop_atr_multiplier: 2.0
-  short_body_position_threshold: 0.3
+  # 动态风险管理参数
+  enable_dynamic_risk: true
+  losing_streak_risk_pct: 0.01
+  bear_market_risk_multiplier: 0.5
+  recent_trades_window: 3
