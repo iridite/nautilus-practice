@@ -33,8 +33,6 @@ from nautilus_trader.indicators import RelativeStrengthIndex
 from nautilus_trader.model.data import Bar, BarType, CustomData, DataType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import InstrumentId
-from ta.trend import ADXIndicator
-import pandas as pd
 
 from config.constants import (
     BASE_RISK_PCT,
