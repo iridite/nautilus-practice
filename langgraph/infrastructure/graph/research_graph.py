@@ -1,44 +1,18 @@
 """Research workflow graph using LangGraph"""
-import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
-# Import external langgraph.graph by temporarily modifying sys.modules and sys.path
-# This prevents conflicts with the project's langgraph module
+from infrastructure.graph._import_utils import import_external_langgraph
 
-# Step 1: Remove project's langgraph from sys.modules
-_original_langgraph = sys.modules.pop("langgraph", None)
-_original_langgraph_infra = sys.modules.pop("langgraph.infrastructure", None)
+StateGraph, END = import_external_langgraph()  # type: ignore[misc]
 
-# Step 2: Temporarily filter sys.path to exclude project directory
-_project_root = str(Path(__file__).parent.parent.parent.parent)
-_original_path = sys.path.copy()
-
-try:
-    # Filter out project directory and editable install paths
-    sys.path = [
-        p for p in sys.path
-        if p != _project_root and p != '' and not p.startswith("__editable__")
-    ]
-
-    # Import external langgraph
-    import langgraph.graph as _lg
-
-    StateGraph = _lg.StateGraph
-    END = _lg.END
-finally:
-    # Restore sys.path and sys.modules
-    sys.path = _original_path
-    if _original_langgraph is not None:
-        sys.modules["langgraph"] = _original_langgraph
-    if _original_langgraph_infra is not None:
-        sys.modules["langgraph.infrastructure"] = _original_langgraph_infra
-
-from langgraph.infrastructure.agents.coordinator import CoordinatorAgent
-from langgraph.infrastructure.agents.researcher import ResearcherAgent
-from langgraph.infrastructure.agents.validator import ValidatorAgent
-from langgraph.infrastructure.llm.claude_client import ClaudeClient
-from langgraph.shared.logging import get_logger
+from infrastructure.agents.coordinator import CoordinatorAgent
+from infrastructure.agents.researcher import ResearcherAgent
+from infrastructure.agents.validator import ValidatorAgent
+from infrastructure.graph._error_handling import with_retry, with_timeout
+from infrastructure.graph.checkpoint import CheckpointManager
+from infrastructure.llm.claude_client import ClaudeClient
+from shared.logging import get_logger
 
 logger = get_logger(__name__)
 
@@ -46,20 +20,35 @@ logger = get_logger(__name__)
 class ResearchGraph:
     """Strategy research workflow graph"""
 
-    def __init__(self, llm_client: ClaudeClient):
+    def __init__(
+        self,
+        llm_client: ClaudeClient,
+        checkpoint_dir: Optional[Path] = None,
+        enable_checkpoints: bool = True,
+    ):
         """
         初始化研究工作流图
 
         Args:
             llm_client: LLM 客户端
+            checkpoint_dir: 检查点目录
+            enable_checkpoints: 是否启用检查点
         """
         self.llm_client = llm_client
         self.coordinator = CoordinatorAgent(llm_client=llm_client)
         self.researcher = ResearcherAgent(llm_client=llm_client)
         self.validator = ValidatorAgent(llm_client=llm_client)
 
+        # 初始化检查点管理器
+        if enable_checkpoints:
+            if checkpoint_dir is None:
+                checkpoint_dir = Path.cwd() / ".langgraph" / "checkpoints" / "research"
+            self.checkpoint_manager: Optional[CheckpointManager] = CheckpointManager(checkpoint_dir)
+        else:
+            self.checkpoint_manager = None
+
         self.graph = self._build_graph()
-        logger.info("Research graph initialized")
+        logger.info("Research graph initialized", checkpoints_enabled=enable_checkpoints)
 
     def _build_graph(self) -> Any:
         """
@@ -98,6 +87,8 @@ class ResearchGraph:
 
         return workflow.compile()
 
+    @with_timeout(30.0)
+    @with_retry(max_retries=3)
     async def _coordinator_node(self, state: dict[str, Any]) -> dict[str, Any]:
         """
         协调员节点
@@ -109,8 +100,20 @@ class ResearchGraph:
             更新后的状态
         """
         logger.debug("Executing coordinator node")
-        return await self.coordinator.process(state)
+        result = await self.coordinator.process(state)
 
+        # 保存检查点
+        if self.checkpoint_manager and state.get("workflow_id"):
+            self.checkpoint_manager.save_checkpoint(
+                workflow_id=state["workflow_id"],
+                node_name="coordinator",
+                state=result,
+            )
+
+        return result
+
+    @with_timeout(30.0)
+    @with_retry(max_retries=3)
     async def _researcher_node(self, state: dict[str, Any]) -> dict[str, Any]:
         """
         研究员节点
@@ -122,8 +125,20 @@ class ResearchGraph:
             更新后的状态
         """
         logger.debug("Executing researcher node")
-        return await self.researcher.process(state)
+        result = await self.researcher.process(state)
 
+        # 保存检查点
+        if self.checkpoint_manager and state.get("workflow_id"):
+            self.checkpoint_manager.save_checkpoint(
+                workflow_id=state["workflow_id"],
+                node_name="researcher",
+                state=result,
+            )
+
+        return result
+
+    @with_timeout(30.0)
+    @with_retry(max_retries=3)
     async def _validator_node(self, state: dict[str, Any]) -> dict[str, Any]:
         """
         验证器节点
@@ -135,7 +150,17 @@ class ResearchGraph:
             更新后的状态
         """
         logger.debug("Executing validator node")
-        return await self.validator.process(state)
+        result = await self.validator.process(state)
+
+        # 保存检查点
+        if self.checkpoint_manager and state.get("workflow_id"):
+            self.checkpoint_manager.save_checkpoint(
+                workflow_id=state["workflow_id"],
+                node_name="validator",
+                state=result,
+            )
+
+        return result
 
     def _route_after_coordinator(self, state: dict[str, Any]) -> str:
         """
@@ -167,27 +192,54 @@ class ResearchGraph:
         logger.debug("Routing to end: validation passed")
         return "end"
 
-    async def run(self, user_input: str) -> dict[str, Any]:
+    async def run(self, user_input: str, workflow_id: Optional[str] = None) -> dict[str, Any]:
         """
         运行研究工作流
 
         Args:
             user_input: 用户输入
+            workflow_id: 工作流 ID（用于检查点恢复）
 
         Returns:
             最终状态
         """
-        logger.info("Starting research workflow", user_input_length=len(user_input))
+        import uuid
 
-        initial_state: dict[str, Any] = {
-            "user_input": user_input,
-            "messages": [],
-            "strategy_code": None,
-            "validation_result": None,
-            "backtest_result": None,
-        }
+        # 生成或使用提供的 workflow_id
+        if workflow_id is None:
+            workflow_id = str(uuid.uuid4())
+
+        logger.info("Starting research workflow", user_input_length=len(user_input), workflow_id=workflow_id)
+
+        # 尝试从检查点恢复
+        checkpoint_data = None
+        if self.checkpoint_manager:
+            checkpoint_data = self.checkpoint_manager.load_checkpoint(workflow_id)
+
+        if checkpoint_data:
+            logger.info(
+                "Resuming from checkpoint",
+                workflow_id=workflow_id,
+                node_name=checkpoint_data.get("node_name"),
+            )
+            initial_state = checkpoint_data["state"]
+            initial_state["workflow_id"] = workflow_id
+        else:
+            initial_state: dict[str, Any] = {
+                "workflow_id": workflow_id,
+                "user_input": user_input,
+                "messages": [],
+                "strategy_code": None,
+                "validation_result": None,
+                "backtest_result": None,
+            }
 
         final_state = await self.graph.ainvoke(initial_state)
+
+        # 清理检查点
+        if self.checkpoint_manager:
+            self.checkpoint_manager.archive_checkpoint(workflow_id)
+            self.checkpoint_manager.delete_checkpoint(workflow_id)
 
         logger.info("Research workflow completed", has_code=bool(final_state.get("strategy_code")))
         return final_state  # type: ignore[no-any-return]

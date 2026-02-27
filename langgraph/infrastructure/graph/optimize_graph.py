@@ -1,44 +1,18 @@
 """Optimization workflow graph using LangGraph"""
-import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
-# Import external langgraph.graph by temporarily modifying sys.modules and sys.path
-# This prevents conflicts with the project's langgraph module
+from infrastructure.graph._import_utils import import_external_langgraph
 
-# Step 1: Remove project's langgraph from sys.modules
-_original_langgraph = sys.modules.pop("langgraph", None)
-_original_langgraph_infra = sys.modules.pop("langgraph.infrastructure", None)
+StateGraph, END = import_external_langgraph()  # type: ignore[misc]
 
-# Step 2: Temporarily filter sys.path to exclude project directory
-_project_root = str(Path(__file__).parent.parent.parent.parent)
-_original_path = sys.path.copy()
-
-try:
-    # Filter out project directory and editable install paths
-    sys.path = [
-        p for p in sys.path
-        if p != _project_root and p != '' and not p.startswith("__editable__")
-    ]
-
-    # Import external langgraph
-    import langgraph.graph as _lg
-
-    StateGraph = _lg.StateGraph
-    END = _lg.END
-finally:
-    # Restore sys.path and sys.modules
-    sys.path = _original_path
-    if _original_langgraph is not None:
-        sys.modules["langgraph"] = _original_langgraph
-    if _original_langgraph_infra is not None:
-        sys.modules["langgraph.infrastructure"] = _original_langgraph_infra
-
-from langgraph.infrastructure.agents.coordinator import CoordinatorAgent
-from langgraph.infrastructure.agents.optimizer import OptimizerAgent
-from langgraph.infrastructure.backtest.engine import BacktestEngine
-from langgraph.infrastructure.llm.claude_client import ClaudeClient
-from langgraph.shared.logging import get_logger
+from infrastructure.agents.coordinator import CoordinatorAgent
+from infrastructure.agents.optimizer import OptimizerAgent
+from infrastructure.backtest.engine import BacktestEngine
+from infrastructure.graph._error_handling import with_retry, with_timeout
+from infrastructure.graph.checkpoint import CheckpointManager
+from infrastructure.llm.claude_client import ClaudeClient
+from shared.logging import get_logger
 
 logger = get_logger(__name__)
 
@@ -46,21 +20,37 @@ logger = get_logger(__name__)
 class OptimizationGraph:
     """Parameter optimization workflow graph"""
 
-    def __init__(self, llm_client: ClaudeClient, backtest_engine: BacktestEngine):
+    def __init__(
+        self,
+        llm_client: ClaudeClient,
+        backtest_engine: BacktestEngine,
+        checkpoint_dir: Optional[Path] = None,
+        enable_checkpoints: bool = True,
+    ):
         """
         初始化优化工作流图
 
         Args:
             llm_client: LLM 客户端
             backtest_engine: 回测引擎
+            checkpoint_dir: 检查点目录
+            enable_checkpoints: 是否启用检查点
         """
         self.llm_client = llm_client
         self.backtest_engine = backtest_engine
         self.coordinator = CoordinatorAgent(llm_client=llm_client)
         self.optimizer = OptimizerAgent(llm_client=llm_client)
 
+        # 初始化检查点管理器
+        if enable_checkpoints:
+            if checkpoint_dir is None:
+                checkpoint_dir = Path.cwd() / ".langgraph" / "checkpoints" / "optimization"
+            self.checkpoint_manager: Optional[CheckpointManager] = CheckpointManager(checkpoint_dir)
+        else:
+            self.checkpoint_manager = None
+
         self.graph = self._build_graph()
-        logger.info("Optimization graph initialized")
+        logger.info("Optimization graph initialized", checkpoints_enabled=enable_checkpoints)
 
     def _build_graph(self) -> Any:
         """
@@ -98,6 +88,8 @@ class OptimizationGraph:
 
         return workflow.compile()
 
+    @with_timeout(60.0)
+    @with_retry(max_retries=3)
     async def _coordinator_node(self, state: dict[str, Any]) -> dict[str, Any]:
         """
         协调员节点
@@ -109,8 +101,20 @@ class OptimizationGraph:
             更新后的状态
         """
         logger.debug("Executing coordinator node")
-        return await self.coordinator.process(state)
+        result = await self.coordinator.process(state)
 
+        # 保存检查点
+        if self.checkpoint_manager and state.get("workflow_id"):
+            self.checkpoint_manager.save_checkpoint(
+                workflow_id=state["workflow_id"],
+                node_name="coordinator",
+                state=result,
+            )
+
+        return result
+
+    @with_timeout(60.0)
+    @with_retry(max_retries=3)
     async def _optimizer_node(self, state: dict[str, Any]) -> dict[str, Any]:
         """
         优化器节点
@@ -122,8 +126,20 @@ class OptimizationGraph:
             更新后的状态
         """
         logger.debug("Executing optimizer node")
-        return await self.optimizer.process(state)
+        result = await self.optimizer.process(state)
 
+        # 保存检查点
+        if self.checkpoint_manager and state.get("workflow_id"):
+            self.checkpoint_manager.save_checkpoint(
+                workflow_id=state["workflow_id"],
+                node_name="optimizer",
+                state=result,
+            )
+
+        return result
+
+    @with_timeout(60.0)
+    @with_retry(max_retries=3)
     async def _backtest_node(self, state: dict[str, Any]) -> dict[str, Any]:
         """
         回测节点
@@ -147,20 +163,55 @@ class OptimizationGraph:
             if hasattr(last_message, "metadata"):
                 suggested_params = last_message.metadata.get("suggested_params", {})
 
-        # 运行回测
         logger.info(f"Running backtest for iteration {current_iteration}")
 
-        # 如果 backtest_engine 存在，则运行回测
-        if self.backtest_engine is not None:
-            # Note: BacktestEngine.run() expects a Strategy object, not just strategy_id
-            # This is a simplified placeholder - in production, you'd need to:
-            # 1. Load the strategy from database using strategy_id
-            # 2. Update its parameters with suggested_params
-            # 3. Pass the Strategy object to run()
-            # For testing purposes, we assume backtest_engine.run() is mocked
-            backtest_result = await self.backtest_engine.run(strategy=strategy_id)  # type: ignore[arg-type,misc]
-        else:
-            backtest_result = {}  # type: ignore[unreachable]
+        try:
+            # Validate strategy_id
+            if not strategy_id or not isinstance(strategy_id, str):
+                raise ValueError("Invalid strategy_id: must be a non-empty string")
+
+            # Load strategy from database
+            from langgraph.infrastructure.database.repositories import SQLAlchemyStrategyRepository
+            from sqlalchemy import create_engine
+            from sqlalchemy.orm import sessionmaker
+            from langgraph.shared.config import LangGraphConfig
+
+            # Load config from environment
+            try:
+                config = LangGraphConfig()
+            except Exception as config_error:
+                logger.error(f"Failed to load config: {config_error}")
+                raise ValueError(f"Configuration error: {config_error}") from config_error
+
+            engine = create_engine(config.database_url)
+            Session = sessionmaker(bind=engine)
+            session = Session()
+
+            try:
+                repo = SQLAlchemyStrategyRepository(session)
+                strategy = await repo.get_by_id(strategy_id)
+
+                if strategy is None:
+                    raise ValueError(f"Strategy {strategy_id} not found in database")
+
+                # Update strategy config with suggested parameters
+                if suggested_params:
+                    logger.debug(f"Updating strategy config with params: {suggested_params}")
+                    strategy.config.update(suggested_params)
+
+                # Run backtest with the loaded strategy
+                backtest_result = self.backtest_engine.run(strategy=strategy)
+
+            finally:
+                session.close()
+
+        except Exception as e:
+            logger.error(f"Backtest failed: {e}", exc_info=True)
+            backtest_result = {
+                "error": str(e),
+                "sharpe_ratio": 0.0,
+                "metrics": {}
+            }
 
         # 更新状态
         state["backtest_result"] = backtest_result
@@ -173,6 +224,15 @@ class OptimizationGraph:
             state["best_score"] = current_score
             state["best_parameters"] = suggested_params
             logger.info(f"New best score: {current_score}")
+
+        # 保存检查点
+        if self.checkpoint_manager and state.get("workflow_id"):
+            self.checkpoint_manager.save_checkpoint(
+                workflow_id=state["workflow_id"],
+                node_name="backtest",
+                state=state,
+                metadata={"iteration": current_iteration, "score": current_score},
+            )
 
         return state
 
@@ -198,7 +258,11 @@ class OptimizationGraph:
         return "optimizer"
 
     async def run(
-        self, strategy_id: str, parameter_space: dict[str, Any], max_iterations: int = 10
+        self,
+        strategy_id: str,
+        parameter_space: dict[str, Any],
+        max_iterations: int = 10,
+        workflow_id: Optional[str] = None,
     ) -> dict[str, Any]:
         """
         运行优化工作流
@@ -207,28 +271,57 @@ class OptimizationGraph:
             strategy_id: 策略 ID
             parameter_space: 参数空间
             max_iterations: 最大迭代次数
+            workflow_id: 工作流 ID（用于检查点恢复）
 
         Returns:
             最终状态
         """
+        import uuid
+
+        # 生成或使用提供的 workflow_id
+        if workflow_id is None:
+            workflow_id = str(uuid.uuid4())
+
         logger.info(
             "Starting optimization workflow",
             strategy_id=strategy_id,
             max_iterations=max_iterations,
+            workflow_id=workflow_id,
         )
 
-        initial_state = {
-            "strategy_id": strategy_id,
-            "parameter_space": parameter_space,
-            "messages": [],
-            "current_iteration": 0,
-            "best_parameters": None,
-            "best_score": None,
-            "should_continue": True,
-            "max_iterations": max_iterations,
-        }
+        # 尝试从检查点恢复
+        checkpoint_data = None
+        if self.checkpoint_manager:
+            checkpoint_data = self.checkpoint_manager.load_checkpoint(workflow_id)
+
+        if checkpoint_data:
+            logger.info(
+                "Resuming from checkpoint",
+                workflow_id=workflow_id,
+                node_name=checkpoint_data.get("node_name"),
+                iteration=checkpoint_data.get("metadata", {}).get("iteration"),
+            )
+            initial_state = checkpoint_data["state"]
+            initial_state["workflow_id"] = workflow_id
+        else:
+            initial_state = {
+                "workflow_id": workflow_id,
+                "strategy_id": strategy_id,
+                "parameter_space": parameter_space,
+                "messages": [],
+                "current_iteration": 0,
+                "best_parameters": None,
+                "best_score": None,
+                "should_continue": True,
+                "max_iterations": max_iterations,
+            }
 
         final_state = await self.graph.ainvoke(initial_state)
+
+        # 清理检查点
+        if self.checkpoint_manager:
+            self.checkpoint_manager.archive_checkpoint(workflow_id)
+            self.checkpoint_manager.delete_checkpoint(workflow_id)
 
         logger.info(
             "Optimization workflow completed",

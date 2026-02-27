@@ -5,9 +5,35 @@ import sys
 from typing import Any
 
 import structlog
-from structlog.types import FilteringBoundLogger
+from structlog.types import EventDict, FilteringBoundLogger, WrappedLogger
 
-from langgraph.shared.config import LangGraphConfig
+from shared.config import LangGraphConfig
+
+
+def _add_trace_context(
+    logger: WrappedLogger, method_name: str, event_dict: EventDict
+) -> EventDict:
+    """Processor to add trace context to log events.
+
+    This processor checks for an active trace context and adds
+    correlation_id, span_id, and parent_span_id to the log event.
+    """
+    # Import here to avoid circular dependency
+    try:
+        from infrastructure.observability.tracing import get_trace_context
+
+        trace_ctx = get_trace_context()
+        if trace_ctx:
+            event_dict["correlation_id"] = trace_ctx.correlation_id
+            event_dict["span_id"] = trace_ctx.span_id
+            if trace_ctx.parent_span_id:
+                event_dict["parent_span_id"] = trace_ctx.parent_span_id
+            event_dict["workflow_name"] = trace_ctx.workflow_name
+    except ImportError:
+        # Observability module not available, skip trace context
+        pass
+
+    return event_dict
 
 
 def setup_logging(config: LangGraphConfig) -> None:
@@ -35,6 +61,7 @@ def setup_logging(config: LangGraphConfig) -> None:
         structlog.stdlib.add_logger_name,
         structlog.processors.TimeStamper(fmt="iso"),
         structlog.processors.StackInfoRenderer(),
+        _add_trace_context,  # Add trace context to all logs
     ]
 
     # Configure console formatter (colored, human-readable)

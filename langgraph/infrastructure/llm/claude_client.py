@@ -1,11 +1,13 @@
 """Claude API client implementation"""
 import time
+from pathlib import Path
 from typing import Optional
 
 from anthropic import Anthropic
 
-from langgraph.shared.exceptions import LLMError
-from langgraph.shared.logging import get_logger
+from infrastructure.cache.llm_cache import LLMCache
+from shared.exceptions import LLMError
+from shared.logging import get_logger
 
 logger = get_logger(__name__)
 
@@ -21,6 +23,8 @@ class ClaudeClient:
         temperature: float = 0.7,
         max_retries: int = 3,
         retry_delay: float = 1.0,
+        cache_dir: Optional[Path] = None,
+        enable_cache: bool = True,
     ):
         """
         初始化 Claude 客户端
@@ -32,6 +36,8 @@ class ClaudeClient:
             temperature: 温度参数（0-1）
             max_retries: 最大重试次数
             retry_delay: 重试延迟（秒）
+            cache_dir: 缓存目录（可选）
+            enable_cache: 是否启用缓存
         """
         self.model = model
         self.max_tokens = max_tokens
@@ -40,12 +46,14 @@ class ClaudeClient:
         self.retry_delay = retry_delay
 
         self._client = Anthropic(api_key=api_key)
+        self._cache = LLMCache(cache_dir=cache_dir, use_memory=True) if enable_cache else None
 
         logger.info(
             "Claude client initialized",
             model=model,
             max_tokens=max_tokens,
             temperature=temperature,
+            cache_enabled=enable_cache,
         )
 
     def generate(
@@ -54,6 +62,7 @@ class ClaudeClient:
         system: Optional[str] = None,
         temperature: Optional[float] = None,
         max_tokens: Optional[int] = None,
+        use_cache: bool = True,
     ) -> str:
         """
         生成响应
@@ -63,6 +72,7 @@ class ClaudeClient:
             system: 系统提示词（可选）
             temperature: 温度参数（可选，覆盖默认值）
             max_tokens: 最大 token 数（可选，覆盖默认值）
+            use_cache: 是否使用缓存
 
         Returns:
             生成的文本响应
@@ -72,6 +82,19 @@ class ClaudeClient:
         """
         temp = temperature if temperature is not None else self.temperature
         tokens = max_tokens if max_tokens is not None else self.max_tokens
+
+        # 尝试从缓存获取
+        if use_cache and self._cache:
+            cached_response = self._cache.get(
+                prompt=prompt,
+                system=system,
+                model=self.model,
+                temperature=temp,
+                max_tokens=tokens,
+            )
+            if cached_response:
+                logger.info("Using cached response", prompt_length=len(prompt))
+                return cached_response
 
         for attempt in range(self.max_retries):
             try:
@@ -110,6 +133,17 @@ class ClaudeClient:
                     response_length=len(result),
                 )
 
+                # 保存到缓存
+                if use_cache and self._cache:
+                    self._cache.set(
+                        prompt=prompt,
+                        response=result,
+                        system=system,
+                        model=self.model,
+                        temperature=temp,
+                        max_tokens=tokens,
+                    )
+
                 return result
 
             except Exception as e:
@@ -127,6 +161,18 @@ class ClaudeClient:
 
         # 不应该到达这里
         raise LLMError("Unexpected error in generate method")
+
+    def clear_cache(self) -> None:
+        """清空缓存"""
+        if self._cache:
+            self._cache.clear()
+            logger.info("Cache cleared")
+
+    def get_cache_stats(self) -> dict:
+        """获取缓存统计信息"""
+        if self._cache:
+            return self._cache.get_stats()
+        return {"cache_enabled": False}
 
     def count_tokens(self, text: str) -> int:
         """
