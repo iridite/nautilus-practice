@@ -32,6 +32,8 @@ jobs:
         id: pr
         uses: actions/github-script@v7
         with:
+          retries: 3
+          retry-exempt-status-codes: 400,401,403,404,422
           script: |
             const pr = context.payload.pull_request || (
               await github.rest.pulls.get({
@@ -90,6 +92,8 @@ jobs:
         if: steps.check_auto_merge.outputs.auto_merge == 'true'
         uses: actions/github-script@v7
         with:
+          retries: 3
+          retry-exempt-status-codes: 400,401,403,404,422
           script: |
             const pr = context.payload.pull_request || (
               await github.rest.pulls.get({
@@ -104,39 +108,50 @@ jobs:
             const delayMs = 10000; // 10 seconds
 
             for (let i = 0; i < maxAttempts; i++) {
-              const { data: checks } = await github.rest.checks.listForRef({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                ref: pr.head.sha
-              });
+              try {
+                const { data: checks } = await github.rest.checks.listForRef({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  ref: pr.head.sha
+                });
 
-              const requiredChecks = checks.check_runs.filter(check =>
-                check.name.includes('Run Tests') ||
-                check.name.includes('Lint Check') ||
-                check.name.includes('Validate Branch')
-              );
+                const requiredChecks = checks.check_runs.filter(check =>
+                  check.name.includes('Run Tests') ||
+                  check.name.includes('Lint Check') ||
+                  check.name.includes('Validate Branch')
+                );
 
-              const allCompleted = requiredChecks.every(check =>
-                check.status === 'completed'
-              );
+                const allCompleted = requiredChecks.every(check =>
+                  check.status === 'completed'
+                );
 
-              const allPassed = requiredChecks.every(check =>
-                check.conclusion === 'success'
-              );
+                const allPassed = requiredChecks.every(check =>
+                  check.conclusion === 'success'
+                );
 
-              if (allCompleted) {
-                if (allPassed) {
-                  console.log('✅ All required checks passed');
-                  return true;
+                if (allCompleted) {
+                  if (allPassed) {
+                    console.log('✅ All required checks passed');
+                    return true;
+                  } else {
+                    console.log('❌ Some checks failed');
+                    const failed = requiredChecks.filter(c => c.conclusion !== 'success');
+                    failed.forEach(c => console.log(`  - ${c.name}: ${c.conclusion}`));
+                    throw new Error('Required checks failed');
+                  }
+                }
+
+                console.log(`⏳ Waiting for checks to complete (${i + 1}/${maxAttempts})...`);
+              } catch (error) {
+                // Handle GitHub API errors (like 500 Unicorn errors)
+                if (error.status >= 500) {
+                  console.log(`⚠️  GitHub API error (${error.status}), retrying...`);
+                  // Continue to next iteration to retry
                 } else {
-                  console.log('❌ Some checks failed');
-                  const failed = requiredChecks.filter(c => c.conclusion !== 'success');
-                  failed.forEach(c => console.log(`  - ${c.name}: ${c.conclusion}`));
-                  throw new Error('Required checks failed');
+                  throw error; // Re-throw non-5xx errors
                 }
               }
 
-              console.log(`⏳ Waiting for checks to complete (${i + 1}/${maxAttempts})...`);
               await new Promise(resolve => setTimeout(resolve, delayMs));
             }
 
@@ -147,6 +162,8 @@ jobs:
         id: check_approval
         uses: actions/github-script@v7
         with:
+          retries: 3
+          retry-exempt-status-codes: 400,401,403,404,422
           script: |
             const pr = context.payload.pull_request || (
               await github.rest.pulls.get({
@@ -184,6 +201,8 @@ jobs:
         if: steps.check_auto_merge.outputs.auto_merge == 'true'
         uses: actions/github-script@v7
         with:
+          retries: 3
+          retry-exempt-status-codes: 400,401,403,404,422
           script: |
             const pr = context.payload.pull_request || (
               await github.rest.pulls.get({
@@ -207,6 +226,8 @@ jobs:
         if: steps.check_auto_merge.outputs.auto_merge == 'true'
         uses: actions/github-script@v7
         with:
+          retries: 3
+          retry-exempt-status-codes: 400,401,403,404,422
           script: |
             const pr = context.payload.pull_request || (
               await github.rest.pulls.get({
@@ -250,6 +271,8 @@ jobs:
           steps.check_approval.outputs.result == 'true'
         uses: actions/github-script@v7
         with:
+          retries: 3
+          retry-exempt-status-codes: 400,401,403,404,422
           script: |
             const pr = context.payload.pull_request || (
               await github.rest.pulls.get({
