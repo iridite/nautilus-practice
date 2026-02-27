@@ -288,7 +288,7 @@ def batch_fetch_ohlcv(
                     executor.submit(
                         _fetch_single_symbol,
                         raw_symbol,
-                        shared_exchange,  # 传入共享的 exchange 实例
+                        exchange_id,  # 传入 exchange_id 字符串
                         timeframe,
                         start_ms,
                         end_ms,
@@ -299,6 +299,7 @@ def batch_fetch_ohlcv(
                         period,
                         source,
                         is_single,
+                        shared_exchange,  # 传入共享的 exchange 实例
                     ): raw_symbol
                     for raw_symbol in symbols
                 }
