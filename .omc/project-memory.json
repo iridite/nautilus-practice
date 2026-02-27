@@ -1,0 +1,612 @@
+{
+  "version": "1.0.0",
+  "lastScanned": 1772173361799,
+  "projectRoot": "/home/yixian/Projects/nautilus-practice",
+  "techStack": {
+    "languages": [
+      {
+        "name": "Python",
+        "version": null,
+        "confidence": "high",
+        "markers": [
+          "pyproject.toml"
+        ]
+      }
+    ],
+    "frameworks": [
+      {
+        "name": "pytest",
+        "version": null,
+        "category": "testing"
+      }
+    ],
+    "packageManager": null,
+    "runtime": null
+  },
+  "build": {
+    "buildCommand": null,
+    "testCommand": "pytest",
+    "lintCommand": "ruff check",
+    "devCommand": null,
+    "scripts": {}
+  },
+  "conventions": {
+    "namingStyle": null,
+    "importStyle": null,
+    "testPattern": null,
+    "fileOrganization": null
+  },
+  "structure": {
+    "isMonorepo": false,
+    "workspaces": [],
+    "mainDirectories": [
+      "docs",
+      "examples",
+      "scripts",
+      "tests"
+    ],
+    "gitBranches": {
+      "defaultBranch": "main",
+      "branchingStrategy": null
+    }
+  },
+  "customNotes": [],
+  "directoryMap": {
+    "__pycache__": {
+      "path": "__pycache__",
+      "purpose": null,
+      "fileCount": 1,
+      "lastAccessed": 1772173361795,
+      "keyFiles": [
+        "main.cpython-312.pyc"
+      ]
+    },
+    "archive": {
+      "path": "archive",
+      "purpose": null,
+      "fileCount": 0,
+      "lastAccessed": 1772173361795,
+      "keyFiles": []
+    },
+    "backtest": {
+      "path": "backtest",
+      "purpose": null,
+      "fileCount": 4,
+      "lastAccessed": 1772173361796,
+      "keyFiles": [
+        "__init__.py",
+        "engine_high.py",
+        "engine_low.py",
+        "tui_manager.py"
+      ]
+    },
+    "cli": {
+      "path": "cli",
+      "purpose": null,
+      "fileCount": 4,
+      "lastAccessed": 1772173361796,
+      "keyFiles": [
+        "README.md",
+        "__init__.py",
+        "commands.py",
+        "file_cleanup.py"
+      ]
+    },
+    "config": {
+      "path": "config",
+      "purpose": "Configuration files",
+      "fileCount": 2,
+      "lastAccessed": 1772173361797,
+      "keyFiles": [
+        "active.yaml",
+        "constants.py"
+      ]
+    },
+    "core": {
+      "path": "core",
+      "purpose": null,
+      "fileCount": 6,
+      "lastAccessed": 1772173361797,
+      "keyFiles": [
+        "__init__.py",
+        "adapter.py",
+        "config_validator.py",
+        "exceptions.py",
+        "loader.py"
+      ]
+    },
+    "data": {
+      "path": "data",
+      "purpose": "Data files",
+      "fileCount": 0,
+      "lastAccessed": 1772173361797,
+      "keyFiles": []
+    },
+    "docs": {
+      "path": "docs",
+      "purpose": "Documentation",
+      "fileCount": 3,
+      "lastAccessed": 1772173361797,
+      "keyFiles": [
+        "BINANCE_API_SETUP.md",
+        "OKX_TESTNET_SETUP.md",
+        "SYNC_GUIDE.md"
+      ]
+    },
+    "examples": {
+      "path": "examples",
+      "purpose": "Example code",
+      "fileCount": 3,
+      "lastAccessed": 1772173361797,
+      "keyFiles": [
+        "data_quality_check_example.py",
+        "performance_analysis_example.py",
+        "profiling_example.py"
+      ]
+    },
+    "indicators": {
+      "path": "indicators",
+      "purpose": null,
+      "fileCount": 0,
+      "lastAccessed": 1772173361797,
+      "keyFiles": []
+    },
+    "langgraph": {
+      "path": "langgraph",
+      "purpose": null,
+      "fileCount": 3,
+      "lastAccessed": 1772173361797,
+      "keyFiles": [
+        "CODE_QUALITY_REPORT.md",
+        "IMPLEMENTATION_SUMMARY.md",
+        "__init__.py"
+      ]
+    },
+    "live": {
+      "path": "live",
+      "purpose": null,
+      "fileCount": 2,
+      "lastAccessed": 1772173361797,
+      "keyFiles": [
+        "__init__.py",
+        "engine.py"
+      ]
+    },
+    "log": {
+      "path": "log",
+      "purpose": null,
+      "fileCount": 1,
+      "lastAccessed": 1772173361798,
+      "keyFiles": [
+        "logrotate.conf"
+      ]
+    },
+    "logs": {
+      "path": "logs",
+      "purpose": null,
+      "fileCount": 1,
+      "lastAccessed": 1772173361798,
+      "keyFiles": [
+        "langgraph.log"
+      ]
+    },
+    "nautilus_practice.egg-info": {
+      "path": "nautilus_practice.egg-info",
+      "purpose": null,
+      "fileCount": 5,
+      "lastAccessed": 1772173361798,
+      "keyFiles": [
+        "PKG-INFO",
+        "SOURCES.txt",
+        "dependency_links.txt",
+        "requires.txt",
+        "top_level.txt"
+      ]
+    },
+    "output": {
+      "path": "output",
+      "purpose": null,
+      "fileCount": 0,
+      "lastAccessed": 1772173361798,
+      "keyFiles": []
+    },
+    "plans": {
+      "path": "plans",
+      "purpose": null,
+      "fileCount": 2,
+      "lastAccessed": 1772173361798,
+      "keyFiles": [
+        "config_parameter_comparison.md",
+        "fix_zero_trades_issue.md"
+      ]
+    },
+    "sandbox": {
+      "path": "sandbox",
+      "purpose": null,
+      "fileCount": 4,
+      "lastAccessed": 1772173361798,
+      "keyFiles": [
+        "README.md",
+        "SANDBOX_STATUS.md",
+        "engine.py",
+        "preflight.py"
+      ]
+    },
+    "scripts": {
+      "path": "scripts",
+      "purpose": "Build/utility scripts",
+      "fileCount": 24,
+      "lastAccessed": 1772173361798,
+      "keyFiles": [
+        "__init__.py",
+        "analyze_backtest_results.py",
+        "benchmark_cache.py",
+        "benchmark_optimization.py",
+        "check.sh"
+      ]
+    },
+    "strategy": {
+      "path": "strategy",
+      "purpose": null,
+      "fileCount": 4,
+      "lastAccessed": 1772173361798,
+      "keyFiles": [
+        "README.md",
+        "__init__.py",
+        "dual_thrust.py",
+        "keltner_rs_breakout.py"
+      ]
+    },
+    "tests": {
+      "path": "tests",
+      "purpose": "Test files",
+      "fileCount": 33,
+      "lastAccessed": 1772173361798,
+      "keyFiles": [
+        "test_adapter.py",
+        "test_adapter_restore_equivalence.py",
+        "test_cli_commands.py",
+        "test_common_components.py",
+        "test_custom_data.py"
+      ]
+    },
+    "utils": {
+      "path": "utils",
+      "purpose": "Utility functions",
+      "fileCount": 15,
+      "lastAccessed": 1772173361798,
+      "keyFiles": [
+        "__init__.py",
+        "api_health_check.py",
+        "custom_data.py",
+        "data_file_checker.py",
+        "exceptions.py"
+      ]
+    },
+    "archive/docs": {
+      "path": "archive/docs",
+      "purpose": "Documentation",
+      "fileCount": 2,
+      "lastAccessed": 1772173361798,
+      "keyFiles": [
+        "ROOT_CLEANUP_REPORT.md",
+        "record.md"
+      ]
+    },
+    "archive/scripts": {
+      "path": "archive/scripts",
+      "purpose": "Build/utility scripts",
+      "fileCount": 0,
+      "lastAccessed": 1772173361798,
+      "keyFiles": []
+    },
+    "data/models": {
+      "path": "data/models",
+      "purpose": "Data models",
+      "fileCount": 0,
+      "lastAccessed": 1772173361799,
+      "keyFiles": []
+    },
+    "docs/api": {
+      "path": "docs/api",
+      "purpose": "API routes",
+      "fileCount": 2,
+      "lastAccessed": 1772173361799,
+      "keyFiles": [
+        "strategy-api.md",
+        "utils-api.md"
+      ]
+    }
+  },
+  "hotPaths": [
+    {
+      "path": "langgraph/infrastructure/graph/optimize_graph.py",
+      "accessCount": 30,
+      "lastAccessed": 1772181221722,
+      "type": "file"
+    },
+    {
+      "path": "langgraph/infrastructure/graph/research_graph.py",
+      "accessCount": 18,
+      "lastAccessed": 1772181190858,
+      "type": "file"
+    },
+    {
+      "path": "langgraph/tests/unit/infrastructure/graph/test_optimize_graph.py",
+      "accessCount": 15,
+      "lastAccessed": 1772178939687,
+      "type": "file"
+    },
+    {
+      "path": "langgraph/infrastructure/graph/_error_handling.py",
+      "accessCount": 14,
+      "lastAccessed": 1772180835223,
+      "type": "file"
+    },
+    {
+      "path": "langgraph/tests/unit/infrastructure/llm/test_claude_client.py",
+      "accessCount": 11,
+      "lastAccessed": 1772181906635,
+      "type": "file"
+    },
+    {
+      "path": "langgraph/infrastructure/backtest/engine.py",
+      "accessCount": 9,
+      "lastAccessed": 1772179973575,
+      "type": "file"
+    },
+    {
+      "path": "langgraph/infrastructure/graph/__init__.py",
+      "accessCount": 7,
+      "lastAccessed": 1772181257355,
+      "type": "file"
+    },
+    {
+      "path": "langgraph/infrastructure/llm/claude_client.py",
+      "accessCount": 7,
+      "lastAccessed": 1772181704547,
+      "type": "file"
+    },
+    {
+      "path": "langgraph/infrastructure/database/repositories.py",
+      "accessCount": 6,
+      "lastAccessed": 1772177493776,
+      "type": "file"
+    },
+    {
+      "path": "langgraph/shared/config.py",
+      "accessCount": 5,
+      "lastAccessed": 1772179874551,
+      "type": "file"
+    },
+    {
+      "path": "langgraph/shared/logging.py",
+      "accessCount": 5,
+      "lastAccessed": 1772180870073,
+      "type": "file"
+    },
+    {
+      "path": "langgraph/infrastructure/graph/state.py",
+      "accessCount": 4,
+      "lastAccessed": 1772176950425,
+      "type": "file"
+    },
+    {
+      "path": "langgraph/infrastructure/agents/base.py",
+      "accessCount": 4,
+      "lastAccessed": 1772176951045,
+      "type": "file"
+    },
+    {
+      "path": "langgraph/domain/models/strategy.py",
+      "accessCount": 4,
+      "lastAccessed": 1772180362004,
+      "type": "file"
+    },
+    {
+      "path": "langgraph/IMPLEMENTATION_SUMMARY.md",
+      "accessCount": 4,
+      "lastAccessed": 1772181484524,
+      "type": "file"
+    },
+    {
+      "path": "langgraph/infrastructure/database/models.py",
+      "accessCount": 3,
+      "lastAccessed": 1772176950439,
+      "type": "file"
+    },
+    {
+      "path": "langgraph/tests/unit/infrastructure/graph/test_research_graph.py",
+      "accessCount": 3,
+      "lastAccessed": 1772176975953,
+      "type": "file"
+    },
+    {
+      "path": "langgraph/infrastructure/graph/_config.py",
+      "accessCount": 3,
+      "lastAccessed": 1772177643392,
+      "type": "file"
+    },
+    {
+      "path": "langgraph",
+      "accessCount": 3,
+      "lastAccessed": 1772177673124,
+      "type": "directory"
+    },
+    {
+      "path": "langgraph/infrastructure/graph/_import_utils.py",
+      "accessCount": 3,
+      "lastAccessed": 1772179052399,
+      "type": "file"
+    },
+    {
+      "path": "langgraph/tests/unit/infrastructure/backtest/test_engine_edge_cases.py",
+      "accessCount": 3,
+      "lastAccessed": 1772180414171,
+      "type": "file"
+    },
+    {
+      "path": "langgraph/infrastructure/observability/__init__.py",
+      "accessCount": 3,
+      "lastAccessed": 1772180813010,
+      "type": "file"
+    },
+    {
+      "path": "langgraph/infrastructure/cache/__init__.py",
+      "accessCount": 3,
+      "lastAccessed": 1772181140313,
+      "type": "file"
+    },
+    {
+      "path": "pyproject.toml",
+      "accessCount": 2,
+      "lastAccessed": 1772174750431,
+      "type": "file"
+    },
+    {
+      "path": "langgraph/infrastructure/agents/coordinator.py",
+      "accessCount": 2,
+      "lastAccessed": 1772176957139,
+      "type": "file"
+    },
+    {
+      "path": "langgraph/infrastructure/agents/researcher.py",
+      "accessCount": 2,
+      "lastAccessed": 1772176957156,
+      "type": "file"
+    },
+    {
+      "path": "langgraph/infrastructure/agents/optimizer.py",
+      "accessCount": 2,
+      "lastAccessed": 1772176957548,
+      "type": "file"
+    },
+    {
+      "path": "langgraph/tests/unit/infrastructure/graph/test_graph_init.py",
+      "accessCount": 2,
+      "lastAccessed": 1772180445043,
+      "type": "file"
+    },
+    {
+      "path": "langgraph/infrastructure/observability/metrics.py",
+      "accessCount": 2,
+      "lastAccessed": 1772180813122,
+      "type": "file"
+    },
+    {
+      "path": "langgraph/infrastructure/observability/tracing.py",
+      "accessCount": 2,
+      "lastAccessed": 1772180835106,
+      "type": "file"
+    },
+    {
+      "path": "langgraph/tests/unit/infrastructure/observability/test_metrics.py",
+      "accessCount": 2,
+      "lastAccessed": 1772180876849,
+      "type": "file"
+    },
+    {
+      "path": "langgraph/tests/unit/infrastructure/observability/test_tracing.py",
+      "accessCount": 2,
+      "lastAccessed": 1772180880049,
+      "type": "file"
+    },
+    {
+      "path": "langgraph/examples/observability_example.py",
+      "accessCount": 2,
+      "lastAccessed": 1772180942314,
+      "type": "file"
+    },
+    {
+      "path": "langgraph/infrastructure/cache/llm_cache.py",
+      "accessCount": 2,
+      "lastAccessed": 1772181146496,
+      "type": "file"
+    },
+    {
+      "path": "langgraph/infrastructure/graph/checkpoint.py",
+      "accessCount": 2,
+      "lastAccessed": 1772181156798,
+      "type": "file"
+    },
+    {
+      "path": "langgraph/shared/exceptions.py",
+      "accessCount": 1,
+      "lastAccessed": 1772174109662,
+      "type": "file"
+    },
+    {
+      "path": "langgraph/CODE_QUALITY_REPORT.md",
+      "accessCount": 1,
+      "lastAccessed": 1772174119897,
+      "type": "file"
+    },
+    {
+      "path": "langgraph/infrastructure/README.md",
+      "accessCount": 1,
+      "lastAccessed": 1772174120917,
+      "type": "file"
+    },
+    {
+      "path": "langgraph/infrastructure/graph/IMPORT_WORKAROUND.md",
+      "accessCount": 1,
+      "lastAccessed": 1772174121320,
+      "type": "file"
+    },
+    {
+      "path": "",
+      "accessCount": 1,
+      "lastAccessed": 1772176971486,
+      "type": "directory"
+    },
+    {
+      "path": "infrastructure/README.md",
+      "accessCount": 1,
+      "lastAccessed": 1772179507978,
+      "type": "file"
+    },
+    {
+      "path": "langgraph/tests/unit/infrastructure/graph/test_error_handling.py",
+      "accessCount": 1,
+      "lastAccessed": 1772180098262,
+      "type": "file"
+    },
+    {
+      "path": "langgraph/tests/unit/infrastructure/observability/__init__.py",
+      "accessCount": 1,
+      "lastAccessed": 1772180295833,
+      "type": "file"
+    },
+    {
+      "path": "langgraph/tests/unit/infrastructure/backtest/test_engine.py",
+      "accessCount": 1,
+      "lastAccessed": 1772180362531,
+      "type": "file"
+    },
+    {
+      "path": "langgraph/tests/test_llm_cache.py",
+      "accessCount": 1,
+      "lastAccessed": 1772180954252,
+      "type": "file"
+    },
+    {
+      "path": "langgraph/tests/test_checkpoint.py",
+      "accessCount": 1,
+      "lastAccessed": 1772181107395,
+      "type": "file"
+    },
+    {
+      "path": "langgraph/infrastructure/observability/README.md",
+      "accessCount": 1,
+      "lastAccessed": 1772181116300,
+      "type": "file"
+    },
+    {
+      "path": "langgraph/infrastructure/observability/IMPLEMENTATION_SUMMARY.md",
+      "accessCount": 1,
+      "lastAccessed": 1772181210824,
+      "type": "file"
+    }
+  ],
+  "userDirectives": []
+}

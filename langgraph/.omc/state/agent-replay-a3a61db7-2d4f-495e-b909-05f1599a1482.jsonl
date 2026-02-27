@@ -1,0 +1,12 @@
+{"t":0,"agent":"system","event":"skill_invoked","skill_name":"oh-my-claudecode:cancel"}
+{"t":0,"agent":"aa0a099","agent_type":"architect","event":"agent_stop","success":true}
+{"t":0,"agent":"system","event":"keyword_detected","keyword":"ultrapilot"}
+{"t":0,"agent":"system","event":"skill_invoked","skill_name":"oh-my-claudecode:ultrapilot"}
+{"t":0,"agent":"ad64a1a","agent_type":"executor","event":"agent_start","parent_mode":"none"}
+{"t":0,"agent":"a3cd3c1","agent_type":"executor","event":"agent_start","parent_mode":"none"}
+{"t":0,"agent":"abd442a","agent_type":"executor","event":"agent_start","parent_mode":"none"}
+{"t":0,"agent":"ad64a1a","agent_type":"executor","event":"agent_stop","success":true,"duration_ms":658769}
+{"t":0,"agent":"abd442a","agent_type":"executor","event":"agent_stop","success":true,"duration_ms":1360326}
+{"t":0,"agent":"a3cd3c1","agent_type":"executor","event":"agent_stop","success":true,"duration_ms":1770009}
+{"t":0,"agent":"ae70ee3","agent_type":"executor","event":"agent_start","parent_mode":"none"}
+{"t":0,"agent":"ae70ee3","agent_type":"executor","event":"agent_stop","success":true,"duration_ms":261511}
