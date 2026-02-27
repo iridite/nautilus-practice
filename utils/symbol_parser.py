@@ -101,6 +101,7 @@ def resolve_symbol_and_type(input_symbol: str) -> Tuple[str, str]:
     - BTCUSDT -> BTC/USDT:USDT (永续合约)
     - BTC/USDT -> BTC/USDT (现货)
     - BTCUSD -> BTC/USD:BTC (合约)
+    - ACTUSDT:USDT -> ACT/USDT:USDT (简化永续合约格式)
 
     Parameters
     ----------
@@ -131,6 +132,22 @@ def resolve_symbol_and_type(input_symbol: str) -> Tuple[str, str]:
     # 已经是标准 CCXT 格式 (包含 "/")
     if "/" in normalized_symbol:
         return _parse_standard_ccxt_format(normalized_symbol)
+
+    # 如果包含 ":" 但不包含 "/"，说明是简化的永续合约格式（如 ACTUSDT:USDT）
+    # 需要转换成标准格式（ACT/USDT:USDT）
+    if ":" in normalized_symbol:
+        # 分离基础部分和结算货币
+        base_part, settle = normalized_symbol.split(":", 1)
+        # 基础部分应该以结算货币结尾（如 ACTUSDT 以 USDT 结尾）
+        if base_part.endswith(settle):
+            # 提取真正的基础货币（ACT）
+            base = base_part[: -len(settle)]
+            if len(base) >= 2:
+                # 转换成标准 CCXT 格式
+                ccxt_symbol = f"{base}/{settle}:{settle}"
+                return ccxt_symbol, "swap"
+        # 如果格式不符合预期，直接返回原始符号
+        return normalized_symbol, "swap"
 
     # 简化格式，需要解析
     return _parse_simplified_format(normalized_symbol)
