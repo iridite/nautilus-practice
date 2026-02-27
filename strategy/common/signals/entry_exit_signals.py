@@ -23,6 +23,7 @@ class EntrySignalGenerator:
         self,
         volume_multiplier: float = 1.5,
         max_upper_wick_ratio: float = 0.3,
+        min_body_ratio: float = 0.4,
     ):
         """
         初始化入场信号生成器
@@ -30,9 +31,11 @@ class EntrySignalGenerator:
         Args:
             volume_multiplier: 成交量放大倍数
             max_upper_wick_ratio: 最大上影线比例
+            min_body_ratio: 最小实体比例（实体/全长）
         """
         self.volume_multiplier = volume_multiplier
         self.max_upper_wick_ratio = max_upper_wick_ratio
+        self.min_body_ratio = min_body_ratio
 
     def check_keltner_breakout(
         self,
@@ -119,6 +122,44 @@ class EntrySignalGenerator:
         upper_wick_ratio = upper_wick / body_size
 
         return upper_wick_ratio <= self.max_upper_wick_ratio
+
+    def check_body_quality(
+        self,
+        open_price: float,
+        high: float,
+        low: float,
+        close: float,
+    ) -> bool:
+        """
+        检查 K线实体质量
+
+        实体质量 = 实体大小 / K线全长
+        - 实体大小 = |close - open|
+        - K线全长 = high - low
+        - 要求实体占比 >= min_body_ratio (默认 40%)
+
+        高质量 K线特征：
+        - 实体饱满，影线短
+        - 表示趋势明确，买卖力量强劲
+        - 避免十字星、陀螺等犹豫形态
+
+        Args:
+            open_price: 开盘价
+            high: 最高价
+            low: 最低价
+            close: 收盘价
+
+        Returns:
+            True 表示实体质量合格
+        """
+        full_range = high - low
+        if full_range <= 0:
+            return False
+
+        body_size = abs(close - open_price)
+        body_ratio = body_size / full_range
+
+        return body_ratio >= self.min_body_ratio
 
 
 class ExitSignalGenerator:

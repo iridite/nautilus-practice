@@ -2,61 +2,61 @@ config_class: KeltnerRSBreakoutConfig
 module_path: strategy.keltner_rs_breakout
 name: KeltnerRSBreakoutStrategy
 parameters:
-  adx_period: 14
-  adx_threshold: 20.0
-  atr_period: 20
-  base_risk_pct: 0.05
-  bb_period: 20
-  bb_std: 1.5
-  breakeven_multiplier: 1.5
-  btc_max_atr_pct: 0.03
-  btc_regime_atr_period: 14
-  btc_regime_sma_period: 200
-  btc_symbol: BTCUSDT
-  chop_period: 14
-  chop_threshold: 61.8
-  data_types:
-  - funding
-  deviation_threshold: 0.35
-  ema_period: 20
-  enable_btc_regime_filter: false
-  enable_euphoria_filter: false
-  enable_rsi_stop_loss: false
-  enable_short: true
-  enable_time_stop: false
-  euphoria_reduce_position_pct: 0.5
-  funding_rate_danger_annual: 200.0
-  funding_rate_warning_annual: 100.0
-  high_conviction_risk_pct: 0.075
-  keltner_base_multiplier: 1.5
-  keltner_trigger_multiplier: 2.2
-  leverage: 2
-  max_positions: 5
-  max_upper_wick_ratio: 0.4
-  min_squeeze_duration: 5
-  origination: EXTERNAL
-  price_type: LAST
-  rs_long_lookback_days: 20
-  rs_long_weight: 0.3
-  rs_short_lookback_days: 5
-  rs_short_weight: 0.7
-  short_body_position_threshold: 0.3
-  short_stop_atr_multiplier: 2.0
-  short_trigger_multiplier: 2.8
-  sma_period: 200
-  squeeze_memory_days: 1
-  stop_loss_atr_multiplier: 2.8
-  time_stop_bars: 3
-  time_stop_momentum_threshold: 0.01
+  # 基础参数
   timeframe: 1d
   timeframes:
   - main
-  universe_freq: W-MON
-  universe_top_n: 15
-  volume_multiplier: 1.2
+  origination: EXTERNAL
+  price_type: LAST
+
+  # 技术指标参数
+  atr_period: 20
+  ema_period: 20
+  sma_period: 200
+  bb_period: 20
+  bb_std: 1.5
   volume_period: 20
-  # 动态风险管理参数
-  enable_dynamic_risk: true
-  losing_streak_risk_pct: 0.01
-  bear_market_risk_multiplier: 0.5
-  recent_trades_window: 3
+
+  # Keltner 通道参数
+  keltner_base_multiplier: 1.5
+  keltner_trigger_multiplier: 2.2
+
+  # 相对强度参数
+  btc_symbol: BTCUSDT
+  rs_short_lookback_days: 5
+  rs_long_lookback_days: 20
+  rs_short_weight: 0.7
+  rs_long_weight: 0.3
+
+  # Squeeze 参数
+  squeeze_memory_days: 1
+
+  # 入场过滤器参数
+  volume_multiplier: 1.2  # 温和量能确认
+  max_upper_wick_ratio: 0.4
+  min_body_ratio: 0.5  # K线实体质量检测
+
+  # 风险管理参数
+  base_risk_pct: 0.05
+  high_conviction_risk_pct: 0.075
+  leverage: 2
+  max_positions: 5
+  max_position_risk_pct: 0.2  # 单个资产最大仓位占比
+
+  # 出场参数
+  stop_loss_atr_multiplier: 2.8  # Chandelier Exit
+  enable_time_stop: false
+  time_stop_bars: 3
+  time_stop_momentum_threshold: 0.01
+
+  # Universe 参数
+  universe_top_n: 15
+  universe_freq: W-MON
+
+  # 市场狂热度过滤器参数
+  enable_euphoria_filter: false
+  funding_rate_warning_annual: 100.0
+  funding_rate_danger_annual: 200.0
+  euphoria_reduce_position_pct: 0.5
+  data_types:
+  - funding
