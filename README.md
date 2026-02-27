@@ -70,11 +70,14 @@ nautilus-practice/
 uv run ruff check .
 uv run ruff format .
 
-# 运行特定策略回测
-uv run python backtest/backtest_keltner_rs.py
+# 运行回测（推荐高级引擎）
+uv run python main.py backtest --type high
 
-# 查看回测结果
-ls -lh output/backtest/result/
+# 分析回测结果
+python scripts/analyze_backtest_results.py
+
+# 查看最新结果
+ls -lht output/backtest/result/*.json | head -3
 ```
 
 ## 核心功能
@@ -126,9 +129,10 @@ ls -lh output/backtest/result/
 ## 注意事项
 
 1. CSV 数据文件必须使用 "datetime" 或 "timestamp" 作为时间列名
-2. 高级引擎比低级引擎快 32%，优先使用高级引擎
+2. **优先使用高级引擎**：比低级引擎快 32%，且提供完整统计数据
 3. 金融计算使用 `Decimal` 而非 `float`
 4. Python 版本严格要求 3.12.12+，不支持 3.13
+5. **参数调优在独立分支进行**：策略优化工作应在 `feat/strategy-optimization` 等独立分支进行，避免污染 main 分支
 
 ## 常见问题
 
@@ -140,12 +144,35 @@ A: 使用过滤器诊断系统：
 3. 查看过滤器统计报告
 4. 根据建议调整配置
 
+**常见原因**：
+- `keltner_trigger_multiplier` 过小（建议 2.0-2.3）
+- `deviation_threshold` 过小（建议 0.30-0.35）
+- 过滤器组合效应导致信号被完全拦截
+
 ### Q: 数据加载很慢？
 
 A: 使用 Parquet 缓存：
 1. 首次运行会生成缓存
 2. 后续运行速度提升 10x
 3. 缓存位置：`data/parquet/`
+
+### Q: 低级引擎回测结果为空？
+
+A: 低级引擎可能不会生成完整的统计数据：
+1. 优先使用高级引擎：`--type high`
+2. 高级引擎提供完整的 PNL 和收益率统计
+3. 低级引擎主要用于调试和验证
+
+### Q: 如何分析���测结果？
+
+A: 使用分析脚本：
+```bash
+# 查看所有回测结果排名
+python scripts/analyze_backtest_results.py
+
+# 查看最新结果
+ls -lht output/backtest/result/*.json | head -3
+```
 
 ## 许可证
 
