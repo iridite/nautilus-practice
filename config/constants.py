@@ -52,7 +52,7 @@ DEFAULT_RSI_PERIOD = 14  # RSI周期
 # Keltner通道常量
 DEFAULT_KELTNER_BASE_MULTIPLIER = 1.5  # Keltner基础通道倍数（Squeeze判定）
 DEFAULT_KELTNER_TRIGGER_MULTIPLIER = 2.25  # Keltner触发通道倍数（入场信号）
-DEFAULT_VOLUME_MULTIPLIER = 1.5  # 成交量倍数（放量过滤）
+DEFAULT_VOLUME_MULTIPLIER = 1.2  # 成交量倍数（温和量能确认，避免错过早期突破）
 
 # 相对强度常量
 RS_SHORT_PERIOD = 5  # 短期RS周期（天）

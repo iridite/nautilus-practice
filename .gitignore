@@ -20,6 +20,7 @@ log/**
 .aider*
 .env
 test.env
+.omc/
 
 # Coverage reports
 htmlcov/

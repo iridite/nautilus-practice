@@ -122,6 +122,7 @@ def _fetch_single_symbol(
     period: int,
     source: str,
     is_single: bool,
+    exchange=None,
 ) -> tuple:
     """
     获取单个交易对的数据
@@ -130,9 +131,10 @@ def _fetch_single_symbol(
         (DataConfig | None, status): DataConfig对象和状态信息
         status: 'fetched', 'cached', 'skipped', 'error'
     """
-    # 每个线程创建自己的 exchange 实例以避免线程安全问题
-    exchange_class = getattr(ccxt, exchange_id.lower())
-    exchange = exchange_class({"enableRateLimit": True, "options": {"defaultType": "future"}})
+    # 如果没有传入 exchange 实例，则创建新的（向后兼容）
+    if exchange is None:
+        exchange_class = getattr(ccxt, exchange_id.lower())
+        exchange = exchange_class({"enableRateLimit": True, "options": {"defaultType": "future"}})
 
     try:
         ccxt_symbol, market_type = resolve_symbol_and_type(raw_symbol)
@@ -144,7 +146,7 @@ def _fetch_single_symbol(
             logger.warning(f"Failed to parse symbol {raw_symbol}: {e}, skipping")
         return None, "skipped"
 
-    safe_symbol = raw_symbol.replace("/", "")
+    safe_symbol = raw_symbol.replace("/", "").replace(":", "")
     filename = f"{exchange.id}-{safe_symbol}-{timeframe}-{start_date}_{end_date}.csv"
     relative_path = f"{safe_symbol}/{filename}"
     output_path = base_dir / "data" / "raw" / relative_path
@@ -216,6 +218,11 @@ def batch_fetch_ohlcv(
     skipped_count = 0
     is_single = len(symbols) == 1
 
+    # 创建共享的 exchange 实例（优化：避免每个线程都调用 load_markets）
+    exchange_class = getattr(ccxt, exchange_id.lower())
+    shared_exchange = exchange_class({"enableRateLimit": True, "options": {"defaultType": "future"}})
+    shared_exchange.load_markets()
+
     tui = get_tui()
     use_tui = is_tui_enabled()
 
@@ -238,6 +245,7 @@ def batch_fetch_ohlcv(
                     period,
                     source,
                     is_single,
+                    shared_exchange,  # 传入共享的 exchange 实例
                 ): raw_symbol
                 for raw_symbol in symbols
             }
@@ -280,7 +288,7 @@ def batch_fetch_ohlcv(
                     executor.submit(
                         _fetch_single_symbol,
                         raw_symbol,
-                        exchange_id,
+                        exchange_id,  # 传入 exchange_id 字符串
                         timeframe,
                         start_ms,
                         end_ms,
@@ -291,6 +299,7 @@ def batch_fetch_ohlcv(
                         period,
                         source,
                         is_single,
+                        shared_exchange,  # 传入共享的 exchange 实例
                     ): raw_symbol
                     for raw_symbol in symbols
                 }
