@@ -69,14 +69,14 @@ def _strip_inst_type_from_symbol(symbol: str) -> str:
 
 def _normalize_aux_symbol(aux_symbol: str) -> str:
     """
-    Normalize auxiliary symbol representations into the canonical 'BASE-USDT' form when possible.
+    Normalize auxiliary symbol representations, preserving the original format.
 
     Rules:
       - If aux_symbol contains a '.' (already an instrument id), return the left-side (without venue).
       - If aux_symbol contains '-' and already includes 'USDT', return uppercase and stripped form.
       - If aux_symbol contains '-' but not USDT, return uppercased form (assume user provided hyphenated symbol).
-      - If aux_symbol contains no '-' and ends with 'USDT' (e.g. 'BTCUSDT'), convert to 'BTC-USDT'.
-      - If aux_symbol is a short base like 'BTC', convert to 'BTC-USDT' (common default).
+      - If aux_symbol contains no '-' and ends with 'USDT' (e.g. 'BTCUSDT'), keep as-is (no hyphen insertion).
+      - If aux_symbol is a short base like 'BTC', convert to 'BTCUSDT' (matching data file format).
     """
     if not aux_symbol:
         raise ValueError("aux_symbol must be a non-empty string")
@@ -87,22 +87,19 @@ def _normalize_aux_symbol(aux_symbol: str) -> str:
     if "." in s:
         s = s.split(".")[0]
 
-    # Remove any trailing known inst type, e.g. "BTC-USDT-PERP" -> "BTC-USDT"
+    # Remove any trailing known inst type, e.g. "BTCUSDT-PERP" -> "BTCUSDT"
     s = _strip_inst_type_from_symbol(s)
 
     # If already hyphenated, make sure it's uppercased
     if "-" in s:
         return s
 
-    # If endswith USDT, split into base-USDT
+    # If endswith USDT, keep as-is (no hyphen insertion)
     if s.endswith("USDT"):
-        base = s[:-4]
-        if not base:
-            raise ValueError(f"Invalid aux_symbol: {aux_symbol}")
-        return f"{base}-USDT"
+        return s
 
-    # Fallback: assume it's a base asset (e.g., 'BTC') -> 'BTC-USDT'
-    return f"{s}-USDT"
+    # Fallback: assume it's a base asset (e.g., 'BTC') -> 'BTCUSDT'
+    return f"{s}USDT"
 
 
 def format_aux_instrument_id(
@@ -124,11 +121,11 @@ def format_aux_instrument_id(
       - Otherwise the `venue` argument must be provided when no template venue exists.
 
     Examples:
-      - format_aux_instrument_id("BTCUSDT", "AVAX-USDT-PERP.OKX") -> "BTC-USDT-PERP.OKX"
-      - format_aux_instrument_id("btc", None, venue="OKX") -> "BTC-USDT-PERP.OKX"
-      - format_aux_instrument_id("BTCUSDT", inst_type="SWAP", venue="BINANCE") -> "BTC-USDT-SWAP.BINANCE"
+      - format_aux_instrument_id("BTCUSDT", "AVAXUSDT-PERP.BINANCE") -> "BTCUSDT-PERP.BINANCE"
+      - format_aux_instrument_id("btc", None, venue="BINANCE") -> "BTCUSDT-PERP.BINANCE"
+      - format_aux_instrument_id("BTCUSDT", inst_type="PERP", venue="BINANCE") -> "BTCUSDT-PERP.BINANCE"
 
-    Returns: instrument_id string like 'BTC-USDT-PERP.OKX'
+    Returns: instrument_id string like 'BTCUSDT-PERP.BINANCE'
     """
     formatted_symbol = _normalize_aux_symbol(aux_symbol)
 

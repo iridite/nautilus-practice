@@ -20,14 +20,14 @@ class TestInstrumentHelpers(unittest.TestCase):
         aux = "BTCUSDT"
         template = "AVAX-USDT-PERP.OKX"
         out = format_aux_instrument_id(aux, template_inst_id=template)
-        self.assertEqual(out, "BTC-USDT-PERP.OKX")
+        self.assertEqual(out, "BTCUSDT-PERP.OKX")
 
     def test_format_aux_with_lowercase_base_and_template(self):
         # Lowercase aux and simple base (no USDT) should default to base-USDT
         aux = "btc"
         template = "AVAX-USDT-PERP.OKX"
         out = format_aux_instrument_id(aux, template_inst_id=template)
-        self.assertEqual(out, "BTC-USDT-PERP.OKX")
+        self.assertEqual(out, "BTCUSDT-PERP.OKX")
 
     def test_format_aux_with_hyphenated_aux_and_template(self):
         # Already hyphenated aux_symbol should be preserved (normalized to uppercase)
@@ -41,7 +41,7 @@ class TestInstrumentHelpers(unittest.TestCase):
         aux = "BTCUSDT"
         template = "AVAX-USDT-SWAP"  # no venue in template
         out = format_aux_instrument_id(aux, template_inst_id=template, venue="OKX")
-        self.assertEqual(out, "BTC-USDT-SWAP.OKX")
+        self.assertEqual(out, "BTCUSDT-SWAP.OKX")
 
     def test_format_aux_requires_venue_if_no_template(self):
         # If no template provided, venue must be supplied
