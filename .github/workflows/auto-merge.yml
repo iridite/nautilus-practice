@@ -115,10 +115,10 @@ jobs:
                   ref: pr.head.sha
                 });
 
+                // Match checks more flexibly to avoid hardcoded names
                 const requiredChecks = checks.check_runs.filter(check =>
-                  check.name.includes('Run Tests') ||
-                  check.name.includes('Lint Check') ||
-                  check.name.includes('Validate Branch')
+                  check.name.match(/test|lint|validate/i) &&
+                  !check.name.includes('coverage') // Exclude optional coverage checks
                 );
 
                 const allCompleted = requiredChecks.every(check =>
