@@ -334,12 +334,12 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
         # 计算每个过滤器的拦截率
         filters = [
             ("Not in Universe", "not_in_universe"),
-            ("BTC Regime", "btc_regime"),
             ("Price < SMA(200)", "price_below_sma"),
             ("RS Weak", "rs_weak"),
             ("Volume Low", "volume_low"),
             ("Keltner No Breakout", "keltner_no_breakout"),
             ("Wick Ratio", "wick_ratio"),
+            ("Body Quality", "body_quality"),
         ]
 
         for name, key in filters:
