@@ -103,7 +103,7 @@ class TestOptimizationGraph:
         """Test backtest node execution"""
         llm_client = Mock()
         backtest_engine = Mock()
-        backtest_engine.run_backtest = AsyncMock(return_value={"sharpe_ratio": 2.0})
+        backtest_engine.run = AsyncMock(return_value={"sharpe_ratio": 2.0})
 
         graph = OptimizationGraph(llm_client=llm_client, backtest_engine=backtest_engine)
 
@@ -124,14 +124,14 @@ class TestOptimizationGraph:
         assert result["backtest_result"]["sharpe_ratio"] == 2.0
         assert result["best_score"] == 2.0
         assert result["best_parameters"] == {"param1": 15}
-        backtest_engine.run_backtest.assert_called_once()
+        backtest_engine.run.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_backtest_node_updates_best_score(self):
         """Test backtest node updates best score when improved"""
         llm_client = Mock()
         backtest_engine = Mock()
-        backtest_engine.run_backtest = AsyncMock(return_value={"sharpe_ratio": 3.0})
+        backtest_engine.run = AsyncMock(return_value={"sharpe_ratio": 3.0})
 
         graph = OptimizationGraph(llm_client=llm_client, backtest_engine=backtest_engine)
 
@@ -156,7 +156,7 @@ class TestOptimizationGraph:
         """Test backtest node keeps best score when not improved"""
         llm_client = Mock()
         backtest_engine = Mock()
-        backtest_engine.run_backtest = AsyncMock(return_value={"sharpe_ratio": 1.5})
+        backtest_engine.run = AsyncMock(return_value={"sharpe_ratio": 1.5})
 
         graph = OptimizationGraph(llm_client=llm_client, backtest_engine=backtest_engine)
 

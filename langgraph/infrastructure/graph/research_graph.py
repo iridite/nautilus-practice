@@ -22,7 +22,7 @@ try:
     ]
 
     # Import external langgraph
-    import langgraph.graph as _lg  # type: ignore[import-untyped]
+    import langgraph.graph as _lg
 
     StateGraph = _lg.StateGraph
     END = _lg.END
@@ -61,7 +61,7 @@ class ResearchGraph:
         self.graph = self._build_graph()
         logger.info("Research graph initialized")
 
-    def _build_graph(self) -> Any:  # type: ignore[type-arg]
+    def _build_graph(self) -> Any:
         """
         构建工作流图
 
@@ -69,12 +69,12 @@ class ResearchGraph:
             StateGraph 对象
         """
         # 创建状态图
-        workflow = StateGraph(dict)
+        workflow = StateGraph(dict)  # type: ignore[type-var]
 
         # 添加节点
-        workflow.add_node("coordinator", self._coordinator_node)
-        workflow.add_node("researcher", self._researcher_node)
-        workflow.add_node("validator", self._validator_node)
+        workflow.add_node("coordinator", self._coordinator_node)  # type: ignore[type-var]
+        workflow.add_node("researcher", self._researcher_node)  # type: ignore[type-var]
+        workflow.add_node("validator", self._validator_node)  # type: ignore[type-var]
 
         # 设置入口点
         workflow.set_entry_point("coordinator")
@@ -179,7 +179,7 @@ class ResearchGraph:
         """
         logger.info("Starting research workflow", user_input_length=len(user_input))
 
-        initial_state = {
+        initial_state: dict[str, Any] = {
             "user_input": user_input,
             "messages": [],
             "strategy_code": None,
@@ -190,4 +190,4 @@ class ResearchGraph:
         final_state = await self.graph.ainvoke(initial_state)
 
         logger.info("Research workflow completed", has_code=bool(final_state.get("strategy_code")))
-        return final_state
+        return final_state  # type: ignore[no-any-return]
