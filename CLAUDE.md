@@ -18,9 +18,17 @@ Nautilus Practice 是一个加密货币量化交易回测平台，基于 Nautilu
 ### 2. 双回测引擎
 
 - **低级引擎** (`backtest/engine_low.py`): 简单、直接、易调试
-- **高级引擎** (`backtest/engine_high.py`): 快 32%、Parquet 缓存、10x 数据加载速度
+  - 适用场景：快速验证、调试策略逻辑
+  - 限制：可能不生成完整的统计数据（PNL、Sharpe 等）
 
-**重要**: 两个引擎各有用途，不需要优化调用代码。
+- **高级引擎** (`backtest/engine_high.py`): 快 32%、Parquet 缓存、10x 数据加载速度
+  - 适用场景：正式回测、性能分析、参数优化
+  - 优势：完整的统计数据、更快的执行速度
+
+**重要**:
+- 优先使用高级引擎进行正式回测
+- 低级引擎主要用于调试和快速验证
+- 两个引擎各有用途，不需要优化调用代码
 
 ### 3. 配置系统
 
@@ -51,12 +59,17 @@ env_config = adapter.get_environment_config()
 3. **绝不直接在 main 分支提交**，即使是小改动
 
 4. **分支命名规范**:
-   - `feat/`: 新功能
+   - `feat/`: 新功能（如 `feat/strategy-optimization`）
    - `fix/`: Bug 修复
    - `refactor/`: 代码重构
    - `docs/`: 文档更新
    - `test/`: 测试相关
-   - `chore/`: 构建、工具、依赖更新
+   - `chore/`: 构建、工具、依赖更新（如 `chore/fix-github-actions`）
+
+5. **分支关注点分离**:
+   - 策略优化 → `feat/strategy-optimization`
+   - 基础设施改进 → `chore/fix-github-actions`
+   - 不要在功能分支中混入基础设施修改
 
 ### Commit Message 规范
 
@@ -163,6 +176,32 @@ uv run python -m unittest discover -s tests -p "test_*.py" -v
 
 **解决方案**: 调试时设置 `components_only: false`
 
+### 6. 回测引擎选择
+
+**问题**: 低级引擎可能不生成完整的统计数据
+
+**现象**:
+- `pnl` 和 `returns` 字段为空
+- 只有基本的订单和持仓统计
+
+**解决方案**:
+- 正式回测使用高级引擎：`--type high`
+- 低级引擎仅用于快速调试
+
+### 7. 参数调优的关键影响
+
+**问题**: 过于保��的参数导致所有信号被过滤
+
+**关键参数**:
+- `keltner_trigger_multiplier`: 1.5 太严格 → 建议 2.0-2.3
+- `deviation_threshold`: 0.25 太严格 → 建议 0.30-0.35
+- `stop_loss_atr_multiplier`: 影响风险控制，建议 2.4-2.8
+
+**教训**:
+- 参数微调对交易数量影响巨大
+- 使用 `feat/strategy-optimization` 分支进行参数实验
+- 对比不同参数组合的回测结果
+
 ## 性能优化
 
 ### 数据加载
@@ -189,8 +228,11 @@ git checkout -b <type>/<description>
 # 运行测试
 uv run python -m unittest discover -s tests -p "test_*.py" -v
 
-# 运行回测
+# 运行回测（推荐高级引擎）
 uv run python main.py backtest --type high
+
+# 分析回测结果
+python scripts/analyze_backtest_results.py
 
 # 代码检查
 uv run ruff check .
@@ -199,6 +241,9 @@ uv run ruff format .
 # 查看变更
 git status
 git diff
+
+# 查看最新回测结果
+ls -lht output/backtest/result/*.json | head -3
 ```
 
 ## 详细文档
