@@ -506,7 +506,9 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
 
         # 防止内存泄漏：定期重置统计计数器（避免长时间运行导致整数溢出）
         if self.filter_stats["total_bars"] >= self._stats_reset_threshold:
-            self.log.info(f"[{symbol}] 重置过滤器统计（已处理 {self.filter_stats['total_bars']} 根 K 线）")
+            self.log.info(
+                f"[{symbol}] 重置过滤器统计（已处理 {self.filter_stats['total_bars']} 根 K 线）"
+            )
             for key in self.filter_stats:
                 self.filter_stats[key] = 0
 
@@ -710,8 +712,7 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
         # 验证 ATR 有效性，防止除零和无效计算
         if self.keltner.atr is None or self.keltner.atr < self.config.min_atr:
             self.log.warning(
-                f"ATR 无效或过小: {self.keltner.atr}, "
-                f"最小要求: {self.config.min_atr}, 跳过仓位计算"
+                f"ATR 无效或过小: {self.keltner.atr}, 最小要求: {self.config.min_atr}, 跳过仓位计算"
             )
             return Decimal("0")
 
@@ -721,8 +722,7 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
         price_threshold = price * Decimal("0.5")
         if atr_decimal > price_threshold:
             self.log.error(
-                f"ATR 异常过大: {atr_decimal} > {price_threshold} "
-                f"(价格的50%), 可能存在数据错误"
+                f"ATR 异常过大: {atr_decimal} > {price_threshold} (价格的50%), 可能存在数据错误"
             )
             return Decimal("0")
 

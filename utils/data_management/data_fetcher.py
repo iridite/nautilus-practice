@@ -121,9 +121,7 @@ class BinanceFetcher:
         # 验证时间范围逻辑
         if start_time is not None and end_time is not None:
             if start_time >= end_time:
-                raise ValueError(
-                    f"start_time ({start_time}) 必须小于 end_time ({end_time})"
-                )
+                raise ValueError(f"start_time ({start_time}) 必须小于 end_time ({end_time})")
 
         interval = self.INTERVAL_MAP.get(timeframe, "1h")
 

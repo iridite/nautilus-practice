@@ -146,7 +146,9 @@ def _load_data_for_feed(
         if isinstance(e, DataLoadError):
             raise
         # 使用 from e 保留原始异常链和堆栈跟踪
-        raise DataLoadError(f"Error loading {data_cfg.csv_file_name}: {e}", str(data_path), e) from e
+        raise DataLoadError(
+            f"Error loading {data_cfg.csv_file_name}: {e}", str(data_path), e
+        ) from e
 
 
 def _get_symbol_from_instrument(instrument_id) -> str:
