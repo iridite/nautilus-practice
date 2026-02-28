@@ -34,7 +34,7 @@ async def analyze_strategy_node(state: dict) -> dict:
         "usage": {
             "input_tokens": 150,
             "output_tokens": 75,
-        }
+        },
     }
 
 
@@ -52,7 +52,7 @@ async def generate_code_node(state: dict) -> dict:
         "usage": {
             "input_tokens": 200,
             "output_tokens": 300,
-        }
+        },
     }
 
 

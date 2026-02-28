@@ -1,4 +1,5 @@
 """Prompt templates for LLM interactions"""
+
 from typing import Any, Optional
 
 

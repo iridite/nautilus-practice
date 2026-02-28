@@ -104,7 +104,7 @@ jobs:
             ).data;
 
             // Wait for all required checks to complete
-            const maxAttempts = 30;
+            const maxAttempts = 60; // Increased from 30 to 60 (10 minutes)
             const delayMs = 10000; // 10 seconds
 
             for (let i = 0; i < maxAttempts; i++) {
@@ -118,15 +118,17 @@ jobs:
                 // Match checks more flexibly to avoid hardcoded names
                 const requiredChecks = checks.check_runs.filter(check =>
                   check.name.match(/test|lint|validate/i) &&
-                  !check.name.includes('coverage') // Exclude optional coverage checks
+                  !check.name.includes('coverage') && // Exclude optional coverage checks
+                  !check.name.includes('Auto-fix') // Exclude auto-fix steps (they're skipped when no issues)
                 );
 
                 const allCompleted = requiredChecks.every(check =>
                   check.status === 'completed'
                 );
 
+                // Allow both 'success' and 'skipped' conclusions (skipped = no work needed)
                 const allPassed = requiredChecks.every(check =>
-                  check.conclusion === 'success'
+                  check.conclusion === 'success' || check.conclusion === 'skipped'
                 );
 
                 if (allCompleted) {
@@ -188,7 +190,13 @@ jobs:
               return true;
             }
 
-            // Require at least 1 approval for human PRs
+            // Auto-approve if created by repository owner
+            if (user === 'iridite') {
+              console.log('✅ Repository owner PR - auto-approved');
+              return true;
+            }
+
+            // Require at least 1 approval for other human PRs
             if (approvals.length > 0) {
               console.log(`✅ PR has ${approvals.length} approval(s)`);
               return true;

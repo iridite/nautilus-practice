@@ -1,4 +1,5 @@
 """Tests for backtest engine wrapper"""
+
 import pytest
 from langgraph.infrastructure.backtest.engine import BacktestEngine
 from langgraph.domain.models.strategy import Strategy, StrategyStatus
@@ -34,7 +35,7 @@ class TestStrategy(Strategy):
             self.position.close()
 """,
             config={"indicators": ["SMA"], "parameters": {"sma_period": 20}},
-            status=StrategyStatus.DRAFT
+            status=StrategyStatus.DRAFT,
         )
 
         engine = BacktestEngine()
@@ -63,13 +64,14 @@ class CustomDataStrategy(Strategy):
         pass
 """,
             config={},
-            status=StrategyStatus.DRAFT
+            status=StrategyStatus.DRAFT,
         )
 
         engine = BacktestEngine()
 
         # Use default GOOG data (testing that data parameter works)
         from backtesting.test import GOOG
+
         result = engine.run(strategy, data=GOOG)
         assert result is not None
 
@@ -90,15 +92,11 @@ class ParamStrategy(Strategy):
         pass
 """,
             config={},
-            status=StrategyStatus.DRAFT
+            status=StrategyStatus.DRAFT,
         )
 
         engine = BacktestEngine()
-        result = engine.run(
-            strategy,
-            cash=100000,
-            commission=0.002
-        )
+        result = engine.run(strategy, cash=100000, commission=0.002)
 
         assert result is not None
         assert "metrics" in result
@@ -120,7 +118,7 @@ class MetricsStrategy(Strategy):
         pass
 """,
             config={},
-            status=StrategyStatus.DRAFT
+            status=StrategyStatus.DRAFT,
         )
 
         engine = BacktestEngine()
@@ -140,7 +138,7 @@ class MetricsStrategy(Strategy):
             description="Invalid strategy code",
             code="invalid python code !!!",
             config={},
-            status=StrategyStatus.DRAFT
+            status=StrategyStatus.DRAFT,
         )
 
         engine = BacktestEngine()
@@ -159,7 +157,7 @@ def some_function():
     pass
 """,
             config={},
-            status=StrategyStatus.DRAFT
+            status=StrategyStatus.DRAFT,
         )
 
         engine = BacktestEngine()

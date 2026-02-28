@@ -1,4 +1,5 @@
 """Coordinator agent for workflow orchestration"""
+
 from typing import Any
 
 from langgraph.infrastructure.agents.base import BaseAgent

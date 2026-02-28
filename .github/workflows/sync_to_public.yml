@@ -8,6 +8,15 @@ jobs:
   sync:
     runs-on: ubuntu-latest
     steps:
+      - name: Validate required secrets
+        run: |
+          if [ -z "${{ secrets.PUBLIC_REPO_TOKEN }}" ]; then
+            echo "❌ ERROR: PUBLIC_REPO_TOKEN secret is not configured"
+            echo "Please configure the secret in repository settings"
+            exit 1
+          fi
+          echo "✅ Required secrets are configured"
+
       - name: Checkout private repo
         uses: actions/checkout@v4
         with:
@@ -53,19 +62,19 @@ jobs:
             "docs/reviews/dk_alpha_trend_audit.md"
           )
 
-          # 构建 rsync 排除参数
-          RSYNC_EXCLUDE=""
+          # 构建 rsync 排除参数（使用数组避免引号问题）
+          RSYNC_EXCLUDE=()
           for pattern in "${EXCLUDE_PATTERNS[@]}"; do
-            RSYNC_EXCLUDE="$RSYNC_EXCLUDE --exclude=\"$pattern\""
+            RSYNC_EXCLUDE+=("--exclude=$pattern")
           done
 
           for file in "${SENSITIVE_FILES[@]}"; do
-            RSYNC_EXCLUDE="$RSYNC_EXCLUDE --exclude=\"$file\""
+            RSYNC_EXCLUDE+=("--exclude=$file")
           done
 
           # 同步文件（忽略 code 24 - 文件在传输中消失，通常是临时文件）
           set +e
-          eval rsync -av --delete $RSYNC_EXCLUDE ./ public-repo/
+          rsync -av --delete "${RSYNC_EXCLUDE[@]}" ./ public-repo/
           RSYNC_EXIT=$?
           set -e
 

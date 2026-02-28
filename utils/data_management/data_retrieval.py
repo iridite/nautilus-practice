@@ -220,7 +220,9 @@ def batch_fetch_ohlcv(
 
     # 创建共享的 exchange 实例（优化：避免每个线程都调用 load_markets）
     exchange_class = getattr(ccxt, exchange_id.lower())
-    shared_exchange = exchange_class({"enableRateLimit": True, "options": {"defaultType": "future"}})
+    shared_exchange = exchange_class(
+        {"enableRateLimit": True, "options": {"defaultType": "future"}}
+    )
     shared_exchange.load_markets()
 
     tui = get_tui()

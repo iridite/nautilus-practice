@@ -1,4 +1,5 @@
 """Tests for strategy code generator"""
+
 from langgraph.infrastructure.code_gen.strategy_generator import StrategyCodeGenerator
 from langgraph.domain.models.strategy import Strategy, StrategyStatus
 
@@ -21,9 +22,9 @@ class TestStrategyCodeGenerator:
             config={
                 "indicators": ["SMA", "RSI"],
                 "timeframe": "1h",
-                "parameters": {"sma_period": 20, "rsi_period": 14}
+                "parameters": {"sma_period": 20, "rsi_period": 14},
             },
-            status=StrategyStatus.DRAFT
+            status=StrategyStatus.DRAFT,
         )
 
         generator = StrategyCodeGenerator()
@@ -46,9 +47,9 @@ class TestStrategyCodeGenerator:
             config={
                 "indicators": ["SMA", "EMA", "MACD"],
                 "timeframe": "4h",
-                "parameters": {"sma_period": 50, "ema_period": 20}
+                "parameters": {"sma_period": 50, "ema_period": 20},
             },
-            status=StrategyStatus.DRAFT
+            status=StrategyStatus.DRAFT,
         )
 
         generator = StrategyCodeGenerator()
@@ -71,10 +72,10 @@ class TestStrategyCodeGenerator:
                 "parameters": {
                     "atr_period": 14,
                     "stop_loss_multiplier": 2.0,
-                    "take_profit_multiplier": 3.0
-                }
+                    "take_profit_multiplier": 3.0,
+                },
             },
-            status=StrategyStatus.DRAFT
+            status=StrategyStatus.DRAFT,
         )
 
         generator = StrategyCodeGenerator()
@@ -92,12 +93,8 @@ class TestStrategyCodeGenerator:
             name="SyntaxTestStrategy",
             description="Test syntax validation",
             code="# placeholder",
-            config={
-                "indicators": ["SMA"],
-                "timeframe": "1h",
-                "parameters": {"period": 20}
-            },
-            status=StrategyStatus.DRAFT
+            config={"indicators": ["SMA"], "timeframe": "1h", "parameters": {"period": 20}},
+            status=StrategyStatus.DRAFT,
         )
 
         generator = StrategyCodeGenerator()
@@ -119,12 +116,8 @@ class TestStrategyCodeGenerator:
             name="ImportTestStrategy",
             description="Test imports",
             code="# placeholder",
-            config={
-                "indicators": ["SMA"],
-                "timeframe": "1h",
-                "parameters": {"period": 20}
-            },
-            status=StrategyStatus.DRAFT
+            config={"indicators": ["SMA"], "timeframe": "1h", "parameters": {"period": 20}},
+            status=StrategyStatus.DRAFT,
         )
 
         generator = StrategyCodeGenerator()
@@ -141,12 +134,8 @@ class TestStrategyCodeGenerator:
             name="NoIndicatorStrategy",
             description="Strategy without indicators",
             code="# placeholder",
-            config={
-                "indicators": [],
-                "timeframe": "1h",
-                "parameters": {}
-            },
-            status=StrategyStatus.DRAFT
+            config={"indicators": [], "timeframe": "1h", "parameters": {}},
+            status=StrategyStatus.DRAFT,
         )
 
         generator = StrategyCodeGenerator()
@@ -164,12 +153,8 @@ class TestStrategyCodeGenerator:
             name="ValidationStrategy",
             description="Test validation",
             code="# placeholder",
-            config={
-                "indicators": ["SMA"],
-                "timeframe": "1h",
-                "parameters": {"period": 20}
-            },
-            status=StrategyStatus.DRAFT
+            config={"indicators": ["SMA"], "timeframe": "1h", "parameters": {"period": 20}},
+            status=StrategyStatus.DRAFT,
         )
 
         generator = StrategyCodeGenerator()

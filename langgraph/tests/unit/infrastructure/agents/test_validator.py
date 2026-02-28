@@ -1,4 +1,5 @@
 """Tests for validator agent"""
+
 import pytest
 from unittest.mock import Mock
 import json
@@ -21,12 +22,9 @@ class TestValidatorAgent:
     async def test_process_with_valid_code(self):
         """Test processing with valid code"""
         llm_client = Mock()
-        llm_response = json.dumps({
-            "is_valid": True,
-            "issues": [],
-            "fixes": [],
-            "quality_score": 85
-        })
+        llm_response = json.dumps(
+            {"is_valid": True, "issues": [], "fixes": [], "quality_score": 85}
+        )
         llm_client.generate.return_value = llm_response
 
         agent = ValidatorAgent(llm_client=llm_client)
@@ -43,12 +41,14 @@ class TestValidatorAgent:
     async def test_process_with_invalid_code(self):
         """Test processing with invalid code"""
         llm_client = Mock()
-        llm_response = json.dumps({
-            "is_valid": False,
-            "issues": ["Syntax error on line 5", "Missing import"],
-            "fixes": ["Fix syntax", "Add import"],
-            "quality_score": 30
-        })
+        llm_response = json.dumps(
+            {
+                "is_valid": False,
+                "issues": ["Syntax error on line 5", "Missing import"],
+                "fixes": ["Fix syntax", "Add import"],
+                "quality_score": 30,
+            }
+        )
         llm_client.generate.return_value = llm_response
 
         agent = ValidatorAgent(llm_client=llm_client)
@@ -78,12 +78,9 @@ class TestValidatorAgent:
     async def test_process_with_previous_errors(self):
         """Test processing with previous validation errors"""
         llm_client = Mock()
-        llm_response = json.dumps({
-            "is_valid": True,
-            "issues": [],
-            "fixes": [],
-            "quality_score": 90
-        })
+        llm_response = json.dumps(
+            {"is_valid": True, "issues": [], "fixes": [], "quality_score": 90}
+        )
         llm_client.generate.return_value = llm_response
 
         agent = ValidatorAgent(llm_client=llm_client)
@@ -94,8 +91,8 @@ class TestValidatorAgent:
                 "is_valid": False,
                 "issues": ["Previous error"],
                 "fixes": [],
-                "quality_score": 0
-            }
+                "quality_score": 0,
+            },
         }
 
         result = await agent.process(state)

@@ -111,6 +111,7 @@ class TestWithTracingDecorator(unittest.IsolatedAsyncioTestCase):
 
     async def test_create_root_context(self):
         """Test creating root trace context."""
+
         @with_tracing(span_name="root_span", workflow_name="test_workflow", create_root=True)
         async def test_func():
             ctx = get_trace_context()
@@ -152,6 +153,7 @@ class TestWithTracingDecorator(unittest.IsolatedAsyncioTestCase):
 
     async def test_no_tracing_without_root(self):
         """Test function executes normally without trace context."""
+
         @with_tracing(span_name="test_span", create_root=False)
         async def test_func():
             # Should execute without creating context
@@ -163,6 +165,7 @@ class TestWithTracingDecorator(unittest.IsolatedAsyncioTestCase):
 
     async def test_default_span_name(self):
         """Test using function name as default span name."""
+
         @with_tracing(create_root=True)
         async def my_custom_function():
             ctx = get_trace_context()
@@ -173,6 +176,7 @@ class TestWithTracingDecorator(unittest.IsolatedAsyncioTestCase):
 
     async def test_exception_handling(self):
         """Test trace context is cleaned up on exception."""
+
         @with_tracing(span_name="test_span", create_root=True)
         async def test_func():
             raise ValueError("Test error")

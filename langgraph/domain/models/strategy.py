@@ -52,10 +52,7 @@ class Strategy:
             raise ValueError(f"Invalid Python code: {e}")
 
         # Check if code defines at least one class
-        has_class = any(
-            isinstance(node, ast.ClassDef)
-            for node in ast.walk(tree)
-        )
+        has_class = any(isinstance(node, ast.ClassDef) for node in ast.walk(tree))
         if not has_class:
             raise ValueError("Strategy code must define at least one class")
 

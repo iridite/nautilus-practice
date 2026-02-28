@@ -1,4 +1,5 @@
 """Tests for optimizer agent"""
+
 import pytest
 from unittest.mock import Mock
 import json
@@ -22,11 +23,13 @@ class TestOptimizerAgent:
     async def test_process_first_iteration(self):
         """Test processing first optimization iteration"""
         llm_client = Mock()
-        llm_response = json.dumps({
-            "suggested_params": {"param1": 15, "param2": 0.5},
-            "reasoning": "Test reasoning",
-            "expected_improvement": "Should improve by 10%"
-        })
+        llm_response = json.dumps(
+            {
+                "suggested_params": {"param1": 15, "param2": 0.5},
+                "reasoning": "Test reasoning",
+                "expected_improvement": "Should improve by 10%",
+            }
+        )
         llm_client.generate.return_value = llm_response
 
         agent = OptimizerAgent(llm_client=llm_client)
@@ -35,12 +38,12 @@ class TestOptimizerAgent:
             "strategy_id": "test-001",
             "parameter_space": {
                 "param1": {"min": 10, "max": 20},
-                "param2": {"min": 0.1, "max": 1.0}
+                "param2": {"min": 0.1, "max": 1.0},
             },
             "current_iteration": 0,
             "best_parameters": None,
             "best_score": None,
-            "should_continue": True
+            "should_continue": True,
         }
 
         result = await agent.process(state)
@@ -53,11 +56,13 @@ class TestOptimizerAgent:
     async def test_process_with_existing_parameters(self):
         """Test processing with existing best parameters"""
         llm_client = Mock()
-        llm_response = json.dumps({
-            "suggested_params": {"param1": 18},
-            "reasoning": "Increase param1",
-            "expected_improvement": "Better performance"
-        })
+        llm_response = json.dumps(
+            {
+                "suggested_params": {"param1": 18},
+                "reasoning": "Increase param1",
+                "expected_improvement": "Better performance",
+            }
+        )
         llm_client.generate.return_value = llm_response
 
         agent = OptimizerAgent(llm_client=llm_client)
@@ -68,7 +73,7 @@ class TestOptimizerAgent:
             "current_iteration": 3,
             "best_parameters": {"param1": 15},
             "best_score": 1.5,
-            "should_continue": True
+            "should_continue": True,
         }
 
         result = await agent.process(state)
@@ -90,7 +95,7 @@ class TestOptimizerAgent:
             "current_iteration": 0,
             "best_parameters": None,
             "best_score": None,
-            "should_continue": True
+            "should_continue": True,
         }
 
         with pytest.raises(LLMError):
@@ -101,15 +106,12 @@ class TestOptimizerAgent:
         llm_client = Mock()
         agent = OptimizerAgent(llm_client=llm_client)
 
-        parameter_space = {
-            "param1": {"min": 10, "max": 20},
-            "param2": {"min": 0.0, "max": 1.0}
-        }
+        parameter_space = {"param1": {"min": 10, "max": 20}, "param2": {"min": 0.0, "max": 1.0}}
 
         defaults = agent._get_default_parameters(parameter_space)
 
         assert defaults["param1"] == 15.0  # (10 + 20) / 2
-        assert defaults["param2"] == 0.5   # (0 + 1) / 2
+        assert defaults["param2"] == 0.5  # (0 + 1) / 2
 
     def test_parse_response_with_valid_json(self):
         """Test parsing valid JSON response"""

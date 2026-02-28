@@ -51,11 +51,7 @@ class ChoppinessIndex:
 
     def handle_bar(self, bar: Bar) -> None:
         """处理新的 Bar 数据"""
-        self.update_raw(
-            float(bar.high),
-            float(bar.low),
-            float(bar.close)
-        )
+        self.update_raw(float(bar.high), float(bar.low), float(bar.close))
 
     def update_raw(self, high: float, low: float, close: float) -> None:
         """更新指标值"""
@@ -78,9 +74,9 @@ class ChoppinessIndex:
 
         # 计算 CHOP
         if self.initialized and len(self._trs) >= self.period:
-            atr_sum = sum(self._trs[-self.period:])
-            high_max = max(self._highs[-self.period:])
-            low_min = min(self._lows[-self.period:])
+            atr_sum = sum(self._trs[-self.period :])
+            high_max = max(self._highs[-self.period :])
+            low_min = min(self._lows[-self.period :])
 
             if high_max > low_min:
                 self.value = 100 * np.log10(atr_sum / (high_max - low_min)) / np.log10(self.period)

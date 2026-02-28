@@ -1,4 +1,5 @@
 """Tests for LangGraph state definitions"""
+
 from datetime import datetime
 from langgraph.infrastructure.graph.state import (
     ResearchState,
@@ -12,11 +13,7 @@ class TestAgentMessage:
 
     def test_agent_message_creation(self):
         """Test creating an agent message"""
-        msg = AgentMessage(
-            agent="researcher",
-            content="Test message",
-            timestamp=datetime.utcnow()
-        )
+        msg = AgentMessage(agent="researcher", content="Test message", timestamp=datetime.utcnow())
 
         assert msg.agent == "researcher"
         assert msg.content == "Test message"
@@ -27,7 +24,7 @@ class TestAgentMessage:
         msg = AgentMessage(
             agent="optimizer",
             content="Optimization complete",
-            metadata={"iterations": 10, "best_score": 1.5}
+            metadata={"iterations": 10, "best_score": 1.5},
         )
 
         assert msg.metadata["iterations"] == 10
@@ -44,7 +41,7 @@ class TestResearchState:
             messages=[],
             strategy_code=None,
             validation_result=None,
-            backtest_result=None
+            backtest_result=None,
         )
 
         assert state.user_input == "Create a trend following strategy"
@@ -61,7 +58,7 @@ class TestResearchState:
             messages=[msg1, msg2],
             strategy_code=None,
             validation_result=None,
-            backtest_result=None
+            backtest_result=None,
         )
 
         assert len(state.messages) == 2
@@ -81,7 +78,7 @@ class TestOptimizationState:
             current_iteration=0,
             best_parameters=None,
             best_score=None,
-            should_continue=True
+            should_continue=True,
         )
 
         assert state.strategy_id == "test-001"
@@ -97,7 +94,7 @@ class TestOptimizationState:
             current_iteration=5,
             best_parameters={"param1": 5},
             best_score=1.8,
-            should_continue=False
+            should_continue=False,
         )
 
         assert state.current_iteration == 5
