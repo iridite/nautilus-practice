@@ -30,29 +30,28 @@ OKX_API_PASSPHRASE=your_passphrase_here
 
 ## 快速启动
 
-### 方式 1: 使用启动脚本（推荐）
+### 使用 CLI 命令（推荐）
 
 ```bash
-./scripts/run_sandbox.sh
+uv run main.py sandbox
 ```
 
-脚本会自动:
-- 检查环境变量配置
-- 运行预检查
-- 启动 Sandbox
+CLI 会自动:
+- 加载 sandbox 环境配置
+- 初始化资金费率熔断器
+- 启动交易节点
 
-### 方式 2: 手动启动
+### 指定环境（可选）
 
 ```bash
-# 1. 切换到 sandbox 环境
-# 编辑 config/active.yaml，设置 environment: "sandbox"
+# 使用特定环境配置
+uv run main.py sandbox --env sandbox
 
-# 2. 运行预检查
-uv run python sandbox/preflight.py --env sandbox
-
-# 3. 启动 sandbox
-uv run python sandbox/engine.py --env sandbox
+# 或使用其他环境
+uv run main.py sandbox --env test
 ```
+
+默认情况下，CLI 会从 `config/active.yaml` 读取活动环境配置。
 
 ## 配置说明
 

@@ -687,15 +687,14 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
 
                 # 同步调用异步方法（在事件循环中）
                 import asyncio
+
                 decision = asyncio.run(
                     self.circuit_breaker.evaluate_signal(symbol, str(self.instrument.id))
                 )
 
                 # 根据决策结果处理
                 if decision.decision == InstrumentType.REJECT:
-                    self.log.warning(
-                        f"🚫 熔断器拒绝信号: {symbol} - {decision.reason}"
-                    )
+                    self.log.warning(f"🚫 熔断器拒绝信号: {symbol} - {decision.reason}")
                     return
                 elif decision.decision == InstrumentType.SPOT:
                     # 切换到现货标的
@@ -707,9 +706,7 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
                     )
                 else:
                     # 正常执行永续合约
-                    self.log.debug(
-                        f"✅ 正常执行: {symbol} - {decision.reason}"
-                    )
+                    self.log.debug(f"✅ 正常执行: {symbol} - {decision.reason}")
             except Exception as e:
                 # 熔断器失败时采用保守策略：拒绝信号
                 self.log.error(f"熔断器检查失败: {e}，拒绝信号")
