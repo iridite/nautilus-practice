@@ -211,7 +211,7 @@ def build_okx_config(live_cfg, instrument_ids):
         is_demo=False,
     )
 
-    return data_config, exec_config
+    return data_config, exec_config, okx_instrument_ids
 
 
 def _load_configs(env_name: Optional[str]):
@@ -261,14 +261,16 @@ def _build_venue_configs(live_cfg, instrument_ids):
             "exec_clients": {BINANCE: exec_config},
             "data_factory": {BINANCE: BinanceLiveDataClientFactory},
             "exec_factory": {BINANCE: BinanceLiveExecClientFactory},
+            "converted_ids": instrument_ids,  # Binance doesn't need conversion
         }
     elif live_cfg.venue == "OKX":
-        data_config, exec_config = build_okx_config(live_cfg, instrument_ids)
+        data_config, exec_config, okx_instrument_ids = build_okx_config(live_cfg, instrument_ids)
         return {
             "data_clients": {OKX: data_config},
             "exec_clients": {OKX: exec_config},
             "data_factory": {OKX: OKXLiveDataClientFactory},
             "exec_factory": {OKX: OKXLiveExecClientFactory},
+            "converted_ids": okx_instrument_ids,  # OKX uses converted IDs
         }
     else:
         raise ValueError(f"Unsupported venue: {live_cfg.venue}")
@@ -337,11 +339,14 @@ async def run_live(env_name: Optional[str] = None):
     instrument_ids = live_cfg.instrument_ids
     venue_configs = _build_venue_configs(live_cfg, instrument_ids)
 
+    # Use converted IDs for strategy and instrument loading
+    converted_ids = venue_configs["converted_ids"]
+
     node_config = _create_node_config(trader_id, logging_config, live_cfg, venue_configs)
     node = TradingNode(config=node_config)
 
-    _setup_node(node, strategy_config, instrument_ids, venue_configs)
-    _load_instruments(node, instrument_ids)
+    _setup_node(node, strategy_config, converted_ids, venue_configs)
+    _load_instruments(node, converted_ids)
 
     try:
         await node.run_async()
