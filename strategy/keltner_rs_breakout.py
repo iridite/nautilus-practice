@@ -44,6 +44,7 @@ from config.constants import (
     DEFAULT_SMA_PERIOD,
     DEFAULT_VOLUME_MULTIPLIER,
     EUPHORIA_REDUCE_POSITION_PCT,
+    FILTER_BLOCKER_THRESHOLD,
     FUNDING_RATE_DANGER_ANNUAL,
     FUNDING_RATE_WARNING_ANNUAL,
     HIGH_CONVICTION_RISK_PCT,
@@ -156,6 +157,10 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
     - DynamicUniverseManager: 动态标的池管理
     """
 
+    # 日志格式常量（避免每次日志调用时重复计算字符串乘法）
+    _LOG_SEPARATOR = "=" * 60
+    _LOG_SUBSEPARATOR = "-" * 60
+
     def __init__(self, config: KeltnerRSBreakoutConfig):
         super().__init__(config)
 
@@ -250,6 +255,8 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
             "body_quality": 0,
             "passed_all": 0,
         }
+        # 防止内存泄漏：定期重置统计计数器
+        self._stats_reset_threshold = 1_000_000  # 每处理 100 万根 K 线重置一次
 
     def on_start(self) -> None:
         """策略启动时初始化"""
@@ -325,11 +332,11 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
             self.log.info(f"[{symbol}] No bars processed")
             return
 
-        self.log.info(f"\n{'=' * 60}")
+        self.log.info(f"\n{self._LOG_SEPARATOR}")
         self.log.info(f"Filter Statistics for {symbol}")
-        self.log.info(f"{'=' * 60}")
+        self.log.info(f"{self._LOG_SEPARATOR}")
         self.log.info(f"Total bars processed: {total}")
-        self.log.info(f"{'-' * 60}")
+        self.log.info(f"{self._LOG_SUBSEPARATOR}")
 
         # 计算每个过滤器的拦截率
         filters = [
@@ -349,9 +356,9 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
 
         passed = self.filter_stats["passed_all"]
         passed_pct = (passed / total * 100) if total > 0 else 0
-        self.log.info(f"{'-' * 60}")
+        self.log.info(f"{self._LOG_SUBSEPARATOR}")
         self.log.info(f"{'Passed All Filters':25s}: {passed:6d} ({passed_pct:5.2f}%)")
-        self.log.info(f"{'=' * 60}\n")
+        self.log.info(f"{self._LOG_SEPARATOR}\n")
 
         # 警告：如果所有信号都被拦截（使用 ERROR 级别确保始终显示）
         if passed == 0 and total > 0:
@@ -364,7 +371,7 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
             for name, key in filters:
                 count = self.filter_stats[key]
                 pct = (count / total * 100) if total > 0 else 0
-                if pct > 10:  # 拦截率超过 10% 的过滤器
+                if pct > (FILTER_BLOCKER_THRESHOLD * 100):  # 拦截率超过阈值的过滤器
                     top_blockers.append(f"{name} ({pct:.1f}%)")
 
             if top_blockers:
@@ -494,6 +501,12 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
         symbol = self.instrument.id.symbol.value
 
         self.filter_stats["total_bars"] += 1
+
+        # 防止内存泄漏：定期重置统计计数器（避免长时间运行导致整数溢出）
+        if self.filter_stats["total_bars"] >= self._stats_reset_threshold:
+            self.log.info(f"[{symbol}] 重置过滤器统计（已处理 {self.filter_stats['total_bars']} 根 K 线）")
+            for key in self.filter_stats:
+                self.filter_stats[key] = 0
 
         # 基本条件
         if self._pending_entry_order:
@@ -693,7 +706,23 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
             return self.instrument.make_qty(qty)
 
         # 波动率平价模式
-        if self.keltner.atr is None:
+        # 验证 ATR 有效性，防止除零和无效计算
+        if self.keltner.atr is None or self.keltner.atr < self.config.min_atr:
+            self.log.warning(
+                f"ATR 无效或过小: {self.keltner.atr}, "
+                f"最小要求: {self.config.min_atr}, 跳过仓位计算"
+            )
+            return Decimal("0")
+
+        # 额外检查：ATR 不应超过价格的 50%（数据异常保护）
+        # 使用 Decimal 进行精确计算，避免 float 精度损失
+        atr_decimal = Decimal(str(self.keltner.atr))
+        price_threshold = price * Decimal("0.5")
+        if atr_decimal > price_threshold:
+            self.log.error(
+                f"ATR 异常过大: {atr_decimal} > {price_threshold} "
+                f"(价格的50%), 可能存在数据错误"
+            )
             return Decimal("0")
 
         # 1. 计算止损距离（基于 ATR）

@@ -107,6 +107,48 @@ class BacktestEngine:
         is_valid = len(errors) == 0
         return is_valid, errors
 
+    def _validate_code_safety(self, code: str) -> None:
+        """
+        Validate code doesn't contain dangerous operations
+
+        Args:
+            code: Python code to validate
+
+        Raises:
+            ValueError: If dangerous patterns detected
+        """
+        # List of dangerous patterns that could lead to arbitrary code execution
+        dangerous_patterns = [
+            ('import os', 'OS module access'),
+            ('import sys', 'System module access'),
+            ('import subprocess', 'Subprocess execution'),
+            ('__import__', 'Dynamic imports'),
+            ('eval(', 'Eval function'),
+            ('exec(', 'Exec function'),
+            ('compile(', 'Compile function'),
+            ('open(', 'File operations'),
+            ('file(', 'File operations'),
+            ('input(', 'User input'),
+            ('raw_input(', 'User input'),
+            ('__builtins__', 'Builtins access'),
+            ('globals(', 'Globals access'),
+            ('locals(', 'Locals access'),
+            ('vars(', 'Vars access'),
+            ('dir(', 'Dir access'),
+            ('delattr(', 'Attribute deletion'),
+            ('__dict__', 'Dict access'),
+            ('__class__', 'Class access'),
+            ('__bases__', 'Bases access'),
+            ('__subclasses__', 'Subclasses access'),
+        ]
+
+        for pattern, description in dangerous_patterns:
+            if pattern in code:
+                raise ValueError(
+                    f"Dangerous pattern detected: {description} ({pattern}). "
+                    "Strategy code must not contain system-level operations."
+                )
+
     def _extract_strategy_class(self, code: str) -> type:
         """
         Extract strategy class from code
@@ -118,13 +160,59 @@ class BacktestEngine:
             Strategy class
 
         Raises:
-            ValueError: If no strategy class found
+            ValueError: If no strategy class found or code contains dangerous patterns
         """
-        # Create namespace for execution
+        # Validate code safety before execution
+        self._validate_code_safety(code)
+
+        # Create restricted namespace for execution
+        # Only allow safe builtins to prevent arbitrary code execution
+        restricted_globals = {
+            '__builtins__': {
+                'range': range,
+                'len': len,
+                'str': str,
+                'int': int,
+                'float': float,
+                'bool': bool,
+                'list': list,
+                'dict': dict,
+                'tuple': tuple,
+                'set': set,
+                'min': min,
+                'max': max,
+                'sum': sum,
+                'abs': abs,
+                'round': round,
+                'enumerate': enumerate,
+                'zip': zip,
+                'map': map,
+                'filter': filter,
+                'sorted': sorted,
+                'reversed': reversed,
+                'isinstance': isinstance,
+                'issubclass': issubclass,
+                'hasattr': hasattr,
+                'getattr': getattr,
+                'setattr': setattr,
+                'type': type,
+                'property': property,
+                'staticmethod': staticmethod,
+                'classmethod': classmethod,
+                'super': super,
+                'Exception': Exception,
+                'ValueError': ValueError,
+                'TypeError': TypeError,
+                'AttributeError': AttributeError,
+                'KeyError': KeyError,
+                'IndexError': IndexError,
+                'RuntimeError': RuntimeError,
+            }
+        }
         namespace = {}
 
-        # Execute code to get class definition
-        exec(code, namespace)
+        # Execute code in restricted environment
+        exec(code, restricted_globals, namespace)
 
         # Find Strategy subclass
         from backtesting import Strategy as BaseStrategy
@@ -159,8 +247,11 @@ class BacktestEngine:
                         value = getattr(stats, key)
                         if not callable(value):
                             metrics[key] = value
-                    except Exception:
-                        pass
+                    except (AttributeError, TypeError) as e:
+                        # Log but continue - some attributes may not be accessible
+                        import logging
+                        logging.debug(f"Could not extract metric '{key}': {e}")
+                        continue
             return metrics
 
     def _extract_equity_curve(self, stats: Any) -> list[float]:

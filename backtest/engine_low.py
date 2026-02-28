@@ -93,6 +93,46 @@ def _load_data_for_feed(
                 f"No data available in range for {data_cfg.csv_file_name}", str(data_path)
             )
 
+        # 验证数据质量：检查必需列和数据有效性
+        required_columns = ["timestamp", "open", "high", "low", "close", "volume"]
+        missing_columns = [col for col in required_columns if col not in df.columns]
+        if missing_columns:
+            raise DataLoadError(
+                f"Missing required columns in {data_cfg.csv_file_name}: {missing_columns}",
+                str(data_path),
+            )
+
+        # 检查价格列是否包含 NaN 或无效值
+        price_columns = ["open", "high", "low", "close"]
+        for col in price_columns:
+            if df[col].isna().any():
+                raise DataLoadError(
+                    f"Column '{col}' contains NaN values in {data_cfg.csv_file_name}",
+                    str(data_path),
+                )
+            if (df[col] <= 0).any():
+                raise DataLoadError(
+                    f"Column '{col}' contains non-positive values in {data_cfg.csv_file_name}",
+                    str(data_path),
+                )
+
+        # 检查 OHLC 逻辑关系：high >= low, high >= open/close, low <= open/close
+        if (df["high"] < df["low"]).any():
+            raise DataLoadError(
+                f"Invalid OHLC data: high < low in {data_cfg.csv_file_name}",
+                str(data_path),
+            )
+        if (df["high"] < df["open"]).any() or (df["high"] < df["close"]).any():
+            raise DataLoadError(
+                f"Invalid OHLC data: high < open or close in {data_cfg.csv_file_name}",
+                str(data_path),
+            )
+        if (df["low"] > df["open"]).any() or (df["low"] > df["close"]).any():
+            raise DataLoadError(
+                f"Invalid OHLC data: low > open or close in {data_cfg.csv_file_name}",
+                str(data_path),
+            )
+
         # 使用 Wrangler 转换并注入引擎
         wrangler = BarDataWrangler(feed_bar_type, inst)
         bars = wrangler.process(df)
@@ -105,7 +145,8 @@ def _load_data_for_feed(
     except Exception as e:
         if isinstance(e, DataLoadError):
             raise
-        raise DataLoadError(f"Error loading {data_cfg.csv_file_name}: {e}", str(data_path), e)
+        # 使用 from e 保留原始异常链和堆栈跟踪
+        raise DataLoadError(f"Error loading {data_cfg.csv_file_name}: {e}", str(data_path), e) from e
 
 
 def _get_symbol_from_instrument(instrument_id) -> str:
