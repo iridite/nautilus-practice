@@ -1,0 +1,34 @@
+config_class: SpotFuturesArbitrageConfig
+module_path: strategy.spot_futures_arbitrage
+name: SpotFuturesArbitrageStrategy
+parameters:
+  # 标的配置
+  venue: BINANCE
+  spot_symbol: BTCUSDT
+  perp_symbol: BTCUSDT-PERP
+  timeframe: 1h
+
+  # 开平仓阈值
+  entry_basis_annual: 15.0      # 开仓年化收益率阈值（%）
+  exit_basis_annual: 5.0        # 平仓年化收益率阈值（%）
+
+  # Delta 管理
+  delta_tolerance: 0.005        # Delta 容忍度（0.5%）
+
+  # 仓位管理
+  position_size_pct: 0.2        # 单次开仓占账户权益比例（20%）
+  max_positions: 3              # 最大同时持仓数
+
+  # 持仓管理
+  min_holding_days: 7           # 最小持有期（天）
+  max_holding_days: 90          # 最大持有期（天）
+
+  # 资金费率管理
+  negative_funding_threshold: -3  # 连续负资金费率次数阈值
+
+  # 风控参数
+  min_margin_ratio: 0.5         # 最小保证金率（50%）
+  emergency_margin_ratio: 0.3   # 紧急保证金率（30%）
+
+  # 订单超时
+  order_timeout_seconds: 5.0    # 订单超时时间（秒）
