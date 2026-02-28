@@ -583,6 +583,35 @@ class StrategyConfig(BaseModel):
         return v.strip()
 
 
+class UniverseConfig(BaseModel):
+    """Universe 动态标的池配置"""
+
+    enabled: bool = False
+    auto_generate: bool = False
+    file: str = ""
+    freq: str = "W-MON"
+    top_n: int = 15
+    initial_period: Optional[str] = None
+    strict_mode: bool = False
+
+    @field_validator("freq", mode="before")
+    @classmethod
+    def validate_freq(cls, v):
+        """验证更新周期是否有效"""
+        valid_freqs = ["ME", "W-MON", "2W-MON"]
+        if v not in valid_freqs:
+            raise ValueError(f"freq must be one of {valid_freqs}")
+        return v
+
+    @field_validator("top_n", mode="before")
+    @classmethod
+    def validate_top_n(cls, v):
+        """验证 top_n 必须大于 0"""
+        if v <= 0:
+            raise ValueError("top_n must be greater than 0")
+        return v
+
+
 class SandboxConfig(BaseModel):
     """Sandbox实时交易配置"""
 
@@ -621,6 +650,9 @@ class SandboxConfig(BaseModel):
     # errors. This is convenient for local development where the data/instrument
     # directory may not be populated. Default is False (strict validation).
     allow_missing_instruments: bool = False
+
+    # Universe 配置
+    universe: Optional[UniverseConfig] = None
 
     @field_validator("venue", mode="before")
     @classmethod
@@ -853,6 +885,7 @@ __all__ = [
     "LoggingConfig",
     "FileCleanupConfig",
     "StrategyConfig",
+    "UniverseConfig",
     "SandboxConfig",
     "EnvironmentConfig",
     "ActiveConfig",

@@ -13,12 +13,18 @@ sandbox:
   venue: "OKX"
   is_testnet: true
 
-  # 交易标的列表（根据策略动态调整）
-  instrument_ids:
-    - "ETH-USDT-SWAP.OKX"
-    - "SOL-USDT-SWAP.OKX"
-    - "BNB-USDT-SWAP.OKX"
-    - "DOGE-USDT-SWAP.OKX"
+  # 交易标的由 Universe 自动生成（无需手动配置）
+  # instrument_ids: []  # 留空，从 Universe 自动生成
+
+  # Universe 动态标的池配置
+  universe:
+    enabled: true                          # 是否启用 Universe 过滤
+    auto_generate: true                    # 是否自动生成 Universe
+    file: "data/universe/universe_15_W-MON.json"  # Universe 文件路径
+    freq: "W-MON"                          # 更新周期 (ME/W-MON/2W-MON)
+    top_n: 15                              # 选取前 N 个标的
+    initial_period: null                   # 初始周期（null=使用当前时间）
+    strict_mode: false                     # 严格模式：加载失败时报错
 
   # 允许本地缺失 instrument json（便于快速迭代）
   allow_missing_instruments: true

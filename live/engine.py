@@ -8,7 +8,6 @@ import asyncio
 import os
 import sys
 from pathlib import Path
-from pathlib import Path
 from typing import Optional
 
 from dotenv import load_dotenv
@@ -117,9 +116,7 @@ def load_strategy_instance(strategy_config, instrument_ids):
         # Fallback: derive btc_instrument_id from btc_symbol if not already set
         inst_id = params["instrument_id"]
         try:
-            btc_inst_id = format_aux_instrument_id(
-                params["btc_symbol"], template_inst_id=inst_id
-            )
+            btc_inst_id = format_aux_instrument_id(params["btc_symbol"], template_inst_id=inst_id)
             venue = inst_id.split(".")[-1] if "." in inst_id else "BINANCE"
             params["btc_instrument_id"] = convert_to_exchange_format(btc_inst_id, venue)
         except Exception as e:
@@ -186,9 +183,7 @@ def build_okx_config(live_cfg, instrument_ids):
         raise ValueError("Missing OKX API credentials in environment")
 
     # Convert instrument IDs to OKX format (with hyphens)
-    okx_instrument_ids = [
-        convert_to_exchange_format(inst_id, "OKX") for inst_id in instrument_ids
-    ]
+    okx_instrument_ids = [convert_to_exchange_format(inst_id, "OKX") for inst_id in instrument_ids]
     load_ids = frozenset(okx_instrument_ids)
 
     data_config = OKXDataClientConfig(

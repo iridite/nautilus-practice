@@ -283,14 +283,59 @@ class ConfigAdapter:
         return timeframes
 
     def _extract_symbols_from_universe(self, u_data: dict) -> set[str]:
-        """从universe数据中提取符号集合"""
+        """从universe数据中提取符号集合（仅提取回测时间范围内的周期）"""
         symbols = set()
-        for month_list in u_data.values():
-            for symbol in month_list:
-                if ":" in symbol:
-                    symbols.add(symbol.split(":")[0])
+
+        # 获取回测时间范围
+        start_date = self.env_config.backtest.start_date
+        end_date = self.env_config.backtest.end_date
+
+        if not start_date or not end_date:
+            # 如果没有时间范围，使用所有周期（向后兼容）
+            for month_list in u_data.values():
+                for symbol in month_list:
+                    # 过滤非 ASCII 符号（如中文符号）
+                    if not symbol.isascii():
+                        continue
+                    if ":" in symbol:
+                        symbols.add(symbol.split(":")[0])
+                    else:
+                        symbols.add(symbol)
+            return symbols
+
+        # 解析时间范围
+        from datetime import datetime
+
+        start_dt = datetime.strptime(start_date, "%Y-%m-%d")
+        end_dt = datetime.strptime(end_date, "%Y-%m-%d")
+
+        # 只提取时间范围内的周期
+        for period, month_list in u_data.items():
+            # 解析周期时间（支持 YYYY-MM 和 YYYY-Www 格式）
+            try:
+                if "-W" in period:
+                    # 周度格式：2022-W01
+                    year, week = period.split("-W")
+                    period_dt = datetime.strptime(f"{year}-W{week}-1", "%Y-W%W-%w")
                 else:
-                    symbols.add(symbol)
+                    # 月度格式：2022-01
+                    period_dt = datetime.strptime(period, "%Y-%m")
+
+                # 检查是否在回测范围内
+                if start_dt <= period_dt <= end_dt:
+                    for symbol in month_list:
+                        # 过滤非 ASCII 符号（如中文符号）
+                        if not symbol.isascii():
+                            logger.warning(f"跳过非 ASCII 符号: {symbol} (周期: {period})")
+                            continue
+                        if ":" in symbol:
+                            symbols.add(symbol.split(":")[0])
+                        else:
+                            symbols.add(symbol)
+            except (ValueError, AttributeError):
+                # 解析失败，跳过该周期
+                continue
+
         return symbols
 
     def _get_universe_file_path(self, universe_top_n: int, universe_freq: str) -> Path:
