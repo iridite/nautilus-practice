@@ -41,7 +41,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 sys.path.append(str(BASE_DIR))
 
 from core.loader import load_config
-from utils.instrument_helpers import format_aux_instrument_id
+from utils.instrument_helpers import convert_to_exchange_format, format_aux_instrument_id
 from utils.instrument_loader import load_instrument
 
 
@@ -110,9 +110,12 @@ def load_strategy_instance(strategy_config, instrument_ids):
         inst_id = params["instrument_id"]
         try:
             # Derive btc_instrument_id by inheriting contract type and venue from the template inst_id
-            params["btc_instrument_id"] = format_aux_instrument_id(
+            btc_inst_id = format_aux_instrument_id(
                 params["btc_symbol"], template_inst_id=inst_id
             )
+            # Convert to exchange-specific format if needed (e.g., OKX requires hyphens)
+            venue = inst_id.split(".")[-1] if "." in inst_id else "BINANCE"
+            params["btc_instrument_id"] = convert_to_exchange_format(btc_inst_id, venue)
         except Exception as e:
             raise ValueError(
                 f"Failed to format btc_instrument_id for template {inst_id}, btc_symbol={params.get('btc_symbol')}: {e}"
@@ -176,7 +179,11 @@ def build_okx_config(live_cfg, instrument_ids):
     if not all([api_key, api_secret, api_passphrase]):
         raise ValueError("Missing OKX API credentials in environment")
 
-    load_ids = frozenset(instrument_ids)
+    # Convert instrument IDs to OKX format (with hyphens)
+    okx_instrument_ids = [
+        convert_to_exchange_format(inst_id, "OKX") for inst_id in instrument_ids
+    ]
+    load_ids = frozenset(okx_instrument_ids)
 
     data_config = OKXDataClientConfig(
         api_key=api_key,
