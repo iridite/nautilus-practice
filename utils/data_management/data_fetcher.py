@@ -131,9 +131,9 @@ class BinanceFetcher:
             "limit": min(limit, 1000),
         }
 
-        if start_time:
+        if start_time is not None:
             params["startTime"] = start_time
-        if end_time:
+        if end_time is not None:
             params["endTime"] = end_time
 
         # 使用带重试机制的 session 发送请求

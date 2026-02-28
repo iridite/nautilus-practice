@@ -511,6 +511,8 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
             )
             for key in self.filter_stats:
                 self.filter_stats[key] = 0
+            # 当前 bar 应该计数
+            self.filter_stats["total_bars"] = 1
 
         # 基本条件
         if self._pending_entry_order:

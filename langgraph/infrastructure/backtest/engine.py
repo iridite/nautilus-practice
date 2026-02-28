@@ -101,7 +101,7 @@ class BacktestEngine:
 
     def _validate_code_safety(self, code: str) -> None:
         """
-        Validate code doesn't contain dangerous operations
+        Validate code doesn't contain dangerous operations using AST analysis.
 
         Args:
             code: Python code to validate
@@ -109,37 +109,90 @@ class BacktestEngine:
         Raises:
             ValueError: If dangerous patterns detected
         """
-        # List of dangerous patterns that could lead to arbitrary code execution
-        dangerous_patterns = [
-            ("import os", "OS module access"),
-            ("import sys", "System module access"),
-            ("import subprocess", "Subprocess execution"),
-            ("__import__", "Dynamic imports"),
-            ("eval(", "Eval function"),
-            ("exec(", "Exec function"),
-            ("compile(", "Compile function"),
-            ("open(", "File operations"),
-            ("file(", "File operations"),
-            ("input(", "User input"),
-            ("raw_input(", "User input"),
-            ("__builtins__", "Builtins access"),
-            ("globals(", "Globals access"),
-            ("locals(", "Locals access"),
-            ("vars(", "Vars access"),
-            ("dir(", "Dir access"),
-            ("delattr(", "Attribute deletion"),
-            ("__dict__", "Dict access"),
-            ("__class__", "Class access"),
-            ("__bases__", "Bases access"),
-            ("__subclasses__", "Subclasses access"),
-        ]
+        try:
+            tree = ast.parse(code)
+        except SyntaxError as exc:
+            raise ValueError(
+                f"Unable to validate strategy code due to syntax error: {exc}"
+            ) from exc
 
-        for pattern, description in dangerous_patterns:
-            if pattern in code:
-                raise ValueError(
-                    f"Dangerous pattern detected: {description} ({pattern}). "
-                    "Strategy code must not contain system-level operations."
-                )
+        # Disallowed modules for import statements
+        forbidden_modules = {
+            "os": "OS module access",
+            "sys": "System module access",
+            "subprocess": "Subprocess execution",
+            "importlib": "Dynamic imports",
+        }
+
+        # Disallowed function names (bare calls)
+        forbidden_function_names = {
+            "eval": "Eval function",
+            "exec": "Exec function",
+            "compile": "Compile function",
+            "open": "File operations",
+            "input": "User input",
+            "raw_input": "User input",
+            "globals": "Globals access",
+            "locals": "Locals access",
+            "vars": "Vars access",
+            "dir": "Dir access",
+            "delattr": "Attribute deletion",
+            "__import__": "Dynamic imports",
+        }
+
+        # Disallowed attribute names for introspection/sandbox escaping
+        forbidden_attributes = {
+            "__builtins__": "Builtins access",
+            "__dict__": "Dict access",
+            "__class__": "Class access",
+            "__bases__": "Bases access",
+            "__subclasses__": "Subclasses access",
+        }
+
+        for node in ast.walk(tree):
+            # Block direct imports of dangerous modules
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    base = alias.name.split(".")[0]
+                    if base in forbidden_modules:
+                        raise ValueError(
+                            f"Dangerous pattern detected: {forbidden_modules[base]} (import {base}). "
+                            "Strategy code must not contain system-level operations."
+                        )
+
+            # Block from X import Y for dangerous modules
+            elif isinstance(node, ast.ImportFrom):
+                if node.module:
+                    base = node.module.split(".")[0]
+                    if base in forbidden_modules:
+                        raise ValueError(
+                            f"Dangerous pattern detected: {forbidden_modules[base]} (from {base} import ...). "
+                            "Strategy code must not contain system-level operations."
+                        )
+
+            # Block dangerous function calls
+            elif isinstance(node, ast.Call):
+                if isinstance(node.func, ast.Name) and node.func.id in forbidden_function_names:
+                    raise ValueError(
+                        f"Dangerous pattern detected: {forbidden_function_names[node.func.id]} ({node.func.id}()). "
+                        "Strategy code must not contain system-level operations."
+                    )
+
+            # Block dangerous attribute access
+            elif isinstance(node, ast.Attribute):
+                if node.attr in forbidden_attributes:
+                    raise ValueError(
+                        f"Dangerous pattern detected: {forbidden_attributes[node.attr]} (.{node.attr}). "
+                        "Strategy code must not contain system-level operations."
+                    )
+
+            # Block dangerous name references (e.g., __builtins__ as a variable)
+            elif isinstance(node, ast.Name):
+                if node.id in forbidden_attributes:
+                    raise ValueError(
+                        f"Dangerous pattern detected: {forbidden_attributes[node.id]} ({node.id}). "
+                        "Strategy code must not contain system-level operations."
+                    )
 
     def _extract_strategy_class(self, code: str) -> type:
         """

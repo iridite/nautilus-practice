@@ -194,3 +194,141 @@ class TestStrategy(Strategy):
 
         assert engine.default_cash == 10000
         assert engine.default_commission == 0.002
+
+
+class TestCodeSafetyValidation:
+    """Test AST-based code safety validation"""
+
+    def test_safe_code_passes(self):
+        """Test that safe code passes validation"""
+        engine = BacktestEngine()
+        code = """
+from backtesting import Strategy
+
+class MyStrategy(Strategy):
+    def init(self):
+        self.value = 100
+
+    def next(self):
+        if self.data.Close[-1] > self.value:
+            self.buy()
+"""
+        # Should not raise
+        engine._validate_code_safety(code)
+
+    def test_import_os_blocked(self):
+        """Test that 'import os' is blocked"""
+        engine = BacktestEngine()
+        code = "import os"
+
+        with pytest.raises(ValueError, match="OS module access"):
+            engine._validate_code_safety(code)
+
+    def test_import_sys_blocked(self):
+        """Test that 'import sys' is blocked"""
+        engine = BacktestEngine()
+        code = "import sys"
+
+        with pytest.raises(ValueError, match="System module access"):
+            engine._validate_code_safety(code)
+
+    def test_import_subprocess_blocked(self):
+        """Test that 'import subprocess' is blocked"""
+        engine = BacktestEngine()
+        code = "import subprocess"
+
+        with pytest.raises(ValueError, match="Subprocess execution"):
+            engine._validate_code_safety(code)
+
+    def test_from_os_import_blocked(self):
+        """Test that 'from os import ...' is blocked"""
+        engine = BacktestEngine()
+        code = "from os import path"
+
+        with pytest.raises(ValueError, match="OS module access"):
+            engine._validate_code_safety(code)
+
+    def test_eval_call_blocked(self):
+        """Test that eval() calls are blocked"""
+        engine = BacktestEngine()
+        code = "result = eval('1 + 1')"
+
+        with pytest.raises(ValueError, match="Eval function"):
+            engine._validate_code_safety(code)
+
+    def test_exec_call_blocked(self):
+        """Test that exec() calls are blocked"""
+        engine = BacktestEngine()
+        code = "exec('print(1)')"
+
+        with pytest.raises(ValueError, match="Exec function"):
+            engine._validate_code_safety(code)
+
+    def test_open_call_blocked(self):
+        """Test that open() calls are blocked"""
+        engine = BacktestEngine()
+        code = "f = open('file.txt')"
+
+        with pytest.raises(ValueError, match="File operations"):
+            engine._validate_code_safety(code)
+
+    def test_dunder_dict_access_blocked(self):
+        """Test that __dict__ access is blocked"""
+        engine = BacktestEngine()
+        code = "x = obj.__dict__"
+
+        with pytest.raises(ValueError, match="Dict access"):
+            engine._validate_code_safety(code)
+
+    def test_dunder_class_access_blocked(self):
+        """Test that __class__ access is blocked"""
+        engine = BacktestEngine()
+        code = "x = obj.__class__"
+
+        with pytest.raises(ValueError, match="Class access"):
+            engine._validate_code_safety(code)
+
+    def test_dunder_builtins_name_blocked(self):
+        """Test that __builtins__ variable is blocked"""
+        engine = BacktestEngine()
+        code = "x = __builtins__"
+
+        with pytest.raises(ValueError, match="Builtins access"):
+            engine._validate_code_safety(code)
+
+    def test_import_importlib_blocked(self):
+        """Test that 'import importlib' is blocked"""
+        engine = BacktestEngine()
+        code = "import importlib"
+
+        with pytest.raises(ValueError, match="Dynamic imports"):
+            engine._validate_code_safety(code)
+
+    def test_importlib_import_module_blocked(self):
+        """Test that importlib.import_module is blocked"""
+        engine = BacktestEngine()
+        code = "from importlib import import_module"
+
+        with pytest.raises(ValueError, match="Dynamic imports"):
+            engine._validate_code_safety(code)
+
+    def test_syntax_error_raises_value_error(self):
+        """Test that syntax errors are caught and re-raised as ValueError"""
+        engine = BacktestEngine()
+        code = "def invalid syntax"
+
+        with pytest.raises(ValueError, match="syntax error"):
+            engine._validate_code_safety(code)
+
+    def test_dangerous_pattern_in_comment_not_blocked(self):
+        """Test that dangerous patterns in comments are NOT blocked (AST advantage)"""
+        engine = BacktestEngine()
+        code = """
+# This comment mentions import os but it's just a comment
+class MyStrategy:
+    def init(self):
+        # Another comment: eval('test')
+        pass
+"""
+        # Should not raise - comments are ignored by AST
+        engine._validate_code_safety(code)
