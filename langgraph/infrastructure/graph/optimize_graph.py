@@ -1,4 +1,5 @@
 """Optimization workflow graph using LangGraph"""
+
 from pathlib import Path
 from typing import Any, Optional
 
@@ -207,11 +208,7 @@ class OptimizationGraph:
 
         except Exception as e:
             logger.error(f"Backtest failed: {e}", exc_info=True)
-            backtest_result = {
-                "error": str(e),
-                "sharpe_ratio": 0.0,
-                "metrics": {}
-            }
+            backtest_result = {"error": str(e), "sharpe_ratio": 0.0, "metrics": {}}
 
         # 更新状态
         state["backtest_result"] = backtest_result

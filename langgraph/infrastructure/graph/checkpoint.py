@@ -1,4 +1,5 @@
 """Checkpoint recovery mechanism for workflow graphs"""
+
 import json
 from datetime import datetime
 from pathlib import Path
@@ -148,7 +149,9 @@ class CheckpointManager:
                     }
                 )
             except Exception as e:
-                logger.warning("Failed to read checkpoint file", file=str(checkpoint_file), error=str(e))
+                logger.warning(
+                    "Failed to read checkpoint file", file=str(checkpoint_file), error=str(e)
+                )
 
         return checkpoints
 
@@ -181,7 +184,9 @@ class CheckpointManager:
             with open(archive_file, "w") as f:
                 json.dump(data, f, indent=2, default=str)
 
-            logger.info("Checkpoint archived", workflow_id=workflow_id, archive_file=str(archive_file))
+            logger.info(
+                "Checkpoint archived", workflow_id=workflow_id, archive_file=str(archive_file)
+            )
             return archive_file
 
         except Exception as e:
@@ -192,7 +197,9 @@ class CheckpointManager:
 class CheckpointMixin:
     """检查点功能混入类"""
 
-    def __init__(self, *args: Any, checkpoint_manager: Optional[CheckpointManager] = None, **kwargs: Any):
+    def __init__(
+        self, *args: Any, checkpoint_manager: Optional[CheckpointManager] = None, **kwargs: Any
+    ):
         """
         初始化检查点混入
 

@@ -1,4 +1,5 @@
 """Tests for research graph"""
+
 import pytest
 from unittest.mock import Mock, AsyncMock, patch
 

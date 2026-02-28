@@ -1,4 +1,5 @@
 """Tests for coordinator agent"""
+
 import pytest
 from unittest.mock import Mock
 
@@ -27,7 +28,7 @@ class TestCoordinatorAgent:
             "messages": [],
             "strategy_code": None,
             "validation_result": None,
-            "backtest_result": None
+            "backtest_result": None,
         }
 
         result = await agent.process(state)
@@ -47,7 +48,7 @@ class TestCoordinatorAgent:
             "messages": [],
             "strategy_code": "class TestStrategy: pass",
             "validation_result": None,
-            "backtest_result": None
+            "backtest_result": None,
         }
 
         result = await agent.process(state)
@@ -65,11 +66,8 @@ class TestCoordinatorAgent:
             "user_input": "Create a strategy",
             "messages": [],
             "strategy_code": "class TestStrategy: pass",
-            "validation_result": {
-                "is_valid": True,
-                "quality_score": 85
-            },
-            "backtest_result": None
+            "validation_result": {"is_valid": True, "quality_score": 85},
+            "backtest_result": None,
         }
 
         result = await agent.process(state)
@@ -87,11 +85,8 @@ class TestCoordinatorAgent:
             "user_input": "Create a strategy",
             "messages": [],
             "strategy_code": "invalid code",
-            "validation_result": {
-                "is_valid": False,
-                "issues": ["Syntax error", "Missing import"]
-            },
-            "backtest_result": None
+            "validation_result": {"is_valid": False, "issues": ["Syntax error", "Missing import"]},
+            "backtest_result": None,
         }
 
         result = await agent.process(state)
@@ -112,7 +107,7 @@ class TestCoordinatorAgent:
             "current_iteration": 0,
             "best_parameters": None,
             "best_score": None,
-            "should_continue": True
+            "should_continue": True,
         }
 
         result = await agent.process(state)
@@ -133,7 +128,7 @@ class TestCoordinatorAgent:
             "current_iteration": 5,
             "best_parameters": {"param1": 15},
             "best_score": 1.8,
-            "should_continue": True
+            "should_continue": True,
         }
 
         result = await agent.process(state)
@@ -154,7 +149,7 @@ class TestCoordinatorAgent:
             "current_iteration": 10,
             "best_parameters": {"param1": 18},
             "best_score": 2.5,
-            "should_continue": False
+            "should_continue": False,
         }
 
         result = await agent.process(state)

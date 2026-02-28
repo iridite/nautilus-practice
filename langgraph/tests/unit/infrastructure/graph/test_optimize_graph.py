@@ -1,4 +1,5 @@
 """Tests for optimization graph"""
+
 import pytest
 from unittest.mock import Mock, AsyncMock, patch
 
@@ -120,11 +121,14 @@ class TestOptimizationGraph:
         }
 
         # Mock database operations - patch at the source module level
-        with patch("sqlalchemy.create_engine"), \
-             patch("sqlalchemy.orm.sessionmaker") as mock_sessionmaker, \
-             patch("langgraph.infrastructure.database.repositories.SQLAlchemyStrategyRepository") as mock_repo_class, \
-             patch("langgraph.shared.config.LangGraphConfig") as mock_config:
-
+        with (
+            patch("sqlalchemy.create_engine"),
+            patch("sqlalchemy.orm.sessionmaker") as mock_sessionmaker,
+            patch(
+                "langgraph.infrastructure.database.repositories.SQLAlchemyStrategyRepository"
+            ) as mock_repo_class,
+            patch("langgraph.shared.config.LangGraphConfig") as mock_config,
+        ):
             # Setup mocks
             mock_config.return_value.database_url = "sqlite:///test.db"
             mock_session = Mock()
@@ -166,11 +170,14 @@ class TestOptimizationGraph:
         }
 
         # Mock database operations - patch at the source module level
-        with patch("sqlalchemy.create_engine"), \
-             patch("sqlalchemy.orm.sessionmaker") as mock_sessionmaker, \
-             patch("langgraph.infrastructure.database.repositories.SQLAlchemyStrategyRepository") as mock_repo_class, \
-             patch("langgraph.shared.config.LangGraphConfig") as mock_config:
-
+        with (
+            patch("sqlalchemy.create_engine"),
+            patch("sqlalchemy.orm.sessionmaker") as mock_sessionmaker,
+            patch(
+                "langgraph.infrastructure.database.repositories.SQLAlchemyStrategyRepository"
+            ) as mock_repo_class,
+            patch("langgraph.shared.config.LangGraphConfig") as mock_config,
+        ):
             mock_config.return_value.database_url = "sqlite:///test.db"
             mock_session = Mock()
             mock_session.close = Mock()
@@ -208,11 +215,14 @@ class TestOptimizationGraph:
         }
 
         # Mock database operations
-        with patch("sqlalchemy.create_engine"), \
-             patch("sqlalchemy.orm.sessionmaker") as mock_sessionmaker, \
-             patch("langgraph.infrastructure.database.repositories.SQLAlchemyStrategyRepository") as mock_repo_class, \
-             patch("langgraph.shared.config.LangGraphConfig") as mock_config:
-
+        with (
+            patch("sqlalchemy.create_engine"),
+            patch("sqlalchemy.orm.sessionmaker") as mock_sessionmaker,
+            patch(
+                "langgraph.infrastructure.database.repositories.SQLAlchemyStrategyRepository"
+            ) as mock_repo_class,
+            patch("langgraph.shared.config.LangGraphConfig") as mock_config,
+        ):
             mock_config.return_value.database_url = "sqlite:///test.db"
             mock_session = Mock()
             mock_session.close = Mock()
@@ -249,11 +259,14 @@ class TestOptimizationGraph:
         }
 
         # Mock database operations - strategy not found
-        with patch("sqlalchemy.create_engine"), \
-             patch("sqlalchemy.orm.sessionmaker") as mock_sessionmaker, \
-             patch("langgraph.infrastructure.database.repositories.SQLAlchemyStrategyRepository") as mock_repo_class, \
-             patch("langgraph.shared.config.LangGraphConfig") as mock_config:
-
+        with (
+            patch("sqlalchemy.create_engine"),
+            patch("sqlalchemy.orm.sessionmaker") as mock_sessionmaker,
+            patch(
+                "langgraph.infrastructure.database.repositories.SQLAlchemyStrategyRepository"
+            ) as mock_repo_class,
+            patch("langgraph.shared.config.LangGraphConfig") as mock_config,
+        ):
             mock_config.return_value.database_url = "sqlite:///test.db"
             mock_session = Mock()
             mock_session.close = Mock()
@@ -293,9 +306,10 @@ class TestOptimizationGraph:
         }
 
         # Mock database operations - connection error
-        with patch("sqlalchemy.create_engine") as mock_create_engine, \
-             patch("langgraph.shared.config.LangGraphConfig") as mock_config:
-
+        with (
+            patch("sqlalchemy.create_engine") as mock_create_engine,
+            patch("langgraph.shared.config.LangGraphConfig") as mock_config,
+        ):
             mock_config.return_value.database_url = "sqlite:///test.db"
             mock_create_engine.side_effect = Exception("Database connection failed")
 

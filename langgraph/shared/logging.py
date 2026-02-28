@@ -9,9 +9,7 @@ from structlog.types import EventDict, FilteringBoundLogger, WrappedLogger
 from shared.config import LangGraphConfig
 
 
-def _add_trace_context(
-    logger: WrappedLogger, method_name: str, event_dict: EventDict
-) -> EventDict:
+def _add_trace_context(logger: WrappedLogger, method_name: str, event_dict: EventDict) -> EventDict:
     """Processor to add trace context to log events.
 
     This processor checks for an active trace context and adds

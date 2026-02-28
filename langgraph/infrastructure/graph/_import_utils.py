@@ -1,4 +1,5 @@
 """Utility for importing external langgraph.graph without conflicts"""
+
 import sys
 from pathlib import Path
 from typing import Any
@@ -23,10 +24,12 @@ def import_external_langgraph() -> tuple[Any, Any]:
 
     try:
         sys.path = [
-            p for p in sys.path
-            if p != _project_root and p != '' and not p.startswith("__editable__")
+            p
+            for p in sys.path
+            if p != _project_root and p != "" and not p.startswith("__editable__")
         ]
         import langgraph.graph as _lg  # type: ignore[import-untyped]
+
         return _lg.StateGraph, _lg.END
     finally:
         sys.path = _original_path

@@ -1,4 +1,5 @@
 """LLM response caching implementation"""
+
 import hashlib
 import json
 import pickle
@@ -158,7 +159,9 @@ class LLMCache:
                 try:
                     cache_file.unlink()
                 except Exception as e:
-                    logger.warning("Failed to delete cache file", file=str(cache_file), error=str(e))
+                    logger.warning(
+                        "Failed to delete cache file", file=str(cache_file), error=str(e)
+                    )
 
         logger.info("Cache cleared")
 

@@ -82,8 +82,7 @@ class LangGraphConfig(BaseSettings):
         # Basic format validation (Anthropic keys start with 'sk-ant-')
         if not v.startswith("sk-ant-"):
             raise ValueError(
-                "claude_api_key must start with 'sk-ant-'. "
-                "Please check your API key format."
+                "claude_api_key must start with 'sk-ant-'. Please check your API key format."
             )
 
         if len(v) < 20:  # Reasonable minimum length
@@ -103,8 +102,6 @@ class LangGraphConfig(BaseSettings):
                 f"Please check write permissions for {self.output_dir} and {self.log_file.parent}"
             ) from e
         except OSError as e:
-            raise ValueError(
-                f"Failed to create directories: {e}"
-            ) from e
+            raise ValueError(f"Failed to create directories: {e}") from e
 
         return self

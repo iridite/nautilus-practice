@@ -1,4 +1,5 @@
 """SQLAlchemy repository implementations"""
+
 import json
 from typing import Optional, List
 from sqlalchemy.orm import Session
@@ -170,13 +171,17 @@ class SQLAlchemyOptimizationRepository:
             optimization: 优化领域对象
         """
         # 检查是否已存在
-        existing = self.session.query(OptimizationModel).filter_by(id=optimization.optimization_id).first()
+        existing = (
+            self.session.query(OptimizationModel).filter_by(id=optimization.optimization_id).first()
+        )
 
         if existing:
             # 更新现有记录
             existing.status = optimization.status.value
             existing.parameter_space = json.dumps(optimization.parameter_space)
-            existing.best_params = json.dumps(optimization.best_params) if optimization.best_params else None
+            existing.best_params = (
+                json.dumps(optimization.best_params) if optimization.best_params else None
+            )
             existing.best_score = optimization.best_score
             existing.trials_count = len(optimization.trials)
             existing.error_message = optimization.error_message
@@ -190,7 +195,9 @@ class SQLAlchemyOptimizationRepository:
                 status=optimization.status.value,
                 config=json.dumps({}),  # 可以扩展为存储优化配置
                 parameter_space=json.dumps(optimization.parameter_space),
-                best_params=json.dumps(optimization.best_params) if optimization.best_params else None,
+                best_params=json.dumps(optimization.best_params)
+                if optimization.best_params
+                else None,
                 best_score=optimization.best_score,
                 trials_count=len(optimization.trials),
                 error_message=optimization.error_message,
@@ -200,7 +207,11 @@ class SQLAlchemyOptimizationRepository:
             self.session.add(model)
 
         self.session.commit()
-        logger.info("Optimization saved", optimization_id=optimization.optimization_id, status=optimization.status.value)
+        logger.info(
+            "Optimization saved",
+            optimization_id=optimization.optimization_id,
+            status=optimization.status.value,
+        )
 
     def find_by_id(self, optimization_id: str) -> Optional[Optimization]:
         """

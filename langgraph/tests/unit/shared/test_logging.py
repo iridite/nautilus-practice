@@ -288,4 +288,3 @@ class TestLoggingFormats:
 
         # Should not raise exception
         logger.info("test message", key="value")
-

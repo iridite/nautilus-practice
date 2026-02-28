@@ -1,4 +1,5 @@
 """Additional tests for backtest engine edge cases"""
+
 import pytest
 from unittest.mock import Mock, patch
 from langgraph.infrastructure.backtest.engine import BacktestEngine
@@ -148,10 +149,7 @@ class NotAStrategy:
         """Test run method with invalid strategy code"""
         engine = BacktestEngine()
         strategy = Strategy(
-            name="Invalid",
-            description="Invalid strategy",
-            code="def invalid syntax",
-            config={}
+            name="Invalid", description="Invalid strategy", code="def invalid syntax", config={}
         )
 
         with pytest.raises(ValueError, match="Invalid strategy code"):
@@ -172,14 +170,9 @@ class TestStrategy(Strategy):
         pass
 """
 
-        strategy = Strategy(
-            name="Test",
-            description="Test strategy",
-            code=valid_code,
-            config={}
-        )
+        strategy = Strategy(name="Test", description="Test strategy", code=valid_code, config={})
 
-        with patch('langgraph.infrastructure.backtest.engine.Backtest') as mock_backtest:
+        with patch("langgraph.infrastructure.backtest.engine.Backtest") as mock_backtest:
             mock_bt_instance = Mock()
             mock_stats = Mock()
             mock_stats.to_dict.return_value = {"return": 0.1}
@@ -192,8 +185,8 @@ class TestStrategy(Strategy):
             # Verify custom parameters were used
             mock_backtest.assert_called_once()
             call_kwargs = mock_backtest.call_args[1]
-            assert call_kwargs['cash'] == 50000
-            assert call_kwargs['commission'] == 0.001
+            assert call_kwargs["cash"] == 50000
+            assert call_kwargs["commission"] == 0.001
 
     def test_default_parameters(self):
         """Test that default parameters are set correctly"""

@@ -1,4 +1,5 @@
 """Tests for database models and repositories"""
+
 import pytest
 from datetime import datetime
 from sqlalchemy import create_engine
@@ -122,6 +123,7 @@ class TestSQLAlchemyStrategyRepository:
         )
 
         import asyncio
+
         asyncio.run(repository.save(strategy))
 
         # 验证保存成功
@@ -138,6 +140,7 @@ class TestSQLAlchemyStrategyRepository:
             config={},
         )
         import asyncio
+
         asyncio.run(repository.save(strategy))
 
         found = repository.find_by_id(strategy.strategy_id)
@@ -156,6 +159,7 @@ class TestSQLAlchemyStrategyRepository:
         strategy2 = Strategy(name="Strategy 2", description="Desc 2", code="pass", config={})
 
         import asyncio
+
         asyncio.run(repository.save(strategy1))
         asyncio.run(repository.save(strategy2))
 
@@ -171,6 +175,7 @@ class TestSQLAlchemyStrategyRepository:
         validated.status = StrategyStatus.VALIDATED
 
         import asyncio
+
         asyncio.run(repository.save(draft))
         asyncio.run(repository.save(validated))
 
@@ -182,6 +187,7 @@ class TestSQLAlchemyStrategyRepository:
         """测试更新策略"""
         strategy = Strategy(name="Original", description="Original desc", code="pass", config={})
         import asyncio
+
         asyncio.run(repository.save(strategy))
 
         # 更新策略
@@ -198,6 +204,7 @@ class TestSQLAlchemyStrategyRepository:
         """测试删除策略"""
         strategy = Strategy(name="To Delete", description="Delete desc", code="pass", config={})
         import asyncio
+
         asyncio.run(repository.save(strategy))
 
         repository.delete(strategy.strategy_id)

@@ -1,4 +1,5 @@
 """Optimizer agent for parameter optimization"""
+
 import json
 from typing import Any
 

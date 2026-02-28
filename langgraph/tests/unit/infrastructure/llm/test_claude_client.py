@@ -1,4 +1,5 @@
 """Tests for Claude API client"""
+
 import pytest
 from unittest.mock import Mock, patch
 from infrastructure.llm.claude_client import ClaudeClient
@@ -28,10 +29,7 @@ def test_client_initialization(mock_anthropic_client):
 def test_client_initialization_with_custom_params(mock_anthropic_client):
     """测试自定义参数初始化"""
     client = ClaudeClient(
-        api_key="test-key",
-        model="claude-sonnet-4-6",
-        max_tokens=8192,
-        temperature=0.5
+        api_key="test-key", model="claude-sonnet-4-6", max_tokens=8192, temperature=0.5
     )
 
     assert client.model == "claude-sonnet-4-6"
@@ -102,7 +100,7 @@ def test_generate_with_max_retries(mock_anthropic_client):
     mock_response.content = [Mock(text="Success")]
     mock_anthropic_client.messages.create.side_effect = [
         Exception("Temporary error"),
-        mock_response
+        mock_response,
     ]
 
     client = ClaudeClient(api_key="test-key", max_retries=2)

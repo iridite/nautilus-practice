@@ -1,4 +1,5 @@
 """Tests for researcher agent"""
+
 import pytest
 from unittest.mock import Mock
 import json
@@ -22,13 +23,15 @@ class TestResearcherAgent:
     async def test_process_with_valid_response(self):
         """Test processing with valid LLM response"""
         llm_client = Mock()
-        llm_response = json.dumps({
-            "name": "TestStrategy",
-            "description": "A test strategy",
-            "code": "class TestStrategy: pass",
-            "config": {"param1": 10},
-            "explanation": "Test explanation"
-        })
+        llm_response = json.dumps(
+            {
+                "name": "TestStrategy",
+                "description": "A test strategy",
+                "code": "class TestStrategy: pass",
+                "config": {"param1": 10},
+                "explanation": "Test explanation",
+            }
+        )
         llm_client.generate.return_value = llm_response
 
         agent = ResearcherAgent(llm_client=llm_client)

@@ -42,10 +42,7 @@ def valid_llm_response():
         "name": "test_strategy",
         "description": "A test strategy",
         "code": "class TestStrategy:\n    pass",
-        "config": {
-            "timeframe": "1h",
-            "parameters": {"param1": 10}
-        }
+        "config": {"timeframe": "1h", "parameters": {"param1": 10}},
     }
 
 
@@ -62,7 +59,9 @@ async def test_use_case_initialization(mock_llm_service, mock_strategy_repositor
 
 
 @pytest.mark.asyncio
-async def test_execute_success(use_case, mock_llm_service, mock_strategy_repository, valid_llm_response):
+async def test_execute_success(
+    use_case, mock_llm_service, mock_strategy_repository, valid_llm_response
+):
     """Test successful strategy generation."""
     # Arrange
     requirements = "Create a momentum strategy"
@@ -129,7 +128,9 @@ async def test_execute_invalid_config(use_case, mock_llm_service, valid_llm_resp
 
 
 @pytest.mark.asyncio
-async def test_execute_creates_strategy_with_correct_status(use_case, mock_llm_service, mock_strategy_repository, valid_llm_response):
+async def test_execute_creates_strategy_with_correct_status(
+    use_case, mock_llm_service, mock_strategy_repository, valid_llm_response
+):
     """Test that generated strategy has DRAFT status."""
     # Arrange
     requirements = "Create a strategy"
@@ -143,7 +144,9 @@ async def test_execute_creates_strategy_with_correct_status(use_case, mock_llm_s
 
 
 @pytest.mark.asyncio
-async def test_execute_repository_not_called_on_validation_failure(use_case, mock_llm_service, mock_strategy_repository, valid_llm_response):
+async def test_execute_repository_not_called_on_validation_failure(
+    use_case, mock_llm_service, mock_strategy_repository, valid_llm_response
+):
     """Test that repository save is not called if validation fails."""
     # Arrange
     requirements = "Create a strategy"

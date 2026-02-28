@@ -496,7 +496,13 @@ def prepare_data_feeds(args, adapter, base_dir, universe_symbols: set):
     strategy_name = adapter.get_strategy_name()
     for idx, symbol in enumerate(symbols_to_check, 1):
         exists, _ = check_single_data_file(
-            symbol.split(":")[0], start_date, end_date, timeframe, venue, base_dir, strategy_name=strategy_name
+            symbol.split(":")[0],
+            start_date,
+            end_date,
+            timeframe,
+            venue,
+            base_dir,
+            strategy_name=strategy_name,
         )
         if not exists:
             missing_symbols.append(symbol.split(":")[0])

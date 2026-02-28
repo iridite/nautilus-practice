@@ -1,4 +1,5 @@
 """Backtest engine wrapper for backtesting.py framework"""
+
 import ast
 from typing import Any, Tuple
 from backtesting import Backtest
@@ -15,11 +16,7 @@ class BacktestEngine:
         self.default_commission = 0.002
 
     def run(
-        self,
-        strategy: Strategy,
-        data: Any = None,
-        cash: float = None,
-        commission: float = None
+        self, strategy: Strategy, data: Any = None, cash: float = None, commission: float = None
     ) -> dict[str, Any]:
         """
         Run backtest for a strategy
@@ -55,19 +52,14 @@ class BacktestEngine:
         strategy_class = self._extract_strategy_class(strategy.code)
 
         # Run backtest
-        bt = Backtest(
-            data,
-            strategy_class,
-            cash=cash,
-            commission=commission
-        )
+        bt = Backtest(data, strategy_class, cash=cash, commission=commission)
 
         stats = bt.run()
 
         # Convert stats to dictionary
         result = {
             "metrics": self._extract_metrics(stats),
-            "equity_curve": self._extract_equity_curve(stats)
+            "equity_curve": self._extract_equity_curve(stats),
         }
 
         return result
