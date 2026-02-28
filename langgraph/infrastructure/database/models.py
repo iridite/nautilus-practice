@@ -1,7 +1,5 @@
 """SQLAlchemy database models"""
-import json
 from datetime import datetime
-from typing import Optional
 
 from sqlalchemy import Column, String, Text, DateTime, Float, Integer
 from sqlalchemy.orm import declarative_base

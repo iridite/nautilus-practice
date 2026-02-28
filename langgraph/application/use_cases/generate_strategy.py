@@ -1,6 +1,6 @@
 """Use case for generating trading strategies."""
 
-from langgraph.domain.models.strategy import Strategy, StrategyStatus
+from langgraph.domain.models.strategy import Strategy
 from langgraph.application.interfaces.llm_service import LLMService
 from langgraph.application.interfaces.strategy_repository import StrategyRepository
 from langgraph.shared.exceptions import LLMError, ParameterValidationError

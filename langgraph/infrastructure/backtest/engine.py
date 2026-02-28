@@ -159,7 +159,7 @@ class BacktestEngine:
                         value = getattr(stats, key)
                         if not callable(value):
                             metrics[key] = value
-                    except:
+                    except Exception:
                         pass
             return metrics
 

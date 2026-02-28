@@ -1,5 +1,4 @@
 """Tests for LangGraph state definitions"""
-import pytest
 from datetime import datetime
 from langgraph.infrastructure.graph.state import (
     ResearchState,

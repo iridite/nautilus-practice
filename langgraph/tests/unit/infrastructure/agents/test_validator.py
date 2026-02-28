@@ -4,7 +4,6 @@ from unittest.mock import Mock
 import json
 
 from langgraph.infrastructure.agents.validator import ValidatorAgent
-from langgraph.shared.exceptions import LLMError
 
 
 class TestValidatorAgent:

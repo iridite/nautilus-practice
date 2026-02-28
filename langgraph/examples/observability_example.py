@@ -22,7 +22,7 @@ logger = get_logger(__name__)
 @with_tracing(span_name="analyze_strategy")
 async def analyze_strategy_node(state: dict) -> dict:
     """Example node with metrics and tracing."""
-    trace_ctx = get_trace_context()
+    _ = get_trace_context()  # Get trace context for observability
     logger.info("Analyzing strategy", strategy_name=state.get("strategy_name"))
 
     # Simulate work
@@ -89,7 +89,7 @@ async def main():
     print("=" * 80)
     print()
 
-    result = await run_workflow("keltner_breakout")
+    await run_workflow("keltner_breakout")
 
     print()
     print("Workflow completed!")

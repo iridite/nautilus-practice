@@ -1,5 +1,4 @@
 """Tests for strategy code generator"""
-import pytest
 from langgraph.infrastructure.code_gen.strategy_generator import StrategyCodeGenerator
 from langgraph.domain.models.strategy import Strategy, StrategyStatus
 

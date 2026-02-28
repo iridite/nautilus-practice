@@ -2,7 +2,6 @@
 
 import logging
 import sys
-from typing import Any
 
 import structlog
 from structlog.types import EventDict, FilteringBoundLogger, WrappedLogger

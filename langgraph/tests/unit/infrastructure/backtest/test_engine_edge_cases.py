@@ -1,6 +1,6 @@
 """Additional tests for backtest engine edge cases"""
 import pytest
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock, patch
 from langgraph.infrastructure.backtest.engine import BacktestEngine
 from langgraph.domain.models.strategy import Strategy
 
@@ -187,7 +187,7 @@ class TestStrategy(Strategy):
             mock_bt_instance.run.return_value = mock_stats
             mock_backtest.return_value = mock_bt_instance
 
-            result = engine.run(strategy, cash=50000, commission=0.001)
+            _ = engine.run(strategy, cash=50000, commission=0.001)
 
             # Verify custom parameters were used
             mock_backtest.assert_called_once()

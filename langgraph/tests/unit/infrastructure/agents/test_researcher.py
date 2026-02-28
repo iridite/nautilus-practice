@@ -1,6 +1,6 @@
 """Tests for researcher agent"""
 import pytest
-from unittest.mock import Mock, patch
+from unittest.mock import Mock
 import json
 
 from langgraph.infrastructure.agents.researcher import ResearcherAgent
