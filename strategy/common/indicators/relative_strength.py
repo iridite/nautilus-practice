@@ -111,9 +111,22 @@ class RelativeStrengthCalculator:
         Returns:
             RS 值，如果数据不足或无效则返回 None
         """
+        # 边界检查：确保有足够的时间戳（需要 lookback_days + 1 个点）
+        if len(common_timestamps) < lookback_days + 1:
+            return None
+
         period_ts = common_timestamps[-(lookback_days + 1) :]
+
+        # 边界检查：确保切片后仍有足够的数据点
+        if len(period_ts) < lookback_days + 1:
+            return None
+
         symbol_prices = [self.symbol_price_history[ts] for ts in period_ts]
         benchmark_prices = [self.benchmark_price_history[ts] for ts in period_ts]
+
+        # 边界检查：确保价格列表不为空
+        if not symbol_prices or not benchmark_prices:
+            return None
 
         # 检查价格有效性
         if symbol_prices[0] <= 0 or benchmark_prices[0] <= 0:

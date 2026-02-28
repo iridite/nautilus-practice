@@ -199,7 +199,28 @@ class ConfigAdapter:
 
         Returns:
             InstrumentConfig 对象
+
+        Raises:
+            ValueError: 如果符号格式无效或包含危险字符
         """
+        # 验证符号格式，防止路径遍历和注入攻击
+        if not symbol or not isinstance(symbol, str):
+            raise ValueError(f"Invalid symbol: must be a non-empty string, got {type(symbol)}")
+
+        # 检查危险字符（路径遍历、命令注入）
+        dangerous_chars = ['..', '/', '\\', '\0', '\n', '\r', ';', '&', '|', '`', '$', '(', ')']
+        if any(char in symbol for char in dangerous_chars):
+            raise ValueError(f"Invalid symbol '{symbol}': contains dangerous characters")
+
+        # 验证符号格式（只允许字母、数字、冒号、斜杠、连字符）
+        import re
+        if not re.match(r'^[A-Z0-9/:_-]+$', symbol, re.IGNORECASE):
+            raise ValueError(f"Invalid symbol format '{symbol}': only alphanumeric, :, /, _, - allowed")
+
+        # 验证符号长度（防止过长输入）
+        if len(symbol) > 50:
+            raise ValueError(f"Invalid symbol '{symbol}': exceeds maximum length of 50 characters")
+
         if ":" in symbol:
             raw_pair = symbol.split(":")[0]
         else:
@@ -207,6 +228,10 @@ class ConfigAdapter:
 
         base_currency = "USDT"
         quote_currency = raw_pair.replace(base_currency, "")
+
+        # 验证提取的货币代码不为空
+        if not quote_currency:
+            raise ValueError(f"Invalid symbol '{symbol}': could not extract quote currency")
 
         return InstrumentConfig(
             venue_name=self.get_venue(),

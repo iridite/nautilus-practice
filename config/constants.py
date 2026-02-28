@@ -79,6 +79,9 @@ BTC_REGIME_SMA_PERIOD = 200  # BTC趋势判定周期
 BTC_REGIME_ATR_PERIOD = 14  # BTC波动率计算周期
 VOLATILITY_THRESHOLD = 0.03  # BTC ATR百分比阈值 3%
 
+# 过滤器诊断常量
+FILTER_BLOCKER_THRESHOLD = 0.10  # 过滤器阻塞率阈值 10%（超过此比例视为主要阻塞器）
+
 # 市场狂热度过滤器常量
 FUNDING_RATE_WARNING_ANNUAL = 100.0  # 资金费率警告阈值（年化%）
 FUNDING_RATE_DANGER_ANNUAL = 200.0  # 资金费率危险阈值（年化%）
