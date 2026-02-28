@@ -53,44 +53,46 @@ class TestAdapterRestoreEquivalence(unittest.TestCase):
         self.adapter.strategy_config = SimpleNamespace(parameters={})
 
     def test_restore_instrument_id_matches_helper_swap_binance(self, mock_loader):
+        """
+        Test that adapter's _restore_instrument_id normalizes symbols before formatting.
+
+        After normalization, all symbols should produce BTCUSDT-based instrument IDs.
+        """
         self._set_env(venue="BINANCE", inst_type="SWAP")
-        symbols = [
-            "BTCUSDT",
-            "BTC",
-            "BTC-USDT",
-            "BTC-USDT-PERP.OKX",  # already instrument-like (diff venue included)
+
+        # All these symbols should normalize to BTCUSDT and produce the same result
+        test_cases = [
+            ("BTCUSDT", "BTCUSDT-PERP.BINANCE"),
+            ("BTC", "BTCUSDT-PERP.BINANCE"),
+            ("BTC-USDT", "BTCUSDT-PERP.BINANCE"),  # Normalized to BTCUSDT
+            ("BTC-USDT-PERP.OKX", "BTCUSDT-PERP.BINANCE"),  # Normalized to BTCUSDT, venue changed
         ]
 
-        for sym in symbols:
+        for sym, expected in test_cases:
             with self.subTest(symbol=sym):
-                expected = format_aux_instrument_id(
-                    sym,
-                    template_inst_id=None,
-                    venue=self.adapter.get_venue(),
-                    inst_type=self.adapter.env_config.trading.instrument_type,
-                )
                 actual = self.adapter._restore_instrument_id(sym)
-                self.assertEqual(actual, expected, f"Mismatch for symbol={sym}: adapter != helper")
+                self.assertEqual(actual, expected, f"Mismatch for symbol={sym}")
 
     def test_restore_instrument_id_matches_helper_spot_okx(self, mock_loader):
+        """
+        Test that adapter's _restore_instrument_id normalizes symbols before formatting.
+
+        After normalization, all symbols should produce normalized instrument IDs.
+        """
         self._set_env(venue="OKX", inst_type="SPOT")
-        symbols = [
-            "ETHUSDT",
-            "ETH",
-            "eth-usdt",
-            "LTC-USDT-PERP.BINANCE",
+
+        # All these symbols should normalize to their base form
+        test_cases = [
+            ("ETHUSDT", "ETHUSDT-SPOT.OKX"),
+            ("ETH", "ETHUSDT-SPOT.OKX"),
+            ("eth-usdt", "ETHUSDT-SPOT.OKX"),  # Normalized to ETHUSDT
+            ("LTC-USDT-PERP.BINANCE", "LTCUSDT-SPOT.OKX"),  # Normalized to LTCUSDT, venue changed
         ]
 
-        for sym in symbols:
+        for sym, expected in test_cases:
             with self.subTest(symbol=sym):
-                expected = format_aux_instrument_id(
-                    sym,
-                    template_inst_id=None,
-                    venue=self.adapter.get_venue(),
-                    inst_type=self.adapter.env_config.trading.instrument_type,
-                )
                 actual = self.adapter._restore_instrument_id(sym)
-                self.assertEqual(actual, expected, f"Mismatch for symbol={sym}: adapter != helper")
+                self.assertEqual(actual, expected, f"Mismatch for symbol={sym}")
 
     def test_restore_bar_type_matches_helper_various_timeframes(self, mock_loader):
         self._set_env(venue="BINANCE", inst_type="SWAP")

@@ -16,6 +16,69 @@ logger = logging.getLogger(__name__)
 KNOWN_INST_TYPES = {"PERP", "SWAP", "FUTURE", "CASH", "SPOT", "LINEAR"}
 
 
+def normalize_symbol_to_internal(symbol: str) -> str:
+    """
+    Normalize exchange-specific symbol formats to internal format.
+
+    Internal format is Binance-style without hyphens (e.g., BTCUSDT).
+    This function handles conversion from various exchange formats:
+
+    Supported formats:
+    - OKX: BTC-USDT-SWAP → BTCUSDT
+    - OKX: ETH-USDT-SWAP.OKX → ETHUSDT
+    - Binance: BTCUSDT → BTCUSDT (passthrough)
+    - Binance: BTCUSDT-PERP.BINANCE → BTCUSDT
+
+    Args:
+        symbol: Exchange-specific symbol string
+
+    Returns:
+        Normalized symbol in internal format (e.g., BTCUSDT)
+
+    Raises:
+        ValueError: If symbol is empty or invalid
+
+    Examples:
+        >>> normalize_symbol_to_internal("BTC-USDT-SWAP")
+        'BTCUSDT'
+        >>> normalize_symbol_to_internal("BTCUSDT")
+        'BTCUSDT'
+        >>> normalize_symbol_to_internal("ETH-USDT-SWAP.OKX")
+        'ETHUSDT'
+    """
+    if not symbol or not symbol.strip():
+        raise ValueError("Symbol must be a non-empty string")
+
+    s = symbol.strip().upper()
+
+    logger.debug(f"Normalizing symbol: {symbol} → processing: {s}")
+
+    # Strip venue suffix if present (e.g., ".OKX", ".BINANCE")
+    if "." in s:
+        s = s.split(".")[0]
+        logger.debug(f"  Stripped venue: {s}")
+
+    # Strip instrument type suffix (e.g., "-SWAP", "-PERP")
+    for inst_type in KNOWN_INST_TYPES:
+        suffix = f"-{inst_type}"
+        if s.endswith(suffix):
+            s = s[: -len(suffix)]
+            logger.debug(f"  Stripped {suffix}: {s}")
+            break
+
+    # Remove hyphens to get internal format (BTC-USDT → BTCUSDT)
+    if "-" in s:
+        s = s.replace("-", "")
+        logger.debug(f"  Removed hyphens: {s}")
+
+    # Validate result format (should be like BTCUSDT)
+    if not s.endswith("USDT"):
+        logger.warning(f"Normalized symbol '{s}' does not end with USDT - may be invalid")
+
+    logger.debug(f"  Final normalized symbol: {s}")
+    return s
+
+
 def _parse_inst_type_from_template(template_inst_id: str) -> str:
     """
     Parse the contract/instrument type from a template instrument id.

@@ -5,6 +5,7 @@
 """
 
 import json
+import logging
 from copy import deepcopy
 from pathlib import Path
 from typing import Any, Dict, List
@@ -30,6 +31,8 @@ from .schemas import (
     StrategyConfig,
     project_root,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class ConfigAdapter:
@@ -425,17 +428,25 @@ class ConfigAdapter:
         Falls back to original heuristic if helper fails for any reason.
         """
         # Local import to avoid circular dependency
-        from utils.instrument_helpers import format_aux_instrument_id
+        from utils.instrument_helpers import format_aux_instrument_id, normalize_symbol_to_internal
 
         venue = self.get_venue()
         inst_type = self.env_config.trading.instrument_type
+
+        # Normalize symbol to internal format (e.g., BTC-USDT-SWAP → BTCUSDT)
+        try:
+            normalized_symbol = normalize_symbol_to_internal(symbol)
+            logger.debug(f"Symbol normalization: {symbol} → {normalized_symbol}")
+        except ValueError as e:
+            logger.warning(f"Symbol normalization failed for '{symbol}': {e}, using as-is")
+            normalized_symbol = symbol
 
         try:
             # Use the helper which normalizes various aux symbol formats and composes
             # a canonical instrument_id. We explicitly pass env-driven inst_type and venue
             # to preserve adapter semantics.
             return format_aux_instrument_id(
-                symbol,
+                normalized_symbol,
                 template_inst_id=None,
                 venue=venue,
                 inst_type=inst_type,
