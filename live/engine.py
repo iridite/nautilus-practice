@@ -8,6 +8,7 @@ import asyncio
 import os
 import sys
 from pathlib import Path
+from pathlib import Path
 from typing import Optional
 
 from dotenv import load_dotenv
@@ -104,16 +105,21 @@ def load_strategy_instance(strategy_config, instrument_ids):
             f"Live trading currently only supports single instrument, got {len(instrument_ids)}"
         )
 
-    if "btc_symbol" in params and (
-        not params.get("btc_instrument_id") or params.get("btc_instrument_id") == ""
-    ):
+    # Convert btc_instrument_id to exchange format if it exists
+    # ConfigAdapter may have already set btc_instrument_id in NautilusTrader format (BTCUSDT-SWAP.OKX)
+    # We need to convert it to exchange format (BTC-USDT-SWAP.OKX for OKX)
+    if "btc_instrument_id" in params and params["btc_instrument_id"]:
+        inst_id = params["instrument_id"]
+        venue = inst_id.split(".")[-1] if "." in inst_id else "BINANCE"
+        btc_inst_id = params["btc_instrument_id"]
+        params["btc_instrument_id"] = convert_to_exchange_format(btc_inst_id, venue)
+    elif "btc_symbol" in params:
+        # Fallback: derive btc_instrument_id from btc_symbol if not already set
         inst_id = params["instrument_id"]
         try:
-            # Derive btc_instrument_id by inheriting contract type and venue from the template inst_id
             btc_inst_id = format_aux_instrument_id(
                 params["btc_symbol"], template_inst_id=inst_id
             )
-            # Convert to exchange-specific format if needed (e.g., OKX requires hyphens)
             venue = inst_id.split(".")[-1] if "." in inst_id else "BINANCE"
             params["btc_instrument_id"] = convert_to_exchange_format(btc_inst_id, venue)
         except Exception as e:
