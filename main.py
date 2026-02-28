@@ -57,7 +57,9 @@ def parse_arguments():
 
     backtest_parser = subparsers.add_parser("backtest", help="Run backtest")
     backtest_parser.add_argument("--type", choices=["high", "low"], default="low")
-    backtest_parser.add_argument("--env", type=str, default="dev", help="Environment name (default: dev)")
+    backtest_parser.add_argument(
+        "--env", type=str, default="dev", help="Environment name (default: dev)"
+    )
     backtest_parser.add_argument("--skip-data-check", action="store_true")
     backtest_parser.add_argument("--skip-oi-data", action="store_true")
     backtest_parser.add_argument("--force-oi-fetch", action="store_true")
@@ -94,6 +96,7 @@ def main():
         env_name = getattr(args, "env", "dev")
         # 临时修改 active.yaml 的环境设置
         import yaml
+
         active_file = BASE_DIR / "config" / "active.yaml"
         with open(active_file, "r") as f:
             active_data = yaml.safe_load(f)

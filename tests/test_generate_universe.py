@@ -1,6 +1,7 @@
 """
 测试 generate_universe.py 的可编程接口
 """
+
 import sys
 import unittest
 from pathlib import Path
