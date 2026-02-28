@@ -144,10 +144,26 @@ def _build_strategy_params(strategy_config, inst_id: str) -> dict:
 
 
 def _process_btc_instrument_id(params: dict, inst_id: str):
-    """处理 btc_instrument_id（如果策略需要）"""
-    if "btc_symbol" in params and (not params.get("btc_instrument_id") or params.get("btc_instrument_id") == ""):
+    """处理 btc_instrument_id（如果策略需要）
+
+    ConfigAdapter may have already set btc_instrument_id in NautilusTrader format (BTCUSDT-SWAP.OKX).
+    We need to convert it to exchange format (BTC-USDT-SWAP.OKX for OKX).
+    """
+    from utils.instrument_helpers import convert_to_exchange_format
+
+    venue = inst_id.split(".")[-1] if "." in inst_id else "BINANCE"
+
+    # If btc_instrument_id already exists (set by ConfigAdapter), convert it
+    if "btc_instrument_id" in params and params["btc_instrument_id"]:
+        btc_inst_id = params["btc_instrument_id"]
+        params["btc_instrument_id"] = convert_to_exchange_format(btc_inst_id, venue)
+        logger.info(f"Converted btc_instrument_id: {btc_inst_id} → {params['btc_instrument_id']} (venue={venue})")
+    # Otherwise, derive it from btc_symbol
+    elif "btc_symbol" in params:
         try:
-            params["btc_instrument_id"] = format_aux_instrument_id(params["btc_symbol"], template_inst_id=inst_id)
+            btc_inst_id = format_aux_instrument_id(params["btc_symbol"], template_inst_id=inst_id)
+            params["btc_instrument_id"] = convert_to_exchange_format(btc_inst_id, venue)
+            logger.info(f"Derived btc_instrument_id: {btc_inst_id} → {params['btc_instrument_id']} (venue={venue})")
         except Exception as e:
             logger.exception("Failed to format btc_instrument_id for template %s, btc_symbol=%s: %s", inst_id, params.get("btc_symbol"), e)
             raise
