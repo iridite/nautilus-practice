@@ -920,23 +920,40 @@ def _validate_loaded_instruments(missing_instruments, sandbox_cfg):
         )
 
 
-def _get_valid_instrument_ids(instrument_ids, loaded_instruments):
+def _get_valid_instrument_ids(instrument_ids, loaded_instruments, allow_missing=False):
     """获取有效的标的ID列表"""
     valid_instrument_ids = [inst_id for inst_id in instrument_ids if inst_id in loaded_instruments]
 
     if not valid_instrument_ids:
-        raise RuntimeError(
-            "No valid instruments available to create strategies. "
-            "All instrument files are missing."
-        )
+        if allow_missing:
+            logger.warning(
+                "No instrument files found, but allow_missing_instruments=True. "
+                "Will attempt to load instruments from exchange."
+            )
+            # 返回所有请求的 instrument_ids，让 NautilusTrader 从交易所加载
+            return instrument_ids
+        else:
+            raise RuntimeError(
+                "No valid instruments available to create strategies. "
+                "All instrument files are missing."
+            )
 
     if len(valid_instrument_ids) < len(instrument_ids):
         skipped = set(instrument_ids) - set(valid_instrument_ids)
-        logger.warning(
-            "Skipping %d instrument(s) due to missing files: %s",
-            len(skipped),
-            ", ".join(skipped)
-        )
+        if allow_missing:
+            logger.info(
+                "Missing %d instrument file(s), will load from exchange: %s",
+                len(skipped),
+                ", ".join(skipped)
+            )
+            # 返回所有请求的 instrument_ids
+            return instrument_ids
+        else:
+            logger.warning(
+                "Skipping %d instrument(s) due to missing files: %s",
+                len(skipped),
+                ", ".join(skipped)
+            )
 
     return valid_instrument_ids
 
@@ -1016,7 +1033,11 @@ async def run_sandbox(env_name: Optional[str] = None):
         _validate_loaded_instruments(missing_instruments, sandbox_cfg)
 
         # 获取有效的标的ID
-        valid_instrument_ids = _get_valid_instrument_ids(sandbox_cfg.instrument_ids, loaded_instruments)
+        valid_instrument_ids = _get_valid_instrument_ids(
+            sandbox_cfg.instrument_ids,
+            loaded_instruments,
+            allow_missing=sandbox_cfg.allow_missing_instruments
+        )
 
         # 加载并注册策略实例
         _load_and_register_strategies(node, strategy_config, valid_instrument_ids)
