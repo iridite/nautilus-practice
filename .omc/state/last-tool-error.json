@@ -1,7 +1,0 @@
-{
-  "tool_name": "Bash",
-  "tool_input_preview": "{\"command\":\"git add -A && git commit -m \\\"$(cat <<'EOF'\\nfix: resolve all CI failures (lint + tests)\\n\\n修复了所有导致 GitHub Actions 失败的问题：\\n\\n1. Ruff lint 错误修复（8个）：\\n   - 移除未使用的变量赋值（F841）\\n   - 修复裸 except ...",
-  "error": "Exit code 1\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n❌ ERROR: Direct commit to main branch is blocked!\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\nPlease follow the proper workflow:\n\n1. Create a feature branch:\n   git checkout -b <type>/<description>\n\n2. Make your commits on the feature branch\n\n3. Push and create a Pull Request\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n❌ ERROR: Direct commit to main branch is blocked!\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━...",
-  "timestamp": "2026-02-28T02:42:47.992Z",
-  "retry_count": 1
-}
