@@ -71,6 +71,8 @@ from strategy.common.universe import DynamicUniverseManager
 from strategy.core.base import BaseStrategy, BaseStrategyConfig
 from utils import get_project_root
 from utils.custom_data import FundingRateData
+from live.funding_rate_monitor import FundingRateMonitor
+from live.circuit_breaker import CircuitBreakerManager, InstrumentType
 
 TARGET_PRECISION = Decimal("0." + "0" * TARGET_PRECISION_DECIMALS)
 
@@ -227,6 +229,28 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
         self.funding_rate_annual: float | None = None
         self.market_euphoria_level: str = "NORMAL"
         self.euphoria_reduced: bool = False
+
+        # 资金费率熔断器（仅在 sandbox/live 模式启用）
+        self.funding_monitor: FundingRateMonitor | None = None
+        self.circuit_breaker: CircuitBreakerManager | None = None
+        try:
+            # 尝试初始化熔断器（如果在 sandbox/live 环境）
+            self.funding_monitor = FundingRateMonitor()
+            self.circuit_breaker = CircuitBreakerManager(
+                funding_monitor=self.funding_monitor,
+                fallback_threshold_annual=config.funding_rate_warning_annual,
+                circuit_breaker_annual=config.funding_rate_danger_annual,
+            )
+            self.log.info(
+                f"资金费率熔断器已启用: "
+                f"现货回退阈值={config.funding_rate_warning_annual}%, "
+                f"熔断阈值={config.funding_rate_danger_annual}%"
+            )
+        except Exception as e:
+            # 回测模式或无网络环境，熔断器不可用
+            self.log.warning(f"资金费率熔断器初始化失败（回测模式下正常）: {e}")
+            self.funding_monitor = None
+            self.circuit_breaker = None
 
         # 持仓跟踪（仅做多）
         self.entry_price: Decimal | None = None
@@ -654,9 +678,43 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
         if not qty or qty <= 0:
             return
 
+        # 资金费率熔断器检查（仅在 sandbox/live 模式）
+        target_instrument_id = self.instrument.id
+        if self.circuit_breaker:
+            try:
+                # 提取交易对符号（如 "ETHUSDT"）
+                symbol = self.instrument.id.symbol.value.replace("-PERP", "")
+
+                # 同步调用异步方法（在事件循环中）
+                import asyncio
+
+                decision = asyncio.run(
+                    self.circuit_breaker.evaluate_signal(symbol, str(self.instrument.id))
+                )
+
+                # 根据决策结果处理
+                if decision.decision == InstrumentType.REJECT:
+                    self.log.warning(f"🚫 熔断器拒绝信号: {symbol} - {decision.reason}")
+                    return
+                elif decision.decision == InstrumentType.SPOT:
+                    # 切换到现货标的
+                    spot_instrument_id = InstrumentId.from_str(decision.instrument_id)
+                    target_instrument_id = spot_instrument_id
+                    self.log.info(
+                        f"💱 现货替代: {symbol} - {decision.reason}, "
+                        f"切换到 {decision.instrument_id}"
+                    )
+                else:
+                    # 正常执行永续合约
+                    self.log.debug(f"✅ 正常执行: {symbol} - {decision.reason}")
+            except Exception as e:
+                # 熔断器失败时采用保守策略：拒绝信号
+                self.log.error(f"熔断器检查失败: {e}，拒绝信号")
+                return
+
         # 下单
         order = self.order_factory.market(
-            instrument_id=self.instrument.id,
+            instrument_id=target_instrument_id,
             order_side=OrderSide.BUY,
             quantity=self.instrument.make_qty(qty),
         )
