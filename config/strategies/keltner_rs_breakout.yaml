@@ -13,8 +13,8 @@ parameters:
   enable_euphoria_filter: false
   enable_time_stop: false
   euphoria_reduce_position_pct: 0.5
-  funding_rate_danger_annual: 200.0
-  funding_rate_warning_annual: 100.0
+  funding_rate_danger_annual: 100.0
+  funding_rate_warning_annual: 50.0
   high_conviction_risk_pct: 0.075
   keltner_base_multiplier: 1.5
   keltner_trigger_multiplier: 2.5
