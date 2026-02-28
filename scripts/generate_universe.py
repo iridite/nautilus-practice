@@ -252,9 +252,285 @@ def _build_universes(period_stats: dict) -> dict:
     return universes
 
 
+def generate_universe_data(
+    top_n: int = 15,
+    freq: str = "W-MON",
+    data_dir: Path = None,
+) -> dict:
+    """
+    生成 Universe 数据的可编程接口（用于回测，生成所有历史周期）
+
+    参数:
+        top_n: 选取前 N 个标的（必须 > 0）
+        freq: 更新频率，支持 "ME"(月度), "W-MON"(周度), "2W-MON"(双周)
+        data_dir: 数据目录路径（默认为 {project_root}/data/top）
+
+    返回:
+        Universe 数据字典 {period: [symbols]}
+        如果数据目录不存在或无有效数据，返回空字典
+
+    异常:
+        ValueError: 参数验证失败时抛出
+    """
+    # 参数验证
+    if top_n <= 0:
+        raise ValueError(f"top_n 必须 > 0，当前值: {top_n}")
+
+    valid_freqs = ["ME", "W-MON", "2W-MON"]
+    if freq not in valid_freqs:
+        raise ValueError(f"freq 必须在 {valid_freqs} 中，当前值: {freq}")
+
+    if data_dir is None:
+        data_dir = get_project_root() / "data" / "top"
+
+    if not data_dir.exists():
+        logger.error(f"Data directory not found: {data_dir}")
+        return {}
+
+    # 临时覆盖全局配置
+    global REBALANCE_FREQ, TOP_Ns, DATA_DIR
+    original_freq = REBALANCE_FREQ
+    original_top_ns = TOP_Ns
+    original_data_dir = DATA_DIR
+
+    try:
+        REBALANCE_FREQ = freq
+        TOP_Ns = [top_n]
+        DATA_DIR = data_dir
+
+        validate_config()
+
+        all_files = _validate_data_directory()
+        if not all_files:
+            return {}
+
+        period_stats = _collect_period_stats(all_files)
+        universes = _build_universes(period_stats)
+
+        return universes.get(top_n, {})
+
+    finally:
+        # 恢复全局配置
+        REBALANCE_FREQ = original_freq
+        TOP_Ns = original_top_ns
+        DATA_DIR = original_data_dir
+
+
+def generate_current_universe(
+    top_n: int = 15,
+    freq: str = "W-MON",
+    lookback_periods: int = 1,
+    data_dir: Path = None,
+) -> dict:
+    """
+    生成当前周期的 Universe（用于实盘/sandbox，基于最近数据生成未来周期）
+
+    原理：
+    - 读取最近 lookback_periods 个周期的数据
+    - 计算平均成交量排名
+    - 生成下一个周期的 Universe
+
+    参数:
+        top_n: 选取前 N 个标的
+        freq: 更新周期（ME/W-MON/2W-MON）
+        lookback_periods: 回看周期数（默认 1，即使用上一个周期的数据）
+        data_dir: 数据目录
+
+    返回:
+        {next_period: [symbols]} - 只包含下一个周期的 Universe
+    """
+    from datetime import datetime, timedelta
+
+    # 参数验证
+    if top_n <= 0:
+        raise ValueError(f"top_n 必须 > 0，当前值: {top_n}")
+
+    valid_freqs = ["ME", "W-MON", "2W-MON"]
+    if freq not in valid_freqs:
+        raise ValueError(f"freq 必须在 {valid_freqs} 中，当前值: {freq}")
+
+    if lookback_periods <= 0:
+        raise ValueError(f"lookback_periods 必须 > 0，当前值: {lookback_periods}")
+
+    if data_dir is None:
+        data_dir = get_project_root() / "data" / "top"
+
+    if not data_dir.exists():
+        logger.error(f"Data directory not found: {data_dir}")
+        return {}
+
+    # 临时覆盖全局配置
+    global REBALANCE_FREQ, TOP_Ns, DATA_DIR, MIN_COUNT_RATIO
+    original_freq = REBALANCE_FREQ
+    original_top_ns = TOP_Ns
+    original_data_dir = DATA_DIR
+    original_min_count = MIN_COUNT_RATIO
+
+    try:
+        REBALANCE_FREQ = freq
+        TOP_Ns = [top_n]
+        DATA_DIR = data_dir
+        MIN_COUNT_RATIO = 0.8  # 实盘模式放宽数据完整度要求
+
+        validate_config()
+
+        all_files = _validate_data_directory()
+        if not all_files:
+            return {}
+
+        # 收集所有周期的统计数据
+        period_stats = _collect_period_stats(all_files)
+        if not period_stats:
+            logger.error("No period stats collected")
+            return {}
+
+        # 获取最近的周期
+        sorted_periods = sorted(period_stats.keys())
+        if len(sorted_periods) < lookback_periods:
+            logger.warning(
+                f"Not enough periods: need {lookback_periods}, got {len(sorted_periods)}"
+            )
+            lookback_periods = len(sorted_periods)
+
+        # 使用最近 lookback_periods 个周期的数据
+        recent_periods = sorted_periods[-lookback_periods:]
+        logger.info(f"Using recent periods for Universe generation: {recent_periods}")
+
+        # 聚合最近周期的成交量数据
+        aggregated_stats = {}
+        for period in recent_periods:
+            for symbol, turnover in period_stats[period]:
+                if symbol not in aggregated_stats:
+                    aggregated_stats[symbol] = []
+                aggregated_stats[symbol].append(turnover)
+
+        # 计算平均成交量
+        avg_turnovers = [
+            (symbol, sum(turnovers) / len(turnovers))
+            for symbol, turnovers in aggregated_stats.items()
+        ]
+        avg_turnovers.sort(key=lambda x: x[1], reverse=True)
+
+        # 选取 Top N
+        top_symbols = [symbol for symbol, _ in avg_turnovers[:top_n]]
+
+        # 生成下一个周期的标识
+        last_period = sorted_periods[-1]
+        next_period = _calculate_next_period(last_period, freq)
+
+        logger.info(f"Generated Universe for next period: {next_period}")
+        logger.info(f"Top {top_n} symbols: {top_symbols[:10]}...")
+
+        return {next_period: top_symbols}
+
+    finally:
+        # 恢复全局配置
+        REBALANCE_FREQ = original_freq
+        TOP_Ns = original_top_ns
+        DATA_DIR = original_data_dir
+        MIN_COUNT_RATIO = original_min_count
+
+
+def _calculate_next_period(current_period: str, freq: str) -> str:
+    """计算下一个周期的标识"""
+    from datetime import datetime, timedelta
+
+    if freq == "ME":
+        # 月度：2026-02 -> 2026-03
+        year, month = map(int, current_period.split("-"))
+        if month == 12:
+            return f"{year + 1}-01"
+        else:
+            return f"{year}-{month + 1:02d}"
+
+    elif freq == "W-MON":
+        # 周度：2026-W08 -> 2026-W09
+        year, week = current_period.split("-W")
+        year, week = int(year), int(week)
+        # 简单递增（不考虑跨年）
+        return f"{year}-W{week + 1:02d}"
+
+    elif freq == "2W-MON":
+        # 双周：2026-2W04 -> 2026-2W05
+        year, biweek = current_period.split("-2W")
+        year, biweek = int(year), int(biweek)
+        return f"{year}-2W{biweek + 1:02d}"
+
+    else:
+        raise ValueError(f"Unsupported freq: {freq}")
+
+
+def generate_universe_data(
+    top_n: int = 15,
+    freq: str = "W-MON",
+    data_dir: Path = None,
+) -> dict:
+    """
+    生成 Universe 数据的可编程接口（用于回测，生成所有历史周期）
+
+    参数:
+        top_n: 选取前 N 个标的（必须 > 0）
+        freq: 更新频率，支持 "ME"(月度), "W-MON"(周度), "2W-MON"(双周)
+        data_dir: 数据目录路径（默认为 {project_root}/data/top）
+
+    返回:
+        Universe 数据字典 {period: [symbols]}
+        如果数据目录不存在或无有效数据，返回空字典
+
+    异常:
+        ValueError: 参数验证失败时抛出
+    """
+    # 参数验证
+    if top_n <= 0:
+        raise ValueError(f"top_n 必须 > 0，当前值: {top_n}")
+
+    valid_freqs = ["ME", "W-MON", "2W-MON"]
+    if freq not in valid_freqs:
+        raise ValueError(f"freq 必须在 {valid_freqs} 中，当前值: {freq}")
+
+    if data_dir is None:
+        data_dir = get_project_root() / "data" / "top"
+
+    if not data_dir.exists():
+        logger.error(f"Data directory not found: {data_dir}")
+        return {}
+
+    # 临时覆盖全局配置
+    global REBALANCE_FREQ, TOP_Ns, DATA_DIR
+    original_freq = REBALANCE_FREQ
+    original_top_ns = TOP_Ns
+    original_data_dir = DATA_DIR
+
+    try:
+        REBALANCE_FREQ = freq
+        TOP_Ns = [top_n]
+        DATA_DIR = data_dir
+
+        validate_config()
+
+        all_files = _validate_data_directory()
+        if not all_files:
+            return {}
+
+        period_stats = _collect_period_stats(all_files)
+        universes = _build_universes(period_stats)
+
+        # 返回单个 top_n 的结果
+        return universes.get(top_n, {})
+
+    finally:
+        # 恢复全局配置
+        REBALANCE_FREQ = original_freq
+        TOP_Ns = original_top_ns
+        DATA_DIR = original_data_dir
+
+
 def generate_universe():
     """
     从 CSV 数据中动态生成交易池，支持月度/周度/双周更新
+
+    这是 CLI 脚本的主函数，使用全局配置常量。
+    对于编程调用，请使用 generate_universe_data() 函数。
     """
     validate_config()
 
@@ -292,3 +568,142 @@ if __name__ == "__main__":
             logger.info(f"Universe Top {n} saved to: {output_path}")
     else:
         logger.warning("No universes generated. Check if data exists in data/top/")
+
+
+def generate_current_universe(
+    top_n: int = 15,
+    freq: str = "W-MON",
+    lookback_periods: int = 1,
+    data_dir: Path = None,
+) -> dict:
+    """
+    生成当前周期的 Universe（用于实盘/sandbox，基于最近数据生成未来周期）
+
+    原理：
+    - 读取最近 lookback_periods 个周期的数据
+    - 计算平均成交量排名
+    - 生成下一个周期的 Universe
+
+    参数:
+        top_n: 选取前 N 个标的
+        freq: 更新周期（ME/W-MON/2W-MON）
+        lookback_periods: 回看周期数（默认 1，即使用上一个周期的数据）
+        data_dir: 数据目录
+
+    返回:
+        {next_period: [symbols]} - 只包含下一个周期的 Universe
+    """
+    # 参数验证
+    if top_n <= 0:
+        raise ValueError(f"top_n 必须 > 0，当前值: {top_n}")
+
+    valid_freqs = ["ME", "W-MON", "2W-MON"]
+    if freq not in valid_freqs:
+        raise ValueError(f"freq 必须在 {valid_freqs} 中，当前值: {freq}")
+
+    if lookback_periods <= 0:
+        raise ValueError(f"lookback_periods 必须 > 0，当前值: {lookback_periods}")
+
+    if data_dir is None:
+        data_dir = get_project_root() / "data" / "top"
+
+    if not data_dir.exists():
+        logger.error(f"Data directory not found: {data_dir}")
+        return {}
+
+    # 临时覆盖全局配置
+    global REBALANCE_FREQ, TOP_Ns, DATA_DIR, MIN_COUNT_RATIO
+    original_freq = REBALANCE_FREQ
+    original_top_ns = TOP_Ns
+    original_data_dir = DATA_DIR
+    original_min_count = MIN_COUNT_RATIO
+
+    try:
+        REBALANCE_FREQ = freq
+        TOP_Ns = [top_n]
+        DATA_DIR = data_dir
+        MIN_COUNT_RATIO = 0.8  # 实盘模式放宽数据完整度要求
+
+        validate_config()
+
+        all_files = _validate_data_directory()
+        if not all_files:
+            return {}
+
+        # 收集所有周期的统计数据
+        period_stats = _collect_period_stats(all_files)
+        if not period_stats:
+            logger.error("No period stats collected")
+            return {}
+
+        # 获取最近的周期
+        sorted_periods = sorted(period_stats.keys())
+        if len(sorted_periods) < lookback_periods:
+            logger.warning(
+                f"Not enough periods: need {lookback_periods}, got {len(sorted_periods)}"
+            )
+            lookback_periods = len(sorted_periods)
+
+        # 使用最近 lookback_periods 个周期的数据
+        recent_periods = sorted_periods[-lookback_periods:]
+        logger.info(f"Using recent periods for Universe generation: {recent_periods}")
+
+        # 聚合最近周期的成交量数据
+        aggregated_stats = {}
+        for period in recent_periods:
+            for symbol, turnover in period_stats[period]:
+                if symbol not in aggregated_stats:
+                    aggregated_stats[symbol] = []
+                aggregated_stats[symbol].append(turnover)
+
+        # 计算平均成交量
+        avg_turnovers = [
+            (symbol, sum(turnovers) / len(turnovers))
+            for symbol, turnovers in aggregated_stats.items()
+        ]
+        avg_turnovers.sort(key=lambda x: x[1], reverse=True)
+
+        # 选取 Top N
+        top_symbols = [symbol for symbol, _ in avg_turnovers[:top_n]]
+
+        # 生成下一个周期的标识
+        last_period = sorted_periods[-1]
+        next_period = _calculate_next_period(last_period, freq)
+
+        logger.info(f"Generated Universe for next period: {next_period}")
+        logger.info(f"Top {top_n} symbols: {top_symbols[:10]}...")
+
+        return {next_period: top_symbols}
+
+    finally:
+        # 恢复全局配置
+        REBALANCE_FREQ = original_freq
+        TOP_Ns = original_top_ns
+        DATA_DIR = original_data_dir
+        MIN_COUNT_RATIO = original_min_count
+
+
+def _calculate_next_period(current_period: str, freq: str) -> str:
+    """计算下一个周期的标识"""
+    if freq == "ME":
+        # 月度：2026-02 -> 2026-03
+        year, month = map(int, current_period.split("-"))
+        if month == 12:
+            return f"{year + 1}-01"
+        else:
+            return f"{year}-{month + 1:02d}"
+
+    elif freq == "W-MON":
+        # 周度：2026-W08 -> 2026-W09
+        year, week = current_period.split("-W")
+        year, week = int(year), int(week)
+        return f"{year}-W{week + 1:02d}"
+
+    elif freq == "2W-MON":
+        # 双周：2026-2W04 -> 2026-2W05
+        year, biweek = current_period.split("-2W")
+        year, biweek = int(year), int(biweek)
+        return f"{year}-2W{biweek + 1:02d}"
+
+    else:
+        raise ValueError(f"Unsupported freq: {freq}")
