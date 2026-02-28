@@ -1,6 +1,5 @@
 """Tests for domain exception hierarchy."""
 
-import pytest
 
 from langgraph.shared.exceptions import (
     BacktestError,
@@ -137,6 +136,6 @@ class TestExceptionHierarchy:
         strategy_err = StrategyError("test")
         optimization_err = OptimizationError("test")
 
-        assert type(strategy_err) != type(optimization_err)
+        assert type(strategy_err) is not type(optimization_err)
         assert not isinstance(strategy_err, OptimizationError)
         assert not isinstance(optimization_err, StrategyError)

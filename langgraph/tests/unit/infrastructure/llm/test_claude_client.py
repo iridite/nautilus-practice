@@ -1,6 +1,6 @@
 """Tests for Claude API client"""
 import pytest
-from unittest.mock import Mock, patch, AsyncMock
+from unittest.mock import Mock, patch
 from infrastructure.llm.claude_client import ClaudeClient
 from shared.exceptions import LLMError
 

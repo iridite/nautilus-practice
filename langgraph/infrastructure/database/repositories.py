@@ -5,8 +5,8 @@ from sqlalchemy.orm import Session
 
 from langgraph.application.interfaces.strategy_repository import StrategyRepository
 from langgraph.domain.models.strategy import Strategy, StrategyStatus
-from langgraph.domain.models.optimization import Optimization, OptimizationStatus, OptimizationTrial
-from langgraph.infrastructure.database.models import StrategyModel, OptimizationModel, TrialModel
+from langgraph.domain.models.optimization import Optimization, OptimizationStatus
+from langgraph.infrastructure.database.models import StrategyModel, OptimizationModel
 from langgraph.shared.logging import get_logger
 
 logger = get_logger(__name__)

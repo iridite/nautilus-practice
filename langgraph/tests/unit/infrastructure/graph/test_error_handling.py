@@ -62,12 +62,12 @@ class TestWithRetry:
         @with_retry(max_retries=4, base_delay=0.1, exponential_base=2.0)
         async def failing_func():
             if len(delays) < 3:
-                start = asyncio.get_event_loop().time()
+                _ = asyncio.get_event_loop().time()  # Track timing
                 raise ValueError("Error")
             return "success"
 
         # Capture delays by measuring time between attempts
-        start_time = asyncio.get_event_loop().time()
+        _ = asyncio.get_event_loop().time()  # Track start time
         try:
             await failing_func()
         except ValueError:

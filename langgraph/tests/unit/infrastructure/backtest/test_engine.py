@@ -1,6 +1,5 @@
 """Tests for backtest engine wrapper"""
 import pytest
-from unittest.mock import Mock, patch
 from langgraph.infrastructure.backtest.engine import BacktestEngine
 from langgraph.domain.models.strategy import Strategy, StrategyStatus
 

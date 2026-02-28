@@ -1,6 +1,5 @@
 """Tests for distributed tracing."""
 
-import asyncio
 import unittest
 
 from infrastructure.observability.tracing import (

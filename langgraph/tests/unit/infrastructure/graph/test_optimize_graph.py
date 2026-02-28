@@ -120,7 +120,7 @@ class TestOptimizationGraph:
         }
 
         # Mock database operations - patch at the source module level
-        with patch("sqlalchemy.create_engine") as mock_create_engine, \
+        with patch("sqlalchemy.create_engine"), \
              patch("sqlalchemy.orm.sessionmaker") as mock_sessionmaker, \
              patch("langgraph.infrastructure.database.repositories.SQLAlchemyStrategyRepository") as mock_repo_class, \
              patch("langgraph.shared.config.LangGraphConfig") as mock_config:

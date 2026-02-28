@@ -1,6 +1,5 @@
 """Unit tests for Optimization domain model."""
 
-import math
 from datetime import datetime, timezone
 from uuid import UUID
 
