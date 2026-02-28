@@ -148,5 +148,64 @@ class TestAdapterHelperMethods(unittest.TestCase):
         self.assertIn("1h", timeframes)
 
 
+class TestAdapterSymbolValidation(unittest.TestCase):
+    """测试符号验证方法"""
+
+    @patch("core.adapter.ConfigLoader")
+    def setUp(self, mock_loader):
+        self.adapter = ConfigAdapter()
+
+    def test_valid_simple_symbol(self):
+        """Plain alphanumeric symbol is accepted"""
+        # Should not raise
+        self.adapter._validate_symbol("BTCUSDT")
+
+    def test_valid_slash_symbol(self):
+        """BTC/USDT style symbol with slash is accepted"""
+        self.adapter._validate_symbol("BTC/USDT")
+
+    def test_valid_colon_symbol(self):
+        """BTC/USDT:USDT style perpetual symbol is accepted"""
+        self.adapter._validate_symbol("BTC/USDT:USDT")
+
+    def test_valid_hyphen_symbol(self):
+        """Symbol with hyphen is accepted"""
+        self.adapter._validate_symbol("BTC-USDT")
+
+    def test_empty_string_raises(self):
+        """Empty string raises ValueError"""
+        with self.assertRaises(ValueError):
+            self.adapter._validate_symbol("")
+
+    def test_none_raises(self):
+        """None raises ValueError"""
+        with self.assertRaises(ValueError):
+            self.adapter._validate_symbol(None)
+
+    def test_backslash_in_symbol_raises(self):
+        """Backslash in symbol is rejected by regex validation"""
+        with self.assertRaises(ValueError):
+            self.adapter._validate_symbol("BTC\\USDT")
+
+    def test_semicolon_in_symbol_raises(self):
+        """Semicolon in symbol is rejected by regex validation"""
+        with self.assertRaises(ValueError):
+            self.adapter._validate_symbol("BTC;USDT")
+
+    def test_null_byte_in_symbol_raises(self):
+        """Null byte in symbol is rejected by regex validation"""
+        with self.assertRaises(ValueError):
+            self.adapter._validate_symbol("BTC\0USDT")
+
+    def test_too_long_symbol_raises(self):
+        """Symbol exceeding 20 characters raises ValueError"""
+        with self.assertRaises(ValueError):
+            self.adapter._validate_symbol("A" * 21)
+
+    def test_max_length_symbol_accepted(self):
+        """Symbol at exactly 20 characters is accepted"""
+        self.adapter._validate_symbol("A" * 20)
+
+
 if __name__ == "__main__":
     unittest.main()

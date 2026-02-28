@@ -38,7 +38,7 @@ def _create_retry_session(
         connect=retries,
         backoff_factor=backoff_factor,
         status_forcelist=status_forcelist,
-        allowed_methods=["GET", "POST"],  # 只对幂等方法重试
+        allowed_methods=["GET"],  # 只对幂等方法重试
     )
     adapter = HTTPAdapter(max_retries=retry)
     session.mount("http://", adapter)
@@ -133,9 +133,9 @@ class BinanceFetcher:
             "limit": min(limit, 1000),
         }
 
-        if start_time:
+        if start_time is not None:
             params["startTime"] = start_time
-        if end_time:
+        if end_time is not None:
             params["endTime"] = end_time
 
         # 使用带重试机制的 session 发送请求

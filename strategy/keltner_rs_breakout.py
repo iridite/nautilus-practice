@@ -507,6 +507,8 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
             self.log.info(f"[{symbol}] 重置过滤器统计（已处理 {self.filter_stats['total_bars']} 根 K 线）")
             for key in self.filter_stats:
                 self.filter_stats[key] = 0
+            # 当前这根触发重置的 K 线仍然需要计入统计
+            self.filter_stats["total_bars"] = 1
 
         # 基本条件
         if self._pending_entry_order:

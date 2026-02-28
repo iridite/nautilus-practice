@@ -1,5 +1,6 @@
 """Backtest engine wrapper for backtesting.py framework"""
 import ast
+import logging
 from typing import Any, Tuple
 from backtesting import Backtest
 from backtesting.test import GOOG
@@ -109,7 +110,7 @@ class BacktestEngine:
 
     def _validate_code_safety(self, code: str) -> None:
         """
-        Validate code doesn't contain dangerous operations
+        Validate code doesn't contain dangerous operations using AST analysis.
 
         Args:
             code: Python code to validate
@@ -117,35 +118,92 @@ class BacktestEngine:
         Raises:
             ValueError: If dangerous patterns detected
         """
-        # List of dangerous patterns that could lead to arbitrary code execution
-        dangerous_patterns = [
-            ('import os', 'OS module access'),
-            ('import sys', 'System module access'),
-            ('import subprocess', 'Subprocess execution'),
-            ('__import__', 'Dynamic imports'),
-            ('eval(', 'Eval function'),
-            ('exec(', 'Exec function'),
-            ('compile(', 'Compile function'),
-            ('open(', 'File operations'),
-            ('file(', 'File operations'),
-            ('input(', 'User input'),
-            ('raw_input(', 'User input'),
-            ('__builtins__', 'Builtins access'),
-            ('globals(', 'Globals access'),
-            ('locals(', 'Locals access'),
-            ('vars(', 'Vars access'),
-            ('dir(', 'Dir access'),
-            ('delattr(', 'Attribute deletion'),
-            ('__dict__', 'Dict access'),
-            ('__class__', 'Class access'),
-            ('__bases__', 'Bases access'),
-            ('__subclasses__', 'Subclasses access'),
-        ]
+        try:
+            tree = ast.parse(code)
+        except SyntaxError as exc:
+            raise ValueError(f"Unable to validate strategy code due to syntax error: {exc}") from exc
 
-        for pattern, description in dangerous_patterns:
-            if pattern in code:
+        # Disallowed modules for import statements
+        forbidden_modules = {
+            "os": "OS module access",
+            "sys": "System module access",
+            "subprocess": "Subprocess execution",
+            "importlib": "Dynamic imports",
+        }
+
+        # Disallowed function names (bare calls)
+        forbidden_function_names = {
+            "eval": "Eval function",
+            "exec": "Exec function",
+            "compile": "Compile function",
+            "open": "File operations",
+            "input": "User input",
+            "raw_input": "User input",
+            "globals": "Globals access",
+            "locals": "Locals access",
+            "vars": "Vars access",
+            "dir": "Dir access",
+            "delattr": "Attribute deletion",
+            "__import__": "Dynamic imports",
+        }
+
+        # Disallowed attribute names for introspection/sandbox escaping
+        forbidden_attributes = {
+            "__builtins__": "Builtins access",
+            "__dict__": "Dict access",
+            "__class__": "Class access",
+            "__bases__": "Bases access",
+            "__subclasses__": "Subclasses access",
+        }
+
+        for node in ast.walk(tree):
+            # Block direct imports of dangerous modules
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    base = alias.name.split(".")[0]
+                    if base in forbidden_modules:
+                        raise ValueError(
+                            f"Dangerous pattern detected: {forbidden_modules[base]} (import {base}). "
+                            "Strategy code must not contain system-level operations."
+                        )
+
+            if isinstance(node, ast.ImportFrom):
+                if node.module is not None:
+                    base = node.module.split(".")[0]
+                    if base in forbidden_modules:
+                        raise ValueError(
+                            f"Dangerous pattern detected: {forbidden_modules[base]} "
+                            f"(from {base} import ...). "
+                            "Strategy code must not contain system-level operations."
+                        )
+
+            # Block calls to dangerous functions
+            if isinstance(node, ast.Call):
+                func = node.func
+                if isinstance(func, ast.Name) and func.id in forbidden_function_names:
+                    raise ValueError(
+                        f"Dangerous pattern detected: {forbidden_function_names[func.id]} "
+                        f"({func.id}()). "
+                        "Strategy code must not contain system-level operations."
+                    )
+                if isinstance(func, ast.Attribute):
+                    if func.attr == "import_module":
+                        raise ValueError(
+                            "Dangerous pattern detected: Dynamic imports (importlib.import_module()). "
+                            "Strategy code must not contain system-level operations."
+                        )
+
+            # Block access to forbidden attributes
+            if isinstance(node, ast.Attribute) and node.attr in forbidden_attributes:
                 raise ValueError(
-                    f"Dangerous pattern detected: {description} ({pattern}). "
+                    f"Dangerous pattern detected: {forbidden_attributes[node.attr]} ({node.attr}). "
+                    "Strategy code must not contain system-level operations."
+                )
+
+            # Block bare name references to __builtins__
+            if isinstance(node, ast.Name) and node.id == "__builtins__":
+                raise ValueError(
+                    f"Dangerous pattern detected: {forbidden_attributes['__builtins__']} (__builtins__). "
                     "Strategy code must not contain system-level operations."
                 )
 
@@ -249,7 +307,6 @@ class BacktestEngine:
                             metrics[key] = value
                     except (AttributeError, TypeError) as e:
                         # Log but continue - some attributes may not be accessible
-                        import logging
                         logging.debug(f"Could not extract metric '{key}': {e}")
                         continue
             return metrics

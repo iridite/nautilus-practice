@@ -1,5 +1,4 @@
 from decimal import Decimal
-from threading import Lock
 from typing import List, Optional
 
 from nautilus_trader.config import StrategyConfig
@@ -94,9 +93,8 @@ class BaseStrategy(Strategy):
         self.base_config = config
         self.instrument: Instrument = None
 
-        # HEDGING 模式持仓跟踪器（线程安全）
+        # HEDGING 模式持仓跟踪器
         self._positions_tracker = {}  # {position_id: {side, entry_price, extreme_price, entry_time}}
-        self._positions_tracker_lock = Lock()  # 保护 _positions_tracker 的线程锁
         self._pending_orders = {}  # {order_id: metadata}
 
     def on_start(self):
@@ -184,10 +182,9 @@ class BaseStrategy(Strategy):
         if self.instrument and event.instrument_id == self.instrument.id:
             self.cancel_all_orders(event.instrument_id)
 
-            # 清理 HEDGING 模式的持仓跟踪（线程安全）
-            with self._positions_tracker_lock:
-                if event.position_id in self._positions_tracker:
-                    del self._positions_tracker[event.position_id]
+            # 清理 HEDGING 模式的持仓跟踪
+            if event.position_id in self._positions_tracker:
+                del self._positions_tracker[event.position_id]
 
             self.log.info(
                 f"BaseStrategy: Position closed for {event.instrument_id}, all orders cancelled."
@@ -461,8 +458,7 @@ class BaseStrategy(Strategy):
         Strategy Reset.
         """
         self.instrument = None
-        with self._positions_tracker_lock:
-            self._positions_tracker = {}
+        self._positions_tracker = {}
         self._pending_orders = {}
 
     # ========================================================================
@@ -470,32 +466,30 @@ class BaseStrategy(Strategy):
     # ========================================================================
 
     def _update_positions_tracker(self, bar):
-        """更新 HEDGING 模式的持仓跟踪器（自动调用）- 线程安全"""
+        """更新 HEDGING 模式的持仓跟踪器（自动调用）"""
         if not self.instrument:
             return
 
         positions = self.cache.positions_open(instrument_id=self.instrument.id)
 
-        # 使用线程锁保护共享状态访问
-        with self._positions_tracker_lock:
-            for pos in positions:
-                pos_id = pos.id
-                if pos_id not in self._positions_tracker:
-                    # 恢复持仓跟踪（策略重启场景）
-                    side_str = "LONG" if pos.side == PositionSide.LONG else "SHORT"
-                    self._positions_tracker[pos_id] = {
-                        "side": side_str,
-                        "entry_price": float(pos.avg_px_open),
-                        "extreme_price": float(bar.high if side_str == "LONG" else bar.low),
-                        "entry_time": pos.ts_opened,
-                    }
-                else:
-                    # 更新极值价格（多头跟踪最高价，空头跟踪最低价）
-                    tracker = self._positions_tracker[pos_id]
-                    if tracker["side"] == "LONG":
-                        tracker["extreme_price"] = max(tracker["extreme_price"], float(bar.high))
-                    else:  # SHORT
-                        tracker["extreme_price"] = min(tracker["extreme_price"], float(bar.low))
+        for pos in positions:
+            pos_id = pos.id
+            if pos_id not in self._positions_tracker:
+                # 恢复持仓跟踪（策略重启场景）
+                side_str = "LONG" if pos.side == PositionSide.LONG else "SHORT"
+                self._positions_tracker[pos_id] = {
+                    "side": side_str,
+                    "entry_price": float(pos.avg_px_open),
+                    "extreme_price": float(bar.high if side_str == "LONG" else bar.low),
+                    "entry_time": pos.ts_opened,
+                }
+            else:
+                # 更新极值价格（多头跟踪最高价，空头跟踪最低价）
+                tracker = self._positions_tracker[pos_id]
+                if tracker["side"] == "LONG":
+                    tracker["extreme_price"] = max(tracker["extreme_price"], float(bar.high))
+                else:  # SHORT
+                    tracker["extreme_price"] = min(tracker["extreme_price"], float(bar.low))
 
     def track_order_for_position(self, order_id, side: OrderSide, bar, **metadata):
         """记录订单元数据，等待成交后关联持仓
@@ -524,16 +518,15 @@ class BaseStrategy(Strategy):
             # 获取订单元数据
             metadata = self._pending_orders.pop(order_id)
 
-            # 查找新创建的持仓（线程安全）
+            # 查找新创建的持仓
             if self.instrument:
                 positions = self.cache.positions_open(instrument_id=self.instrument.id)
-                with self._positions_tracker_lock:
-                    for pos in positions:
-                        if pos.id not in self._positions_tracker:
-                            # 关联持仓与元数据
-                            self._positions_tracker[pos.id] = metadata
-                            self.log.info(f"持仓跟踪已建立: Position {pos.id}")
-                            break
+                for pos in positions:
+                    if pos.id not in self._positions_tracker:
+                        # 关联持仓与元数据
+                        self._positions_tracker[pos.id] = metadata
+                        self.log.info(f"持仓跟踪已建立: Position {pos.id}")
+                        break
 
     def on_order_rejected(self, event):
         """订单拒绝回调（HEDGING 模式：清理被拒绝的订单）"""
