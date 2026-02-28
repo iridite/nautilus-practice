@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Optional
 
-from live.funding_rate_monitor import FundingRateMonitor, FundingRateSnapshot
+from live.funding_rate_monitor import FundingRateMonitor
 
 
 class InstrumentType(Enum):
