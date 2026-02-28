@@ -62,7 +62,7 @@ def normalize_symbol_to_internal(symbol: str) -> str:
     for inst_type in KNOWN_INST_TYPES:
         suffix = f"-{inst_type}"
         if s.endswith(suffix):
-            s = s[:-len(suffix)]
+            s = s[: -len(suffix)]
             logger.debug(f"  Stripped {suffix}: {s}")
             break
 
