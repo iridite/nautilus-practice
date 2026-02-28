@@ -47,9 +47,10 @@ def _create_retry_session(
 
 
 class BinanceFetcher:
-    """Binance公开API获取器"""
+    """Binance公开API获取器 - 支持现货和永续合约"""
 
     BASE_URL = "https://api.binance.com"
+    FUTURES_BASE_URL = "https://fapi.binance.com"
 
     INTERVAL_MAP = {
         "1m": "1m",
@@ -80,6 +81,7 @@ class BinanceFetcher:
         start_time: Optional[int] = None,
         end_time: Optional[int] = None,
         limit: int = 1000,
+        market_type: str = "spot",
     ) -> pd.DataFrame:
         """
         获取OHLCV数据
@@ -90,6 +92,7 @@ class BinanceFetcher:
             start_time: 开始时间戳(毫秒)
             end_time: 结束时间戳(毫秒)
             limit: 最多返回条数(最大1000)
+            market_type: 市场类型 ("spot" 或 "futures")
 
         Raises:
             ValueError: 如果时间戳超出有效范围
@@ -123,6 +126,14 @@ class BinanceFetcher:
             if start_time >= end_time:
                 raise ValueError(f"start_time ({start_time}) 必须小于 end_time ({end_time})")
 
+        # 根据市场类型选择API端点
+        if market_type == "futures":
+            base_url = self.FUTURES_BASE_URL
+            endpoint = "/fapi/v1/klines"
+        else:
+            base_url = self.BASE_URL
+            endpoint = "/api/v3/klines"
+
         interval = self.INTERVAL_MAP.get(timeframe, "1h")
 
         params = {
@@ -137,7 +148,7 @@ class BinanceFetcher:
             params["endTime"] = end_time
 
         # 使用带重试机制的 session 发送请求
-        resp = self.session.get(f"{self.BASE_URL}/api/v3/klines", params=params, timeout=10)
+        resp = self.session.get(f"{base_url}{endpoint}", params=params, timeout=10)
         resp.raise_for_status()
 
         data = resp.json()
@@ -164,6 +175,80 @@ class BinanceFetcher:
             df[col] = df[col].astype(float)
 
         return df[["timestamp", "open", "high", "low", "close", "volume"]]
+
+    def fetch_funding_rate(
+        self,
+        symbol: str,
+        start_time: Optional[int] = None,
+        end_time: Optional[int] = None,
+        limit: int = 1000,
+    ) -> pd.DataFrame:
+        """
+        获取资金费率数据
+
+        Args:
+            symbol: 交易对 (如 BTCUSDT)
+            start_time: 开始时间戳(毫秒)
+            end_time: 结束时间戳(毫秒)
+            limit: 最多返回条数(最大1000)
+
+        Returns:
+            DataFrame with columns: timestamp, funding_rate, funding_rate_annual
+
+        Raises:
+            ValueError: 如果时间戳超出有效范围
+        """
+        # 验证时间戳范围
+        MAX_TIMESTAMP = 8640000000000
+        MIN_TIMESTAMP = 0
+
+        if start_time is not None:
+            if not isinstance(start_time, int):
+                raise ValueError(f"start_time 必须是整数，当前类型: {type(start_time)}")
+            if start_time < MIN_TIMESTAMP or start_time > MAX_TIMESTAMP:
+                raise ValueError(
+                    f"start_time 超出有效范围: {start_time} "
+                    f"(有效范围: {MIN_TIMESTAMP} - {MAX_TIMESTAMP})"
+                )
+
+        if end_time is not None:
+            if not isinstance(end_time, int):
+                raise ValueError(f"end_time 必须是整数，当前类型: {type(end_time)}")
+            if end_time < MIN_TIMESTAMP or end_time > MAX_TIMESTAMP:
+                raise ValueError(
+                    f"end_time 超出有效范围: {end_time} "
+                    f"(有效范围: {MIN_TIMESTAMP} - {MAX_TIMESTAMP})"
+                )
+
+        if start_time is not None and end_time is not None:
+            if start_time >= end_time:
+                raise ValueError(f"start_time ({start_time}) 必须小于 end_time ({end_time})")
+
+        params = {
+            "symbol": symbol.replace("/", ""),
+            "limit": min(limit, 1000),
+        }
+
+        if start_time is not None:
+            params["startTime"] = start_time
+        if end_time is not None:
+            params["endTime"] = end_time
+
+        # 使用永续合约API获取资金费率
+        resp = self.session.get(
+            f"{self.FUTURES_BASE_URL}/fapi/v1/fundingRate", params=params, timeout=10
+        )
+        resp.raise_for_status()
+
+        data = resp.json()
+        df = pd.DataFrame(data)
+
+        # 转换数据格式
+        df["timestamp"] = pd.to_datetime(df["fundingTime"], unit="ms")
+        df["funding_rate"] = df["fundingRate"].astype(float)
+        df["funding_rate_annual"] = df["funding_rate"] * 3 * 365 * 100  # 年化百分比
+
+        return df[["timestamp", "funding_rate", "funding_rate_annual"]]
 
 
 class CoinGeckoFetcher:
