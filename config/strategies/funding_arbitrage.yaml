@@ -2,15 +2,21 @@ config_class: FundingArbitrageConfig
 module_path: strategy.funding_arbitrage
 name: FundingArbitrageStrategy
 parameters:
-  # 标的配置 (只需指定 PERP,策略会自动推导 SPOT)
-  instrument_id: BTCUSDT-PERP.BINANCE  # 永续合约标的
-  bar_type: BTCUSDT-PERP.BINANCE-1-HOUR-LAST-EXTERNAL  # K线类型
+  # 标的配置
+  # 注意: 必须同时指定 SPOT 和 PERP 两个标的
+  # 回测引擎会加载这两个标的的数据
+  symbols:
+    - BTCUSDT  # 现货标的 (会被解析为 BTCUSDT.BINANCE)
 
-  # 或者使用简化配置 (推荐)
-  # symbol: BTCUSDT-PERP
-  # timeframe: 1h
-  # price_type: LAST
-  # origination: EXTERNAL
+  # 策略使用的主标的 (PERP)
+  # 策略会自动从 PERP 推导出 SPOT
+  instrument_id: BTCUSDT-PERP.BINANCE
+  bar_type: BTCUSDT-PERP.BINANCE-1-HOUR-LAST-EXTERNAL
+
+  # 时间周期配置
+  timeframe: 1h
+  price_type: LAST
+  origination: EXTERNAL
 
   # 核心参数
   entry_basis_pct: 0.005        # 开仓基差阈值 (0.5%)

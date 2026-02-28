@@ -1,0 +1,27 @@
+# 资金费率套利策略回测环境配置
+
+extends: "base.yaml"
+
+# 回测时间范围 (Q1 2024)
+backtest:
+  start_date: "2024-01-01"
+  end_date: "2024-03-31"
+
+# 策略配置
+strategy:
+  name: "FundingArbitrageStrategy"
+  config_path: "config/strategies/funding_arbitrage.yaml"
+
+# 日志配置
+logging:
+  level: "INFO"
+  file_level: "DEBUG"
+  components:
+    BacktestEngine: "INFO"
+    DataFeed: "INFO"
+    Strategy: "DEBUG"
+  components_only: false
+
+# 初始资金
+trading:
+  initial_balance: 10000

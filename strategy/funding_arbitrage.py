@@ -79,7 +79,6 @@ class FundingArbitrageStrategy(BaseStrategy):
 
     def __init__(self, config: FundingArbitrageConfig):
         super().__init__(config)
-        self.config = config
 
         # 初始化组件
         self.basis_calc = BasisCalculator()
@@ -117,7 +116,12 @@ class FundingArbitrageStrategy(BaseStrategy):
         # 2. 暗度陈仓：从 PERP 推导 SPOT
         perp_id_str = str(self.perp_instrument.id)
         if "-PERP" not in perp_id_str:
-            self.log.error(f"❌ CRITICAL: Instrument is not a perpetual contract: {perp_id_str}")
+            # 如果不是 PERP 标的,说明这是为 SPOT 标的创建的策略实例
+            # 资金费率套利策略只需要一个实例(PERP),SPOT 实例应该跳过
+            self.log.info(
+                f"⏭️  Skipping strategy initialization for non-PERP instrument: {perp_id_str}. "
+                f"This strategy only runs on PERP instruments."
+            )
             return
 
         # 推导现货 ID: BTCUSDT-PERP.BINANCE -> BTCUSDT.BINANCE
@@ -136,12 +140,19 @@ class FundingArbitrageStrategy(BaseStrategy):
         self.log.info(f"✅ Spot instrument derived: {self.spot_instrument.id}")
 
         # 4. 订阅 Bar 数据
-        spot_bar_type = BarType.from_str(
-            f"{self.spot_instrument.id}-{self.config.timeframe}-{self.config.price_type}-{self.config.origination}"
-        )
-        perp_bar_type = BarType.from_str(
-            f"{self.perp_instrument.id}-{self.config.timeframe}-{self.config.price_type}-{self.config.origination}"
-        )
+        # 从配置的 bar_type 中提取时间周期、价格类型和数据来源
+        # bar_type 格式: BTCUSDT-PERP.BINANCE-1-HOUR-LAST-EXTERNAL
+        perp_bar_type_str = self.config.bar_type
+        # 提取 bar_type 的后半部分: 1-HOUR-LAST-EXTERNAL
+        bar_spec = "-".join(perp_bar_type_str.split("-")[2:])  # 跳过 instrument_id 部分
+
+        # 构造 SPOT 的 bar_type
+        spot_bar_type = BarType.from_str(f"{self.spot_instrument.id}-{bar_spec}")
+        perp_bar_type = BarType.from_str(perp_bar_type_str)
+
+        # 保存 bar_type 供 on_stop() 使用
+        self.spot_bar_type = spot_bar_type
+        self.perp_bar_type = perp_bar_type
 
         self.subscribe_bars(spot_bar_type)
         self.subscribe_bars(perp_bar_type)
@@ -583,17 +594,12 @@ class FundingArbitrageStrategy(BaseStrategy):
 
         # 取消订阅
         if self.spot_instrument and self.perp_instrument:
-            spot_bar_type = BarType.from_str(
-                f"{self.spot_instrument.id}-{self.config.timeframe}-{self.config.price_type}-{self.config.origination}"
-            )
-            perp_bar_type = BarType.from_str(
-                f"{self.perp_instrument.id}-{self.config.timeframe}-{self.config.price_type}-{self.config.origination}"
-            )
+            # 使用保存的 bar_type
+            if hasattr(self, 'spot_bar_type') and hasattr(self, 'perp_bar_type'):
+                self.unsubscribe_bars(self.spot_bar_type)
+                self.unsubscribe_bars(self.perp_bar_type)
 
-            self.unsubscribe_bars(spot_bar_type)
-            self.unsubscribe_bars(perp_bar_type)
-
-            funding_data_type = DataType(
-                FundingRateData, metadata={"instrument_id": self.perp_instrument.id}
-            )
-            self.unsubscribe_data(funding_data_type)
+                funding_data_type = DataType(
+                    FundingRateData, metadata={"instrument_id": self.perp_instrument.id}
+                )
+                self.unsubscribe_data(funding_data_type)
