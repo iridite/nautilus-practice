@@ -1,0 +1,29 @@
+config_class: FundingArbitrageConfig
+module_path: strategy.funding_arbitrage
+name: FundingArbitrageStrategy
+parameters:
+  # 核心参数
+  entry_basis_pct: 0.005        # 开仓基差阈值 (0.5%)
+  exit_basis_pct: 0.001         # 平仓基差阈值 (0.1%)
+  min_funding_rate_annual: 15.0 # 最小要求年化资金费率 (%)
+
+  # Delta 管理
+  delta_tolerance: 0.005        # Delta 容忍度 (0.5%)
+
+  # 仓位管理
+  max_position_risk_pct: 0.4    # 最大仓位占比 (40%)
+  max_positions: 3              # 最大同时持仓数
+
+  # 持仓管理
+  min_holding_days: 7           # 最小持有期（天）
+  max_holding_days: 90          # 最大持有期（天）
+
+  # 资金费率管理
+  negative_funding_threshold: 3 # 连续负资金费率次数阈值
+
+  # 风控参数
+  min_margin_ratio: 0.5         # 最小保证金率（50%）
+  emergency_margin_ratio: 0.3   # 紧急保证金率（30%）
+
+  # 订单超时
+  order_timeout_seconds: 5.0    # 订单超时时间（秒）
