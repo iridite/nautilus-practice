@@ -104,7 +104,7 @@ jobs:
             ).data;
 
             // Wait for all required checks to complete
-            const maxAttempts = 30;
+            const maxAttempts = 60; // Increased from 30 to 60 (10 minutes)
             const delayMs = 10000; // 10 seconds
 
             for (let i = 0; i < maxAttempts; i++) {
