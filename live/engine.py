@@ -41,7 +41,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 sys.path.append(str(BASE_DIR))
 
 from core.loader import load_config
-from utils.instrument_helpers import format_aux_instrument_id
+from utils.instrument_helpers import convert_to_exchange_format, format_aux_instrument_id
 from utils.instrument_loader import load_instrument
 
 
@@ -176,7 +176,11 @@ def build_okx_config(live_cfg, instrument_ids):
     if not all([api_key, api_secret, api_passphrase]):
         raise ValueError("Missing OKX API credentials in environment")
 
-    load_ids = frozenset(instrument_ids)
+    # Convert instrument IDs to OKX format (with hyphens)
+    okx_instrument_ids = [
+        convert_to_exchange_format(inst_id, "OKX") for inst_id in instrument_ids
+    ]
+    load_ids = frozenset(okx_instrument_ids)
 
     data_config = OKXDataClientConfig(
         api_key=api_key,

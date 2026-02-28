@@ -280,8 +280,58 @@ def parse_instrument_id(instrument_id: str) -> Tuple[str, str, Optional[str]]:
     return symbol, inst_type, venue
 
 
+def convert_to_exchange_format(instrument_id: str, venue: str) -> str:
+    """
+    Convert internal instrument_id format to exchange-specific format.
+
+    For OKX: Converts BTCUSDT-SWAP.OKX to BTC-USDT-SWAP.OKX (adds hyphens)
+    For Binance: Keeps BTCUSDT-PERP.BINANCE as-is (no hyphens needed)
+
+    Args:
+        instrument_id: Internal format instrument ID (e.g., "BTCUSDT-SWAP.OKX")
+        venue: Exchange name (e.g., "OKX", "BINANCE")
+
+    Returns:
+        Exchange-specific format instrument ID
+
+    Examples:
+        >>> convert_to_exchange_format("BTCUSDT-SWAP.OKX", "OKX")
+        'BTC-USDT-SWAP.OKX'
+        >>> convert_to_exchange_format("BTCUSDT-PERP.BINANCE", "BINANCE")
+        'BTCUSDT-PERP.BINANCE'
+    """
+    venue = venue.upper()
+
+    # OKX requires hyphenated format: BTC-USDT-SWAP
+    if venue == "OKX":
+        symbol, inst_type, parsed_venue = parse_instrument_id(instrument_id)
+
+        # If symbol is already hyphenated (e.g., "BTC-USDT"), keep it
+        if "-" in symbol:
+            return instrument_id
+
+        # Convert BTCUSDT to BTC-USDT
+        # Assume format is {BASE}{QUOTE} where QUOTE is always USDT
+        if symbol.endswith("USDT"):
+            base = symbol[:-4]  # Remove "USDT"
+            hyphenated_symbol = f"{base}-USDT"
+
+            # Reconstruct instrument_id
+            result = f"{hyphenated_symbol}-{inst_type}"
+            if parsed_venue:
+                result += f".{parsed_venue}"
+
+            logger.debug(f"Converted to OKX format: {instrument_id} → {result}")
+            return result
+
+    # For other venues (Binance, etc.), return as-is
+    return instrument_id
+
+
 __all__ = [
     "format_aux_instrument_id",
     "build_bar_type_from_timeframe",
     "parse_instrument_id",
+    "normalize_symbol_to_internal",
+    "convert_to_exchange_format",
 ]
