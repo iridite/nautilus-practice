@@ -1,8 +1,8 @@
 # 当前活跃配置选择
 # 这个文件控制当前使用的环境和策略
 
-# 当前环境 (可选: dev, prod)
-environment: "dev"
+# 当前环境 (可选: dev, sandbox, live)
+environment: "sandbox"
 
 # 当前策略 (可选: oi_divergence, rs_squeeze, dual_thrust, kalman_pairs, keltner_rs_breakout)
 strategy: "keltner_rs_breakout"
