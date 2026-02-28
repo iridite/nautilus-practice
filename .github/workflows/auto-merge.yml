@@ -190,7 +190,13 @@ jobs:
               return true;
             }
 
-            // Require at least 1 approval for human PRs
+            // Auto-approve if created by repository owner
+            if (user === 'iridite') {
+              console.log('✅ Repository owner PR - auto-approved');
+              return true;
+            }
+
+            // Require at least 1 approval for other human PRs
             if (approvals.length > 0) {
               console.log(`✅ PR has ${approvals.length} approval(s)`);
               return true;
