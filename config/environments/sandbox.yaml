@@ -3,6 +3,11 @@
 
 extends: "base.yaml"
 
+# 回测配置（sandbox 环境不使用，但 schema 要求必须有）
+backtest:
+  start_date: "2022-01-01"
+  end_date: "2026-01-01"
+
 # 测试网特定配置
 sandbox:
   venue: "OKX"
