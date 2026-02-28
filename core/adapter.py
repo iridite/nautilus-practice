@@ -207,22 +207,17 @@ class ConfigAdapter:
         if not symbol or not isinstance(symbol, str):
             raise ValueError(f"Invalid symbol: must be a non-empty string, got {type(symbol)}")
 
-        # 检查危险字符（路径遍历、命令注入）
-        dangerous_chars = ["..", "/", "\\", "\0", "\n", "\r", ";", "&", "|", "`", "$", "(", ")"]
-        if any(char in symbol for char in dangerous_chars):
-            raise ValueError(f"Invalid symbol '{symbol}': contains dangerous characters")
-
-        # 验证符号格式（只允许字母、数字、冒号、斜杠、连字符）
+        # 验证符号格式（只允许字母、数字、冒号、斜杠、下划线、连字符）
         import re
 
         if not re.match(r"^[A-Z0-9/:_-]+$", symbol, re.IGNORECASE):
             raise ValueError(
-                f"Invalid symbol format '{symbol}': only alphanumeric, :, /, _, - allowed"
+                f"Invalid symbol format '{symbol}': only alphanumeric characters, :, /, _, - allowed"
             )
 
         # 验证符号长度（防止过长输入）
-        if len(symbol) > 50:
-            raise ValueError(f"Invalid symbol '{symbol}': exceeds maximum length of 50 characters")
+        if len(symbol) > 20:
+            raise ValueError(f"Invalid symbol '{symbol}': exceeds maximum length of 20 characters")
 
         if ":" in symbol:
             raw_pair = symbol.split(":")[0]

@@ -148,5 +148,100 @@ class TestAdapterHelperMethods(unittest.TestCase):
         self.assertIn("1h", timeframes)
 
 
+class TestSymbolValidation(unittest.TestCase):
+    """Test symbol validation in NautilusAdapter"""
+
+    @patch("core.adapter.ConfigLoader")
+    def setUp(self, mock_loader):
+        from core.adapter import NautilusAdapter
+        from config.env_config import EnvConfig
+
+        self.env_config = EnvConfig()
+        self.adapter = NautilusAdapter(self.env_config)
+
+    def test_valid_simple_symbol(self):
+        """Test valid simple symbol like BTCUSDT"""
+        config = self.adapter.create_instrument_config("BTCUSDT")
+        self.assertEqual(config.quote_currency, "BTC")
+        self.assertEqual(config.base_currency, "USDT")
+
+    def test_valid_slash_symbol(self):
+        """Test valid symbol with slash like BTC/USDT"""
+        config = self.adapter.create_instrument_config("BTC/USDT")
+        self.assertEqual(config.quote_currency, "BTC")
+        self.assertEqual(config.base_currency, "USDT")
+
+    def test_valid_colon_symbol(self):
+        """Test valid symbol with colon like BTC/USDT:USDT"""
+        config = self.adapter.create_instrument_config("BTC/USDT:USDT")
+        self.assertEqual(config.quote_currency, "BTC")
+        self.assertEqual(config.base_currency, "USDT")
+
+    def test_valid_hyphen_symbol(self):
+        """Test valid symbol with hyphen like BTC-USDT"""
+        config = self.adapter.create_instrument_config("BTC-USDT")
+        self.assertEqual(config.quote_currency, "BTC")
+        self.assertEqual(config.base_currency, "USDT")
+
+    def test_empty_string_raises(self):
+        """Test that empty string raises ValueError"""
+        with self.assertRaises(ValueError) as cm:
+            self.adapter.create_instrument_config("")
+        self.assertIn("must be a non-empty string", str(cm.exception))
+
+    def test_none_raises(self):
+        """Test that None raises ValueError"""
+        with self.assertRaises(ValueError) as cm:
+            self.adapter.create_instrument_config(None)
+        self.assertIn("must be a non-empty string", str(cm.exception))
+
+    def test_non_string_raises(self):
+        """Test that non-string input raises ValueError"""
+        with self.assertRaises(ValueError) as cm:
+            self.adapter.create_instrument_config(123)
+        self.assertIn("must be a non-empty string", str(cm.exception))
+
+    def test_invalid_characters_raises(self):
+        """Test that invalid characters raise ValueError"""
+        invalid_symbols = [
+            "BTC;USDT",  # semicolon
+            "BTC&USDT",  # ampersand
+            "BTC|USDT",  # pipe
+            "BTC`USDT",  # backtick
+            "BTC$USDT",  # dollar sign
+            "BTC(USDT",  # parenthesis
+        ]
+
+        for symbol in invalid_symbols:
+            with self.assertRaises(ValueError) as cm:
+                self.adapter.create_instrument_config(symbol)
+            self.assertIn("only alphanumeric characters", str(cm.exception))
+
+    def test_max_length_boundary(self):
+        """Test symbol length validation at boundary (20 chars)"""
+        # Exactly 20 chars - should pass
+        valid_symbol = "A" * 16 + "USDT"  # 16 + 4 = 20
+        config = self.adapter.create_instrument_config(valid_symbol)
+        self.assertIsNotNone(config)
+
+        # 21 chars - should fail
+        invalid_symbol = "A" * 17 + "USDT"  # 17 + 4 = 21
+        with self.assertRaises(ValueError) as cm:
+            self.adapter.create_instrument_config(invalid_symbol)
+        self.assertIn("exceeds maximum length of 20", str(cm.exception))
+
+    def test_lowercase_symbol(self):
+        """Test that lowercase symbols are accepted"""
+        config = self.adapter.create_instrument_config("btcusdt")
+        self.assertEqual(config.quote_currency, "btc")
+        self.assertEqual(config.base_currency, "USDT")
+
+    def test_mixed_case_symbol(self):
+        """Test that mixed case symbols are accepted"""
+        config = self.adapter.create_instrument_config("BtcUSDT")
+        self.assertEqual(config.quote_currency, "Btc")
+        self.assertEqual(config.base_currency, "USDT")
+
+
 if __name__ == "__main__":
     unittest.main()
