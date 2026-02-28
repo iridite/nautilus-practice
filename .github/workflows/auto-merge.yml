@@ -118,15 +118,17 @@ jobs:
                 // Match checks more flexibly to avoid hardcoded names
                 const requiredChecks = checks.check_runs.filter(check =>
                   check.name.match(/test|lint|validate/i) &&
-                  !check.name.includes('coverage') // Exclude optional coverage checks
+                  !check.name.includes('coverage') && // Exclude optional coverage checks
+                  !check.name.includes('Auto-fix') // Exclude auto-fix steps (they're skipped when no issues)
                 );
 
                 const allCompleted = requiredChecks.every(check =>
                   check.status === 'completed'
                 );
 
+                // Allow both 'success' and 'skipped' conclusions (skipped = no work needed)
                 const allPassed = requiredChecks.every(check =>
-                  check.conclusion === 'success'
+                  check.conclusion === 'success' || check.conclusion === 'skipped'
                 );
 
                 if (allCompleted) {
