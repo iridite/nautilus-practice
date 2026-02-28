@@ -109,7 +109,11 @@ class TestAdapterHelperMethods(unittest.TestCase):
     @patch("core.adapter.ConfigLoader")
     def test_extract_symbols_from_universe(self, mock_loader):
         adapter = ConfigAdapter()
-        universe_data = {"2024-01-01": ["BTCUSDT", "ETHUSDT"], "2024-01-02": ["BTCUSDT", "SOLUSDT"]}
+        adapter.env_config = Mock()
+        adapter.env_config.backtest = Mock()
+        adapter.env_config.backtest.start_date = "2024-01-01"
+        adapter.env_config.backtest.end_date = "2024-12-31"
+        universe_data = {"2024-01": ["BTCUSDT", "ETHUSDT"], "2024-02": ["BTCUSDT", "SOLUSDT"]}
         symbols = adapter._extract_symbols_from_universe(universe_data)
         self.assertIsInstance(symbols, set)
         self.assertIn("BTCUSDT", symbols)

@@ -57,6 +57,9 @@ def parse_arguments():
 
     backtest_parser = subparsers.add_parser("backtest", help="Run backtest")
     backtest_parser.add_argument("--type", choices=["high", "low"], default="low")
+    backtest_parser.add_argument(
+        "--env", type=str, default="dev", help="Environment name (default: dev)"
+    )
     backtest_parser.add_argument("--skip-data-check", action="store_true")
     backtest_parser.add_argument("--skip-oi-data", action="store_true")
     backtest_parser.add_argument("--force-oi-fetch", action="store_true")
@@ -87,7 +90,33 @@ def main():
         logger.info("请指定命令。使用 --help 查看可用命令。")
         sys.exit(1)
 
-    adapter = get_adapter()
+    # 根据命令选择环境
+    if args.command == "backtest":
+        # 回测默认使用 dev 环境（可通过 --env 覆盖）
+        env_name = getattr(args, "env", "dev")
+        # 临时修改 active.yaml 的环境设置
+        import yaml
+
+        active_file = BASE_DIR / "config" / "active.yaml"
+        with open(active_file, "r") as f:
+            active_data = yaml.safe_load(f)
+        original_env = active_data.get("environment", "dev")
+        active_data["environment"] = env_name
+        with open(active_file, "w") as f:
+            yaml.dump(active_data, f, default_flow_style=False, allow_unicode=True)
+
+        try:
+            adapter = get_adapter()
+            adapter.reload()
+        finally:
+            # 恢复原始环境设置
+            active_data["environment"] = original_env
+            with open(active_file, "w") as f:
+                yaml.dump(active_data, f, default_flow_style=False, allow_unicode=True)
+    else:
+        # sandbox 和 live 使用 active.yaml 或 --env 参数
+        adapter = get_adapter()
+
     universe_symbols = load_universe_symbols(adapter, BASE_DIR)
 
     if args.command == "backtest":

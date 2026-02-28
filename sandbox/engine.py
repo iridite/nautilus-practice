@@ -208,6 +208,94 @@ def _create_strategy_instance(StrategyClass, ConfigClass, params: dict):
     return StrategyClass(config=config)
 
 
+def _auto_generate_universe(sandbox_cfg: SandboxConfig) -> Optional[Path]:
+    """
+    自动生成 Universe 数据文件
+
+    Args:
+        sandbox_cfg: Sandbox 配置对象
+
+    Returns:
+        生成的 Universe 文件路径，失败时返回 None
+
+    Raises:
+        RuntimeError: 当 strict_mode=True 且生成失败时抛出
+    """
+    # 检查是否启用 Universe 和自动生成
+    if not sandbox_cfg.universe or not sandbox_cfg.universe.enabled:
+        logger.debug("Universe not enabled, skipping auto-generation")
+        return None
+
+    if not sandbox_cfg.universe.auto_generate:
+        logger.debug("Universe auto_generate disabled, skipping")
+        return None
+
+    logger.info("=" * 60)
+    logger.info("Starting Universe auto-generation...")
+    logger.info("=" * 60)
+
+    try:
+        from scripts.generate_universe import generate_current_universe
+
+        # 调用生成函数（生成当前周期的 Universe）
+        universe_data = generate_current_universe(
+            top_n=sandbox_cfg.universe.top_n,
+            freq=sandbox_cfg.universe.freq,
+            lookback_periods=1,  # 使用上一个周期的数据
+            data_dir=BASE_DIR / "data" / "top"
+        )
+
+        if not universe_data:
+            error_msg = (
+                f"Failed to generate Universe data: no valid data returned. "
+                f"Check if data/top/ directory contains CSV files."
+            )
+            logger.error(error_msg)
+
+            if sandbox_cfg.universe.strict_mode:
+                raise RuntimeError(error_msg)
+            else:
+                logger.warning("Continuing without Universe (strict_mode=false)")
+                return None
+
+        # 保存生成的数据
+        freq_suffix = sandbox_cfg.universe.freq.replace("/", "")
+        output_path = BASE_DIR / "data" / "universe" / f"universe_{sandbox_cfg.universe.top_n}_{freq_suffix}.json"
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+
+        import json
+        with open(output_path, "w") as f:
+            json.dump(universe_data, f, indent=4)
+
+        logger.info(f"✓ Universe generated successfully: {output_path}")
+        logger.info(f"  - Top N: {sandbox_cfg.universe.top_n}")
+        logger.info(f"  - Frequency: {sandbox_cfg.universe.freq}")
+        logger.info(f"  - Periods: {len(universe_data)}")
+        logger.info("=" * 60)
+
+        return output_path
+
+    except ImportError as e:
+        error_msg = f"Failed to import generate_universe module: {e}"
+        logger.error(error_msg)
+
+        if sandbox_cfg.universe.strict_mode:
+            raise RuntimeError(error_msg) from e
+        else:
+            logger.warning("Continuing without Universe (strict_mode=false)")
+            return None
+
+    except Exception as e:
+        error_msg = f"Unexpected error during Universe generation: {e}"
+        logger.exception(error_msg)
+
+        if sandbox_cfg.universe.strict_mode:
+            raise RuntimeError(error_msg) from e
+        else:
+            logger.warning("Continuing without Universe (strict_mode=false)")
+            return None
+
+
 def load_strategy_instances(strategy_config, instrument_ids):
     """动态加载策略实例列表 (支持多标的)"""
     # 硬限制：防止创建过多策略实例导致性能问题
@@ -580,9 +668,148 @@ def _derive_btc_instrument_id(btc_symbol: str, template_inst_id: str) -> str:
         ) from e
 
 
+def _load_universe_symbols(sandbox_cfg: SandboxConfig) -> Optional[set]:
+    """加载 Universe 文件并解析当前周期的活跃标的
+
+    Args:
+        sandbox_cfg: Sandbox 配置对象
+
+    Returns:
+        活跃标的符号集合（如 {"ETH", "SOL", "BNB"}），如果未启用或加载失败则返回 None
+    """
+    # 检查是否启用 Universe
+    if not sandbox_cfg.universe or not sandbox_cfg.universe.enabled:
+        logger.debug("Universe filtering disabled")
+        return None
+
+    universe_cfg = sandbox_cfg.universe
+    universe_file = Path(universe_cfg.file)
+
+    # 检查文件是否存在
+    if not universe_file.is_absolute():
+        universe_file = BASE_DIR / universe_file
+
+    if not universe_file.exists():
+        logger.error(f"Universe file not found: {universe_file}")
+        return None
+
+    try:
+        import json
+        from datetime import datetime
+
+        # 加载 Universe 文件
+        with open(universe_file, 'r') as f:
+            universe_data = json.load(f)
+
+        # 确定当前周期
+        if universe_cfg.initial_period:
+            current_period = universe_cfg.initial_period
+        else:
+            # 使用当前日期确定周期
+            now = datetime.now()
+            if universe_cfg.freq == "W-MON":
+                # ISO week format: YYYY-Www
+                current_period = now.strftime("%Y-W%V")
+            elif universe_cfg.freq == "2W-MON":
+                # 双周格式，需要特殊处理
+                week_num = int(now.strftime("%V"))
+                year = now.year
+                # 双周：1-2, 3-4, 5-6, ...
+                biweek = ((week_num - 1) // 2) * 2 + 1
+                current_period = f"{year}-W{biweek:02d}"
+            elif universe_cfg.freq == "ME":
+                # 月末格式: YYYY-MM
+                current_period = now.strftime("%Y-%m")
+            else:
+                logger.error(f"Unsupported universe frequency: {universe_cfg.freq}")
+                return None
+
+        # 获取当前周期的标的列表
+        if current_period not in universe_data:
+            logger.warning(
+                f"Current period {current_period} not found in universe file. "
+                f"Available periods: {list(universe_data.keys())[:5]}..."
+            )
+            return None
+
+        # 解析标的符号（格式: "ETHUSDT:USDT" -> "ETH"）
+        raw_symbols = universe_data[current_period]
+        active_symbols = set()
+
+        for symbol in raw_symbols:
+            # 提取 base symbol（去掉 USDT 和 :USDT 后缀）
+            if ":" in symbol:
+                base_part = symbol.split(":")[0]
+            else:
+                base_part = symbol
+
+            # 去掉 USDT 后缀
+            if base_part.endswith("USDT"):
+                base_symbol = base_part[:-4]
+            else:
+                base_symbol = base_part
+
+            active_symbols.add(base_symbol)
+
+        logger.info(
+            f"Loaded Universe for period {current_period}: "
+            f"{len(active_symbols)} active symbols from {universe_file.name}"
+        )
+        logger.debug(f"Active symbols: {sorted(active_symbols)}")
+
+        return active_symbols
+
+    except Exception as e:
+        logger.exception(f"Failed to load universe file {universe_file}: {e}")
+        return None
+
+
 def _collect_all_instrument_ids(sandbox_cfg, strategy_config):
     """收集所有需要的标的ID（包括辅助标的）"""
-    instrument_ids = sandbox_cfg.instrument_ids
+
+    # 加载 Universe 过滤器
+    universe_symbols = _load_universe_symbols(sandbox_cfg)
+
+    # 如果启用了 Universe，从 Universe 生成 instrument_ids
+    if universe_symbols is not None and len(universe_symbols) > 0:
+        # 从 Universe 自动生成 instrument_ids
+        # 需要知道交易所和合约类型
+        venue = sandbox_cfg.venue
+
+        # 从配置中获取 instrument_type（默认 SWAP）
+        from core.adapter import ConfigAdapter
+        try:
+            # 尝试从 trading 配置获取 instrument_type
+            adapter = ConfigAdapter()
+            instrument_type = getattr(adapter.env_config.trading, 'instrument_type', 'SWAP')
+        except:
+            instrument_type = 'SWAP'
+
+        # 生成 instrument_ids
+        instrument_ids = []
+        for symbol in sorted(universe_symbols):
+            # 将 "ETHUSDT:USDT" 转换为 "ETH-USDT-SWAP.OKX"
+            base_symbol = symbol.split(":")[0].replace("USDT", "")
+            inst_id = f"{base_symbol}-USDT-{instrument_type}.{venue}"
+            instrument_ids.append(inst_id)
+
+        logger.info(
+            f"Generated {len(instrument_ids)} instrument_ids from Universe: "
+            f"{instrument_ids[:5]}{'...' if len(instrument_ids) > 5 else ''}"
+        )
+    else:
+        # 使用配置文件中的 instrument_ids
+        instrument_ids = sandbox_cfg.instrument_ids
+
+        if not instrument_ids:
+            raise ValueError(
+                "No instrument_ids found. Either:\n"
+                "  1. Enable Universe (universe.enabled=true), or\n"
+                "  2. Provide instrument_ids in sandbox.yaml"
+            )
+
+        logger.info(f"Using {len(instrument_ids)} instrument_ids from config")
+
     all_needed_ids = set(instrument_ids)
 
     # 自动探测策略需要的辅助标的（如 BTC）
@@ -591,12 +818,12 @@ def _collect_all_instrument_ids(sandbox_cfg, strategy_config):
 
         if not instrument_ids:
             raise ValueError(
-                "Cannot derive BTC instrument_id: no template instrument_ids provided. "
-                "Please add at least one instrument_id to sandbox.yaml"
+                "Cannot derive BTC instrument_id: no template instrument_ids available"
             )
 
         aux_id = _derive_btc_instrument_id(btc_symbol, instrument_ids[0])
         all_needed_ids.add(aux_id)
+        logger.info(f"Added auxiliary instrument (BTC): {aux_id}")
 
     return list(all_needed_ids)
 
@@ -693,23 +920,40 @@ def _validate_loaded_instruments(missing_instruments, sandbox_cfg):
         )
 
 
-def _get_valid_instrument_ids(instrument_ids, loaded_instruments):
+def _get_valid_instrument_ids(instrument_ids, loaded_instruments, allow_missing=False):
     """获取有效的标的ID列表"""
     valid_instrument_ids = [inst_id for inst_id in instrument_ids if inst_id in loaded_instruments]
 
     if not valid_instrument_ids:
-        raise RuntimeError(
-            "No valid instruments available to create strategies. "
-            "All instrument files are missing."
-        )
+        if allow_missing:
+            logger.warning(
+                "No instrument files found, but allow_missing_instruments=True. "
+                "Will attempt to load instruments from exchange."
+            )
+            # 返回所有请求的 instrument_ids，让 NautilusTrader 从交易所加载
+            return instrument_ids
+        else:
+            raise RuntimeError(
+                "No valid instruments available to create strategies. "
+                "All instrument files are missing."
+            )
 
     if len(valid_instrument_ids) < len(instrument_ids):
         skipped = set(instrument_ids) - set(valid_instrument_ids)
-        logger.warning(
-            "Skipping %d instrument(s) due to missing files: %s",
-            len(skipped),
-            ", ".join(skipped)
-        )
+        if allow_missing:
+            logger.info(
+                "Missing %d instrument file(s), will load from exchange: %s",
+                len(skipped),
+                ", ".join(skipped)
+            )
+            # 返回所有请求的 instrument_ids
+            return instrument_ids
+        else:
+            logger.warning(
+                "Skipping %d instrument(s) due to missing files: %s",
+                len(skipped),
+                ", ".join(skipped)
+            )
 
     return valid_instrument_ids
 
@@ -752,6 +996,11 @@ async def run_sandbox(env_name: Optional[str] = None):
     # 运行预检查
     _run_preflight_checks(sandbox_cfg, strategy_config)
 
+    # 自动生成 Universe（如果启用）
+    universe_file = _auto_generate_universe(sandbox_cfg)
+    if universe_file:
+        logger.info(f"Universe file ready: {universe_file}")
+
     # 构建交易者配置
     trader_id, logging_config = _build_trader_config(sandbox_cfg, env_config)
 
@@ -784,7 +1033,11 @@ async def run_sandbox(env_name: Optional[str] = None):
         _validate_loaded_instruments(missing_instruments, sandbox_cfg)
 
         # 获取有效的标的ID
-        valid_instrument_ids = _get_valid_instrument_ids(sandbox_cfg.instrument_ids, loaded_instruments)
+        valid_instrument_ids = _get_valid_instrument_ids(
+            sandbox_cfg.instrument_ids,
+            loaded_instruments,
+            allow_missing=sandbox_cfg.allow_missing_instruments
+        )
 
         # 加载并注册策略实例
         _load_and_register_strategies(node, strategy_config, valid_instrument_ids)
