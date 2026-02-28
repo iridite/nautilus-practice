@@ -1,4 +1,5 @@
 """Research workflow graph using LangGraph"""
+
 from pathlib import Path
 from typing import Any, Optional
 
@@ -209,7 +210,9 @@ class ResearchGraph:
         if workflow_id is None:
             workflow_id = str(uuid.uuid4())
 
-        logger.info("Starting research workflow", user_input_length=len(user_input), workflow_id=workflow_id)
+        logger.info(
+            "Starting research workflow", user_input_length=len(user_input), workflow_id=workflow_id
+        )
 
         # 尝试从检查点恢复
         checkpoint_data = None

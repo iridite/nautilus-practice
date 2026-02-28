@@ -480,7 +480,9 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
             self.highest_high = max(self.highest_high, float(bar.high))
 
         # 更新 Chandelier Exit 追踪止损线（只升不降）
-        new_trailing_stop = self.highest_high - (self.config.stop_loss_atr_multiplier * self.keltner.atr)
+        new_trailing_stop = self.highest_high - (
+            self.config.stop_loss_atr_multiplier * self.keltner.atr
+        )
         if self.trailing_stop is None:
             self.trailing_stop = new_trailing_stop
         else:
@@ -626,7 +628,6 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
         if self.portfolio.is_net_long(self.instrument.id):
             self._handle_long_position_management(bar)
             return
-
 
         # 入场检查
         if self._check_entry_conditions(bar):

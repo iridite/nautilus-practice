@@ -13,7 +13,7 @@ from typing import Any, Awaitable, Callable, TypeVar
 from shared.logging import get_logger
 
 logger = get_logger(__name__)
-T = TypeVar('T')
+T = TypeVar("T")
 
 # Context variable for trace context
 _trace_context: contextvars.ContextVar["TraceContext | None"] = contextvars.ContextVar(
@@ -95,9 +95,7 @@ def clear_trace_context() -> None:
 
 
 def with_tracing(
-    span_name: str | None = None,
-    workflow_name: str | None = None,
-    create_root: bool = False
+    span_name: str | None = None, workflow_name: str | None = None, create_root: bool = False
 ) -> Callable[[Callable[..., Awaitable[T]]], Callable[..., Awaitable[T]]]:
     """Decorator to add tracing to a function.
 
@@ -112,6 +110,7 @@ def with_tracing(
         ...     # Node implementation
         ...     return {"result": "analyzed"}
     """
+
     def decorator(func: Callable[..., Awaitable[T]]) -> Callable[..., Awaitable[T]]:
         name = span_name or func.__name__
 
@@ -166,6 +165,7 @@ def with_tracing(
                 _trace_context.reset(token)
 
         return wrapper
+
     return decorator
 
 

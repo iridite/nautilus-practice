@@ -12,14 +12,14 @@ from infrastructure.observability.tracing import get_trace_context
 from shared.logging import get_logger
 
 logger = get_logger(__name__)
-T = TypeVar('T')
+T = TypeVar("T")
 
 
 def with_retry(
     max_retries: int = 3,
     base_delay: float = 1.0,
     max_delay: float = 10.0,
-    exponential_base: float = 2.0
+    exponential_base: float = 2.0,
 ) -> Callable[[Callable[..., Awaitable[T]]], Callable[..., Awaitable[T]]]:
     """Retry decorator with exponential backoff.
 
@@ -29,6 +29,7 @@ def with_retry(
         max_delay: Maximum delay in seconds
         exponential_base: Base for exponential backoff calculation
     """
+
     def decorator(func: Callable[..., Awaitable[T]]) -> Callable[..., Awaitable[T]]:
         @functools.wraps(func)
         async def wrapper(*args: Any, **kwargs: Any) -> T:
@@ -53,7 +54,7 @@ def with_retry(
                         collector.record_metric(metric)
 
                     if attempt < max_retries - 1:
-                        delay = min(base_delay * (exponential_base ** attempt), max_delay)
+                        delay = min(base_delay * (exponential_base**attempt), max_delay)
                         log_kwargs = {
                             "error": str(e),
                             "retry_delay": delay,
@@ -63,7 +64,7 @@ def with_retry(
 
                         logger.warning(
                             f"Attempt {attempt + 1}/{max_retries} failed for {func.__name__}",
-                            **log_kwargs
+                            **log_kwargs,
                         )
                         await asyncio.sleep(delay)
                     else:
@@ -72,41 +73,41 @@ def with_retry(
                             log_kwargs.update(trace_ctx.to_dict())
 
                         logger.error(
-                            f"All {max_retries} attempts failed for {func.__name__}",
-                            **log_kwargs
+                            f"All {max_retries} attempts failed for {func.__name__}", **log_kwargs
                         )
             if last_exception:
                 raise last_exception
             raise RuntimeError("Unexpected: no exception but all retries failed")
+
         return wrapper
+
     return decorator
 
 
-def with_timeout(timeout_seconds: float) -> Callable[[Callable[..., Awaitable[T]]], Callable[..., Awaitable[T]]]:
+def with_timeout(
+    timeout_seconds: float,
+) -> Callable[[Callable[..., Awaitable[T]]], Callable[..., Awaitable[T]]]:
     """Timeout decorator for async functions.
 
     Args:
         timeout_seconds: Maximum execution time in seconds
     """
+
     def decorator(func: Callable[..., Awaitable[T]]) -> Callable[..., Awaitable[T]]:
         @functools.wraps(func)
         async def wrapper(*args: Any, **kwargs: Any) -> T:
             trace_ctx = get_trace_context()
 
             try:
-                return await asyncio.wait_for(
-                    func(*args, **kwargs),
-                    timeout=timeout_seconds
-                )
+                return await asyncio.wait_for(func(*args, **kwargs), timeout=timeout_seconds)
             except asyncio.TimeoutError:
                 log_kwargs = {"timeout_seconds": timeout_seconds}
                 if trace_ctx:
                     log_kwargs.update(trace_ctx.to_dict())
 
-                logger.error(
-                    f"Timeout after {timeout_seconds}s for {func.__name__}",
-                    **log_kwargs
-                )
+                logger.error(f"Timeout after {timeout_seconds}s for {func.__name__}", **log_kwargs)
                 raise
+
         return wrapper
+
     return decorator

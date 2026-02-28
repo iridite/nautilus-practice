@@ -1,4 +1,5 @@
 """Tests for base agent"""
+
 import pytest
 from unittest.mock import Mock
 from datetime import datetime

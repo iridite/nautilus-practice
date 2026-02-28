@@ -1,4 +1,5 @@
 """Tests for error handling decorators"""
+
 import asyncio
 import pytest
 from langgraph.infrastructure.graph._error_handling import with_retry, with_timeout
@@ -100,6 +101,7 @@ class TestWithTimeout:
     @pytest.mark.asyncio
     async def test_successful_execution_within_timeout(self):
         """Test that fast execution completes successfully"""
+
         @with_timeout(timeout_seconds=1.0)
         async def fast_func():
             await asyncio.sleep(0.01)
@@ -111,6 +113,7 @@ class TestWithTimeout:
     @pytest.mark.asyncio
     async def test_timeout_exceeded(self):
         """Test that timeout raises TimeoutError"""
+
         @with_timeout(timeout_seconds=0.1)
         async def slow_func():
             await asyncio.sleep(1.0)
@@ -122,6 +125,7 @@ class TestWithTimeout:
     @pytest.mark.asyncio
     async def test_timeout_with_return_value(self):
         """Test that return value is preserved"""
+
         @with_timeout(timeout_seconds=1.0)
         async def func_with_value():
             await asyncio.sleep(0.01)
@@ -133,6 +137,7 @@ class TestWithTimeout:
     @pytest.mark.asyncio
     async def test_timeout_with_exception(self):
         """Test that exceptions are propagated"""
+
         @with_timeout(timeout_seconds=1.0)
         async def func_with_error():
             await asyncio.sleep(0.01)

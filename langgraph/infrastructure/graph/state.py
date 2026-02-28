@@ -1,4 +1,5 @@
 """LangGraph state definitions"""
+
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
@@ -7,6 +8,7 @@ from typing import Any
 @dataclass
 class AgentMessage:
     """Message from an agent"""
+
     agent: str
     content: str
     timestamp: datetime = field(default_factory=datetime.utcnow)
@@ -16,6 +18,7 @@ class AgentMessage:
 @dataclass
 class ResearchState:
     """State for strategy research workflow"""
+
     user_input: str
     messages: list[AgentMessage]
     strategy_code: str | None
@@ -26,6 +29,7 @@ class ResearchState:
 @dataclass
 class OptimizationState:
     """State for parameter optimization workflow"""
+
     strategy_id: str
     parameter_space: dict[str, Any]
     messages: list[AgentMessage]

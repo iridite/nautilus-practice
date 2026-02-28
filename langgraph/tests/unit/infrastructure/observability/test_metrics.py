@@ -144,9 +144,7 @@ class TestMetricsCollector(unittest.TestCase):
         collector.record_metric(
             NodeMetrics("node1", 1.0, True, llm_tokens_input=100, llm_tokens_output=50)
         )
-        collector.record_metric(
-            NodeMetrics("node2", 2.0, False, error="Test error")
-        )
+        collector.record_metric(NodeMetrics("node2", 2.0, False, error="Test error"))
 
         report = collector.generate_report()
         self.assertIn("LangGraph Execution Metrics Report", report)
@@ -179,6 +177,7 @@ class TestWithMetricsDecorator(unittest.IsolatedAsyncioTestCase):
 
     async def test_successful_execution(self):
         """Test decorator with successful execution."""
+
         @with_metrics(node_name="test_node")
         async def test_func():
             await asyncio.sleep(0.1)
@@ -196,6 +195,7 @@ class TestWithMetricsDecorator(unittest.IsolatedAsyncioTestCase):
 
     async def test_failed_execution(self):
         """Test decorator with failed execution."""
+
         @with_metrics(node_name="test_node")
         async def test_func():
             raise ValueError("Test error")
@@ -211,6 +211,7 @@ class TestWithMetricsDecorator(unittest.IsolatedAsyncioTestCase):
 
     async def test_token_tracking(self):
         """Test token tracking from response."""
+
         @with_metrics(node_name="test_node", track_tokens=True)
         async def test_func():
             return {
@@ -218,7 +219,7 @@ class TestWithMetricsDecorator(unittest.IsolatedAsyncioTestCase):
                 "usage": {
                     "input_tokens": 100,
                     "output_tokens": 50,
-                }
+                },
             }
 
         await test_func()
@@ -230,6 +231,7 @@ class TestWithMetricsDecorator(unittest.IsolatedAsyncioTestCase):
 
     async def test_default_node_name(self):
         """Test decorator with default node name."""
+
         @with_metrics()
         async def my_custom_function():
             return {"result": "success"}

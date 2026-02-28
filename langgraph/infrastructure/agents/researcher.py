@@ -1,4 +1,5 @@
 """Researcher agent for strategy research"""
+
 import json
 from typing import Any
 

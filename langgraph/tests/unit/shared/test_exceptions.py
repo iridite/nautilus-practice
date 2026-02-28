@@ -1,6 +1,5 @@
 """Tests for domain exception hierarchy."""
 
-
 from langgraph.shared.exceptions import (
     BacktestError,
     LangGraphError,

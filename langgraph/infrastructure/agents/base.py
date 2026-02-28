@@ -1,4 +1,5 @@
 """Base agent class for LangGraph workflows"""
+
 from abc import ABC, abstractmethod
 from datetime import datetime
 from typing import Any
@@ -57,7 +58,9 @@ class BaseAgent(ABC):
             metadata=metadata or {},
         )
 
-    def add_message(self, state: dict[str, Any], content: str, metadata: dict[str, Any] | None = None) -> None:
+    def add_message(
+        self, state: dict[str, Any], content: str, metadata: dict[str, Any] | None = None
+    ) -> None:
         """
         向状态添加消息
 

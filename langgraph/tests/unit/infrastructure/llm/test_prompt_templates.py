@@ -1,4 +1,5 @@
 """Tests for prompt templates"""
+
 import pytest
 from langgraph.infrastructure.llm.prompt_templates import (
     PromptTemplate,

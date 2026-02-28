@@ -1,4 +1,5 @@
 """Strategy code generator for backtesting.py framework"""
+
 import ast
 from typing import Tuple
 from langgraph.domain.models.strategy import Strategy
@@ -34,15 +35,7 @@ class StrategyCodeGenerator:
         next_method = self._generate_next_method(strategy)
 
         # Combine all parts
-        code_parts = [
-            imports,
-            "",
-            "",
-            class_def,
-            init_method,
-            "",
-            next_method
-        ]
+        code_parts = [imports, "", "", class_def, init_method, "", next_method]
 
         return "\n".join(code_parts)
 
@@ -81,7 +74,9 @@ from backtesting.test import SMA, GOOG"""
 
                 elif indicator_lower == "ema":
                     period = parameters.get("ema_period", 20)
-                    lines.append(f"        self.ema = self.I(SMA, self.data.Close, {period})  # Using SMA as placeholder")
+                    lines.append(
+                        f"        self.ema = self.I(SMA, self.data.Close, {period})  # Using SMA as placeholder"
+                    )
 
                 elif indicator_lower == "rsi":
                     period = parameters.get("rsi_period", 14)

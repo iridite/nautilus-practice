@@ -1,4 +1,5 @@
 """Agent implementations for LangGraph workflows"""
+
 from langgraph.infrastructure.agents.base import BaseAgent
 from langgraph.infrastructure.agents.researcher import ResearcherAgent
 from langgraph.infrastructure.agents.optimizer import OptimizerAgent

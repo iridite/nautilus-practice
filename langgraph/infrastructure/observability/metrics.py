@@ -16,7 +16,7 @@ from typing import Any, Awaitable, Callable, TypeVar
 from shared.logging import get_logger
 
 logger = get_logger(__name__)
-T = TypeVar('T')
+T = TypeVar("T")
 
 
 @dataclass
@@ -46,7 +46,7 @@ class AggregatedMetrics:
     successful_executions: int = 0
     failed_executions: int = 0
     total_execution_time: float = 0.0
-    min_execution_time: float = float('inf')
+    min_execution_time: float = float("inf")
     max_execution_time: float = 0.0
     total_tokens: int = 0
 
@@ -181,15 +181,17 @@ class MetricsCollector:
         success_count = sum(1 for m in self._metrics if m.success)
         total_count = len(self._metrics)
 
-        lines.extend([
-            "Overall Statistics:",
-            f"  Total Executions: {total_count}",
-            f"  Successful: {success_count} ({success_count/total_count*100:.1f}%)",
-            f"  Failed: {total_count - success_count}",
-            f"  Total Time: {total_time:.2f}s",
-            f"  Total Tokens: {total_tokens:,}",
-            "",
-        ])
+        lines.extend(
+            [
+                "Overall Statistics:",
+                f"  Total Executions: {total_count}",
+                f"  Successful: {success_count} ({success_count / total_count * 100:.1f}%)",
+                f"  Failed: {total_count - success_count}",
+                f"  Total Time: {total_time:.2f}s",
+                f"  Total Tokens: {total_tokens:,}",
+                "",
+            ]
+        )
 
         # Per-node statistics
         lines.append("Per-Node Statistics:")
@@ -217,8 +219,7 @@ class MetricsCollector:
 
 
 def with_metrics(
-    node_name: str | None = None,
-    track_tokens: bool = True
+    node_name: str | None = None, track_tokens: bool = True
 ) -> Callable[[Callable[..., Awaitable[T]]], Callable[..., Awaitable[T]]]:
     """Decorator to collect metrics for a node function.
 
@@ -232,6 +233,7 @@ def with_metrics(
         ...     # Node implementation
         ...     return {"result": "analyzed"}
     """
+
     def decorator(func: Callable[..., Awaitable[T]]) -> Callable[..., Awaitable[T]]:
         name = node_name or func.__name__
 
@@ -273,4 +275,5 @@ def with_metrics(
                 collector.record_metric(metric)
 
         return wrapper
+
     return decorator

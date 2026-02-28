@@ -1,4 +1,5 @@
 """Tests for checkpoint manager"""
+
 import json
 import tempfile
 from pathlib import Path
