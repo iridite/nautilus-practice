@@ -84,6 +84,9 @@ def _load_data_for_feed(
     if not data_path.exists():
         raise DataLoadError(f"Data file not found: {data_path}", str(data_path))
 
+    # 调试日志：输出实际加载的文件路径
+    logger.info(f"🔍 Loading {inst_id_str} from: {data_path}")
+
     try:
         # 使用自动格式检测加载器（支持 CSV 和 Parquet）
         df: DataFrame = load_ohlcv_auto(
@@ -498,8 +501,16 @@ def _build_result_dict(
     total_orders: int,
     total_positions: int,
     stats_pnls: dict,
+    engine_pnl: float,
+    funding_collected: Decimal,
+    initial_capital: float,
 ) -> dict:
     """构建结果字典"""
+    # 计算真实 PnL
+    funding_float = float(funding_collected)
+    real_pnl = engine_pnl + funding_float
+    real_return_pct = (real_pnl / initial_capital * 100) if initial_capital > 0 else 0
+
     result_dict = {
         "meta": {
             "strategy_name": cfg.strategy.name,
@@ -512,6 +523,10 @@ def _build_result_dict(
             "initial_balances": [str(balance) for balance in cfg.initial_balances],
             "total_orders": total_orders,
             "total_positions": total_positions,
+            "engine_pnl": engine_pnl,
+            "funding_collected": funding_float,
+            "real_pnl": real_pnl,
+            "real_return_pct": real_return_pct,
         },
         "pnl": {},
         "returns": {},
@@ -524,6 +539,10 @@ def _build_result_dict(
         "performance": {
             "total_orders": total_orders,
             "total_positions": total_positions,
+            "engine_pnl": engine_pnl,
+            "funding_collected": funding_float,
+            "real_pnl": real_pnl,
+            "real_return_pct": real_return_pct,
         },
     }
 
@@ -561,6 +580,44 @@ def _save_result_json(cfg: BacktestConfig, base_dir: Path, result_dict: dict) ->
     logger.info(f"📁 Results saved to: {filepath}")
 
 
+def _extract_funding_collected(engine: BacktestEngine) -> Decimal:
+    """从策略实例中提取资金费率收益"""
+    total_funding = Decimal("0")
+
+    try:
+        # 遍历所有策略实例
+        for strategy in engine.trader.strategies():
+            # 检查策略是否有 _total_funding_collected 属性
+            if hasattr(strategy, "_total_funding_collected"):
+                funding = strategy._total_funding_collected
+                if funding:
+                    total_funding += funding
+                    logger.info(f"💰 Extracted funding from {strategy.__class__.__name__}: {float(funding):.2f} USDT")
+    except Exception as e:
+        logger.warning(f"⚠️ Failed to extract funding collected: {e}")
+
+    return total_funding
+
+
+def _calculate_engine_pnl(cfg: BacktestConfig, engine: BacktestEngine) -> tuple[float, float]:
+    """计算引擎层面的 PnL 和初始资金"""
+    initial_capital = sum(float(b.as_decimal()) for b in cfg.initial_balances)
+
+    # 获取最终账户余额
+    venue_name = cfg.instrument.venue_name if cfg.instrument else "BINANCE"
+    venue = Venue(venue_name)
+    account = engine.trader.generate_account_report(venue)
+
+    if account is not None and not account.empty:
+        # 从账户报告中提取最终余额
+        final_balance = float(account.iloc[-1]["total"]) if "total" in account.columns else initial_capital
+    else:
+        final_balance = initial_capital
+
+    engine_pnl = final_balance - initial_capital
+    return engine_pnl, initial_capital
+
+
 def _process_backtest_results(
     cfg: BacktestConfig,
     base_dir: Path,
@@ -581,11 +638,33 @@ def _process_backtest_results(
         positions_report = engine.trader.generate_positions_report()
         stats_pnls = _extract_pnl_from_positions(positions_report)
 
+        # 提取资金费率收益
+        funding_collected = _extract_funding_collected(engine)
+
+        # 计算引擎 PnL
+        engine_pnl, initial_capital = _calculate_engine_pnl(cfg, engine)
+
         result_dict = _build_result_dict(
-            cfg, strategy_config, total_orders, total_positions, stats_pnls
+            cfg, strategy_config, total_orders, total_positions, stats_pnls,
+            engine_pnl, funding_collected, initial_capital
         )
         _add_returns_to_result(engine, result_dict)
         _save_result_json(cfg, base_dir, result_dict)
+
+        # 输出真实 PnL 摘要
+        real_pnl = engine_pnl + float(funding_collected)
+        real_return_pct = (real_pnl / initial_capital * 100) if initial_capital > 0 else 0
+
+        logger.info(
+            f"\n{'=' * 60}\n"
+            f"📊 Backtest Results Summary\n"
+            f"{'=' * 60}\n"
+            f"Initial Capital: {initial_capital:.2f} USDT\n"
+            f"Engine PnL: {engine_pnl:.2f} USDT\n"
+            f"Funding Collected: {float(funding_collected):.2f} USDT\n"
+            f"Real PnL: {real_pnl:.2f} USDT ({real_return_pct:+.2f}%)\n"
+            f"{'=' * 60}"
+        )
 
     except Exception as e:
         logger.warning(f"⚠️ Error saving results: {e}")
@@ -775,12 +854,16 @@ def _load_data_feeds(
     # 为自动添加的 SPOT 标的创建数据源配置
     data_feeds_to_load = list(cfg.data_feeds)
 
+    logger.info(f"🔍 Initial data_feeds_to_load: {[f.instrument_id for f in data_feeds_to_load]}")
+
     # 检查是否有 SPOT 标的需要加载数据
     for inst_id_str in loaded_instruments.keys():
         # 如果是 SPOT 标的且不在现有 data_feeds 中
-        if "-PERP" not in inst_id_str and not any(
-            df.instrument_id == inst_id_str for df in data_feeds_to_load
-        ):
+        is_spot = "-PERP" not in inst_id_str
+        has_feed = any(df.instrument_id == inst_id_str for df in data_feeds_to_load)
+        logger.info(f"🔍 Checking {inst_id_str}: is_spot={is_spot}, has_feed={has_feed}")
+
+        if is_spot and not has_feed:
             # 查找对应的 PERP 配置作为模板
             perp_id = inst_id_str.replace(".BINANCE", "-PERP.BINANCE")
             perp_feed = next((df for df in cfg.data_feeds if perp_id in df.instrument_id), None)
