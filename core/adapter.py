@@ -61,6 +61,9 @@ class ConfigAdapter:
         )
         self._backtest_config_cache: BacktestConfig | None = None
 
+        # 应用 active.yaml 中的 trading overrides
+        self._apply_trading_overrides()
+
     def get_venue(self) -> str:
         """
         获取交易所名称
@@ -569,6 +572,16 @@ class ConfigAdapter:
             if strategy_overrides:
                 params_dict.update(strategy_overrides)
 
+    def _apply_trading_overrides(self) -> None:
+        """应用active.yaml的trading overrides到env_config"""
+        if self.active_config.overrides:
+            trading_overrides = self.active_config.overrides.get("trading", {})
+            if trading_overrides:
+                # 更新 env_config.trading 的属性
+                for key, value in trading_overrides.items():
+                    if hasattr(self.env_config.trading, key):
+                        setattr(self.env_config.trading, key, value)
+
     def _instantiate_config_class(self, params_dict: dict) -> Any:
         """实例化策略配置类"""
         if not self.strategy_config.config_class:
@@ -637,17 +650,47 @@ class ConfigAdapter:
         instruments = []
         data_feeds = []
 
-        # 从策略配置读取交易对象列表
-        symbols = self._get_trading_symbols()
+        # 优先使用环境配置中的 data_feeds（如果存在）
+        if hasattr(self.env_config, 'data_feeds') and self.env_config.data_feeds:
+            # 使用环境配置中的 data_feeds
+            from core.schemas import DataConfig
+            from nautilus_trader.model.enums import BarAggregation, PriceType
 
-        for symbol in symbols:
-            inst_cfg = self.create_instrument_config(symbol)
-            instruments.append(inst_cfg)
-            data_feeds.extend(self._create_data_feeds_for_symbol(symbol, inst_cfg))
+            for feed_dict in self.env_config.data_feeds:
+                if isinstance(feed_dict, dict):
+                    # 转换字符串枚举为实际枚举值
+                    feed_dict = feed_dict.copy()
+                    if 'bar_aggregation' in feed_dict and isinstance(feed_dict['bar_aggregation'], str):
+                        feed_dict['bar_aggregation'] = BarAggregation[feed_dict['bar_aggregation']]
+                    if 'price_type' in feed_dict and isinstance(feed_dict['price_type'], str):
+                        feed_dict['price_type'] = PriceType[feed_dict['price_type']]
+                    data_feeds.append(DataConfig(**feed_dict))
+                else:
+                    data_feeds.append(feed_dict)
 
-        # 确保 benchmark 标的存在并创建数据流
-        btc_inst = self._ensure_benchmark_instrument(instruments)
-        data_feeds.extend(self._create_benchmark_feeds(btc_inst.instrument_id))
+            # 从 data_feeds 中提取 instrument_ids 来创建 instruments
+            instrument_ids = set()
+            for feed in data_feeds:
+                instrument_ids.add(feed.instrument_id)
+
+            for inst_id in instrument_ids:
+                # 从 instrument_id 提取 symbol
+                symbol = inst_id.split('.')[0].replace('-PERP', '')
+                inst_cfg = self.create_instrument_config(symbol)
+                instruments.append(inst_cfg)
+        else:
+            # 回退到自动生成模式
+            # 从策略配置读取交易对象列表
+            symbols = self._get_trading_symbols()
+
+            for symbol in symbols:
+                inst_cfg = self.create_instrument_config(symbol)
+                instruments.append(inst_cfg)
+                data_feeds.extend(self._create_data_feeds_for_symbol(symbol, inst_cfg))
+
+            # 确保 benchmark 标的存在并创建数据流
+            btc_inst = self._ensure_benchmark_instrument(instruments)
+            data_feeds.extend(self._create_benchmark_feeds(btc_inst.instrument_id))
 
         # 构建配置对象
         self._backtest_config_cache = BacktestConfig(
