@@ -158,13 +158,10 @@ class FundingArbitrageStrategy(BaseStrategy):
 
         self.log.info(f"📈 Subscribed to bars: spot={spot_bar_type}, perp={perp_bar_type}")
 
-        # 5. 订阅资金费率数据
-        self.subscribe_funding_rates(
-            instrument_id=self.perp_instrument.id,
-            client_id=ClientId("BINANCE")
-        )
-
-        self.log.info(f"💰 Subscribed to funding rate: {self.perp_instrument.id}")
+        # 5. 资金费率数据处理说明
+        # 注意：低级引擎使用 engine.add_data() 直接注入数据，不需要订阅
+        # 数据会通过 on_data() 回调自动到达策略
+        self.log.info(f"💰 Ready to receive funding rate data for: {self.perp_instrument.id}")
 
         # 6. 输出策略参数
         self.log.info(
@@ -221,6 +218,27 @@ class FundingArbitrageStrategy(BaseStrategy):
         except ValueError as e:
             self.log.error(f"Basis calculation error: {e}")
             return
+
+        # 🎯 幽灵信号捕获器：抓取满足条件但未开仓的情况
+        if basis_pct >= self.config.entry_basis_pct and self._latest_funding_rate_annual >= self.config.min_funding_rate_annual:
+            # 满足金融条件，但可能被系统状态拦截
+            can_open = self.pair_tracker.can_open_new_pair()
+            has_pending = len(self._pending_pairs) > 0
+            open_positions = len(self.pair_tracker.get_all_pairs())
+
+            self.log.error(
+                f"🎯 幽灵信号捕获！满足金融条件但可能被拦截:\n"
+                f"  时间: {self._latest_perp_bar.ts_event}\n"
+                f"  基差: {basis_pct:.4%} (阈值: {self.config.entry_basis_pct:.4%}) ✅\n"
+                f"  资金费率(年化): {self._latest_funding_rate_annual:.2f}% (最小: {self.config.min_funding_rate_annual:.2f}%) ✅\n"
+                f"  现货价格: {spot_price:.2f}\n"
+                f"  合约价格: {perp_price:.2f}\n"
+                f"  系统状态:\n"
+                f"    - 可以开新仓: {can_open} (当前持仓: {open_positions}/{self.config.max_positions})\n"
+                f"    - 待配对订单: {has_pending} (数量: {len(self._pending_pairs)})\n"
+                f"    - Bar 计数: {getattr(self, '_bar_count', 0)}\n"
+                f"  时间戳差异: {abs(self._latest_spot_bar.ts_event - self._latest_perp_bar.ts_event) / 1e9:.3f}s"
+            )
 
         # 每 100 个 bar 输出一次详细信息（避免日志过多）
         if not hasattr(self, '_bar_count'):
@@ -620,8 +638,4 @@ class FundingArbitrageStrategy(BaseStrategy):
             if hasattr(self, "spot_bar_type") and hasattr(self, "perp_bar_type"):
                 self.unsubscribe_bars(self.spot_bar_type)
                 self.unsubscribe_bars(self.perp_bar_type)
-
-                funding_data_type = DataType(
-                    FundingRateUpdate, metadata={"instrument_id": self.perp_instrument.id}
-                )
-                self.unsubscribe_data(data_type=funding_data_type, client_id=ClientId("BINANCE"))
+                # 注意：资金费率数据不需要取消订阅，因为我们没有订阅

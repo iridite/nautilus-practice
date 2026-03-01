@@ -287,8 +287,13 @@ def _process_instrument_custom_data(
         merged_data = merge_custom_data_with_bars(oi_data_list, funding_data_list)
         from nautilus_trader.model.identifiers import ClientId
 
-        engine.add_data(merged_data, client_id=ClientId("BINANCE"))
+        # 重要：使用 add_data() 并确保数据被排序
+        # BacktestEngine 会在 run() 时自动回放所有添加的数据
+        engine.add_data(merged_data, client_id=ClientId("BINANCE"), sort=True)
+
         logger.info(f"   ✅ Added {len(merged_data)} custom data points for {symbol}")
+        logger.debug(f"   📊 Data types: {set(type(d).__name__ for d in merged_data)}")
+        logger.debug(f"   ⏰ Time range: {merged_data[0].ts_event} to {merged_data[-1].ts_event}")
         return len(merged_data)
 
     return 0
