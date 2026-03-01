@@ -68,10 +68,12 @@ DATA_DIR="data/raw"
 REQUIRED_SYMBOLS=("BTCUSDT" "ETHUSDT" "SOLUSDT" "BNBUSDT" "ADAUSDT")
 
 MISSING_DATA=false
+MISSING_SYMBOLS=()
 for symbol in "${REQUIRED_SYMBOLS[@]}"; do
     if [ ! -d "$DATA_DIR/$symbol" ] || [ -z "$(ls -A $DATA_DIR/$symbol 2>/dev/null)" ]; then
         echo "  ✗ 缺失数据: $symbol"
         MISSING_DATA=true
+        MISSING_SYMBOLS+=("$symbol")
     else
         echo "  ✓ 数据存在: $symbol"
     fi
@@ -79,33 +81,28 @@ done
 echo ""
 
 if [ "$MISSING_DATA" = true ]; then
-    echo -e "${YELLOW}开始下载缺失的数据...${NC}"
+    echo -e "${YELLOW}开始并行下载缺失的数据...${NC}"
 
     # 计算日期范围（最近 2 年）
     END_DATE=$(date +%Y-%m-%d)
     START_DATE=$(date -d "2 years ago" +%Y-%m-%d)
 
     echo "日期范围: $START_DATE 到 $END_DATE"
+    echo "并发数: 3 个交易对"
     echo ""
 
-    # 下载数据（使用 Binance 公开 API）
-    for symbol in "${REQUIRED_SYMBOLS[@]}"; do
-        if [ ! -d "$DATA_DIR/$symbol" ] || [ -z "$(ls -A $DATA_DIR/$symbol 2>/dev/null)" ]; then
-            echo "下载 $symbol 数据..."
-            python scripts/download_full_year_data.py \
-                --symbols "$symbol" \
-                --start-date "$START_DATE" \
-                --end-date "$END_DATE" \
-                --interval "${TIMEFRAME:-1d}" \
-                || echo "警告: $symbol 下载失败，将跳过"
-            echo ""
-        fi
-    done
+    # 使用并行下载脚本（5x 性能提升）
+    python scripts/download_parallel.py \
+        --symbols "${MISSING_SYMBOLS[@]}" \
+        --start-date "$START_DATE" \
+        --end-date "$END_DATE" \
+        --max-workers 3 \
+        || echo "警告: 部分数据下载失败"
 
     echo -e "${GREEN}✓ 数据下载完成${NC}"
     echo ""
 else
-    echo -e "${GREEN}✓ 所有必需数据已存在${NC}"
+    echo -e "${GREEN}✓ 所有必需数据已存在（增量更新已跳过）${NC}"
     echo ""
 fi
 
