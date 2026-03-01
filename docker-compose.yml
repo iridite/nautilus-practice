@@ -1,0 +1,72 @@
+version: '3.8'
+
+services:
+  mihomo:
+    image: metacubex/mihomo:latest
+    container_name: mihomo-proxy
+    ports:
+      - "7890:7890"  # HTTP proxy
+      - "7891:7891"  # SOCKS5 proxy
+      # - "9090:9090"  # API/Dashboard - 仅调试时启用
+    volumes:
+      - ./docker/mihomo-config.yaml.template:/root/.config/mihomo/config.yaml.template:ro
+    environment:
+      - CLASH_SUBSCRIPTION_URL=${CLASH_SUBSCRIPTION_URL}
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        apk add --no-cache gettext
+        envsubst < /root/.config/mihomo/config.yaml.template > /root/.config/mihomo/config.yaml
+        exec mihomo -d /root/.config/mihomo
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:9090"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+    networks:
+      - nautilus-network
+
+  nautilus-keltner:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: nautilus-keltner
+    depends_on:
+      mihomo:
+        condition: service_healthy
+    environment:
+      - HTTP_PROXY=http://mihomo:7890
+      - HTTPS_PROXY=http://mihomo:7890
+      - NAUTILUS_ENV=${NAUTILUS_ENV:-sandbox}
+      - LOG_LEVEL=DEBUG
+      - TZ=UTC
+    volumes:
+      - ./data:/app/data
+      - ./output:/app/output
+      - ./logs:/app/logs
+      - ./config:/app/config:ro
+    deploy:
+      resources:
+        limits:
+          cpus: '4'
+          memory: 8G
+    healthcheck:
+      test: ["CMD", "python", "-c", "import sys; sys.exit(0)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    restart: "no"
+    networks:
+      - nautilus-network
+
+networks:
+  nautilus-network:
+    driver: bridge
