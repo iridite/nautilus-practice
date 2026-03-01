@@ -3,6 +3,7 @@ import json
 import logging
 import sys
 from datetime import datetime
+from decimal import Decimal
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -13,8 +14,10 @@ from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.models.fee import MakerTakerFeeModel
 from nautilus_trader.common.config import LoggingConfig
 from nautilus_trader.config import RiskEngineConfig
+from nautilus_trader.core.nautilus_pyo3 import millis_to_nanos
 from nautilus_trader.model import BarType, TraderId
 from nautilus_trader.model.currencies import USDT
+from nautilus_trader.model.data import FundingRateUpdate
 from nautilus_trader.model.enums import (
     AccountType,
     BarAggregation,
@@ -24,6 +27,7 @@ from nautilus_trader.model.enums import (
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.persistence.wranglers import BarDataWrangler
+import pandas as pd
 from pandas import DataFrame
 
 from core.exceptions import (
@@ -93,6 +97,15 @@ def _load_data_for_feed(
                 f"No data available in range for {data_cfg.csv_file_name}", str(data_path)
             )
 
+        # 确保 timestamp 列存在（用于验证），同时保持 DatetimeIndex（用于 Wrangler）
+        if "timestamp" not in df.columns:
+            if isinstance(df.index, pd.DatetimeIndex):
+                # 将索引转换为 Unix 时间戳（毫秒）作为 timestamp 列
+                df['timestamp'] = (df.index.astype('int64') // 10**6).astype('int64')
+            elif hasattr(df.index, 'name') and df.index.name == "timestamp":
+                # 索引名为 timestamp，转换���数值
+                df['timestamp'] = (df.index.astype('int64') // 10**6).astype('int64')
+
         # 验证数据质量：检查必需列和数据有效性
         required_columns = ["timestamp", "open", "high", "low", "close", "volume"]
         missing_columns = [col for col in required_columns if col not in df.columns]
@@ -152,14 +165,17 @@ def _load_data_for_feed(
 
 
 def _get_symbol_from_instrument(instrument_id) -> str:
-    """从instrument_id提取符号"""
-    return str(instrument_id.symbol).split("-")[0]
+    """从instrument_id提取符号（保留 -PERP 后缀以正确定位数据目录）"""
+    # 对于 PERP 标的，保留完整的 symbol（包括 -PERP）
+    # 因为资金费率数据存储在 BTCUSDT-PERP 目录下
+    symbol_str = str(instrument_id.symbol)
+    return symbol_str  # 返回完整的 symbol，例如 "BTCUSDT-PERP" 或 "BTCUSDT"
 
 
 def _find_custom_data_files(symbol_dir: Path) -> tuple[list, list]:
     """查找OI和Funding数据文件"""
     oi_files = list(symbol_dir.glob("*-oi-1h-*.csv"))
-    funding_files = list(symbol_dir.glob("*-funding-*.csv"))
+    funding_files = list(symbol_dir.glob("*-funding_rate-*.csv"))
     return oi_files, funding_files
 
 
@@ -190,22 +206,52 @@ def _load_funding_data_for_symbol(
     symbol: str,
     instrument_id,
     cfg: BacktestConfig,
-) -> list:
+) -> List[FundingRateUpdate]:
     """加载Funding Rate数据"""
     funding_data_list = []
     if funding_files:
         for funding_file in funding_files:
-            # 确保日期不为 None
-            if cfg.start_date and cfg.end_date:
-                funding_data_list.extend(
-                    loader.load_funding_data(
-                        symbol=symbol,
+            try:
+                df = pd.read_csv(funding_file)
+
+                # 验证数据格式
+                if "timestamp" not in df.columns or "funding_rate" not in df.columns:
+                    continue
+
+                # 转换为 FundingRateUpdate 对象
+                for _, row in df.iterrows():
+                    # 处理 timestamp：可能是字符串或整数
+                    ts_value = row["timestamp"]
+                    if isinstance(ts_value, str):
+                        # 字符串格式，转换为 Unix 毫秒时间戳
+                        ts_ms = int(pd.to_datetime(ts_value).timestamp() * 1000)
+                    else:
+                        ts_ms = int(ts_value)
+
+                    ts_event = millis_to_nanos(ts_ms)
+                    funding_rate = Decimal(str(row["funding_rate"]))
+
+                    next_funding_time = None
+                    if "next_funding_time" in df.columns and pd.notna(row["next_funding_time"]):
+                        next_ts_value = row["next_funding_time"]
+                        if isinstance(next_ts_value, str):
+                            next_ts_ms = int(pd.to_datetime(next_ts_value).timestamp() * 1000)
+                        else:
+                            next_ts_ms = int(next_ts_value)
+                        next_funding_time = millis_to_nanos(next_ts_ms)
+
+                    funding_data = FundingRateUpdate(
                         instrument_id=instrument_id,
-                        start_date=cfg.start_date,
-                        end_date=cfg.end_date,
-                        exchange=cfg.instrument.venue_name.lower() if cfg.instrument else "binance",
+                        rate=funding_rate,
+                        next_funding_ns=next_funding_time,
+                        ts_event=ts_event,
+                        ts_init=ts_event,
                     )
-                )
+                    funding_data_list.append(funding_data)
+
+            except Exception as e:
+                logger.warning(f"Error loading {funding_file}: {e}")
+
     return funding_data_list
 
 
@@ -219,14 +265,18 @@ def _process_instrument_custom_data(
     symbol = _get_symbol_from_instrument(instrument_id)
     symbol_dir = data_dir / symbol
 
+    logger.debug(f"   🔍 Checking custom data for {instrument_id} in {symbol_dir}")
+
     if not symbol_dir.exists():
+        logger.debug(f"   ⚠️ Directory not found: {symbol_dir}")
         return 0
 
     # 查找数据文件
     oi_files, funding_files = _find_custom_data_files(symbol_dir)
+    logger.debug(f"   📁 Found {len(oi_files)} OI files, {len(funding_files)} funding files")
 
     # 加载数据
-    loader = OIFundingDataLoader(Path(cfg.base_dir) if hasattr(cfg, "base_dir") else Path.cwd())
+    loader = OIFundingDataLoader(data_dir)
     oi_data_list = _load_oi_data_for_symbol(loader, oi_files, symbol, instrument_id, cfg)
     funding_data_list = _load_funding_data_for_symbol(
         loader, funding_files, symbol, instrument_id, cfg
@@ -235,7 +285,9 @@ def _process_instrument_custom_data(
     # 合并并添加到引擎
     if oi_data_list or funding_data_list:
         merged_data = merge_custom_data_with_bars(oi_data_list, funding_data_list)
-        engine.add_data(merged_data)
+        from nautilus_trader.model.identifiers import ClientId
+
+        engine.add_data(merged_data, client_id=ClientId("BINANCE"))
         logger.info(f"   ✅ Added {len(merged_data)} custom data points for {symbol}")
         return len(merged_data)
 
@@ -574,6 +626,8 @@ def _setup_engine(cfg: BacktestConfig, base_dir: Path) -> BacktestEngine:
 
 def _filter_instruments_with_data(cfg: BacktestConfig, base_dir: Path) -> List:
     """过滤有数据的标的"""
+    from core.schemas import InstrumentConfig, InstrumentType
+
     instruments_with_data = []
 
     if not cfg.start_date or not cfg.end_date:
@@ -612,6 +666,40 @@ def _filter_instruments_with_data(cfg: BacktestConfig, base_dir: Path) -> List:
         else:
             logger.debug(f"⏭️ Skipping {inst_cfg.instrument_id}: no data file")
 
+    # 自动添加 SPOT 标的（用于资金费率套利策略）
+    perp_instruments = [cfg for cfg in instruments_with_data if "-PERP" in cfg.instrument_id]
+
+    for perp_cfg in perp_instruments:
+        # 推导 SPOT symbol: BTCUSDT-PERP -> BTCUSDT
+        spot_symbol = perp_cfg.instrument_id.split("-")[0]
+        spot_id = spot_symbol + "." + perp_cfg.venue_name
+
+        # 检查是否已存在
+        if not any(cfg.instrument_id == spot_id for cfg in instruments_with_data):
+            # 检查 SPOT 数据是否存在
+            has_spot_data, _ = check_single_data_file(
+                symbol=spot_symbol,
+                start_date=cfg.start_date,
+                end_date=cfg.end_date,
+                timeframe=timeframe,
+                exchange=perp_cfg.venue_name.lower(),
+                base_dir=base_dir,
+            )
+
+            if has_spot_data:
+                # 创建 SPOT 标的配置
+                spot_cfg = InstrumentConfig(
+                    type=InstrumentType.SPOT,
+                    venue_name=perp_cfg.venue_name,
+                    base_currency=perp_cfg.base_currency,
+                    quote_currency=perp_cfg.quote_currency,
+                    leverage=1,
+                )
+                instruments_with_data.append(spot_cfg)
+                logger.info(f"🔄 Auto-added SPOT instrument for funding arbitrage: {spot_id}")
+            else:
+                logger.warning(f"⚠️ SPOT data not found for {spot_id}, funding arbitrage may not work")
+
     if not instruments_with_data:
         raise BacktestEngineError("No instruments with available data found")
 
@@ -622,10 +710,34 @@ def _filter_instruments_with_data(cfg: BacktestConfig, base_dir: Path) -> List:
 
 
 def _load_instruments(engine: BacktestEngine, instruments_with_data: List) -> Dict:
-    """加载标的定义"""
+    """加载标的定义（自动添加 SPOT 标的用于资金费率套利）"""
+    from core.schemas import InstrumentConfig, InstrumentType
+
+    # 自动添加 SPOT 标的（用于资金费率套利策略）
+    # 如果发现 PERP 标的，自动添加对应的 SPOT 标的
+    inst_cfg_list = list(instruments_with_data)  # 转换为列表以便修改
+    perp_instruments = [cfg for cfg in inst_cfg_list if "-PERP" in cfg.instrument_id]
+
+    for perp_cfg in perp_instruments:
+        # 推导 SPOT ID: BTCUSDT-PERP.BINANCE -> BTCUSDT.BINANCE
+        spot_id = perp_cfg.instrument_id.replace("-PERP", "")
+
+        # 检查是否已存在
+        if not any(cfg.instrument_id == spot_id for cfg in inst_cfg_list):
+            # 创建 SPOT 标的配置
+            spot_cfg = InstrumentConfig(
+                type=InstrumentType.SPOT,
+                venue_name=perp_cfg.venue_name,
+                base_currency=perp_cfg.base_currency,
+                quote_currency=perp_cfg.quote_currency,
+                leverage=1,  # SPOT 不使用杠杆
+            )
+            inst_cfg_list.append(spot_cfg)
+            logger.info(f"🔄 Auto-added SPOT instrument for funding arbitrage: {spot_id}")
+
     loaded_instruments = {}
 
-    for inst_cfg in instruments_with_data:
+    for inst_cfg in inst_cfg_list:
         inst_path = inst_cfg.get_json_path()
         if not inst_path.exists():
             raise InstrumentLoadError(
@@ -651,10 +763,41 @@ def _load_data_feeds(
     engine: BacktestEngine, cfg: BacktestConfig, base_dir: Path, loaded_instruments: Dict
 ) -> Dict:
     """加载回测数据"""
-    all_feeds = {}
-    total_feeds = len(cfg.data_feeds)
+    from core.schemas import DataConfig
 
-    for feed_idx, data_cfg in enumerate(cfg.data_feeds, 1):
+    all_feeds = {}
+
+    # 为自动添加的 SPOT 标的创建数据源配置
+    data_feeds_to_load = list(cfg.data_feeds)
+
+    # 检查是否有 SPOT 标的需要加载数据
+    for inst_id_str in loaded_instruments.keys():
+        # 如果是 SPOT 标的且不在现有 data_feeds 中
+        if "-PERP" not in inst_id_str and not any(
+            df.instrument_id == inst_id_str for df in data_feeds_to_load
+        ):
+            # 查找对应的 PERP 配置作为模板
+            perp_id = inst_id_str.replace(".BINANCE", "-PERP.BINANCE")
+            perp_feed = next((df for df in cfg.data_feeds if perp_id in df.instrument_id), None)
+
+            if perp_feed:
+                # 创建 SPOT 数据源配置（复制 PERP 的配置）
+                spot_symbol = inst_id_str.split(".")[0]
+                spot_feed = DataConfig(
+                    instrument_id=inst_id_str,
+                    bar_aggregation=perp_feed.bar_aggregation,
+                    bar_period=perp_feed.bar_period,
+                    price_type=perp_feed.price_type,
+                    origination=perp_feed.origination,
+                    csv_file_name=f"{spot_symbol}/binance-{spot_symbol}-1h-{cfg.start_date}_{cfg.end_date}.csv",
+                    label="main",
+                )
+                data_feeds_to_load.append(spot_feed)
+                logger.info(f"🔄 Auto-created data feed for SPOT: {inst_id_str}")
+
+    total_feeds = len(data_feeds_to_load)
+
+    for feed_idx, data_cfg in enumerate(data_feeds_to_load, 1):
         sys.stdout.write(f"\r📖 [{feed_idx}/{total_feeds}] Loading: {data_cfg.csv_file_name}")
         sys.stdout.flush()
 
@@ -683,7 +826,14 @@ def _add_strategies(
     global_feeds = {label: bt for (iid, label), bt in all_feeds.items() if label == "benchmark"}
     strategies_count = 0
 
+    # 特殊处理：资金费率套利策略只需要一个实例（基于 PERP 标的）
+    is_funding_arbitrage = cfg.strategy.name == "FundingArbitrageStrategy"
+
     for inst_id, inst in loaded_instruments.items():
+        # 如果是资金费率套利策略，跳过 SPOT 标的
+        if is_funding_arbitrage and "-PERP" not in inst_id:
+            continue
+
         local_feeds = {
             label: bt
             for (iid, label), bt in all_feeds.items()
@@ -742,6 +892,7 @@ def run_low_level(cfg: BacktestConfig, base_dir: Path):
         loaded_instruments = _load_instruments(engine, instruments_with_data)
         all_feeds = _load_data_feeds(engine, cfg, base_dir, loaded_instruments)
 
+        # 在 bar 数据加载之后、策略添加之前加载自定义数据
         try:
             _load_custom_data_to_engine(cfg, base_dir, engine, loaded_instruments)
         except CustomDataError as e:
@@ -753,6 +904,8 @@ def run_low_level(cfg: BacktestConfig, base_dir: Path):
             raise BacktestEngineError(
                 "No strategy instances were created. Check config and data paths."
             )
+
+        # 调试：检查引擎中的数据
 
         logger.info(f"⏳ Running engine with {strategies_count} strategy instances...")
         engine.run()

@@ -13,7 +13,7 @@ Delta 中性资金费率套利策略 (Funding Rate Arbitrage)
 from dataclasses import dataclass
 from decimal import Decimal
 
-from nautilus_trader.model.data import Bar, BarType, CustomData, DataType
+from nautilus_trader.model.data import Bar, BarType, CustomData, DataType, FundingRateUpdate
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import ClientId, InstrumentId
 from nautilus_trader.model.instruments import Instrument
@@ -24,7 +24,6 @@ from strategy.common.arbitrage import (
     DeltaManager,
 )
 from strategy.core.base import BaseStrategy, BaseStrategyConfig
-from utils.custom_data import FundingRateData
 
 
 @dataclass
@@ -160,10 +159,10 @@ class FundingArbitrageStrategy(BaseStrategy):
         self.log.info(f"📈 Subscribed to bars: spot={spot_bar_type}, perp={perp_bar_type}")
 
         # 5. 订阅资金费率数据
-        funding_data_type = DataType(
-            FundingRateData, metadata={"instrument_id": self.perp_instrument.id}
+        self.subscribe_funding_rates(
+            instrument_id=self.perp_instrument.id,
+            client_id=ClientId("BINANCE")
         )
-        self.subscribe_data(data_type=funding_data_type, client_id=ClientId("BINANCE"))
 
         self.log.info(f"💰 Subscribed to funding rate: {self.perp_instrument.id}")
 
@@ -223,10 +222,23 @@ class FundingArbitrageStrategy(BaseStrategy):
             self.log.error(f"Basis calculation error: {e}")
             return
 
-        self.log.debug(
-            f"Basis: {basis_pct:.4%}, Funding(Annual): {self._latest_funding_rate_annual:.2f}%, "
-            f"spot={spot_price:.2f}, perp={perp_price:.2f}"
-        )
+        # 每 100 个 bar 输出一次详细信息（避免日志过多）
+        if not hasattr(self, '_bar_count'):
+            self._bar_count = 0
+        self._bar_count += 1
+
+        if self._bar_count % 100 == 0:
+            self.log.info(
+                f"📊 Market State (bar #{self._bar_count}): "
+                f"Basis={basis_pct:.4%} (threshold={self.config.entry_basis_pct:.4%}), "
+                f"Funding={self._latest_funding_rate_annual:.2f}% (min={self.config.min_funding_rate_annual:.2f}%), "
+                f"Spot={spot_price:.2f}, Perp={perp_price:.2f}"
+            )
+        else:
+            self.log.debug(
+                f"Basis: {basis_pct:.4%}, Funding(Annual): {self._latest_funding_rate_annual:.2f}%, "
+                f"spot={spot_price:.2f}, perp={perp_price:.2f}"
+            )
 
         # 检查开仓条件
         if self._check_entry_signal(spot_price, perp_price, basis_pct):
@@ -247,22 +259,25 @@ class FundingArbitrageStrategy(BaseStrategy):
         """检查开仓信号"""
         # 1. 检查是否可以开新仓
         if not self.pair_tracker.can_open_new_pair():
-            self.log.debug(f"Max positions reached: {self.config.max_positions}")
+            self.log.debug(f"❌ Entry blocked: Max positions reached ({self.config.max_positions})")
             return False
 
         # 2. 检查是否有待配对订单
         if self._pending_pairs:
-            self.log.debug("Pending pairs exist, skipping entry")
+            self.log.debug(f"❌ Entry blocked: Pending pairs exist ({len(self._pending_pairs)})")
             return False
 
         # 3. 检查基差是否满足开仓条件
         if basis_pct < self.config.entry_basis_pct:
+            self.log.debug(
+                f"❌ Entry blocked: Basis too low: {basis_pct:.4%} < {self.config.entry_basis_pct:.4%}"
+            )
             return False
 
         # 4. 检查资金费率是否满足最小要求
         if self._latest_funding_rate_annual < self.config.min_funding_rate_annual:
             self.log.debug(
-                f"Funding rate too low: {self._latest_funding_rate_annual:.2f}% < "
+                f"❌ Entry blocked: Funding rate too low: {self._latest_funding_rate_annual:.2f}% < "
                 f"{self.config.min_funding_rate_annual:.2f}%"
             )
             return False
@@ -532,15 +547,22 @@ class FundingArbitrageStrategy(BaseStrategy):
             f"  Entry Funding (Annual): {self._latest_funding_rate_annual:.2f}%"
         )
 
-    def on_data(self, data: CustomData) -> None:
+    def on_funding_rate(self, funding_rate: FundingRateUpdate) -> None:
+        """处理资金费率更新"""
+        self._handle_funding_rate(funding_rate)
+
+    def on_data(self, data) -> None:
         """处理自定义数据（如 Funding Rate）"""
-        if isinstance(data, FundingRateData):
+        self.log.info(f"🔔 on_data called: type={type(data).__name__}")
+        if isinstance(data, FundingRateUpdate):
+            self.log.info(f"💰 Received funding rate: {float(data.rate) * 3 * 365:.2f}% annual")
             self._handle_funding_rate(data)
 
-    def _handle_funding_rate(self, data: FundingRateData) -> None:
+    def _handle_funding_rate(self, data: FundingRateUpdate) -> None:
         """处理资金费率结算"""
-        # 更新缓存的资金费率
-        self._latest_funding_rate_annual = data.funding_rate_annual
+        # 更新缓存的资金费率（转换为年化）
+        # Binance 资金费率每8小时结算一次，年化 = rate * 3 * 365
+        self._latest_funding_rate_annual = float(data.rate) * 3 * 365
 
         for pair in self.pair_tracker.get_all_pairs():
             # 获取合约持仓
@@ -557,13 +579,13 @@ class FundingArbitrageStrategy(BaseStrategy):
 
             # 计算资金费率收益（做空合约收取正资金费率）
             # 注意：做空时 quantity 为负，所以需要取绝对值
-            funding_pnl = abs(perp_position.quantity.as_decimal()) * data.funding_rate
+            funding_pnl = abs(perp_position.quantity.as_decimal()) * data.rate
 
             # 更新持仓
             self.pair_tracker.update_funding_rate(pair.pair_id, funding_pnl)
 
             # 检查负资金费率
-            if data.funding_rate < 0:
+            if data.rate < 0:
                 self.pair_tracker.increment_negative_funding(pair.pair_id)
             else:
                 self.pair_tracker.reset_negative_funding(pair.pair_id)
@@ -600,6 +622,6 @@ class FundingArbitrageStrategy(BaseStrategy):
                 self.unsubscribe_bars(self.perp_bar_type)
 
                 funding_data_type = DataType(
-                    FundingRateData, metadata={"instrument_id": self.perp_instrument.id}
+                    FundingRateUpdate, metadata={"instrument_id": self.perp_instrument.id}
                 )
                 self.unsubscribe_data(data_type=funding_data_type, client_id=ClientId("BINANCE"))

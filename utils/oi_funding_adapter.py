@@ -156,7 +156,7 @@ class OIFundingDataLoader:
         if not symbol_dir.exists():
             return []
 
-        funding_files = list(symbol_dir.glob(f"{exchange}-{safe_symbol}-funding-*.csv"))
+        funding_files = list(symbol_dir.glob(f"{exchange}-{safe_symbol}-funding_rate-*.csv"))
         return sorted(funding_files)
 
     def _build_funding_file_path(
@@ -164,7 +164,7 @@ class OIFundingDataLoader:
     ) -> Path:
         """构建Funding数据文件路径"""
         safe_symbol = symbol.replace("/", "")
-        filename = f"{exchange}-{safe_symbol}-funding-{start_date}_{end_date}.csv"
+        filename = f"{exchange}-{safe_symbol}-funding_rate-{start_date}_{end_date}.csv"
         return self.data_dir / safe_symbol / filename
 
     def _log_file_not_found(self, file_path: Path, symbol: str, exchange: str) -> None:
