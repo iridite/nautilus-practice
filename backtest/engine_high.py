@@ -890,12 +890,15 @@ def _import_data_to_catalog(
 
                 # 查找 SPOT 数据文件
                 import glob
+
                 spot_csv_files = glob.glob(spot_csv_pattern)
 
                 if spot_csv_files:
                     # 使用第一个找到的文件
                     spot_csv_file = spot_csv_files[0]
-                    logger.info(f"🔄 Auto-importing SPOT data for funding arbitrage: {spot_id} from {spot_csv_file}")
+                    logger.info(
+                        f"🔄 Auto-importing SPOT data for funding arbitrage: {spot_id} from {spot_csv_file}"
+                    )
 
                     # 提取相对路径 (去掉 data/raw/ 前缀)
                     # spot_csv_file 格式: data/raw/BTCUSDT/binance-BTCUSDT-1h-2024-01-01_2024-03-31.csv
@@ -923,7 +926,11 @@ def _import_data_to_catalog(
                         # 归类数据流
                         if feed_bar_type_str:
                             _categorize_data_feed(
-                                inst_id, feed_bar_type_str, spot_data_cfg, global_feeds, feeds_by_inst
+                                inst_id,
+                                feed_bar_type_str,
+                                spot_data_cfg,
+                                global_feeds,
+                                feeds_by_inst,
                             )
 
                         # 更新数据配置
@@ -933,7 +940,9 @@ def _import_data_to_catalog(
                         )
                         logger.info(f"✅ Successfully imported SPOT data: {spot_id}")
                 else:
-                    logger.warning(f"⚠️ No SPOT data files found for {spot_id} at {spot_csv_pattern}")
+                    logger.warning(
+                        f"⚠️ No SPOT data files found for {spot_id} at {spot_csv_pattern}"
+                    )
 
     return data_config_by_inst, global_feeds, feeds_by_inst
 

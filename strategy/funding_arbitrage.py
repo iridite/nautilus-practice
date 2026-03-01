@@ -163,8 +163,7 @@ class FundingArbitrageStrategy(BaseStrategy):
 
         # 订阅资金费率数据
         self.subscribe_funding_rates(
-            instrument_id=self.perp_instrument.id,
-            client_id=ClientId("BINANCE")
+            instrument_id=self.perp_instrument.id, client_id=ClientId("BINANCE")
         )
         self.log.info(f"💰 Subscribed to funding rates for {self.perp_instrument.id}")
 
@@ -233,7 +232,10 @@ class FundingArbitrageStrategy(BaseStrategy):
         )
 
         # 🎯 幽灵信号捕获器：抓取满足条件但未开仓的情况
-        if basis_pct >= self.config.entry_basis_pct and self._latest_funding_rate_annual >= self.config.min_funding_rate_annual:
+        if (
+            basis_pct >= self.config.entry_basis_pct
+            and self._latest_funding_rate_annual >= self.config.min_funding_rate_annual
+        ):
             # 满足金融条件，但可能被系统状态拦截
             can_open = self.pair_tracker.can_open_new_pair()
             has_pending = len(self._pending_pairs) > 0
@@ -254,7 +256,7 @@ class FundingArbitrageStrategy(BaseStrategy):
             )
 
         # 每 100 个 bar 输出一次详细信息（避免日志过多）
-        if not hasattr(self, '_bar_count'):
+        if not hasattr(self, "_bar_count"):
             self._bar_count = 0
         self._bar_count += 1
 
@@ -629,7 +631,10 @@ class FundingArbitrageStrategy(BaseStrategy):
             # 注意：做空时 quantity 为负，所以需要取绝对值
             # 资金费率 = 持仓数量 * 费率 * 持仓价格
             from decimal import Decimal
-            position_value = abs(perp_position.quantity.as_decimal()) * Decimal(str(perp_position.avg_px_open))
+
+            position_value = abs(perp_position.quantity.as_decimal()) * Decimal(
+                str(perp_position.avg_px_open)
+            )
             funding_pnl = position_value * Decimal(str(data.rate))
 
             # 更新持仓
@@ -676,6 +681,5 @@ class FundingArbitrageStrategy(BaseStrategy):
 
             # 取消订阅资金费率
             self.unsubscribe_funding_rates(
-                instrument_id=self.perp_instrument.id,
-                client_id=ClientId("BINANCE")
+                instrument_id=self.perp_instrument.id, client_id=ClientId("BINANCE")
             )

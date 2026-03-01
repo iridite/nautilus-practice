@@ -196,7 +196,9 @@ class ConfigAdapter:
         """
         return self.strategy_config.parameters
 
-    def create_instrument_config(self, symbol: str, instrument_type: str = None) -> InstrumentConfig:
+    def create_instrument_config(
+        self, symbol: str, instrument_type: str = None
+    ) -> InstrumentConfig:
         """
         根据符号创建 InstrumentConfig
 
@@ -228,8 +230,8 @@ class ConfigAdapter:
 
         # 自动检测标的类型
         if instrument_type is None:
-            if '-PERP' in symbol:
-                instrument_type = 'PERP'
+            if "-PERP" in symbol:
+                instrument_type = "PERP"
             else:
                 instrument_type = self.env_config.trading.instrument_type
 
@@ -239,7 +241,7 @@ class ConfigAdapter:
             raw_pair = symbol
 
         # 移除 -PERP 后缀以提取货币对
-        raw_pair = raw_pair.replace('-PERP', '')
+        raw_pair = raw_pair.replace("-PERP", "")
 
         base_currency = "USDT"
         quote_currency = raw_pair.replace(base_currency, "")
@@ -662,7 +664,7 @@ class ConfigAdapter:
         data_feeds = []
 
         # 优先使用环境配置中的 data_feeds（如果存在）
-        if hasattr(self.env_config, 'data_feeds') and self.env_config.data_feeds:
+        if hasattr(self.env_config, "data_feeds") and self.env_config.data_feeds:
             # 使用环境配置中的 data_feeds
             from core.schemas import DataConfig
             from nautilus_trader.model.enums import BarAggregation, PriceType
@@ -671,10 +673,12 @@ class ConfigAdapter:
                 if isinstance(feed_dict, dict):
                     # 转换字符串枚举为实际枚举值
                     feed_dict = feed_dict.copy()
-                    if 'bar_aggregation' in feed_dict and isinstance(feed_dict['bar_aggregation'], str):
-                        feed_dict['bar_aggregation'] = BarAggregation[feed_dict['bar_aggregation']]
-                    if 'price_type' in feed_dict and isinstance(feed_dict['price_type'], str):
-                        feed_dict['price_type'] = PriceType[feed_dict['price_type']]
+                    if "bar_aggregation" in feed_dict and isinstance(
+                        feed_dict["bar_aggregation"], str
+                    ):
+                        feed_dict["bar_aggregation"] = BarAggregation[feed_dict["bar_aggregation"]]
+                    if "price_type" in feed_dict and isinstance(feed_dict["price_type"], str):
+                        feed_dict["price_type"] = PriceType[feed_dict["price_type"]]
                     data_feeds.append(DataConfig(**feed_dict))
                 else:
                     data_feeds.append(feed_dict)
@@ -688,14 +692,14 @@ class ConfigAdapter:
                 # 从 instrument_id 提取 symbol 和类型
                 # BTCUSDT-PERP.BINANCE -> symbol=BTCUSDT-PERP, type=PERP
                 # BTCUSDT.BINANCE -> symbol=BTCUSDT, type=SPOT
-                symbol_with_suffix = inst_id.split('.')[0]
+                symbol_with_suffix = inst_id.split(".")[0]
 
                 # 根据 instrument_id 判断类型
-                if '-PERP' in inst_id:
-                    instrument_type = 'PERP'
+                if "-PERP" in inst_id:
+                    instrument_type = "PERP"
                     symbol = symbol_with_suffix  # 保留 -PERP 后缀
                 else:
-                    instrument_type = 'SPOT'
+                    instrument_type = "SPOT"
                     symbol = symbol_with_suffix  # 不带后缀
 
                 inst_cfg = self.create_instrument_config(symbol, instrument_type)

@@ -104,10 +104,10 @@ def _load_data_for_feed(
         if "timestamp" not in df.columns:
             if isinstance(df.index, pd.DatetimeIndex):
                 # 将索引转换为 Unix 时间戳（毫秒）作为 timestamp 列
-                df['timestamp'] = (df.index.astype('int64') // 10**6).astype('int64')
-            elif hasattr(df.index, 'name') and df.index.name == "timestamp":
+                df["timestamp"] = (df.index.astype("int64") // 10**6).astype("int64")
+            elif hasattr(df.index, "name") and df.index.name == "timestamp":
                 # 索引名为 timestamp，转换���数值
-                df['timestamp'] = (df.index.astype('int64') // 10**6).astype('int64')
+                df["timestamp"] = (df.index.astype("int64") // 10**6).astype("int64")
 
         # 验证数据质量：检查必需列和数据有效性
         required_columns = ["timestamp", "open", "high", "low", "close", "volume"]
@@ -592,7 +592,9 @@ def _extract_funding_collected(engine: BacktestEngine) -> Decimal:
                 funding = strategy._total_funding_collected
                 if funding:
                     total_funding += funding
-                    logger.info(f"💰 Extracted funding from {strategy.__class__.__name__}: {float(funding):.2f} USDT")
+                    logger.info(
+                        f"💰 Extracted funding from {strategy.__class__.__name__}: {float(funding):.2f} USDT"
+                    )
     except Exception as e:
         logger.warning(f"⚠️ Failed to extract funding collected: {e}")
 
@@ -610,7 +612,9 @@ def _calculate_engine_pnl(cfg: BacktestConfig, engine: BacktestEngine) -> tuple[
 
     if account is not None and not account.empty:
         # 从账户报告中提取最终余额
-        final_balance = float(account.iloc[-1]["total"]) if "total" in account.columns else initial_capital
+        final_balance = (
+            float(account.iloc[-1]["total"]) if "total" in account.columns else initial_capital
+        )
     else:
         final_balance = initial_capital
 
@@ -645,8 +649,14 @@ def _process_backtest_results(
         engine_pnl, initial_capital = _calculate_engine_pnl(cfg, engine)
 
         result_dict = _build_result_dict(
-            cfg, strategy_config, total_orders, total_positions, stats_pnls,
-            engine_pnl, funding_collected, initial_capital
+            cfg,
+            strategy_config,
+            total_orders,
+            total_positions,
+            stats_pnls,
+            engine_pnl,
+            funding_collected,
+            initial_capital,
         )
         _add_returns_to_result(engine, result_dict)
         _save_result_json(cfg, base_dir, result_dict)
@@ -782,7 +792,9 @@ def _filter_instruments_with_data(cfg: BacktestConfig, base_dir: Path) -> List:
                 instruments_with_data.append(spot_cfg)
                 logger.info(f"🔄 Auto-added SPOT instrument for funding arbitrage: {spot_id}")
             else:
-                logger.warning(f"⚠️ SPOT data not found for {spot_id}, funding arbitrage may not work")
+                logger.warning(
+                    f"⚠️ SPOT data not found for {spot_id}, funding arbitrage may not work"
+                )
 
     if not instruments_with_data:
         raise BacktestEngineError("No instruments with available data found")
