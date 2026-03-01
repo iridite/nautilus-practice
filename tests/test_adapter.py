@@ -224,17 +224,17 @@ class TestSymbolValidation(unittest.TestCase):
             self.assertIn("only alphanumeric characters", str(cm.exception))
 
     def test_max_length_boundary(self):
-        """Test symbol length validation at boundary (20 chars)"""
-        # Exactly 20 chars - should pass
-        valid_symbol = "A" * 16 + "USDT"  # 16 + 4 = 20
+        """Test symbol length validation at boundary (30 chars)"""
+        # Exactly 30 chars - should pass
+        valid_symbol = "A" * 26 + "USDT"  # 26 + 4 = 30
         config = self.adapter.create_instrument_config(valid_symbol)
         self.assertIsNotNone(config)
 
-        # 21 chars - should fail
-        invalid_symbol = "A" * 17 + "USDT"  # 17 + 4 = 21
+        # 31 chars - should fail
+        invalid_symbol = "A" * 27 + "USDT"  # 27 + 4 = 31
         with self.assertRaises(ValueError) as cm:
             self.adapter.create_instrument_config(invalid_symbol)
-        self.assertIn("exceeds maximum length of 20", str(cm.exception))
+        self.assertIn("exceeds maximum length of 30", str(cm.exception))
 
 
 if __name__ == "__main__":

@@ -196,12 +196,13 @@ class ConfigAdapter:
         """
         return self.strategy_config.parameters
 
-    def create_instrument_config(self, symbol: str) -> InstrumentConfig:
+    def create_instrument_config(self, symbol: str, instrument_type: str = None) -> InstrumentConfig:
         """
         根据符号创建 InstrumentConfig
 
         Args:
-            symbol: 交易对符号（如 BTCUSDT 或 BTC/USDT:USDT）
+            symbol: 交易对符号（如 BTCUSDT、BTCUSDT-PERP 或 BTC/USDT:USDT）
+            instrument_type: 可选的标的类型,如果不提供则从 symbol 或环境配置推断
 
         Returns:
             InstrumentConfig 对象
@@ -222,13 +223,23 @@ class ConfigAdapter:
             )
 
         # 验证符号长度（防止过长输入）
-        if len(symbol) > 20:
-            raise ValueError(f"Invalid symbol '{symbol}': exceeds maximum length of 20 characters")
+        if len(symbol) > 30:  # 增加长度限制以支持 -PERP 后缀
+            raise ValueError(f"Invalid symbol '{symbol}': exceeds maximum length of 30 characters")
+
+        # 自动检测标的类型
+        if instrument_type is None:
+            if '-PERP' in symbol:
+                instrument_type = 'PERP'
+            else:
+                instrument_type = self.env_config.trading.instrument_type
 
         if ":" in symbol:
             raw_pair = symbol.split(":")[0]
         else:
             raw_pair = symbol
+
+        # 移除 -PERP 后缀以提取货币对
+        raw_pair = raw_pair.replace('-PERP', '')
 
         base_currency = "USDT"
         quote_currency = raw_pair.replace(base_currency, "")
@@ -241,7 +252,7 @@ class ConfigAdapter:
             venue_name=self.get_venue(),
             quote_currency=quote_currency,
             base_currency=base_currency,
-            type=InstrumentType(self.env_config.trading.instrument_type),
+            type=InstrumentType(instrument_type),
         )
 
     def create_data_config(self, symbol: str, timeframe: str, label: str = "main") -> DataConfig:
@@ -674,9 +685,20 @@ class ConfigAdapter:
                 instrument_ids.add(feed.instrument_id)
 
             for inst_id in instrument_ids:
-                # 从 instrument_id 提取 symbol
-                symbol = inst_id.split('.')[0].replace('-PERP', '')
-                inst_cfg = self.create_instrument_config(symbol)
+                # 从 instrument_id 提取 symbol 和类型
+                # BTCUSDT-PERP.BINANCE -> symbol=BTCUSDT-PERP, type=PERP
+                # BTCUSDT.BINANCE -> symbol=BTCUSDT, type=SPOT
+                symbol_with_suffix = inst_id.split('.')[0]
+
+                # 根据 instrument_id 判断类型
+                if '-PERP' in inst_id:
+                    instrument_type = 'PERP'
+                    symbol = symbol_with_suffix  # 保留 -PERP 后缀
+                else:
+                    instrument_type = 'SPOT'
+                    symbol = symbol_with_suffix  # 不带后缀
+
+                inst_cfg = self.create_instrument_config(symbol, instrument_type)
                 instruments.append(inst_cfg)
         else:
             # 回退到自动生成模式
