@@ -13,7 +13,9 @@ Delta 中性资金费率套利策略 (Funding Rate Arbitrage)
 from dataclasses import dataclass
 from decimal import Decimal
 
-from nautilus_trader.model.data import Bar, BarType, CustomData, DataType, FundingRateUpdate
+from pydantic import field_validator
+
+from nautilus_trader.model.data import Bar, BarType, FundingRateUpdate
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import ClientId, InstrumentId
 from nautilus_trader.model.instruments import Instrument
@@ -64,6 +66,55 @@ class FundingArbitrageConfig(BaseStrategyConfig):
     # 订单超时
     order_timeout_seconds: float = 5.0  # 订单超时时间（秒）
 
+    @field_validator("entry_basis_pct", "exit_basis_pct")
+    @classmethod
+    def validate_basis_pct(cls, v):
+        if not -1.0 <= v <= 1.0:
+            raise ValueError(f"Basis percentage must be between -100% and 100%, got {v}")
+        return v
+
+    @field_validator("delta_tolerance")
+    @classmethod
+    def validate_delta_tolerance(cls, v):
+        if not 0 < v < 0.1:
+            raise ValueError(f"Delta tolerance must be between 0 and 10%, got {v}")
+        return v
+
+    @field_validator("max_position_risk_pct")
+    @classmethod
+    def validate_position_risk(cls, v):
+        if not 0 < v <= 1.0:
+            raise ValueError(f"Position risk must be between 0 and 100%, got {v}")
+        return v
+
+    @field_validator("min_funding_rate_annual")
+    @classmethod
+    def validate_funding_rate(cls, v):
+        if not -100 <= v <= 1000:
+            raise ValueError(f"Funding rate must be between -100% and 1000%, got {v}")
+        return v
+
+    @field_validator("max_positions")
+    @classmethod
+    def validate_max_positions(cls, v):
+        if not 1 <= v <= 100:
+            raise ValueError(f"Max positions must be between 1 and 100, got {v}")
+        return v
+
+    @field_validator("min_holding_days", "max_holding_days")
+    @classmethod
+    def validate_holding_days(cls, v):
+        if not 1 <= v <= 365:
+            raise ValueError(f"Holding days must be between 1 and 365, got {v}")
+        return v
+
+    @field_validator("order_timeout_seconds")
+    @classmethod
+    def validate_timeout(cls, v):
+        if not 0.1 <= v <= 300:
+            raise ValueError(f"Order timeout must be between 0.1 and 300 seconds, got {v}")
+        return v
+
 
 class FundingArbitrageStrategy(BaseStrategy):
     """
@@ -75,6 +126,10 @@ class FundingArbitrageStrategy(BaseStrategy):
     - 收取正资金费率收益
     - 基差收敛时平仓获利
     """
+
+    # 类常量
+    BAR_SYNC_TOLERANCE_NS = 60_000_000_000  # 1 分钟 bar 同步容忍度
+    LOG_INTERVAL_BARS = 100  # 每 N 个 bar 输出一次详细日志
 
     def __init__(self, config: FundingArbitrageConfig):
         super().__init__(config)
@@ -91,7 +146,7 @@ class FundingArbitrageStrategy(BaseStrategy):
         # Bar 缓存
         self._latest_spot_bar: Bar | None = None
         self._latest_perp_bar: Bar | None = None
-        self._bar_sync_tolerance_ns = 60_000_000_000  # 1 分钟容忍度
+        self._bar_sync_tolerance_ns = self.BAR_SYNC_TOLERANCE_NS
 
         # 订单跟踪
         self._pending_pairs: dict[str, PendingPair] = {}
@@ -215,6 +270,15 @@ class FundingArbitrageStrategy(BaseStrategy):
         spot_price = float(self._latest_spot_bar.close)
         perp_price = float(self._latest_perp_bar.close)
 
+        # 验证价格有效性
+        if spot_price <= 0:
+            self.log.error(f"Invalid spot price: {spot_price}")
+            return
+
+        if perp_price <= 0:
+            self.log.error(f"Invalid perp price: {perp_price}")
+            return
+
         # 计算基差
         try:
             basis = self.basis_calc.calculate_basis(spot_price, perp_price)
@@ -241,7 +305,8 @@ class FundingArbitrageStrategy(BaseStrategy):
             has_pending = len(self._pending_pairs) > 0
             open_positions = len(self.pair_tracker.get_all_pairs())
 
-            self.log.error(
+            # 改用 DEBUG 级别，避免污染日志
+            self.log.debug(
                 f"🎯 幽灵信号捕获！满足金融条件但可能被拦截:\n"
                 f"  时间: {self._latest_perp_bar.ts_event}\n"
                 f"  基差: {basis_pct:.4%} (阈值: {self.config.entry_basis_pct:.4%}) ✅\n"
@@ -255,12 +320,12 @@ class FundingArbitrageStrategy(BaseStrategy):
                 f"  时间戳差异: {abs(self._latest_spot_bar.ts_event - self._latest_perp_bar.ts_event) / 1e9:.3f}s"
             )
 
-        # 每 100 个 bar 输出一次详细信息（避免日志过多）
+        # 每 N 个 bar 输出一次详细信息（避免日志过多）
         if not hasattr(self, "_bar_count"):
             self._bar_count = 0
         self._bar_count += 1
 
-        if self._bar_count % 100 == 0:
+        if self._bar_count % self.LOG_INTERVAL_BARS == 0:
             self.log.info(
                 f"📊 Market State (bar #{self._bar_count}): "
                 f"Basis={basis_pct:.4%} (threshold={self.config.entry_basis_pct:.4%}), "
@@ -380,6 +445,15 @@ class FundingArbitrageStrategy(BaseStrategy):
         spot_qty = self.spot_instrument.make_qty(spot_qty_raw)
         perp_qty = self.perp_instrument.make_qty(perp_qty_raw)
 
+        # 验证数量有效性
+        if spot_qty.as_decimal() <= 0:
+            self.log.error(f"Invalid spot quantity: {spot_qty}")
+            return
+
+        if perp_qty.as_decimal() <= 0:
+            self.log.error(f"Invalid perp quantity: {perp_qty}")
+            return
+
         # 4. 验证 Delta 中性
         spot_notional_actual = self.delta_mgr.calculate_notional(spot_qty.as_decimal(), spot_price)
         perp_notional_actual = self.delta_mgr.calculate_notional(perp_qty.as_decimal(), perp_price)
@@ -496,7 +570,11 @@ class FundingArbitrageStrategy(BaseStrategy):
 
     def _check_order_timeout(self) -> None:
         """检查订单超时"""
-        current_time = self.clock.timestamp_ns()
+        # 使用事件时间而非系统时钟，避免回测中的竞态条件
+        if not self._latest_perp_bar:
+            return
+
+        current_time = self._latest_perp_bar.ts_event
         timeout_pairs = []
 
         for pair_id, pending in self._pending_pairs.items():
@@ -536,8 +614,11 @@ class FundingArbitrageStrategy(BaseStrategy):
         """订单成交回调"""
         super().on_order_filled(event)
 
+        # 创建副本以避免迭代时修改字典
+        pending_items = list(self._pending_pairs.items())
+
         # 查找对应的配对
-        for pair_id, pending in list(self._pending_pairs.items()):
+        for pair_id, pending in pending_items:
             if str(event.client_order_id) == pending.spot_order_id:
                 pending.spot_filled = True
                 self.log.debug(f"Spot order filled: {event.client_order_id}")
@@ -548,7 +629,9 @@ class FundingArbitrageStrategy(BaseStrategy):
             # 检查是否双边成交
             if pending.spot_filled and pending.perp_filled:
                 self._on_pair_filled(pair_id, pending)
-                del self._pending_pairs[pair_id]
+                # 安全删除：检查键是否仍然存在
+                if pair_id in self._pending_pairs:
+                    del self._pending_pairs[pair_id]
                 return
 
     def _on_pair_filled(self, pair_id: str, pending: PendingPair) -> None:
@@ -609,7 +692,11 @@ class FundingArbitrageStrategy(BaseStrategy):
         """处理资金费率结算"""
         # 更新缓存的资金费率（转换为年化百分比）
         # Binance 资金费率每8小时结算一次，年化 = rate * 3 * 365 * 100
-        self._latest_funding_rate_annual = float(data.rate) * 3 * 365 * 100
+        # 使用 Decimal 计算避免浮点精度损失
+        rate_decimal = Decimal(str(data.rate))
+        self._latest_funding_rate_annual = float(
+            rate_decimal * Decimal("3") * Decimal("365") * Decimal("100")
+        )
 
         all_pairs = self.pair_tracker.get_all_pairs()
         self.log.info(f"🔍 Funding rate settlement: {len(all_pairs)} active pairs")
@@ -630,8 +717,6 @@ class FundingArbitrageStrategy(BaseStrategy):
             # 计算资金费率收益（做空合约收取正资金费率）
             # 注意：做空时 quantity 为负，所以需要取绝对值
             # 资金费率 = 持仓数量 * 费率 * 持仓价格
-            from decimal import Decimal
-
             position_value = abs(perp_position.quantity.as_decimal()) * Decimal(
                 str(perp_position.avg_px_open)
             )

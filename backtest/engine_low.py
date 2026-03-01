@@ -169,6 +169,12 @@ def _load_data_for_feed(
 
 def _get_symbol_from_instrument(instrument_id) -> str:
     """从instrument_id提取符号（保留 -PERP 后缀以正确定位数据目录）"""
+    if not instrument_id:
+        raise ValueError("instrument_id cannot be None or empty")
+
+    if not hasattr(instrument_id, "symbol"):
+        raise ValueError(f"Invalid instrument_id type: {type(instrument_id)}")
+
     # 对于 PERP 标的，保留完整的 symbol（包括 -PERP）
     # 因为资金费率数据存储在 BTCUSDT-PERP 目录下
     symbol_str = str(instrument_id.symbol)
@@ -217,6 +223,14 @@ def _load_funding_data_for_symbol(
             try:
                 df = pd.read_csv(funding_file)
 
+                # 添加大小限制检查
+                MAX_ROWS = 100000  # ~11 年的 8 小时资金费率数据
+                if len(df) > MAX_ROWS:
+                    logger.warning(
+                        f"Funding data file too large: {len(df)} rows, truncating to {MAX_ROWS}"
+                    )
+                    df = df.head(MAX_ROWS)
+
                 # 验证数据格式
                 if "timestamp" not in df.columns or "funding_rate" not in df.columns:
                     continue
@@ -226,7 +240,7 @@ def _load_funding_data_for_symbol(
                     # 处理 timestamp：可能是字符串或整数
                     ts_value = row["timestamp"]
                     if isinstance(ts_value, str):
-                        # 字符串格式，转换为 Unix 毫秒时间戳
+                        # 字符串格式，转换为 Unix 毫秒时间��
                         ts_ms = int(pd.to_datetime(ts_value).timestamp() * 1000)
                     else:
                         ts_ms = int(ts_value)
