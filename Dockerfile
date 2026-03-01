@@ -34,6 +34,7 @@ FROM python:3.12-slim AS runtime
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     gettext-base \
+    netcat-openbsd \
     && rm -rf /var/lib/apt/lists/*
 
 # Set working directory
@@ -60,9 +61,10 @@ COPY pyproject.toml ./
 # Create data/instrument directory (will be populated via volume mount)
 RUN mkdir -p ./data/instrument
 
-# Copy entrypoint script
-COPY docker/entrypoint-standalone.sh /app/docker/entrypoint.sh
-RUN chmod +x /app/docker/entrypoint.sh
+# Copy entrypoint scripts
+COPY docker/entrypoint-auto.sh /app/docker/entrypoint.sh
+COPY docker/entrypoint-standalone.sh /app/docker/entrypoint-standalone.sh
+RUN chmod +x /app/docker/entrypoint.sh /app/docker/entrypoint-standalone.sh
 
 # Create output directories
 RUN mkdir -p /app/output/backtest/result \
