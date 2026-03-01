@@ -15,7 +15,7 @@ from decimal import Decimal
 
 from nautilus_trader.model.data import Bar, BarType, CustomData, DataType
 from nautilus_trader.model.enums import OrderSide
-from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.identifiers import ClientId, InstrumentId
 from nautilus_trader.model.instruments import Instrument
 
 from strategy.common.arbitrage import (
@@ -163,7 +163,7 @@ class FundingArbitrageStrategy(BaseStrategy):
         funding_data_type = DataType(
             FundingRateData, metadata={"instrument_id": self.perp_instrument.id}
         )
-        self.subscribe_data(funding_data_type)
+        self.subscribe_data(data_type=funding_data_type, client_id=ClientId("BINANCE"))
 
         self.log.info(f"💰 Subscribed to funding rate: {self.perp_instrument.id}")
 
@@ -595,11 +595,11 @@ class FundingArbitrageStrategy(BaseStrategy):
         # 取消订阅
         if self.spot_instrument and self.perp_instrument:
             # 使用保存的 bar_type
-            if hasattr(self, 'spot_bar_type') and hasattr(self, 'perp_bar_type'):
+            if hasattr(self, "spot_bar_type") and hasattr(self, "perp_bar_type"):
                 self.unsubscribe_bars(self.spot_bar_type)
                 self.unsubscribe_bars(self.perp_bar_type)
 
                 funding_data_type = DataType(
                     FundingRateData, metadata={"instrument_id": self.perp_instrument.id}
                 )
-                self.unsubscribe_data(funding_data_type)
+                self.unsubscribe_data(data_type=funding_data_type, client_id=ClientId("BINANCE"))
