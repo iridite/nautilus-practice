@@ -2,10 +2,10 @@
 
 extends: "base.yaml"
 
-# 回测时间范围 (Q1 2024)
+# 回测时间范围 (Full Year 2024)
 backtest:
   start_date: "2024-01-01"
-  end_date: "2024-03-31"
+  end_date: "2024-12-31"
 
 # 策略配置
 strategy:
