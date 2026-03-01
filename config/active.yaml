@@ -1,6 +1,5 @@
 environment: dev
 overrides:
   trading:
-    initial_balance: 10000
     venue: BINANCE
 strategy: funding_arbitrage

@@ -2,44 +2,23 @@ config_class: FundingArbitrageConfig
 module_path: strategy.funding_arbitrage
 name: FundingArbitrageStrategy
 parameters:
-  # 标的配置
-  # 注意: 必须同时指定 SPOT 和 PERP 两个标的
-  # 回测引擎会加载这两个标的的数据
-  symbols:
-    - BTCUSDT  # 现货标的 (会被解析为 BTCUSDT.BINANCE)
-
-  # 策略使用的主标的 (PERP)
-  # 策略会自动从 PERP 推导出 SPOT
-  instrument_id: BTCUSDT-PERP.BINANCE
-  bar_type: BTCUSDT-PERP.BINANCE-1-HOUR-LAST-EXTERNAL
-
-  # 时间周期配置
-  timeframe: 1h
-  price_type: LAST
+  bar_type: BNBUSDT-PERP.BINANCE-1-HOUR-LAST-EXTERNAL
+  delta_tolerance: 0.005
+  emergency_margin_ratio: 0.3
+  entry_basis_pct: 0.0008
+  exit_basis_pct: -0.0005
+  instrument_id: BNBUSDT-PERP.BINANCE
+  max_holding_days: 90
+  max_position_risk_pct: 0.4
+  max_positions: 3
+  min_funding_rate_annual: 12.0
+  min_holding_days: 30
+  min_margin_ratio: 0.5
+  negative_funding_threshold: 3
+  oms_type: HEDGING
+  order_timeout_seconds: 5.0
   origination: EXTERNAL
-
-  # 核心参数
-  entry_basis_pct: 0.0008       # 开仓基差阈值 (0.08%)
-  exit_basis_pct: 0.0002        # 平仓基差阈值 (0.02%)
-  min_funding_rate_annual: 12.0 # 最小要求年化资金费率 (%)
-
-  # Delta 管理
-  delta_tolerance: 0.005        # Delta 容忍度 (0.5%)
-
-  # 仓位管理
-  max_position_risk_pct: 0.4    # 最大仓位占比 (40%)
-  max_positions: 3              # 最大同时持仓数
-
-  # 持仓管理
-  min_holding_days: 7           # 最小持有期（天）
-  max_holding_days: 90          # 最大持有期（天）
-
-  # 资金费率管理
-  negative_funding_threshold: 3 # 连续负资金费率次数阈值
-
-  # 风控参数
-  min_margin_ratio: 0.5         # 最小保证金率（50%）
-  emergency_margin_ratio: 0.3   # 紧急保证金率（30%）
-
-  # 订单超时
-  order_timeout_seconds: 5.0    # 订单超时时间（秒）
+  price_type: LAST
+  symbols:
+  - BNBUSDT
+  timeframe: 1h

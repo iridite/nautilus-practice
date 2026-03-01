@@ -1,0 +1,38 @@
+backtest:
+  end_date: '2024-12-31'
+  start_date: '2024-01-01'
+data_feeds:
+- bar_aggregation: HOUR
+  bar_period: 1
+  csv_file_name: BTCUSDT-PERP/binance-BTCUSDT-PERP-1h-2024-01-01_2024-12-31.csv
+  instrument_id: BTCUSDT-PERP.BINANCE
+  label: main
+  origination: EXTERNAL
+  price_type: LAST
+- bar_aggregation: HOUR
+  bar_period: 1
+  csv_file_name: BTCUSDT/binance-BTCUSDT-1h-2024-01-01_2024-12-31.csv
+  instrument_id: BTCUSDT.BINANCE
+  label: main
+  origination: EXTERNAL
+  price_type: LAST
+extends: base.yaml
+file_cleanup:
+  delete_days: 30
+  enabled: true
+  keep_days: 7
+  max_files_per_dir: 50
+  target_dirs:
+  - log
+  - output
+  use_time_rotation: true
+logging:
+  components:
+    BacktestEngine: INFO
+    DataFeed: INFO
+    Strategy: INFO
+  components_only: false
+  file_level: DEBUG
+  level: INFO
+trading:
+  initial_balance: 100000
