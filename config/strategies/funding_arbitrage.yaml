@@ -19,9 +19,9 @@ parameters:
   origination: EXTERNAL
 
   # 核心参数
-  entry_basis_pct: 0.005        # 开仓基差阈值 (0.5%)
-  exit_basis_pct: 0.001         # 平仓基差阈值 (0.1%)
-  min_funding_rate_annual: 15.0 # 最小要求年化资金费率 (%)
+  entry_basis_pct: 0.0008       # 开仓基差阈值 (0.08%)
+  exit_basis_pct: 0.0002        # 平仓基差阈值 (0.02%)
+  min_funding_rate_annual: 12.0 # 最小要求年化资金费率 (%)
 
   # Delta 管理
   delta_tolerance: 0.005        # Delta 容忍度 (0.5%)
