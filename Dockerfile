@@ -54,9 +54,11 @@ COPY backtest/ ./backtest/
 COPY core/ ./core/
 COPY utils/ ./utils/
 COPY config/ ./config/
-COPY data/instrument/ ./data/instrument/
 COPY main.py ./
 COPY pyproject.toml ./
+
+# Create data/instrument directory (will be populated via volume mount)
+RUN mkdir -p ./data/instrument
 
 # Copy entrypoint script
 COPY docker/entrypoint-standalone.sh /app/docker/entrypoint.sh
