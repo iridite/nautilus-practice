@@ -1,0 +1,51 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info
+dist
+build
+.pytest_cache
+.coverage
+htmlcov
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# 环境
+.env
+.venv
+venv
+
+# 数据和输出（构建时不需要）
+data/raw
+data/parquet
+output
+logs
+
+# 文档
+docs
+*.md
+!docker/README.md
+
+# 测试
+tests
+sandbox
+
+# OMC
+.omc
+
+# 其他
+.DS_Store
+*.log
