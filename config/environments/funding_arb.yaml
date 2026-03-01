@@ -1,0 +1,53 @@
+# 资金费率套利策略回测环境配置
+
+extends: "base.yaml"
+
+# 回测时间范围 (Full Year 2024)
+backtest:
+  start_date: "2024-01-01"
+  end_date: "2024-12-31"
+
+# 策略配置
+strategy:
+  name: "FundingArbitrageStrategy"
+  config_path: "config/strategies/funding_arbitrage.yaml"
+
+# 日志配置
+logging:
+  level: "INFO"
+  file_level: "DEBUG"
+  components:
+    BacktestEngine: "INFO"
+    DataFeed: "INFO"
+    Strategy: "DEBUG"
+  components_only: false
+
+# 初始资金
+trading:
+  initial_balance: 10000
+
+# 数据源配置
+data_feeds:
+  - instrument_id: BTCUSDT-PERP.BINANCE
+    bar_aggregation: HOUR
+    bar_period: 1
+    price_type: LAST
+    origination: EXTERNAL
+    csv_file_name: BTCUSDT-PERP/binance-BTCUSDT-PERP-1h-2024-01-01_2024-03-31.csv
+    label: main
+
+  - instrument_id: BTCUSDT-PERP.BINANCE
+    bar_aggregation: HOUR
+    bar_period: 1
+    price_type: LAST
+    origination: EXTERNAL
+    csv_file_name: BTCUSDT-PERP/binance-BTCUSDT-PERP-1h-2024-04-01_2024-12-31.csv
+    label: main
+
+  - instrument_id: BTCUSDT.BINANCE
+    bar_aggregation: HOUR
+    bar_period: 1
+    price_type: LAST
+    origination: EXTERNAL
+    csv_file_name: BTCUSDT/binance-BTCUSDT-1h-2024-01-01_2024-12-31.csv
+    label: main

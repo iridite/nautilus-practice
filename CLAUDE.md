@@ -18,17 +18,25 @@ Nautilus Practice 是一个加密货币量化交易回测平台，基于 Nautilu
 ### 2. 双回测引擎
 
 - **低级引擎** (`backtest/engine_low.py`): 简单、直接、易调试
-  - 适用场景：快速验证、调试策略逻辑
+  - 适用场景：快速验证、调试策略逻辑、**自定义数据类型**
+  - 优势：直接 API 调用 `engine.add_data()`，无需 Parquet catalog
   - 限制：可能不生成完整的统计数据（PNL、Sharpe 等）
 
 - **高级引擎** (`backtest/engine_high.py`): 快 32%、Parquet 缓存、10x 数据加载速度
   - 适用场景：正式回测、性能分析、参数优化
   - 优势：完整的统计数据、更快的执行速度
+  - **自定义数据支持**: NautilusTrader 完全支持，但需要先写入 Parquet catalog
 
-**重要**:
-- 优先使用高级引擎进行正式回测
-- 低级引擎主要用于调试和快速验证
-- 两个引擎各有用途，不需要优化调用代码
+**重要发现 (2026-03-01)**:
+- ✅ NautilusTrader 的 BacktestNode **完全支持**自定义数据类型 (FundingRateUpdate, 自定义 Data 子类)
+- ✅ `BacktestDataConfig.data_cls` 接受任意 Data 子类的导入路径字符串
+- ❌ 我们的 `engine_high.py` 硬编码了 `data_cls="Bar"`，这是**实现限制**，不是架构限制
+- 📝 要在高级引擎使用自定义数据，需要先写入 Parquet catalog
+
+**引擎选择指南**:
+- 纯 OHLCV 数据策略 → 优先使用高级引擎
+- 需要自定义数据 (Funding Rate, OI) → 当前使用低级引擎
+- 未来优化方向 → 实现 Parquet catalog 写入，统一使用高级引擎
 
 ### 3. 配置系统
 

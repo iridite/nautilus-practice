@@ -23,6 +23,80 @@ from core.adapter import get_adapter
 from utils.data_management import prepare_data_feeds
 
 
+def override_symbol_config(adapter, symbol: str, base_dir: Path):
+    """
+    动态覆盖配置中的交易对
+
+    Args:
+        adapter: 配置适配器
+        symbol: 交易对符号（如 BTCUSDT）
+        base_dir: 项目根目录
+    """
+    import yaml
+
+    # 1. 更新策略配置
+    strategy_file = base_dir / "config" / "strategies" / f"{adapter.active_config.strategy}.yaml"
+    with open(strategy_file, "r", encoding="utf-8") as f:
+        strategy_config = yaml.safe_load(f)
+
+    # 更新 symbols 和 instrument_id
+    strategy_config["parameters"]["symbols"] = [symbol]
+    strategy_config["parameters"]["instrument_id"] = f"{symbol}-PERP.BINANCE"
+    strategy_config["parameters"]["bar_type"] = f"{symbol}-PERP.BINANCE-1-HOUR-LAST-EXTERNAL"
+
+    with open(strategy_file, "w", encoding="utf-8") as f:
+        yaml.dump(strategy_config, f, default_flow_style=False, allow_unicode=True)
+
+    # 2. 更新环境配置
+    env_file = base_dir / "config" / "environments" / f"{adapter.active_config.environment}.yaml"
+    with open(env_file, "r", encoding="utf-8") as f:
+        env_config = yaml.safe_load(f)
+
+    # 获取时间范围
+    start_date = env_config.get("backtest", {}).get("start_date", "2024-01-01")
+    end_date = env_config.get("backtest", {}).get("end_date", "2024-12-31")
+
+    # 更新数据源配置（只更新 data_feeds，保留其他配置）
+    env_config["data_feeds"] = [
+        {
+            "instrument_id": f"{symbol}-PERP.BINANCE",
+            "bar_aggregation": "HOUR",
+            "bar_period": 1,
+            "price_type": "LAST",
+            "origination": "EXTERNAL",
+            "csv_file_name": f"{symbol}-PERP/binance-{symbol}-PERP-1h-{start_date}_{end_date}.csv",
+            "label": "main",
+        },
+        {
+            "instrument_id": f"{symbol}.BINANCE",
+            "bar_aggregation": "HOUR",
+            "bar_period": 1,
+            "price_type": "LAST",
+            "origination": "EXTERNAL",
+            "csv_file_name": f"{symbol}/binance-{symbol}-1h-{start_date}_{end_date}.csv",
+            "label": "main",
+        },
+    ]
+
+    with open(env_file, "w", encoding="utf-8") as f:
+        yaml.dump(env_config, f, default_flow_style=False, allow_unicode=True)
+
+    # 3. 更新 active.yaml 中的 overrides（移除 initial_balance 覆盖）
+    active_file = base_dir / "config" / "active.yaml"
+    with open(active_file, "r", encoding="utf-8") as f:
+        active_data = yaml.safe_load(f)
+
+    # 移除 overrides 中的 initial_balance，让环境配置生效
+    if "overrides" in active_data and "trading" in active_data["overrides"]:
+        if "initial_balance" in active_data["overrides"]["trading"]:
+            del active_data["overrides"]["trading"]["initial_balance"]
+
+    with open(active_file, "w", encoding="utf-8") as f:
+        yaml.dump(active_data, f, default_flow_style=False, allow_unicode=True)
+
+    logger.info(f"✅ 配置已更新为 {symbol}")
+
+
 def load_universe_symbols(adapter, base_dir: Path) -> set:
     """加载 Universe 符号"""
     try:
@@ -59,6 +133,9 @@ def parse_arguments():
     backtest_parser.add_argument("--type", choices=["high", "low"], default="low")
     backtest_parser.add_argument(
         "--env", type=str, default="dev", help="Environment name (default: dev)"
+    )
+    backtest_parser.add_argument(
+        "--symbol", type=str, help="Trading symbol (e.g., BTCUSDT, SOLUSDT, BNBUSDT)"
     )
     backtest_parser.add_argument("--skip-data-check", action="store_true")
     backtest_parser.add_argument("--skip-oi-data", action="store_true")
@@ -116,6 +193,12 @@ def main():
     else:
         # sandbox 和 live 使用 active.yaml 或 --env 参数
         adapter = get_adapter()
+
+    # 如果指定了 symbol，动态覆盖配置
+    if args.command == "backtest" and hasattr(args, "symbol") and args.symbol:
+        override_symbol_config(adapter, args.symbol, BASE_DIR)
+        # 重新加载配置
+        adapter.reload()
 
     universe_symbols = load_universe_symbols(adapter, BASE_DIR)
 

@@ -1,5 +1,5 @@
-environment: sandbox
+environment: dev
 overrides:
   trading:
-    initial_balance: 100
-strategy: keltner_rs_breakout
+    venue: BINANCE
+strategy: funding_arbitrage

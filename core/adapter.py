@@ -61,6 +61,9 @@ class ConfigAdapter:
         )
         self._backtest_config_cache: BacktestConfig | None = None
 
+        # 应用 active.yaml 中的 trading overrides
+        self._apply_trading_overrides()
+
     def get_venue(self) -> str:
         """
         获取交易所名称
@@ -193,12 +196,15 @@ class ConfigAdapter:
         """
         return self.strategy_config.parameters
 
-    def create_instrument_config(self, symbol: str) -> InstrumentConfig:
+    def create_instrument_config(
+        self, symbol: str, instrument_type: str = None
+    ) -> InstrumentConfig:
         """
         根据符号创建 InstrumentConfig
 
         Args:
-            symbol: 交易对符号（如 BTCUSDT 或 BTC/USDT:USDT）
+            symbol: 交易对符号（如 BTCUSDT、BTCUSDT-PERP 或 BTC/USDT:USDT）
+            instrument_type: 可选的标的类型,如果不提供则从 symbol 或环境配置推断
 
         Returns:
             InstrumentConfig 对象
@@ -219,13 +225,23 @@ class ConfigAdapter:
             )
 
         # 验证符号长度（防止过长输入）
-        if len(symbol) > 20:
-            raise ValueError(f"Invalid symbol '{symbol}': exceeds maximum length of 20 characters")
+        if len(symbol) > 30:  # 增加长度限制以支持 -PERP 后缀
+            raise ValueError(f"Invalid symbol '{symbol}': exceeds maximum length of 30 characters")
+
+        # 自动检测标的类型
+        if instrument_type is None:
+            if "-PERP" in symbol:
+                instrument_type = "PERP"
+            else:
+                instrument_type = self.env_config.trading.instrument_type
 
         if ":" in symbol:
             raw_pair = symbol.split(":")[0]
         else:
             raw_pair = symbol
+
+        # 移除 -PERP 后缀以提取货币对
+        raw_pair = raw_pair.replace("-PERP", "")
 
         base_currency = "USDT"
         quote_currency = raw_pair.replace(base_currency, "")
@@ -238,7 +254,7 @@ class ConfigAdapter:
             venue_name=self.get_venue(),
             quote_currency=quote_currency,
             base_currency=base_currency,
-            type=InstrumentType(self.env_config.trading.instrument_type),
+            type=InstrumentType(instrument_type),
         )
 
     def create_data_config(self, symbol: str, timeframe: str, label: str = "main") -> DataConfig:
@@ -569,6 +585,16 @@ class ConfigAdapter:
             if strategy_overrides:
                 params_dict.update(strategy_overrides)
 
+    def _apply_trading_overrides(self) -> None:
+        """应用active.yaml的trading overrides到env_config"""
+        if self.active_config.overrides:
+            trading_overrides = self.active_config.overrides.get("trading", {})
+            if trading_overrides:
+                # 更新 env_config.trading 的属性
+                for key, value in trading_overrides.items():
+                    if hasattr(self.env_config.trading, key):
+                        setattr(self.env_config.trading, key, value)
+
     def _instantiate_config_class(self, params_dict: dict) -> Any:
         """实例化策略配置类"""
         if not self.strategy_config.config_class:
@@ -637,17 +663,60 @@ class ConfigAdapter:
         instruments = []
         data_feeds = []
 
-        # 从策略配置读取交易对象列表
-        symbols = self._get_trading_symbols()
+        # 优先使用环境配置中的 data_feeds（如果存在）
+        if hasattr(self.env_config, "data_feeds") and self.env_config.data_feeds:
+            # 使用环境配置中的 data_feeds
+            from core.schemas import DataConfig
+            from nautilus_trader.model.enums import BarAggregation, PriceType
 
-        for symbol in symbols:
-            inst_cfg = self.create_instrument_config(symbol)
-            instruments.append(inst_cfg)
-            data_feeds.extend(self._create_data_feeds_for_symbol(symbol, inst_cfg))
+            for feed_dict in self.env_config.data_feeds:
+                if isinstance(feed_dict, dict):
+                    # 转换字符串枚举为实际枚举值
+                    feed_dict = feed_dict.copy()
+                    if "bar_aggregation" in feed_dict and isinstance(
+                        feed_dict["bar_aggregation"], str
+                    ):
+                        feed_dict["bar_aggregation"] = BarAggregation[feed_dict["bar_aggregation"]]
+                    if "price_type" in feed_dict and isinstance(feed_dict["price_type"], str):
+                        feed_dict["price_type"] = PriceType[feed_dict["price_type"]]
+                    data_feeds.append(DataConfig(**feed_dict))
+                else:
+                    data_feeds.append(feed_dict)
 
-        # 确保 benchmark 标的存在并创建数据流
-        btc_inst = self._ensure_benchmark_instrument(instruments)
-        data_feeds.extend(self._create_benchmark_feeds(btc_inst.instrument_id))
+            # 从 data_feeds 中提取 instrument_ids 来创建 instruments
+            instrument_ids = set()
+            for feed in data_feeds:
+                instrument_ids.add(feed.instrument_id)
+
+            for inst_id in instrument_ids:
+                # 从 instrument_id 提取 symbol 和类型
+                # BTCUSDT-PERP.BINANCE -> symbol=BTCUSDT-PERP, type=PERP
+                # BTCUSDT.BINANCE -> symbol=BTCUSDT, type=SPOT
+                symbol_with_suffix = inst_id.split(".")[0]
+
+                # 根据 instrument_id 判断类型
+                if "-PERP" in inst_id:
+                    instrument_type = "PERP"
+                    symbol = symbol_with_suffix  # 保留 -PERP 后缀
+                else:
+                    instrument_type = "SPOT"
+                    symbol = symbol_with_suffix  # 不带后缀
+
+                inst_cfg = self.create_instrument_config(symbol, instrument_type)
+                instruments.append(inst_cfg)
+        else:
+            # 回退到自动生成模式
+            # 从策略配置读取交易对象列表
+            symbols = self._get_trading_symbols()
+
+            for symbol in symbols:
+                inst_cfg = self.create_instrument_config(symbol)
+                instruments.append(inst_cfg)
+                data_feeds.extend(self._create_data_feeds_for_symbol(symbol, inst_cfg))
+
+            # 确保 benchmark 标的存在并创建数据流
+            btc_inst = self._ensure_benchmark_instrument(instruments)
+            data_feeds.extend(self._create_benchmark_feeds(btc_inst.instrument_id))
 
         # 构建配置对象
         self._backtest_config_cache = BacktestConfig(

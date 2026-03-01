@@ -14,7 +14,8 @@ import pandas as pd
 from nautilus_trader.core.nautilus_pyo3 import millis_to_nanos
 from nautilus_trader.model.identifiers import InstrumentId
 
-from utils.custom_data import FundingRateData, OpenInterestData
+from nautilus_trader.model.data import FundingRateUpdate
+from utils.custom_data import OpenInterestData
 
 logger = logging.getLogger(__name__)
 
@@ -156,7 +157,7 @@ class OIFundingDataLoader:
         if not symbol_dir.exists():
             return []
 
-        funding_files = list(symbol_dir.glob(f"{exchange}-{safe_symbol}-funding-*.csv"))
+        funding_files = list(symbol_dir.glob(f"{exchange}-{safe_symbol}-funding_rate-*.csv"))
         return sorted(funding_files)
 
     def _build_funding_file_path(
@@ -164,7 +165,7 @@ class OIFundingDataLoader:
     ) -> Path:
         """构建Funding数据文件路径"""
         safe_symbol = symbol.replace("/", "")
-        filename = f"{exchange}-{safe_symbol}-funding-{start_date}_{end_date}.csv"
+        filename = f"{exchange}-{safe_symbol}-funding_rate-{start_date}_{end_date}.csv"
         return self.data_dir / safe_symbol / filename
 
     def _log_file_not_found(self, file_path: Path, symbol: str, exchange: str) -> None:
@@ -200,8 +201,8 @@ class OIFundingDataLoader:
 
     def _convert_row_to_funding_data(
         self, row: pd.Series, df: pd.DataFrame, instrument_id: InstrumentId
-    ) -> FundingRateData:
-        """将DataFrame行转换为FundingRateData对象"""
+    ) -> FundingRateUpdate:
+        """将DataFrame行转换为FundingRateUpdate对象"""
         ts_ms = int(row["timestamp"])
         ts_event = millis_to_nanos(ts_ms)
         ts_init = ts_event
@@ -209,18 +210,18 @@ class OIFundingDataLoader:
         funding_rate = Decimal(str(row["funding_rate"]))
         next_funding_time = self._parse_next_funding_time(row, df)
 
-        return FundingRateData(
+        return FundingRateUpdate(
             instrument_id=instrument_id,
-            funding_rate=funding_rate,
-            next_funding_time=next_funding_time,
+            rate=funding_rate,
+            next_funding_ns=next_funding_time,
             ts_event=ts_event,
             ts_init=ts_init,
         )
 
     def _parse_funding_dataframe(
         self, df: pd.DataFrame, instrument_id: InstrumentId
-    ) -> List[FundingRateData]:
-        """解析DataFrame为FundingRateData列表"""
+    ) -> List[FundingRateUpdate]:
+        """解析DataFrame为FundingRateUpdate列表"""
         funding_data_list = []
         for _, row in df.iterrows():
             funding_data = self._convert_row_to_funding_data(row, df, instrument_id)
@@ -234,7 +235,7 @@ class OIFundingDataLoader:
         start_date: str,
         end_date: str,
         exchange: str = "binance",
-    ) -> List[FundingRateData]:
+    ) -> List[FundingRateUpdate]:
         """
         加载 Funding Rate 数据
 
@@ -253,7 +254,7 @@ class OIFundingDataLoader:
 
         Returns
         -------
-        List[FundingRateData]
+        List[FundingRateUpdate]
             Funding Rate 数据列表，按时间戳排序
         """
         file_path = self._build_funding_file_path(symbol, exchange, start_date, end_date)
@@ -334,7 +335,7 @@ class OIFundingDataLoader:
 
 def merge_custom_data_with_bars(
     oi_data: List[OpenInterestData],
-    funding_data: List[FundingRateData],
+    funding_data: List[FundingRateUpdate],
 ) -> List:
     """
     将 OI 和 Funding Rate 数据合并成统一的时间序列
@@ -343,7 +344,7 @@ def merge_custom_data_with_bars(
     ----------
     oi_data : List[OpenInterestData]
         OI 数据列表
-    funding_data : List[FundingRateData]
+    funding_data : List[FundingRateUpdate]
         Funding Rate 数据列表
 
     Returns
@@ -364,7 +365,7 @@ def merge_custom_data_with_bars(
 
 def validate_data_alignment(
     oi_data: List[OpenInterestData],
-    funding_data: List[FundingRateData],
+    funding_data: List[FundingRateUpdate],
     bar_count: int,
     tolerance_hours: int = 1,
 ) -> dict:

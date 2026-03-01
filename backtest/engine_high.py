@@ -152,7 +152,28 @@ def _load_instruments(cfg: BacktestConfig, base_dir: Path) -> Dict[str, Instrume
     Raises:
         InstrumentLoadError: 当标的加载失败时
     """
+    from core.schemas import InstrumentConfig, InstrumentType
+
     inst_cfg_map = {ic.instrument_id: ic for ic in cfg.instruments}
+
+    # 自动添加 SPOT 标的（用于资金费率套利策略）
+    # 如果发现 PERP 标的,自动添加对应的 SPOT 标的
+    perp_instruments = [inst_id for inst_id in inst_cfg_map.keys() if "-PERP" in inst_id]
+    for perp_id in perp_instruments:
+        # 推导 SPOT ID: BTCUSDT-PERP.BINANCE -> BTCUSDT.BINANCE
+        spot_id = perp_id.replace("-PERP", "")
+        if spot_id not in inst_cfg_map:
+            # 创建 SPOT 标的配置
+            perp_cfg = inst_cfg_map[perp_id]
+            spot_cfg = InstrumentConfig(
+                type=InstrumentType.SPOT,
+                venue_name=perp_cfg.venue_name,
+                base_currency=perp_cfg.base_currency,
+                quote_currency=perp_cfg.quote_currency,
+                leverage=1,  # SPOT 不使用杠杆
+            )
+            inst_cfg_map[spot_id] = spot_cfg
+            logger.info(f"🔄 Auto-added SPOT instrument for funding arbitrage: {spot_id}")
 
     # 过滤有数据的标的
     instruments_with_data = _filter_instruments_with_data(cfg, inst_cfg_map, base_dir)
@@ -849,6 +870,80 @@ def _import_data_to_catalog(
             sys.stdout = original_stdout
 
     logger.info(f"\n✅ Data import complete. Created {len(data_config_by_inst)} data configs.")
+
+    # 为资金费率套利策略自动导入 SPOT 数据
+    # 检查是否有 PERP 标的,如果有则为对应的 SPOT 标的导入数据
+    perp_instruments = [inst_id for inst_id in loaded_instruments.keys() if "-PERP" in inst_id]
+    for perp_id in perp_instruments:
+        spot_id = perp_id.replace("-PERP", "")
+        # 检查 SPOT 标的是否已加载但没有数据配置
+        if spot_id in loaded_instruments and spot_id not in data_config_by_inst:
+            # 为 SPOT 标的创建一个虚拟的 data feed 配置
+            from core.schemas import DataConfig
+
+            # 获取 PERP 的数据配置作为参考
+            perp_config = data_config_by_inst.get(perp_id)
+            if perp_config:
+                # 构造 SPOT 的 CSV 文件路径
+                spot_symbol = spot_id.split(".")[0]  # BTCUSDT
+                spot_csv_pattern = f"data/raw/{spot_symbol}/binance-{spot_symbol}-*.csv"
+
+                # 查找 SPOT 数据文件
+                import glob
+
+                spot_csv_files = glob.glob(spot_csv_pattern)
+
+                if spot_csv_files:
+                    # 使用第一个找到的文件
+                    spot_csv_file = spot_csv_files[0]
+                    logger.info(
+                        f"🔄 Auto-importing SPOT data for funding arbitrage: {spot_id} from {spot_csv_file}"
+                    )
+
+                    # 提取相对路径 (去掉 data/raw/ 前缀)
+                    # spot_csv_file 格式: data/raw/BTCUSDT/binance-BTCUSDT-1h-2024-01-01_2024-03-31.csv
+                    # DataConfig 需要的格式: BTCUSDT/binance-BTCUSDT-1h-2024-01-01_2024-03-31.csv
+                    relative_path = spot_csv_file.replace("data/raw/", "")
+
+                    # 创建虚拟的 DataConfig
+                    spot_data_cfg = DataConfig(
+                        csv_file_name=relative_path,
+                        instrument_id=spot_id,
+                    )
+
+                    # 处理 SPOT 数据导入
+                    inst_id, feed_bar_type_str, bar_type_str, status_msg, _ = _process_data_feed(
+                        len(cfg.data_feeds) + 1,
+                        len(cfg.data_feeds) + 1,
+                        spot_data_cfg,
+                        cfg,
+                        loaded_instruments,
+                        _catalog,
+                        stats,
+                    )
+
+                    if inst_id and bar_type_str:
+                        # 归类数据流
+                        if feed_bar_type_str:
+                            _categorize_data_feed(
+                                inst_id,
+                                feed_bar_type_str,
+                                spot_data_cfg,
+                                global_feeds,
+                                feeds_by_inst,
+                            )
+
+                        # 更新数据配置
+                        inst = loaded_instruments[inst_id]
+                        _update_data_config(
+                            str(inst.id), inst, bar_type_str, catalog_path, data_config_by_inst
+                        )
+                        logger.info(f"✅ Successfully imported SPOT data: {spot_id}")
+                else:
+                    logger.warning(
+                        f"⚠️ No SPOT data files found for {spot_id} at {spot_csv_pattern}"
+                    )
+
     return data_config_by_inst, global_feeds, feeds_by_inst
 
 
@@ -1215,6 +1310,28 @@ def run_high_level(cfg: BacktestConfig, base_dir: Path):
                     end_time=cfg.end_date,
                 )
             )
+
+        # 5.1 为资金费率套利策略添加 SPOT 标的的数据配置
+        # 检查是否有 PERP 标的,如果有则为对应的 SPOT 标的创建数据配置
+        for inst_id_str in list(data_config_by_inst.keys()):
+            if "-PERP" in inst_id_str:
+                spot_id_str = inst_id_str.replace("-PERP", "")
+                # 检查 SPOT 标的是否已加载但没有数据配置
+                if spot_id_str in loaded_instruments and spot_id_str not in data_config_by_inst:
+                    # 复用 PERP 的数据配置,但使用 SPOT 的标的 ID 和 bar_type
+                    perp_cfg = data_config_by_inst[inst_id_str]
+                    spot_bar_types = [bt.replace("-PERP", "") for bt in perp_cfg["bar_types"]]
+                    backtest_data_configs.append(
+                        BacktestDataConfig(
+                            catalog_path=perp_cfg["catalog_path"],
+                            data_cls="nautilus_trader.model.data:Bar",
+                            instrument_id=spot_id_str,
+                            bar_types=spot_bar_types,
+                            start_time=cfg.start_date,
+                            end_time=cfg.end_date,
+                        )
+                    )
+                    logger.info(f"🔄 Added BacktestDataConfig for SPOT instrument: {spot_id_str}")
 
         # 6. 运行回测
         _run_backtest_with_custom_data(

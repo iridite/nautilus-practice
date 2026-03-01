@@ -7,6 +7,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch, mock_open
 
 import pandas as pd
+from nautilus_trader.model.identifiers import InstrumentId
 
 from utils.oi_funding_adapter import OIFundingDataLoader
 
@@ -158,7 +159,7 @@ class TestOIFundingDataLoader(unittest.TestCase):
     @patch("pandas.read_csv")
     def test_load_funding_data_success(self, mock_read_csv):
         """测试成功加载 Funding Rate 数据"""
-        instrument_id = MagicMock()
+        instrument_id = InstrumentId.from_str("BTCUSDT-PERP.BINANCE")
 
         # 模拟有效的 DataFrame
         mock_df = pd.DataFrame(
@@ -177,7 +178,7 @@ class TestOIFundingDataLoader(unittest.TestCase):
     @patch("pandas.read_csv")
     def test_load_funding_data_exception(self, mock_read_csv, mock_logger):
         """测试加载 Funding Rate 数据时发生异常"""
-        instrument_id = MagicMock()
+        instrument_id = InstrumentId.from_str("BTCUSDT-PERP.BINANCE")
 
         mock_read_csv.side_effect = Exception("Read error")
 

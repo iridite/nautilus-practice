@@ -13,9 +13,9 @@ Delta 中性资金费率套利策略 (Funding Rate Arbitrage)
 from dataclasses import dataclass
 from decimal import Decimal
 
-from nautilus_trader.model.data import Bar, BarType, CustomData, DataType
+from nautilus_trader.model.data import Bar, BarType, CustomData, DataType, FundingRateUpdate
 from nautilus_trader.model.enums import OrderSide
-from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.identifiers import ClientId, InstrumentId
 from nautilus_trader.model.instruments import Instrument
 
 from strategy.common.arbitrage import (
@@ -24,7 +24,6 @@ from strategy.common.arbitrage import (
     DeltaManager,
 )
 from strategy.core.base import BaseStrategy, BaseStrategyConfig
-from utils.custom_data import FundingRateData
 
 
 @dataclass
@@ -79,7 +78,6 @@ class FundingArbitrageStrategy(BaseStrategy):
 
     def __init__(self, config: FundingArbitrageConfig):
         super().__init__(config)
-        self.config = config
 
         # 初始化组件
         self.basis_calc = BasisCalculator()
@@ -102,6 +100,9 @@ class FundingArbitrageStrategy(BaseStrategy):
         # 资金费率缓存
         self._latest_funding_rate_annual: float = 0.0
 
+        # 统计数据
+        self._total_funding_collected: Decimal = Decimal("0")
+
     def on_start(self) -> None:
         """策略启动时初始化 - 暗度陈仓推导现货标的"""
         super().on_start()
@@ -117,7 +118,12 @@ class FundingArbitrageStrategy(BaseStrategy):
         # 2. 暗度陈仓：从 PERP 推导 SPOT
         perp_id_str = str(self.perp_instrument.id)
         if "-PERP" not in perp_id_str:
-            self.log.error(f"❌ CRITICAL: Instrument is not a perpetual contract: {perp_id_str}")
+            # 如果不是 PERP 标的,说明这是为 SPOT 标的创建的策略实例
+            # 资金费率套利策略只需要一个实例(PERP),SPOT 实例应该跳过
+            self.log.info(
+                f"⏭️  Skipping strategy initialization for non-PERP instrument: {perp_id_str}. "
+                f"This strategy only runs on PERP instruments."
+            )
             return
 
         # 推导现货 ID: BTCUSDT-PERP.BINANCE -> BTCUSDT.BINANCE
@@ -136,25 +142,30 @@ class FundingArbitrageStrategy(BaseStrategy):
         self.log.info(f"✅ Spot instrument derived: {self.spot_instrument.id}")
 
         # 4. 订阅 Bar 数据
-        spot_bar_type = BarType.from_str(
-            f"{self.spot_instrument.id}-{self.config.timeframe}-{self.config.price_type}-{self.config.origination}"
-        )
-        perp_bar_type = BarType.from_str(
-            f"{self.perp_instrument.id}-{self.config.timeframe}-{self.config.price_type}-{self.config.origination}"
-        )
+        # 从配置的 bar_type 中提取时间周期、价格类型和数据来源
+        # bar_type 格式: BTCUSDT-PERP.BINANCE-1-HOUR-LAST-EXTERNAL
+        perp_bar_type_str = self.config.bar_type
+        # 提取 bar_type 的后半部分: 1-HOUR-LAST-EXTERNAL
+        bar_spec = "-".join(perp_bar_type_str.split("-")[2:])  # 跳过 instrument_id 部分
+
+        # 构造 SPOT 的 bar_type
+        spot_bar_type = BarType.from_str(f"{self.spot_instrument.id}-{bar_spec}")
+        perp_bar_type = BarType.from_str(perp_bar_type_str)
+
+        # 保存 bar_type 供 on_stop() 使用
+        self.spot_bar_type = spot_bar_type
+        self.perp_bar_type = perp_bar_type
 
         self.subscribe_bars(spot_bar_type)
         self.subscribe_bars(perp_bar_type)
 
         self.log.info(f"📈 Subscribed to bars: spot={spot_bar_type}, perp={perp_bar_type}")
 
-        # 5. 订阅资金费率数据
-        funding_data_type = DataType(
-            FundingRateData, metadata={"instrument_id": self.perp_instrument.id}
+        # 订阅资金费率数据
+        self.subscribe_funding_rates(
+            instrument_id=self.perp_instrument.id, client_id=ClientId("BINANCE")
         )
-        self.subscribe_data(funding_data_type)
-
-        self.log.info(f"💰 Subscribed to funding rate: {self.perp_instrument.id}")
+        self.log.info(f"💰 Subscribed to funding rates for {self.perp_instrument.id}")
 
         # 6. 输出策略参数
         self.log.info(
@@ -212,10 +223,55 @@ class FundingArbitrageStrategy(BaseStrategy):
             self.log.error(f"Basis calculation error: {e}")
             return
 
-        self.log.debug(
-            f"Basis: {basis_pct:.4%}, Funding(Annual): {self._latest_funding_rate_annual:.2f}%, "
-            f"spot={spot_price:.2f}, perp={perp_price:.2f}"
+        # 记录基差和资金费率（每小时）
+        self.log.info(
+            f"📊 Arbitrage Check | "
+            f"Basis: {basis_pct:.4%} (entry: {self.config.entry_basis_pct:.4%}) | "
+            f"Funding(annual): {self._latest_funding_rate_annual:.2f}% (min: {self.config.min_funding_rate_annual:.2f}%) | "
+            f"Spot: {spot_price:.2f} | Perp: {perp_price:.2f}"
         )
+
+        # 🎯 幽灵信号捕获器：抓取满足条件但未开仓的情况
+        if (
+            basis_pct >= self.config.entry_basis_pct
+            and self._latest_funding_rate_annual >= self.config.min_funding_rate_annual
+        ):
+            # 满足金融条件，但可能被系统状态拦截
+            can_open = self.pair_tracker.can_open_new_pair()
+            has_pending = len(self._pending_pairs) > 0
+            open_positions = len(self.pair_tracker.get_all_pairs())
+
+            self.log.error(
+                f"🎯 幽灵信号捕获！满足金融条件但可能被拦截:\n"
+                f"  时间: {self._latest_perp_bar.ts_event}\n"
+                f"  基差: {basis_pct:.4%} (阈值: {self.config.entry_basis_pct:.4%}) ✅\n"
+                f"  资金费率(年化): {self._latest_funding_rate_annual:.2f}% (最小: {self.config.min_funding_rate_annual:.2f}%) ✅\n"
+                f"  现货价格: {spot_price:.2f}\n"
+                f"  合约价格: {perp_price:.2f}\n"
+                f"  系统状态:\n"
+                f"    - 可以开新仓: {can_open} (当前持仓: {open_positions}/{self.config.max_positions})\n"
+                f"    - 待配对订单: {has_pending} (数量: {len(self._pending_pairs)})\n"
+                f"    - Bar 计数: {getattr(self, '_bar_count', 0)}\n"
+                f"  时间戳差异: {abs(self._latest_spot_bar.ts_event - self._latest_perp_bar.ts_event) / 1e9:.3f}s"
+            )
+
+        # 每 100 个 bar 输出一次详细信息（避免日志过多）
+        if not hasattr(self, "_bar_count"):
+            self._bar_count = 0
+        self._bar_count += 1
+
+        if self._bar_count % 100 == 0:
+            self.log.info(
+                f"📊 Market State (bar #{self._bar_count}): "
+                f"Basis={basis_pct:.4%} (threshold={self.config.entry_basis_pct:.4%}), "
+                f"Funding={self._latest_funding_rate_annual:.2f}% (min={self.config.min_funding_rate_annual:.2f}%), "
+                f"Spot={spot_price:.2f}, Perp={perp_price:.2f}"
+            )
+        else:
+            self.log.debug(
+                f"Basis: {basis_pct:.4%}, Funding(Annual): {self._latest_funding_rate_annual:.2f}%, "
+                f"spot={spot_price:.2f}, perp={perp_price:.2f}"
+            )
 
         # 检查开仓条件
         if self._check_entry_signal(spot_price, perp_price, basis_pct):
@@ -236,22 +292,25 @@ class FundingArbitrageStrategy(BaseStrategy):
         """检查开仓信号"""
         # 1. 检查是否可以开新仓
         if not self.pair_tracker.can_open_new_pair():
-            self.log.debug(f"Max positions reached: {self.config.max_positions}")
+            self.log.debug(f"❌ Entry blocked: Max positions reached ({self.config.max_positions})")
             return False
 
         # 2. 检查是否有待配对订单
         if self._pending_pairs:
-            self.log.debug("Pending pairs exist, skipping entry")
+            self.log.debug(f"❌ Entry blocked: Pending pairs exist ({len(self._pending_pairs)})")
             return False
 
         # 3. 检查基差是否满足开仓条件
         if basis_pct < self.config.entry_basis_pct:
+            self.log.debug(
+                f"❌ Entry blocked: Basis too low: {basis_pct:.4%} < {self.config.entry_basis_pct:.4%}"
+            )
             return False
 
         # 4. 检查资金费率是否满足最小要求
         if self._latest_funding_rate_annual < self.config.min_funding_rate_annual:
             self.log.debug(
-                f"Funding rate too low: {self._latest_funding_rate_annual:.2f}% < "
+                f"❌ Entry blocked: Funding rate too low: {self._latest_funding_rate_annual:.2f}% < "
                 f"{self.config.min_funding_rate_annual:.2f}%"
             )
             return False
@@ -267,11 +326,7 @@ class FundingArbitrageStrategy(BaseStrategy):
         self, pair_id: str, spot_price: float, perp_price: float, basis_pct: float
     ) -> tuple[bool, str]:
         """检查平仓信号"""
-        # 1. 基差收敛
-        if basis_pct < self.config.exit_basis_pct:
-            return True, f"basis_converged (basis={basis_pct:.4%})"
-
-        # 2. 时间触发
+        # 1. 时间触发（优先检查，确保最小持仓期）
         should_close_time, time_reason = self.pair_tracker.should_close_by_time(
             pair_id,
             current_time=self._latest_perp_bar.ts_event,
@@ -281,7 +336,7 @@ class FundingArbitrageStrategy(BaseStrategy):
         if should_close_time:
             return True, time_reason
 
-        # 3. 负资金费率
+        # 2. 负资金费率（强制平仓）
         if self.pair_tracker.should_close_by_funding(
             pair_id, threshold=self.config.negative_funding_threshold
         ):
@@ -289,6 +344,12 @@ class FundingArbitrageStrategy(BaseStrategy):
                 True,
                 f"negative_funding_rate (count >= {self.config.negative_funding_threshold})",
             )
+
+        # 3. 基差收敛（只有满足最小持仓期后才检查）
+        holding_days = self.pair_tracker.get_holding_days(pair_id, self._latest_perp_bar.ts_event)
+        if holding_days >= self.config.min_holding_days:
+            if basis_pct < self.config.exit_basis_pct:
+                return True, f"basis_converged (basis={basis_pct:.4%})"
 
         return False, ""
 
@@ -414,18 +475,24 @@ class FundingArbitrageStrategy(BaseStrategy):
         self.submit_order(spot_close_order)
         self.submit_order(perp_close_order)
 
-        # 3. 移除配对
-        self.pair_tracker.unlink_pair(pair_id)
-
+        # 3. 获取持仓时长（在删除配对前）
         holding_days = self.pair_tracker.get_holding_days(pair_id, self._latest_perp_bar.ts_event)
+
+        # 4. 累加资金费率收益到总计
+        funding_collected = pair.funding_rate_collected
+        self._total_funding_collected += funding_collected
 
         self.log.info(
             f"📉 Closing arbitrage position:\n"
             f"  Pair ID: {pair_id}\n"
             f"  Reason: {reason}\n"
             f"  Holding Days: {holding_days:.1f}\n"
-            f"  Funding Collected: {pair.funding_rate_collected:.2f} USDT"
+            f"  Funding Collected: {float(funding_collected):.2f} USDT\n"
+            f"  Total Funding (All Pairs): {float(self._total_funding_collected):.2f} USDT"
         )
+
+        # 5. 移除配对（在日志输出后）
+        self.pair_tracker.unlink_pair(pair_id)
 
     def _check_order_timeout(self) -> None:
         """检查订单超时"""
@@ -521,17 +588,33 @@ class FundingArbitrageStrategy(BaseStrategy):
             f"  Entry Funding (Annual): {self._latest_funding_rate_annual:.2f}%"
         )
 
-    def on_data(self, data: CustomData) -> None:
+    def on_funding_rate(self, funding_rate: FundingRateUpdate) -> None:
+        """处理资金费率更新 - NautilusTrader 会自动调用此方法"""
+        self.log.info(f"🔔 on_funding_rate called: rate={float(funding_rate.rate):.6f}")
+        self._handle_funding_rate(funding_rate)
+
+    def on_data(self, data) -> None:
         """处理自定义数据（如 Funding Rate）"""
-        if isinstance(data, FundingRateData):
+        self.log.info(f"🔔 on_data called: type={type(data).__name__}")
+        if isinstance(data, FundingRateUpdate):
+            # 过滤：只处理当前策略关注的标的
+            if data.instrument_id != self.perp_instrument.id:
+                self.log.debug(f"⏭️  Skipping funding rate for {data.instrument_id}")
+                return
+
+            self.log.info(f"💰 Received funding rate: {float(data.rate) * 3 * 365:.2f}% annual")
             self._handle_funding_rate(data)
 
-    def _handle_funding_rate(self, data: FundingRateData) -> None:
+    def _handle_funding_rate(self, data: FundingRateUpdate) -> None:
         """处理资金费率结算"""
-        # 更新缓存的资金费率
-        self._latest_funding_rate_annual = data.funding_rate_annual
+        # 更新缓存的资金费率（转换为年化百分比）
+        # Binance 资金费率每8小时结算一次，年化 = rate * 3 * 365 * 100
+        self._latest_funding_rate_annual = float(data.rate) * 3 * 365 * 100
 
-        for pair in self.pair_tracker.get_all_pairs():
+        all_pairs = self.pair_tracker.get_all_pairs()
+        self.log.info(f"🔍 Funding rate settlement: {len(all_pairs)} active pairs")
+
+        for pair in all_pairs:
             # 获取合约持仓
             perp_positions = [
                 p
@@ -546,13 +629,19 @@ class FundingArbitrageStrategy(BaseStrategy):
 
             # 计算资金费率收益（做空合约收取正资金费率）
             # 注意：做空时 quantity 为负，所以需要取绝对值
-            funding_pnl = abs(perp_position.quantity.as_decimal()) * data.funding_rate
+            # 资金费率 = 持仓数量 * 费率 * 持仓价格
+            from decimal import Decimal
+
+            position_value = abs(perp_position.quantity.as_decimal()) * Decimal(
+                str(perp_position.avg_px_open)
+            )
+            funding_pnl = position_value * Decimal(str(data.rate))
 
             # 更新持仓
             self.pair_tracker.update_funding_rate(pair.pair_id, funding_pnl)
 
             # 检查负资金费率
-            if data.funding_rate < 0:
+            if data.rate < 0:
                 self.pair_tracker.increment_negative_funding(pair.pair_id)
             else:
                 self.pair_tracker.reset_negative_funding(pair.pair_id)
@@ -560,8 +649,8 @@ class FundingArbitrageStrategy(BaseStrategy):
             self.log.info(
                 f"💰 Funding rate settled:\n"
                 f"  Pair: {pair.pair_id}\n"
-                f"  Rate: {data.funding_rate:.4%}\n"
-                f"  Annual: {data.funding_rate_annual:.2f}%\n"
+                f"  Rate: {float(data.rate):.4%}\n"
+                f"  Annual: {self._latest_funding_rate_annual:.2f}%\n"
                 f"  PNL: {funding_pnl:.2f} USDT\n"
                 f"  Total Collected: {pair.funding_rate_collected:.2f} USDT"
             )
@@ -570,30 +659,27 @@ class FundingArbitrageStrategy(BaseStrategy):
         """策略停止"""
         # 输出最终统计
         total_pairs = len(self.pair_tracker.get_all_pairs())
-        total_funding = sum(p.funding_rate_collected for p in self.pair_tracker.get_all_pairs())
+        active_funding = sum(p.funding_rate_collected for p in self.pair_tracker.get_all_pairs())
 
         self.log.info(
             f"\n{'=' * 60}\n"
             f"FundingArbitrage Strategy Stopped\n"
             f"{'=' * 60}\n"
             f"Total active pairs: {total_pairs}\n"
-            f"Total funding collected: {total_funding:.2f} USDT\n"
+            f"Active pairs funding: {float(active_funding):.2f} USDT\n"
+            f"Total funding collected (all closed pairs): {float(self._total_funding_collected):.2f} USDT\n"
+            f"Grand total funding: {float(self._total_funding_collected + active_funding):.2f} USDT\n"
             f"{'=' * 60}"
         )
 
         # 取消订阅
         if self.spot_instrument and self.perp_instrument:
-            spot_bar_type = BarType.from_str(
-                f"{self.spot_instrument.id}-{self.config.timeframe}-{self.config.price_type}-{self.config.origination}"
-            )
-            perp_bar_type = BarType.from_str(
-                f"{self.perp_instrument.id}-{self.config.timeframe}-{self.config.price_type}-{self.config.origination}"
-            )
+            # 使用保存的 bar_type
+            if hasattr(self, "spot_bar_type") and hasattr(self, "perp_bar_type"):
+                self.unsubscribe_bars(self.spot_bar_type)
+                self.unsubscribe_bars(self.perp_bar_type)
 
-            self.unsubscribe_bars(spot_bar_type)
-            self.unsubscribe_bars(perp_bar_type)
-
-            funding_data_type = DataType(
-                FundingRateData, metadata={"instrument_id": self.perp_instrument.id}
+            # 取消订阅资金费率
+            self.unsubscribe_funding_rates(
+                instrument_id=self.perp_instrument.id, client_id=ClientId("BINANCE")
             )
-            self.unsubscribe_data(funding_data_type)
