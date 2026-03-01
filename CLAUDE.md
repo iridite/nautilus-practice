@@ -146,6 +146,56 @@ uv run python -m unittest discover -s tests -p "test_*.py" -v
 
 **解决方案**: 开始工作前主动检查分支，不依赖 hook 提醒
 
+### 2. CI/CD 代码格式检查
+
+**问题**: PR 提交后 CI 失败，原因是代码格式不符合 ruff 规范
+
+**现象**:
+- `ruff check` 通过，但 `ruff format --check` 失败
+- 错误信息：`Would reformat: <file>`
+- 导致 Lint Check 和 Auto Merge 失败
+
+**根本原因**:
+- 本地提交前没有运行 `ruff format`
+- 只运行了 `ruff check`（检查语法错误）
+- 格式检查（format）和语法检查（check）是两个独立的步骤
+
+**解决方案**:
+1. **提交前必须运行两个命令**:
+   ```bash
+   uv run ruff check .      # 检查语法错误
+   uv run ruff format .     # 自动格式化代码
+   ```
+
+2. **推荐工作流**:
+   ```bash
+   # 修改代码后
+   uv run ruff format .     # 先格式化
+   uv run ruff check .      # 再检查语法
+   git add .
+   git commit -m "..."
+   git push
+   ```
+
+3. **CI 失败后的修复流程**:
+   ```bash
+   # 查看哪些文件需要格式化
+   uv run ruff format --check .
+
+   # 自动格式化
+   uv run ruff format <files>
+
+   # 提交修复
+   git add <files>
+   git commit -m "style: fix ruff format issues"
+   git push
+   ```
+
+**教训**:
+- 代码格式化是 CI 的强制要求，不是可选项
+- 本地开发时养成先格式化再提交的习惯
+- 可以考虑添加 pre-commit hook 自动运行 ruff format
+
 ### 2. 过滤器组合效应
 
 **问题**: 多个独立过滤器导致 100% 信号被拦截
@@ -225,6 +275,10 @@ git branch --show-current
 # 创建新分支
 git checkout -b <type>/<description>
 
+# 代码检查和格式化（提交前必须运行）
+uv run ruff format .     # 自动格式化代码
+uv run ruff check .      # 检查语法错误
+
 # 运行测试
 uv run python -m unittest discover -s tests -p "test_*.py" -v
 
@@ -233,10 +287,6 @@ uv run python main.py backtest --type high
 
 # 分析回测结果
 python scripts/analyze_backtest_results.py
-
-# 代码检查
-uv run ruff check .
-uv run ruff format .
 
 # 查看变更
 git status
