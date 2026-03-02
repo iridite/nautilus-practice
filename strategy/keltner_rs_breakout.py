@@ -280,7 +280,8 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
             "passed_all": 0,
         }
         # 防止内存泄漏：定期重置统计计数器
-        self._stats_reset_threshold = 1_000_000  # 每处理 100 万根 K 线重置一次
+        # 对于小时线：10000 根 ≈ 417 天，对于日线：10000 根 ≈ 27 年
+        self._stats_reset_threshold = 10_000  # 每处理 1 万根 K 线重置一次
 
     def on_start(self) -> None:
         """策略启动时初始化"""
@@ -561,18 +562,17 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
             return False
 
         # RS 计算（短路优化：避免重复��算）
-        # 特殊情况：如果主标的就是 BTC，RS 视为 0（不强于自己）
+        # 特殊情况：如果主标的就是 BTC，跳过 RS 检查（BTC 作为 benchmark 本身）
         if self.instrument.id == self.btc_instrument_id:
-            rs_value = 0.0
+            # BTC 作为主标的时，跳过 RS 过滤器（无需与自己比较）
+            rs_value = 1.0  # 设为 1.0 表示"总是通过 RS 检查"
+            self.log.debug(f"[{symbol}] ✓ BTC as main instrument, RS check skipped")
         else:
             rs_value = self.rs_calculator.calculate_rs()
-        if rs_value is None or rs_value <= RS_THRESHOLD:
-            self.filter_stats["rs_weak"] += 1
-            self.log.debug(f"[{symbol}] ❌ RS not strong: {rs_value}")
-            return False
-
-        # 成交量
-        if not self.entry_signals.check_volume_surge(volume, self.keltner.volume_sma):
+            if rs_value is None or rs_value <= RS_THRESHOLD:
+                self.filter_stats["rs_weak"] += 1
+                self.log.debug(f"[{symbol}] ❌ RS not strong: {rs_value}")
+                return False
             self.filter_stats["volume_low"] += 1
             vol_ratio = volume / self.keltner.volume_sma if self.keltner.volume_sma else 0
             self.log.debug(f"[{symbol}] ❌ Volume surge failed: {vol_ratio:.2f}x")
@@ -668,6 +668,10 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
         # 检查持仓数量限制
         total_positions = len(self.cache.positions_open())
         if total_positions >= self.config.max_positions:
+            self.log.info(
+                f"⏸️ 达到最大持仓数量限制: {total_positions}/{self.config.max_positions}, "
+                f"跳过 {bar.bar_type.instrument_id.symbol} 的入场信号"
+            )
             return
 
         # 判断是否为高确信度设置
@@ -685,15 +689,36 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
                 # 提取交易对符号（如 "ETHUSDT"）
                 symbol = self.instrument.id.symbol.value.replace("-PERP", "")
 
-                # 同步调用异步方法（在事件循环中）
+                # 使用事件循环安全的方式调用异步方法
                 import asyncio
 
-                decision = asyncio.run(
-                    self.circuit_breaker.evaluate_signal(symbol, str(self.instrument.id))
-                )
+                try:
+                    # 尝试获取当前事件循环
+                    loop = asyncio.get_event_loop()
+                    if loop.is_running():
+                        # 事件循环正在运行,使用 run_until_complete 会失败
+                        # 改为跳过熔断器检查并记录警告
+                        self.log.warning(
+                            "Circuit breaker check skipped: event loop already running. "
+                            "Consider making _handle_entry async or using sync circuit breaker."
+                        )
+                        decision = None
+                    else:
+                        # 事件循环未运行,可以安全使用
+                        decision = loop.run_until_complete(
+                            self.circuit_breaker.evaluate_signal(symbol, str(self.instrument.id))
+                        )
+                except RuntimeError:
+                    # 没有事件循环,创建新的
+                    decision = asyncio.run(
+                        self.circuit_breaker.evaluate_signal(symbol, str(self.instrument.id))
+                    )
 
+                # 如果熔断器检查被跳过,继续正常执行(不做熔断)
+                if decision is None:
+                    pass  # 继续执行
                 # 根据决策结果处理
-                if decision.decision == InstrumentType.REJECT:
+                elif decision.decision == InstrumentType.REJECT:
                     self.log.warning(f"🚫 熔断器拒绝信号: {symbol} - {decision.reason}")
                     return
                 elif decision.decision == InstrumentType.SPOT:
