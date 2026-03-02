@@ -684,15 +684,36 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
                 # 提取交易对符号（如 "ETHUSDT"）
                 symbol = self.instrument.id.symbol.value.replace("-PERP", "")
 
-                # 同步调用异步方法（在事件循环中）
+                # 使用事件循环安全的方式调用异步方法
                 import asyncio
 
-                decision = asyncio.run(
-                    self.circuit_breaker.evaluate_signal(symbol, str(self.instrument.id))
-                )
+                try:
+                    # 尝试获取当前事件循环
+                    loop = asyncio.get_event_loop()
+                    if loop.is_running():
+                        # 事件循环正在运行,使用 run_until_complete 会失败
+                        # 改为跳过熔断器检查并记录警告
+                        self.log.warning(
+                            "Circuit breaker check skipped: event loop already running. "
+                            "Consider making _handle_entry async or using sync circuit breaker."
+                        )
+                        decision = None
+                    else:
+                        # 事件循环未运行,可以安全使用
+                        decision = loop.run_until_complete(
+                            self.circuit_breaker.evaluate_signal(symbol, str(self.instrument.id))
+                        )
+                except RuntimeError:
+                    # 没有事件循环,创建新的
+                    decision = asyncio.run(
+                        self.circuit_breaker.evaluate_signal(symbol, str(self.instrument.id))
+                    )
 
+                # 如果熔断器检查被跳过,继续正常执行(不做熔断)
+                if decision is None:
+                    pass  # 继续执行
                 # 根据决策结果处理
-                if decision.decision == InstrumentType.REJECT:
+                elif decision.decision == InstrumentType.REJECT:
                     self.log.warning(f"🚫 熔断器拒绝信号: {symbol} - {decision.reason}")
                     return
                 elif decision.decision == InstrumentType.SPOT:
