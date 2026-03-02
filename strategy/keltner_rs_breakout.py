@@ -280,7 +280,8 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
             "passed_all": 0,
         }
         # 防止内存泄漏：定期重置统计计数器
-        self._stats_reset_threshold = 1_000_000  # 每处理 100 万根 K 线重置一次
+        # 对于小时线：10000 根 ≈ 417 天，对于日线：10000 根 ≈ 27 年
+        self._stats_reset_threshold = 10_000  # 每处理 1 万根 K 线重置一次
 
     def on_start(self) -> None:
         """策略启动时初始化"""
