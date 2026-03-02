@@ -111,25 +111,36 @@ fi
 # ============================================================================
 echo -e "${YELLOW}[3/5] 检查 Universe 文件...${NC}"
 
-UNIVERSE_FILE="data/universe/universe_${UNIVERSE_TOP_N:-15}_W-MON.json"
-
-if [ ! -f "$UNIVERSE_FILE" ]; then
-    echo "  ✗ Universe 文件不存在: $UNIVERSE_FILE"
-    echo ""
-    echo -e "${YELLOW}生成 Universe...${NC}"
-
-    python scripts/generate_universe.py \
-        --top-n "${UNIVERSE_TOP_N:-15}" \
-        --freq "W-MON" \
-        --output "$UNIVERSE_FILE" \
-        || echo "警告: Universe 生成失败，将使用默认配置"
-
-    echo -e "${GREEN}✓ Universe 生成完成${NC}"
+# Sandbox 模式会自动生成 Universe，跳过此步骤
+if [ "${NAUTILUS_ENV}" = "sandbox" ]; then
+    echo -e "${GREEN}✓ Sandbox 模式将自动生成 Universe（跳过预生成）${NC}"
     echo ""
 else
-    echo -e "${GREEN}✓ Universe 文件已存在${NC}"
-    echo "  文件: $UNIVERSE_FILE"
-    echo ""
+    UNIVERSE_FILE="data/universe/universe_${UNIVERSE_TOP_N:-15}_W-MON.json"
+
+    if [ ! -f "$UNIVERSE_FILE" ]; then
+        echo "  ✗ Universe 文件不存在: $UNIVERSE_FILE"
+        echo ""
+
+        # 检查是否有 data/top 目录
+        if [ ! -d "data/top" ] || [ -z "$(ls -A data/top 2>/dev/null)" ]; then
+            echo -e "${YELLOW}警告: data/top 目录不存在或为空，跳过 Universe 生成${NC}"
+            echo "  提示: Universe 将在运行时自动生成"
+        else
+            echo -e "${YELLOW}生成 Universe...${NC}"
+            python scripts/generate_universe.py \
+                --top-n "${UNIVERSE_TOP_N:-15}" \
+                --freq "W-MON" \
+                --output "$UNIVERSE_FILE" \
+                || echo "警告: Universe 生成失败，将使用默认配置"
+            echo -e "${GREEN}✓ Universe 生成完成${NC}"
+        fi
+        echo ""
+    else
+        echo -e "${GREEN}✓ Universe 文件已存在${NC}"
+        echo "  文件: $UNIVERSE_FILE"
+        echo ""
+    fi
 fi
 
 # ============================================================================
