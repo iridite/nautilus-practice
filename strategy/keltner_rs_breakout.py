@@ -67,6 +67,7 @@ from config.constants import (
 from strategy.common.indicators import (
     KeltnerChannel,
     RelativeStrengthCalculator,
+    ChoppinessIndex,
 )
 from strategy.common.signals import EntrySignalGenerator, ExitSignalGenerator, SqueezeDetector
 from strategy.common.universe import DynamicUniverseManager
@@ -229,6 +230,8 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
             max_history_size=config.max_history_size,
         )
 
+        self.chop = ChoppinessIndex(period=config.chop_period)
+
         self.entry_signals = EntrySignalGenerator(
             volume_multiplier=config.volume_multiplier,
             max_upper_wick_ratio=config.max_upper_wick_ratio,
@@ -317,6 +320,7 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
             "keltner_no_breakout": 0,
             "wick_ratio": 0,
             "body_quality": 0,
+            "chop_blocked": 0,
             "passed_all": 0,
         }
         # 防止内存泄漏：定期重置统计计数器
@@ -412,6 +416,7 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
             ("Keltner No Breakout", "keltner_no_breakout"),
             ("Wick Ratio", "wick_ratio"),
             ("Body Quality", "body_quality"),
+            ("CHOP > Threshold", "chop_blocked"),
         ]
 
         for name, key in filters:
@@ -522,6 +527,9 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
         # 更新 Keltner 指标
         self.keltner.update(high, low, close, volume)
 
+        # 更新 CHOP 指标
+        self.chop.update_raw(high, low, close)
+
         # 更新 RS 计算器
         self.rs_calculator.update_symbol_price(bar.ts_event, close)
 
@@ -600,6 +608,15 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
             self.filter_stats["price_below_sma"] += 1
             self.log.debug(f"[{symbol}] ❌ Price < SMA(200): {close:.2f} < {self.keltner.sma}")
             return False
+        # CHOP filter (after SMA check, before expensive RS calculation)
+        if self.config.enable_chop_filter and self.chop.initialized:
+            if self.chop.value > self.config.chop_threshold:
+                self.filter_stats["chop_blocked"] += 1
+                self.log.debug(
+                    f"[{symbol}] ❌ CHOP filter: {self.chop.value:.2f} > {self.config.chop_threshold}"
+                )
+                return False
+
 
         # RS 计算（短路优化：避免重复��算）
         # 特殊情况：如果主标的就是 BTC，跳过 RS 检查（BTC 作为 benchmark 本身）

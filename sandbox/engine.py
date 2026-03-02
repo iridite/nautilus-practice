@@ -726,11 +726,19 @@ def _load_universe_symbols(sandbox_cfg: SandboxConfig) -> Optional[set]:
 
         # 获取当前周期的标的列表
         if current_period not in universe_data:
+            # 使用最新可用周期作为后备
+            available_periods = sorted(universe_data.keys())
+            if not available_periods:
+                logger.error("Universe file contains no periods")
+                return None
+
+            latest_period = available_periods[-1]
             logger.warning(
                 f"Current period {current_period} not found in universe file. "
-                f"Available periods: {list(universe_data.keys())[:5]}..."
+                f"Using latest available period: {latest_period} "
+                f"(available: {available_periods[:5]}...)"
             )
-            return None
+            current_period = latest_period
 
         # 解析标的符号（格式: "ETHUSDT:USDT" -> "ETH"）
         raw_symbols = universe_data[current_period]
