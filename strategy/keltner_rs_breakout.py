@@ -561,18 +561,17 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
             return False
 
         # RS 计算（短路优化：避免重复��算）
-        # 特殊情况：如果主标的就是 BTC，RS 视为 0（不强于自己）
+        # 特殊情况：如果主标的就是 BTC，跳过 RS 检查（BTC 作为 benchmark 本身）
         if self.instrument.id == self.btc_instrument_id:
-            rs_value = 0.0
+            # BTC 作为主标的时，跳过 RS 过滤器（无需与自己比较）
+            rs_value = 1.0  # 设为 1.0 表示"总是通过 RS 检查"
+            self.log.debug(f"[{symbol}] ✓ BTC as main instrument, RS check skipped")
         else:
             rs_value = self.rs_calculator.calculate_rs()
-        if rs_value is None or rs_value <= RS_THRESHOLD:
-            self.filter_stats["rs_weak"] += 1
-            self.log.debug(f"[{symbol}] ❌ RS not strong: {rs_value}")
-            return False
-
-        # 成交量
-        if not self.entry_signals.check_volume_surge(volume, self.keltner.volume_sma):
+            if rs_value is None or rs_value <= RS_THRESHOLD:
+                self.filter_stats["rs_weak"] += 1
+                self.log.debug(f"[{symbol}] ❌ RS not strong: {rs_value}")
+                return False
             self.filter_stats["volume_low"] += 1
             vol_ratio = volume / self.keltner.volume_sma if self.keltner.volume_sma else 0
             self.log.debug(f"[{symbol}] ❌ Volume surge failed: {vol_ratio:.2f}x")
