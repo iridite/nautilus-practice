@@ -56,11 +56,13 @@ COPY core/ ./core/
 COPY utils/ ./utils/
 COPY config/ ./config/
 COPY scripts/ ./scripts/
+COPY cli/ ./cli/
+COPY sandbox/ ./sandbox/
 COPY main.py ./
 COPY pyproject.toml ./
 
-# Create data/instrument directory (will be populated via volume mount)
-RUN mkdir -p ./data/instrument
+# Create data directories
+RUN mkdir -p ./data/instrument ./data/top ./data/universe ./data/raw
 
 # Copy entrypoint scripts
 COPY docker/entrypoint-auto.sh /app/docker/entrypoint.sh
@@ -86,5 +88,5 @@ USER nautilus
 # Entrypoint
 ENTRYPOINT ["/app/docker/entrypoint.sh"]
 
-# Default command (can be overridden)
-CMD ["backtest", "--type", "high"]
+# Default command - run sandbox mode
+CMD ["sandbox"]
