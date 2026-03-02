@@ -55,6 +55,7 @@ COPY backtest/ ./backtest/
 COPY core/ ./core/
 COPY utils/ ./utils/
 COPY config/ ./config/
+COPY scripts/ ./scripts/
 COPY main.py ./
 COPY pyproject.toml ./
 
