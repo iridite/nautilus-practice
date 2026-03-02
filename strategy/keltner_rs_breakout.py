@@ -668,6 +668,10 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
         # 检查持仓数量限制
         total_positions = len(self.cache.positions_open())
         if total_positions >= self.config.max_positions:
+            self.log.info(
+                f"⏸️ 达到最大持仓数量限制: {total_positions}/{self.config.max_positions}, "
+                f"跳过 {bar.bar_type.instrument_id.symbol} 的入场信号"
+            )
             return
 
         # 判断是否为高确信度设置
