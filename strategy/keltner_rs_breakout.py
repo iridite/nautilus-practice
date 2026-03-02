@@ -562,6 +562,16 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
             # 只升不降：只有当新止损线更高时才更新
             self.trailing_stop = max(self.trailing_stop, new_trailing_stop)
 
+        # Breakeven stop: if price moved 1.5*ATR from entry, pull stop to entry+0.5%
+        if self.entry_price is not None and self.keltner.atr is not None:
+            entry_float = float(self.entry_price)
+            breakeven_trigger = entry_float + (1.5 * self.keltner.atr)
+
+            if self.highest_high >= breakeven_trigger:
+                breakeven_stop = entry_float * (1 + self.config.breakeven_stop_pct)
+                self.trailing_stop = max(self.trailing_stop, breakeven_stop)
+
+
         self.entry_bar_count += 1
         self._handle_long_exit(bar)
 
@@ -613,7 +623,8 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
             if self.chop.value > self.config.chop_threshold:
                 self.filter_stats["chop_blocked"] += 1
                 self.log.debug(
-                    f"[{symbol}] ❌ CHOP filter: {self.chop.value:.2f} > {self.config.chop_threshold}"
+                    f"[{symbol}] ❌ CHOP filter: "
+                    f"{self.chop.value:.2f} > {self.config.chop_threshold}"
                 )
                 return False
 
