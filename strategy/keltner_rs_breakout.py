@@ -29,6 +29,8 @@ and dual-layer filtering (Universe → RS) to ensure trading reasonable targets.
 
 from decimal import ROUND_DOWN, ROUND_HALF_UP, Decimal
 
+from pydantic import field_validator
+
 from nautilus_trader.model.data import Bar, BarType, CustomData, DataType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import InstrumentId
@@ -134,9 +136,47 @@ class KeltnerRSBreakoutConfig(BaseStrategyConfig):
     universe_top_n: int | None = None
     universe_freq: str = "ME"
 
+    # CHOP filter parameters (100U optimization)
+    enable_chop_filter: bool = True
+    chop_threshold: float = 60.0
+    chop_period: int = 14
+
+    # Breakeven stop parameters (100U optimization)
+    enable_breakeven_stop: bool = True
+    breakeven_trigger_atr: float = 1.5
+    breakeven_offset_pct: float = 0.005  # 0.5%
+
     # 其他参数
     min_stop_distance_pct: float = MIN_STOP_DISTANCE_PCT
     max_history_size: int = MAX_HISTORY_SIZE
+
+    @field_validator("chop_threshold")
+    @classmethod
+    def validate_chop_threshold(cls, v):
+        if not 0 <= v <= 100:
+            raise ValueError("chop_threshold must be between 0 and 100")
+        return v
+
+    @field_validator("chop_period")
+    @classmethod
+    def validate_chop_period(cls, v):
+        if v < 5:
+            raise ValueError("chop_period must be >= 5")
+        return v
+
+    @field_validator("breakeven_trigger_atr")
+    @classmethod
+    def validate_breakeven_trigger(cls, v):
+        if v < 0.5:
+            raise ValueError("breakeven_trigger_atr must be >= 0.5")
+        return v
+
+    @field_validator("breakeven_offset_pct")
+    @classmethod
+    def validate_breakeven_offset(cls, v):
+        if not 0 <= v <= 0.02:
+            raise ValueError("breakeven_offset_pct must be between 0 and 0.02 (2%)")
+        return v
 
 
 class KeltnerRSBreakoutStrategy(BaseStrategy):
@@ -852,6 +892,30 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
                 f"仓位受上限限制: risk_qty={qty_by_risk:.4f}, max_qty={max_qty:.4f}, "
                 f"final_qty={qty:.4f} (max_position_risk={self.config.max_position_risk_pct:.1%})"
             )
+
+        # 8. Min Notional 验证（Binance: 10 USDT）
+        position_value = qty * price
+        min_notional = Decimal("10.0")
+
+        if position_value < min_notional:
+            self.log.warning(
+                f"Position value {position_value:.2f} < Min Notional {min_notional}, "
+                f"adjusting qty to meet minimum"
+            )
+            adjusted_qty = (min_notional / price).quantize(
+                Decimal(str(self.instrument.size_increment)),
+                ROUND_HALF_UP
+            )
+
+            # Verify adjusted qty doesn't exceed max position
+            if adjusted_qty > max_qty:
+                self.log.error(
+                    f"Cannot meet Min Notional without exceeding max position: "
+                    f"required={adjusted_qty:.4f}, max={max_qty:.4f}"
+                )
+                return Decimal("0")
+
+            qty = adjusted_qty
 
         return qty
 

@@ -38,6 +38,6 @@ parameters:
   timeframes:
   - main
   universe_freq: W-MON
-  universe_top_n: 15
+  universe_top_n: 2  # 小资金优化：集中到 2 个币确保订单金额 > Min Notional (10 USDT)
   volume_multiplier: 1.2
   volume_period: 20
