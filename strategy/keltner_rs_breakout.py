@@ -563,12 +563,18 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
             self.trailing_stop = max(self.trailing_stop, new_trailing_stop)
 
         # Breakeven stop: if price moved 1.5*ATR from entry, pull stop to entry+0.5%
-        if self.entry_price is not None and self.keltner.atr is not None:
+        if (
+            self.entry_price is not None
+            and self.keltner.atr is not None
+            and self.trailing_stop is not None
+        ):
             entry_float = float(self.entry_price)
-            breakeven_trigger = entry_float + (1.5 * self.keltner.atr)
+            breakeven_trigger = entry_float + (
+                self.config.breakeven_trigger_atr * self.keltner.atr
+            )
 
             if self.highest_high >= breakeven_trigger:
-                breakeven_stop = entry_float * (1 + self.config.breakeven_stop_pct)
+                breakeven_stop = entry_float * (1 + self.config.breakeven_offset_pct)
                 self.trailing_stop = max(self.trailing_stop, breakeven_stop)
 
 
