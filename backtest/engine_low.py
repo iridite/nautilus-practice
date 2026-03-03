@@ -734,7 +734,6 @@ def _setup_engine(cfg: BacktestConfig, base_dir: Path) -> BacktestEngine:
 
 def _filter_instruments_with_data(cfg: BacktestConfig, base_dir: Path) -> List:
     """过滤有数据的标的"""
-    from core.schemas import InstrumentConfig, InstrumentType
 
     instruments_with_data = []
 
@@ -823,7 +822,6 @@ def _filter_instruments_with_data(cfg: BacktestConfig, base_dir: Path) -> List:
 
 def _load_instruments(engine: BacktestEngine, instruments_with_data: List) -> Dict:
     """加载标的定义（自动添加 SPOT 标的用于资金费率套利）"""
-    from core.schemas import InstrumentConfig, InstrumentType
 
     # 自动添加 SPOT 标的（用于资金费率套利策略）
     # 如果发现 PERP 标的，自动添加对应的 SPOT 标的

@@ -224,3 +224,63 @@ def resolve_universe_path(universe_name: str | None, base_dir: Union[str, Path])
         return universe_path
     else:
         return None
+
+
+def generate_universe_file(
+    top_n: int,
+    freq: str = "W-MON",
+    base_dir: Union[str, Path, None] = None,
+) -> Path:
+    """
+    生成 Universe 文件
+
+    Parameters
+    ----------
+    top_n : int
+        选取前 N 个标的
+    freq : str
+        更新频率 (ME/W-MON/2W-MON)
+    base_dir : Union[str, Path, None]
+        项目基础目录
+
+    Returns
+    -------
+    Path
+        生成的 Universe 文件路径
+
+    Raises
+    ------
+    ValueError
+        参数验证失败
+    RuntimeError
+        Universe 生成失败
+    """
+    from scripts.generate_universe import generate_universe_data
+
+    if base_dir is None:
+        from utils import get_project_root
+
+        base_dir = get_project_root()
+    else:
+        base_dir = Path(base_dir)
+
+    # 数据目录
+    data_dir = base_dir / "data" / "top"
+
+    # 生成 Universe 数据
+    logger.info(f"Generating Universe: top_n={top_n}, freq={freq}")
+    universe_data = generate_universe_data(top_n=top_n, freq=freq, data_dir=data_dir)
+
+    if not universe_data:
+        raise RuntimeError(f"Failed to generate Universe data (no data in {data_dir})")
+
+    # 保存为 JSON
+    freq_suffix = freq.replace("/", "")
+    output_path = base_dir / "data" / "universe" / f"universe_{top_n}_{freq_suffix}.json"
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    with open(output_path, "w") as f:
+        json.dump(universe_data, f, indent=4)
+
+    logger.info(f"Universe file saved: {output_path}")
+    return output_path

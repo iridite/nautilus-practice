@@ -230,6 +230,7 @@ class TestSymbolActiveCache(unittest.TestCase):
 if __name__ == "__main__":
     unittest.main()
 
+
 class TestSmallCapitalOptimizations(unittest.TestCase):
     """测试 100U 小资金优化功能"""
 
