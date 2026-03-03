@@ -337,6 +337,13 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
             f"SMA={self.config.sma_period}, BTC={self.config.btc_instrument_id}"
         )
 
+        # 🔍 DEBUG: 输出关键配置参数以验证配置加载
+        self.log.info(
+            f"🔍 CONFIG DEBUG: universe_top_n={self.config.universe_top_n}, "
+            f"enable_chop_filter={self.config.enable_chop_filter}, "
+            f"enable_breakeven_stop={self.config.enable_breakeven_stop}"
+        )
+
         # 解析 base symbol（用于缓存机制）
         self._parse_base_symbol()
 

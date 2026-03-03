@@ -22,4 +22,4 @@ logging:
 trading:
   initial_balance: 100
 strategies:
-  - config/strategies/keltner_rs_breakout_baseline.yaml
+  - keltner_rs_breakout_baseline
