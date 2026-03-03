@@ -585,14 +585,11 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
             and self.trailing_stop is not None
         ):
             entry_float = float(self.entry_price)
-            breakeven_trigger = entry_float + (
-                self.config.breakeven_trigger_atr * self.keltner.atr
-            )
+            breakeven_trigger = entry_float + (self.config.breakeven_trigger_atr * self.keltner.atr)
 
             if self.highest_high >= breakeven_trigger:
                 breakeven_stop = entry_float * (1 + self.config.breakeven_offset_pct)
                 self.trailing_stop = max(self.trailing_stop, breakeven_stop)
-
 
         self.entry_bar_count += 1
         self._handle_long_exit(bar)
@@ -649,7 +646,6 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
                     f"{self.chop.value:.2f} > {self.config.chop_threshold}"
                 )
                 return False
-
 
         # RS 计算（短路优化：避免重复��算）
         # 特殊情况：如果主标的就是 BTC，跳过 RS 检查（BTC 作为 benchmark 本身）
@@ -953,8 +949,7 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
                 f"adjusting qty to meet minimum"
             )
             adjusted_qty = (min_notional / price).quantize(
-                Decimal(str(self.instrument.size_increment)),
-                ROUND_HALF_UP
+                Decimal(str(self.instrument.size_increment)), ROUND_HALF_UP
             )
 
             # Verify adjusted qty doesn't exceed max position
