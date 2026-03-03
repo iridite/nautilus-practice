@@ -7,8 +7,7 @@ parameters:
   bb_period: 20
   bb_std: 1.5
   btc_symbol: BTCUSDT
-  data_types:
-  - funding
+  data_types: []  # 暂时禁用 funding 数据以避免 SPOT instrument 依赖
   ema_period: 20
   enable_euphoria_filter: false
   enable_time_stop: false
@@ -41,3 +40,11 @@ parameters:
   universe_top_n: 2  # 小资金优化：集中到 2 个币确保订单金额 > Min Notional (10 USDT)
   volume_multiplier: 1.2
   volume_period: 20
+  # CHOP 过滤器 - 100U 优化启用
+  enable_chop_filter: true
+  chop_threshold: 60.0
+  chop_period: 14
+  # 保本止损 - 100U 优化启用
+  enable_breakeven_stop: true
+  breakeven_trigger_atr: 1.5
+  breakeven_offset_pct: 0.005

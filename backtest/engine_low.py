@@ -775,40 +775,42 @@ def _filter_instruments_with_data(cfg: BacktestConfig, base_dir: Path) -> List:
             logger.debug(f"⏭️ Skipping {inst_cfg.instrument_id}: no data file")
 
     # 自动添加 SPOT 标的（用于资金费率套利策略）
-    perp_instruments = [cfg for cfg in instruments_with_data if "-PERP" in cfg.instrument_id]
-
-    for perp_cfg in perp_instruments:
-        # 推导 SPOT symbol: BTCUSDT-PERP -> BTCUSDT
-        spot_symbol = perp_cfg.instrument_id.split("-")[0]
-        spot_id = spot_symbol + "." + perp_cfg.venue_name
-
-        # 检查是否已存在
-        if not any(cfg.instrument_id == spot_id for cfg in instruments_with_data):
-            # 检查 SPOT 数据是否存在
-            has_spot_data, _ = check_single_data_file(
-                symbol=spot_symbol,
-                start_date=cfg.start_date,
-                end_date=cfg.end_date,
-                timeframe=timeframe,
-                exchange=perp_cfg.venue_name.lower(),
-                base_dir=base_dir,
-            )
-
-            if has_spot_data:
-                # 创建 SPOT 标的配置
-                spot_cfg = InstrumentConfig(
-                    type=InstrumentType.SPOT,
-                    venue_name=perp_cfg.venue_name,
-                    base_currency=perp_cfg.base_currency,
-                    quote_currency=perp_cfg.quote_currency,
-                    leverage=1,
-                )
-                instruments_with_data.append(spot_cfg)
-                logger.info(f"🔄 Auto-added SPOT instrument for funding arbitrage: {spot_id}")
-            else:
-                logger.warning(
-                    f"⚠️ SPOT data not found for {spot_id}, funding arbitrage may not work"
-                )
+    # TODO: 添加配置开关控制此行为
+    # DISABLED: 当前测试不需要 SPOT 数据，且缺少 SPOT instrument 文件
+    # perp_instruments = [cfg for cfg in instruments_with_data if "-PERP" in cfg.instrument_id]
+    #
+    # for perp_cfg in perp_instruments:
+    #     # 推导 SPOT symbol: BTCUSDT-PERP -> BTCUSDT
+    #     spot_symbol = perp_cfg.instrument_id.split("-")[0]
+    #     spot_id = spot_symbol + "." + perp_cfg.venue_name
+    #
+    #     # 检查是否已存在
+    #     if not any(cfg.instrument_id == spot_id for cfg in instruments_with_data):
+    #         # 检查 SPOT 数据是否存在
+    #         has_spot_data, _ = check_single_data_file(
+    #             symbol=spot_symbol,
+    #             start_date=cfg.start_date,
+    #             end_date=cfg.end_date,
+    #             timeframe=timeframe,
+    #             exchange=perp_cfg.venue_name.lower(),
+    #             base_dir=base_dir,
+    #         )
+    #
+    #         if has_spot_data:
+    #             # 创建 SPOT 标的配置
+    #             spot_cfg = InstrumentConfig(
+    #                 type=InstrumentType.SPOT,
+    #                 venue_name=perp_cfg.venue_name,
+    #                 base_currency=perp_cfg.base_currency,
+    #                 quote_currency=perp_cfg.quote_currency,
+    #                 leverage=1,
+    #             )
+    #             instruments_with_data.append(spot_cfg)
+    #             logger.info(f"🔄 Auto-added SPOT instrument for funding arbitrage: {spot_id}")
+    #         else:
+    #             logger.warning(
+    #                 f"⚠️ SPOT data not found for {spot_id}, funding arbitrage may not work"
+    #             )
 
     if not instruments_with_data:
         raise BacktestEngineError("No instruments with available data found")
@@ -825,25 +827,26 @@ def _load_instruments(engine: BacktestEngine, instruments_with_data: List) -> Di
 
     # 自动添加 SPOT 标的（用于资金费率套利策略）
     # 如果发现 PERP 标的，自动添加对应的 SPOT 标的
+    # DISABLED: 当前测试不需要 SPOT 数据，且缺少 SPOT instrument 文件
     inst_cfg_list = list(instruments_with_data)  # 转换为列表以便修改
-    perp_instruments = [cfg for cfg in inst_cfg_list if "-PERP" in cfg.instrument_id]
-
-    for perp_cfg in perp_instruments:
-        # 推导 SPOT ID: BTCUSDT-PERP.BINANCE -> BTCUSDT.BINANCE
-        spot_id = perp_cfg.instrument_id.replace("-PERP", "")
-
-        # 检查是否已存在
-        if not any(cfg.instrument_id == spot_id for cfg in inst_cfg_list):
-            # 创建 SPOT 标的配置
-            spot_cfg = InstrumentConfig(
-                type=InstrumentType.SPOT,
-                venue_name=perp_cfg.venue_name,
-                base_currency=perp_cfg.base_currency,
-                quote_currency=perp_cfg.quote_currency,
-                leverage=1,  # SPOT 不使用杠杆
-            )
-            inst_cfg_list.append(spot_cfg)
-            logger.info(f"🔄 Auto-added SPOT instrument for funding arbitrage: {spot_id}")
+    # perp_instruments = [cfg for cfg in inst_cfg_list if "-PERP" in cfg.instrument_id]
+    #
+    # for perp_cfg in perp_instruments:
+    #     # 推导 SPOT ID: BTCUSDT-PERP.BINANCE -> BTCUSDT.BINANCE
+    #     spot_id = perp_cfg.instrument_id.replace("-PERP", "")
+    #
+    #     # 检查是否已存在
+    #     if not any(cfg.instrument_id == spot_id for cfg in inst_cfg_list):
+    #         # 创建 SPOT 标的配置
+    #         spot_cfg = InstrumentConfig(
+    #             type=InstrumentType.SPOT,
+    #             venue_name=perp_cfg.venue_name,
+    #             base_currency=perp_cfg.base_currency,
+    #             quote_currency=perp_cfg.quote_currency,
+    #             leverage=1,  # SPOT 不使用杠杆
+    #         )
+    #         inst_cfg_list.append(spot_cfg)
+    #         logger.info(f"🔄 Auto-added SPOT instrument for funding arbitrage: {spot_id}")
 
     loaded_instruments = {}
 

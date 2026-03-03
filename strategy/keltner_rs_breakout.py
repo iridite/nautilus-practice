@@ -138,12 +138,12 @@ class KeltnerRSBreakoutConfig(BaseStrategyConfig):
     universe_freq: str = "ME"
 
     # CHOP filter parameters (100U optimization)
-    enable_chop_filter: bool = True
+    enable_chop_filter: bool = False  # 默认禁用，需要在配置中显式启用
     chop_threshold: float = 60.0
     chop_period: int = 14
 
     # Breakeven stop parameters (100U optimization)
-    enable_breakeven_stop: bool = True
+    enable_breakeven_stop: bool = False  # 默认禁用，需要在配置中显式启用
     breakeven_trigger_atr: float = 1.5
     breakeven_offset_pct: float = 0.005  # 0.5%
 
