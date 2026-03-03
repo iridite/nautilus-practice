@@ -29,6 +29,8 @@ and dual-layer filtering (Universe → RS) to ensure trading reasonable targets.
 
 from decimal import ROUND_DOWN, ROUND_HALF_UP, Decimal
 
+from pydantic import field_validator
+
 from nautilus_trader.model.data import Bar, BarType, CustomData, DataType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import InstrumentId
@@ -65,14 +67,22 @@ from config.constants import (
 from strategy.common.indicators import (
     KeltnerChannel,
     RelativeStrengthCalculator,
+    ChoppinessIndex,
 )
 from strategy.common.signals import EntrySignalGenerator, ExitSignalGenerator, SqueezeDetector
 from strategy.common.universe import DynamicUniverseManager
 from strategy.core.base import BaseStrategy, BaseStrategyConfig
 from utils import get_project_root
 from utils.custom_data import FundingRateData
-from live.funding_rate_monitor import FundingRateMonitor
-from live.circuit_breaker import CircuitBreakerManager, InstrumentType
+
+# 条件导入实盘模块（回测时不需要）
+try:
+    from live.funding_rate_monitor import FundingRateMonitor
+    from live.circuit_breaker import CircuitBreakerManager, InstrumentType
+except ImportError:
+    FundingRateMonitor = None
+    CircuitBreakerManager = None
+    InstrumentType = None
 
 TARGET_PRECISION = Decimal("0." + "0" * TARGET_PRECISION_DECIMALS)
 
@@ -134,9 +144,47 @@ class KeltnerRSBreakoutConfig(BaseStrategyConfig):
     universe_top_n: int | None = None
     universe_freq: str = "ME"
 
+    # CHOP filter parameters (100U optimization)
+    enable_chop_filter: bool = False  # 默认禁用，需要在配置中显式启用
+    chop_threshold: float = 60.0
+    chop_period: int = 14
+
+    # Breakeven stop parameters (100U optimization)
+    enable_breakeven_stop: bool = False  # 默认禁用，需要在配置中显式启用
+    breakeven_trigger_atr: float = 1.5
+    breakeven_offset_pct: float = 0.005  # 0.5%
+
     # 其他参数
     min_stop_distance_pct: float = MIN_STOP_DISTANCE_PCT
     max_history_size: int = MAX_HISTORY_SIZE
+
+    @field_validator("chop_threshold")
+    @classmethod
+    def validate_chop_threshold(cls, v):
+        if not 0 <= v <= 100:
+            raise ValueError("chop_threshold must be between 0 and 100")
+        return v
+
+    @field_validator("chop_period")
+    @classmethod
+    def validate_chop_period(cls, v):
+        if v < 5:
+            raise ValueError("chop_period must be >= 5")
+        return v
+
+    @field_validator("breakeven_trigger_atr")
+    @classmethod
+    def validate_breakeven_trigger(cls, v):
+        if v < 0.5:
+            raise ValueError("breakeven_trigger_atr must be >= 0.5")
+        return v
+
+    @field_validator("breakeven_offset_pct")
+    @classmethod
+    def validate_breakeven_offset(cls, v):
+        if not 0 <= v <= 0.02:
+            raise ValueError("breakeven_offset_pct must be between 0 and 0.02 (2%)")
+        return v
 
 
 class KeltnerRSBreakoutStrategy(BaseStrategy):
@@ -189,6 +237,8 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
             max_history_size=config.max_history_size,
         )
 
+        self.chop = ChoppinessIndex(period=config.chop_period)
+
         self.entry_signals = EntrySignalGenerator(
             volume_multiplier=config.volume_multiplier,
             max_upper_wick_ratio=config.max_upper_wick_ratio,
@@ -231,26 +281,27 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
         self.euphoria_reduced: bool = False
 
         # 资金费率熔断器（仅在 sandbox/live 模式启用）
-        self.funding_monitor: FundingRateMonitor | None = None
-        self.circuit_breaker: CircuitBreakerManager | None = None
-        try:
-            # 尝试初始化熔断器（如果在 sandbox/live 环境）
-            self.funding_monitor = FundingRateMonitor()
-            self.circuit_breaker = CircuitBreakerManager(
-                funding_monitor=self.funding_monitor,
-                fallback_threshold_annual=config.funding_rate_warning_annual,
-                circuit_breaker_annual=config.funding_rate_danger_annual,
-            )
-            self.log.info(
-                f"资金费率熔断器已启用: "
-                f"现货回退阈值={config.funding_rate_warning_annual}%, "
-                f"熔断阈值={config.funding_rate_danger_annual}%"
-            )
-        except Exception as e:
-            # 回测模式或无网络环境，熔断器不可用
-            self.log.warning(f"资金费率熔断器初始化失败（回测模式下正常）: {e}")
-            self.funding_monitor = None
-            self.circuit_breaker = None
+        self.funding_monitor = None
+        self.circuit_breaker = None
+        if FundingRateMonitor is not None and CircuitBreakerManager is not None:
+            try:
+                # 尝试初始化熔断器（如果在 sandbox/live 环境）
+                self.funding_monitor = FundingRateMonitor()
+                self.circuit_breaker = CircuitBreakerManager(
+                    funding_monitor=self.funding_monitor,
+                    fallback_threshold_annual=config.funding_rate_warning_annual,
+                    circuit_breaker_annual=config.funding_rate_danger_annual,
+                )
+                self.log.info(
+                    f"资金费率熔断器已启用: "
+                    f"现货回退阈值={config.funding_rate_warning_annual}%, "
+                    f"熔断阈值={config.funding_rate_danger_annual}%"
+                )
+            except Exception as e:
+                # 回测模式或无网络环境，熔断器不可用
+                self.log.warning(f"资金费率熔断器初始化失败（回测模式下正常）: {e}")
+                self.funding_monitor = None
+                self.circuit_breaker = None
 
         # 持仓跟踪（仅做多）
         self.entry_price: Decimal | None = None
@@ -277,6 +328,7 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
             "keltner_no_breakout": 0,
             "wick_ratio": 0,
             "body_quality": 0,
+            "chop_blocked": 0,
             "passed_all": 0,
         }
         # 防止内存泄漏：定期重置统计计数器
@@ -291,6 +343,13 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
             f"Keltner RS Breakout 启动 (重构版本): "
             f"EMA={self.config.ema_period}, ATR={self.config.atr_period}, "
             f"SMA={self.config.sma_period}, BTC={self.config.btc_instrument_id}"
+        )
+
+        # 🔍 DEBUG: 输出关键配置参数以验证配置加载
+        self.log.info(
+            f"🔍 CONFIG DEBUG: universe_top_n={self.config.universe_top_n}, "
+            f"enable_chop_filter={self.config.enable_chop_filter}, "
+            f"enable_breakeven_stop={self.config.enable_breakeven_stop}"
         )
 
         # 解析 base symbol（用于缓存机制）
@@ -372,6 +431,7 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
             ("Keltner No Breakout", "keltner_no_breakout"),
             ("Wick Ratio", "wick_ratio"),
             ("Body Quality", "body_quality"),
+            ("CHOP > Threshold", "chop_blocked"),
         ]
 
         for name, key in filters:
@@ -433,7 +493,8 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
         if period_changed:
             current_period = self.universe_manager.get_current_period()
             self._last_universe_period = current_period
-            self._is_active_cache = self.universe_manager.is_active(self._base_symbol)
+            if self._base_symbol:
+                self._is_active_cache = self.universe_manager.is_active(self._base_symbol)
             self.log.debug(
                 f"更新活跃缓存: period={current_period}, "
                 f"symbol={self._base_symbol}, active={self._is_active_cache}"
@@ -482,6 +543,9 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
         # 更新 Keltner 指标
         self.keltner.update(high, low, close, volume)
 
+        # 更新 CHOP 指标
+        self.chop.update_raw(high, low, close)
+
         # 更新 RS 计算器
         self.rs_calculator.update_symbol_price(bar.ts_event, close)
 
@@ -513,6 +577,22 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
         else:
             # 只升不降：只有当新止损线更高时才更新
             self.trailing_stop = max(self.trailing_stop, new_trailing_stop)
+
+        # Breakeven stop: if price moved 1.5*ATR from entry, pull stop to entry+0.5%
+        if (
+            self.entry_price is not None
+            and self.keltner.atr is not None
+            and self.trailing_stop is not None
+        ):
+            entry_float = float(self.entry_price)
+            breakeven_trigger = entry_float + (
+                self.config.breakeven_trigger_atr * self.keltner.atr
+            )
+
+            if self.highest_high >= breakeven_trigger:
+                breakeven_stop = entry_float * (1 + self.config.breakeven_offset_pct)
+                self.trailing_stop = max(self.trailing_stop, breakeven_stop)
+
 
         self.entry_bar_count += 1
         self._handle_long_exit(bar)
@@ -560,6 +640,16 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
             self.filter_stats["price_below_sma"] += 1
             self.log.debug(f"[{symbol}] ❌ Price < SMA(200): {close:.2f} < {self.keltner.sma}")
             return False
+        # CHOP filter (after SMA check, before expensive RS calculation)
+        if self.config.enable_chop_filter and self.chop.initialized:
+            if self.chop.value > self.config.chop_threshold:
+                self.filter_stats["chop_blocked"] += 1
+                self.log.debug(
+                    f"[{symbol}] ❌ CHOP filter: "
+                    f"{self.chop.value:.2f} > {self.config.chop_threshold}"
+                )
+                return False
+
 
         # RS 计算（短路优化：避免重复��算）
         # 特殊情况：如果主标的就是 BTC，跳过 RS 检查（BTC 作为 benchmark 本身）
@@ -718,10 +808,10 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
                 if decision is None:
                     pass  # 继续执行
                 # 根据决策结果处理
-                elif decision.decision == InstrumentType.REJECT:
+                elif InstrumentType is not None and decision.decision == InstrumentType.REJECT:
                     self.log.warning(f"🚫 熔断器拒绝信号: {symbol} - {decision.reason}")
                     return
-                elif decision.decision == InstrumentType.SPOT:
+                elif InstrumentType is not None and decision.decision == InstrumentType.SPOT:
                     # 切换到现货标的
                     spot_instrument_id = InstrumentId.from_str(decision.instrument_id)
                     target_instrument_id = spot_instrument_id
@@ -852,6 +942,30 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
                 f"仓位受上限限制: risk_qty={qty_by_risk:.4f}, max_qty={max_qty:.4f}, "
                 f"final_qty={qty:.4f} (max_position_risk={self.config.max_position_risk_pct:.1%})"
             )
+
+        # 8. Min Notional 验证（Binance: 10 USDT）
+        position_value = qty * price
+        min_notional = Decimal("10.0")
+
+        if position_value < min_notional:
+            self.log.warning(
+                f"Position value {position_value:.2f} < Min Notional {min_notional}, "
+                f"adjusting qty to meet minimum"
+            )
+            adjusted_qty = (min_notional / price).quantize(
+                Decimal(str(self.instrument.size_increment)),
+                ROUND_HALF_UP
+            )
+
+            # Verify adjusted qty doesn't exceed max position
+            if adjusted_qty > max_qty:
+                self.log.error(
+                    f"Cannot meet Min Notional without exceeding max position: "
+                    f"required={adjusted_qty:.4f}, max={max_qty:.4f}"
+                )
+                return Decimal("0")
+
+            qty = adjusted_qty
 
         return qty
 

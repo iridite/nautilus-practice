@@ -1,5 +1,2 @@
-environment: dev
-overrides:
-  trading:
-    venue: BINANCE
-strategy: funding_arbitrage
+environment: sandbox
+strategy: keltner_rs_breakout

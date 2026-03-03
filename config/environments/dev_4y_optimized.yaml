@@ -1,0 +1,25 @@
+backtest:
+  end_date: '2026-01-01'
+  start_date: '2022-01-01'
+extends: base.yaml
+file_cleanup:
+  delete_days: 30
+  enabled: true
+  keep_days: 7
+  max_files_per_dir: 50
+  target_dirs:
+  - log
+  - output
+  use_time_rotation: true
+logging:
+  components:
+    BacktestEngine: INFO
+    DataFeed: DEBUG
+    Strategy: DEBUG
+  components_only: false
+  file_level: DEBUG
+  level: DEBUG
+trading:
+  initial_balance: 100
+strategies:
+  - keltner_rs_breakout
