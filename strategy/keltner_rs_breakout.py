@@ -74,8 +74,15 @@ from strategy.common.universe import DynamicUniverseManager
 from strategy.core.base import BaseStrategy, BaseStrategyConfig
 from utils import get_project_root
 from utils.custom_data import FundingRateData
-from live.funding_rate_monitor import FundingRateMonitor
-from live.circuit_breaker import CircuitBreakerManager, InstrumentType
+
+# 条件导入实盘模块（回测时不需要）
+try:
+    from live.funding_rate_monitor import FundingRateMonitor
+    from live.circuit_breaker import CircuitBreakerManager, InstrumentType
+except ImportError:
+    FundingRateMonitor = None
+    CircuitBreakerManager = None
+    InstrumentType = None
 
 TARGET_PRECISION = Decimal("0." + "0" * TARGET_PRECISION_DECIMALS)
 
@@ -274,26 +281,27 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
         self.euphoria_reduced: bool = False
 
         # 资金费率熔断器（仅在 sandbox/live 模式启用）
-        self.funding_monitor: FundingRateMonitor | None = None
-        self.circuit_breaker: CircuitBreakerManager | None = None
-        try:
-            # 尝试初始化熔断器（如果在 sandbox/live 环境）
-            self.funding_monitor = FundingRateMonitor()
-            self.circuit_breaker = CircuitBreakerManager(
-                funding_monitor=self.funding_monitor,
-                fallback_threshold_annual=config.funding_rate_warning_annual,
-                circuit_breaker_annual=config.funding_rate_danger_annual,
-            )
-            self.log.info(
-                f"资金费率熔断器已启用: "
-                f"现货回退阈值={config.funding_rate_warning_annual}%, "
-                f"熔断阈值={config.funding_rate_danger_annual}%"
-            )
-        except Exception as e:
-            # 回测模式或无网络环境，熔断器不可用
-            self.log.warning(f"资金费率熔断器初始化失败（回测模式下正常）: {e}")
-            self.funding_monitor = None
-            self.circuit_breaker = None
+        self.funding_monitor = None
+        self.circuit_breaker = None
+        if FundingRateMonitor is not None and CircuitBreakerManager is not None:
+            try:
+                # 尝试初始化熔断器（如果在 sandbox/live 环境）
+                self.funding_monitor = FundingRateMonitor()
+                self.circuit_breaker = CircuitBreakerManager(
+                    funding_monitor=self.funding_monitor,
+                    fallback_threshold_annual=config.funding_rate_warning_annual,
+                    circuit_breaker_annual=config.funding_rate_danger_annual,
+                )
+                self.log.info(
+                    f"资金费率熔断器已启用: "
+                    f"现货回退阈值={config.funding_rate_warning_annual}%, "
+                    f"熔断阈值={config.funding_rate_danger_annual}%"
+                )
+            except Exception as e:
+                # 回测模式或无网络环境，熔断器不可用
+                self.log.warning(f"资金费率熔断器初始化失败（回测模式下正常）: {e}")
+                self.funding_monitor = None
+                self.circuit_breaker = None
 
         # 持仓跟踪（仅做多）
         self.entry_price: Decimal | None = None
@@ -485,7 +493,8 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
         if period_changed:
             current_period = self.universe_manager.get_current_period()
             self._last_universe_period = current_period
-            self._is_active_cache = self.universe_manager.is_active(self._base_symbol)
+            if self._base_symbol:
+                self._is_active_cache = self.universe_manager.is_active(self._base_symbol)
             self.log.debug(
                 f"更新活跃缓存: period={current_period}, "
                 f"symbol={self._base_symbol}, active={self._is_active_cache}"
@@ -799,10 +808,10 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
                 if decision is None:
                     pass  # 继续执行
                 # 根据决策结果处理
-                elif decision.decision == InstrumentType.REJECT:
+                elif InstrumentType is not None and decision.decision == InstrumentType.REJECT:
                     self.log.warning(f"🚫 熔断器拒绝信号: {symbol} - {decision.reason}")
                     return
-                elif decision.decision == InstrumentType.SPOT:
+                elif InstrumentType is not None and decision.decision == InstrumentType.SPOT:
                     # 切换到现货标的
                     spot_instrument_id = InstrumentId.from_str(decision.instrument_id)
                     target_instrument_id = spot_instrument_id
