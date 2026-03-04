@@ -2,6 +2,12 @@
 Strategy: Keltner RS Breakout (KRB) - Refactored Version
 Type: Medium-Frequency Trend Following
 
+⚠️ CRITICAL: This strategy is DESIGNED FOR 1D (DAILY) TIMEFRAME ONLY
+   - All indicator periods are calibrated for daily bars
+   - RS lookback periods (5d, 20d) assume daily data
+   - SMA(200) trend filter requires daily timeframe
+   - DO NOT use with 4h, 1h, or other timeframes without recalibration
+
 Core Logic:
   1. Entry: Close > EMA(20) + 2.25*ATR(20)
   2. Filter A (Market Regime): BTC > SMA(200) and BTC_ATR% < 3%
@@ -32,7 +38,7 @@ from decimal import ROUND_DOWN, ROUND_HALF_UP, Decimal
 from pydantic import field_validator
 
 from nautilus_trader.model.data import Bar, BarType, CustomData, DataType
-from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import BarAggregation, OrderSide
 from nautilus_trader.model.identifiers import InstrumentId
 
 from config.constants import (
@@ -88,11 +94,18 @@ TARGET_PRECISION = Decimal("0." + "0" * TARGET_PRECISION_DECIMALS)
 
 
 class KeltnerRSBreakoutConfig(BaseStrategyConfig):
-    """Keltner RS Breakout 策略配置"""
+    """
+    Keltner RS Breakout 策略配置
+
+    ⚠️ CRITICAL: 此策略仅支持 1d (日线) 时间周期
+    - timeframe 字段已废弃,策略内部强制使用 1d
+    - 所有指标参数都是为日线数据校准的
+    - 如需使用其他周期,请创建新的策略类并重新校准所有参数
+    """
 
     # 简化配置字段（推荐使用）
     symbol: str = ""
-    timeframe: str = ""
+    timeframe: str = "1d"  # ⚠️ 固定为 1d,不可修改（此字段已废弃,仅保留用于向后兼容）
     price_type: str = "LAST"
     origination: str = "EXTERNAL"
     btc_symbol: str = "BTCUSDT"
@@ -339,8 +352,23 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
         """策略启动时初始化"""
         super().on_start()
 
+        # ⚠️ CRITICAL: 验证时间周期必须为 1d (日线)
+        # 此策略的所有指标参数都是为日线数据校准的
+        # 使用其他周期会导致策略行为异常
+        bar_type = BarType.from_str(self.config.bar_type)
+        if bar_type.spec.aggregation != BarAggregation.DAY or bar_type.spec.step != 1:
+            error_msg = (
+                f"❌ FATAL ERROR: Keltner RS Breakout 策略仅支持 1d (日线) 时间周期!\n"
+                f"   当前配置: {bar_type.spec.aggregation}-{bar_type.spec.step}\n"
+                f"   所有指标参数 (EMA20, SMA200, RS 5d/20d) 都是为日线校准的\n"
+                f"   使用其他周期会导致策略完全失效\n"
+                f"   如需使用 4h/1h 周期,请创建新的策略类并重新校准所有参数"
+            )
+            self.log.error(error_msg)
+            raise ValueError(error_msg)
+
         self.log.info(
-            f"Keltner RS Breakout 启动 (重构版本): "
+            f"Keltner RS Breakout 启动 (重构版本 - 1d 专用): "
             f"EMA={self.config.ema_period}, ATR={self.config.atr_period}, "
             f"SMA={self.config.sma_period}, BTC={self.config.btc_instrument_id}"
         )
@@ -349,7 +377,8 @@ class KeltnerRSBreakoutStrategy(BaseStrategy):
         self.log.info(
             f"🔍 CONFIG DEBUG: universe_top_n={self.config.universe_top_n}, "
             f"enable_chop_filter={self.config.enable_chop_filter}, "
-            f"enable_breakeven_stop={self.config.enable_breakeven_stop}"
+            f"enable_breakeven_stop={self.config.enable_breakeven_stop}, "
+            f"timeframe=1d (ENFORCED)"
         )
 
         # 解析 base symbol（用于缓存机制）
