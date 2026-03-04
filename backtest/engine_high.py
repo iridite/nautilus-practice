@@ -1242,6 +1242,12 @@ def _create_strategy_configs(
         if "main" not in local_feeds:
             continue
 
+        # 跳过 SPOT 标的（它们只作为数据源，不运行策略）
+        # SPOT 标的通常使用 1h 数据，而策略要求 1d 数据
+        if "-PERP" not in inst_id and ".BINANCE" in inst_id:
+            logger.info(f"⏭️ Skipping strategy creation for SPOT instrument: {inst_id} (data source only)")
+            continue
+
         # 合并本地和全局数据流
         combined_feeds = {**local_feeds, **global_feeds}
 
