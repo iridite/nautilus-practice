@@ -1,2 +1,2 @@
-environment: sandbox
+environment: dev
 strategy: keltner_rs_breakout

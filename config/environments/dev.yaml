@@ -1,38 +1,34 @@
-backtest:
-  end_date: '2024-12-31'
-  start_date: '2024-01-01'
-data_feeds:
-- bar_aggregation: HOUR
-  bar_period: 1
-  csv_file_name: BNBUSDT-PERP/binance-BNBUSDT-PERP-1h-2024-01-01_2024-12-31.csv
-  instrument_id: BNBUSDT-PERP.BINANCE
-  label: main
-  origination: EXTERNAL
-  price_type: LAST
-- bar_aggregation: HOUR
-  bar_period: 1
-  csv_file_name: BNBUSDT/binance-BNBUSDT-1h-2024-01-01_2024-12-31.csv
-  instrument_id: BNBUSDT.BINANCE
-  label: main
-  origination: EXTERNAL
-  price_type: LAST
+# 开发/回测环境配置
+# 用于本地策略回测和开发测试
+
 extends: base.yaml
-file_cleanup:
-  delete_days: 30
-  enabled: true
-  keep_days: 7
-  max_files_per_dir: 50
-  target_dirs:
-  - log
-  - output
-  use_time_rotation: true
+
+# 回测时间范围
+backtest:
+  start_date: '2024-01-01'
+  end_date: '2024-12-31'
+
+# 开发环境使用更详细的日志便于调试
 logging:
+  level: DEBUG
+  file_level: DEBUG
   components:
-    BacktestEngine: INFO
+    BacktestEngine: DEBUG
     DataFeed: DEBUG
     Strategy: DEBUG
   components_only: false
-  file_level: DEBUG
-  level: DEBUG
+
+# 开发环境使用较小的初始资金进行快速测试
 trading:
-  initial_balance: 100
+  initial_balance: 100  # 默认小资金测试
+
+# 文件清理配置（开发环境保留较短时间）
+file_cleanup:
+  enabled: true
+  use_time_rotation: true
+  keep_days: 7
+  delete_days: 30
+  max_files_per_dir: 50
+  target_dirs:
+    - log
+    - output
