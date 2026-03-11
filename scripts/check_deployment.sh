@@ -25,8 +25,8 @@ ISSUES=0
 # 1. 检查关键文件
 echo "1. 检查关键文件..."
 REQUIRED_FILES=(
-    "Dockerfile"
-    "docker-compose.prod.yml"
+    "docker/Dockerfile"
+    "docker/docker-compose.prod.yml"
     "docker/entrypoint-auto.sh"
     "config/active.yaml"
     "config/environments/sandbox.yaml"
