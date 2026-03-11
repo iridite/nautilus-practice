@@ -3,17 +3,17 @@
 from pathlib import Path
 from typing import Any, Optional
 
-from infrastructure.graph._import_utils import import_external_langgraph
+from langgraph.infrastructure.graph._import_utils import import_external_langgraph
 
 StateGraph, END = import_external_langgraph()  # type: ignore[misc]
 
-from infrastructure.agents.coordinator import CoordinatorAgent
-from infrastructure.agents.optimizer import OptimizerAgent
-from infrastructure.backtest.engine import BacktestEngine
-from infrastructure.graph._error_handling import with_retry, with_timeout
-from infrastructure.graph.checkpoint import CheckpointManager
-from infrastructure.llm.claude_client import ClaudeClient
-from shared.logging import get_logger
+from langgraph.infrastructure.agents.coordinator import CoordinatorAgent
+from langgraph.infrastructure.agents.optimizer import OptimizerAgent
+from langgraph.infrastructure.backtest.engine import BacktestEngine
+from langgraph.infrastructure.graph._error_handling import with_retry, with_timeout
+from langgraph.infrastructure.graph.checkpoint import CheckpointManager
+from langgraph.infrastructure.llm.claude_client import ClaudeClient
+from langgraph.shared.logging import get_logger
 
 logger = get_logger(__name__)
 

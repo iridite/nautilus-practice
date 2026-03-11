@@ -2,7 +2,7 @@
 
 import unittest
 
-from infrastructure.observability.tracing import (
+from langgraph.infrastructure.observability.tracing import (
     TraceContext,
     clear_trace_context,
     get_trace_context,

@@ -178,10 +178,17 @@ def _load_instruments(cfg: BacktestConfig, base_dir: Path) -> Dict[str, Instrume
     # 过滤有数据的标的
     instruments_with_data = _filter_instruments_with_data(cfg, inst_cfg_map, base_dir)
 
-    # 加载标的
+    # 加载标的（跳过没有 instrument JSON 文件的标的）
     loaded_instruments = {}
     for inst_id in instruments_with_data:
         inst_cfg = inst_cfg_map[inst_id]
+        inst_path = inst_cfg.get_json_path()
+
+        # 检查 instrument JSON 文件是否存在
+        if not inst_path.exists():
+            logger.warning(f"⏭️ Skipping {inst_id}: instrument file not found at {inst_path}")
+            continue
+
         loaded_instruments[inst_id] = _load_single_instrument(inst_id, inst_cfg)
 
     return loaded_instruments
@@ -1233,6 +1240,12 @@ def _create_strategy_configs(
 
         # 只有拥有 'main' 数据流的标的才创建策略实例
         if "main" not in local_feeds:
+            continue
+
+        # 跳过 SPOT 标的（它们只作为数据源，不运行策略）
+        # SPOT 标的通常使用 1h 数据，而策略要求 1d 数据
+        if "-PERP" not in inst_id and ".BINANCE" in inst_id:
+            logger.info(f"⏭️ Skipping strategy creation for SPOT instrument: {inst_id} (data source only)")
             continue
 
         # 合并本地和全局数据流

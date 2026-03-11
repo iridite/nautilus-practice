@@ -7,9 +7,9 @@ import asyncio
 import functools
 from typing import Any, Awaitable, Callable, TypeVar
 
-from infrastructure.observability.metrics import MetricsCollector, NodeMetrics
-from infrastructure.observability.tracing import get_trace_context
-from shared.logging import get_logger
+from langgraph.infrastructure.observability.metrics import MetricsCollector, NodeMetrics
+from langgraph.infrastructure.observability.tracing import get_trace_context
+from langgraph.shared.logging import get_logger
 
 logger = get_logger(__name__)
 T = TypeVar("T")

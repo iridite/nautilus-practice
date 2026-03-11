@@ -219,7 +219,7 @@ def _filter_by_date_range(
 
 
 def _try_get_cached_csv_data(
-    csv_path: Path, start_date: str, end_date: str, use_cache: bool
+    csv_path: Path, start_date: Optional[str], end_date: Optional[str], use_cache: bool
 ) -> Optional[pd.DataFrame]:
     """尝试从缓存获取CSV数据"""
     if use_cache and start_date and end_date:
@@ -566,7 +566,7 @@ def batch_load_custom_data(
     symbol: str,
     instrument_id: InstrumentId,
     data_types: List[str] = ["oi", "funding"],
-) -> Dict[str, List]:
+) -> Dict[str, List[Any]]:
     """
     批量加载指定符号的所有自定义数据
 
@@ -587,7 +587,7 @@ def batch_load_custom_data(
         按数据类型分组的数据字典
     """
     symbol_dir = data_dir / symbol
-    result = {}
+    result: Dict[str, List[Any]] = {}
 
     for data_type in data_types:
         result[data_type] = []

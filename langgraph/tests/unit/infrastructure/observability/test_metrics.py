@@ -3,7 +3,7 @@
 import asyncio
 import unittest
 
-from infrastructure.observability.metrics import (
+from langgraph.infrastructure.observability.metrics import (
     AggregatedMetrics,
     MetricsCollector,
     NodeMetrics,

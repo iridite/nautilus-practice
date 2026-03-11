@@ -87,17 +87,20 @@ def validate_all_configs():
     print("🔧 验证完整配置加载...")
     try:
         adapter = ConfigAdapter()
-        print(f"  ✅ ConfigAdapter 初始化成功")
+        print("  ✅ ConfigAdapter 初始化成功")
         print(f"  ✅ 环境: {adapter.active_config.environment}")
         print(f"  ✅ 策略: {adapter.active_config.strategy}")
         print(f"  ✅ 主时间框架: {adapter.get_main_timeframe()}")
         print(f"  ✅ 回测时间: {adapter.get_start_date()} 到 {adapter.get_end_date()}")
-        print(f"  ✅ 初始资金: {adapter.env_config.trading.initial_balance} {adapter.env_config.trading.currency}")
+        print(
+            f"  ✅ 初始资金: {adapter.env_config.trading.initial_balance} {adapter.env_config.trading.currency}"
+        )
 
-        # 收集验证警告
-        validation_warnings = loader.get_validation_warnings()
-        if validation_warnings:
-            warnings.extend([f"{name}: {w.message}" for name, w in validation_warnings])
+        # 收集验证警告（兼容旧版本 loader）
+        if hasattr(loader, "get_validation_warnings"):
+            validation_warnings = loader.get_validation_warnings()
+            if validation_warnings:
+                warnings.extend([f"{name}: {w.message}" for name, w in validation_warnings])
     except Exception as e:
         errors.append(f"ConfigAdapter 初始化失败: {e}")
         print(f"  ❌ 失败: {e}")

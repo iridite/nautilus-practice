@@ -6,7 +6,7 @@ import sys
 import structlog
 from structlog.types import EventDict, FilteringBoundLogger, WrappedLogger
 
-from shared.config import LangGraphConfig
+from langgraph.shared.config import LangGraphConfig
 
 
 def _add_trace_context(logger: WrappedLogger, method_name: str, event_dict: EventDict) -> EventDict:
@@ -17,7 +17,7 @@ def _add_trace_context(logger: WrappedLogger, method_name: str, event_dict: Even
     """
     # Import here to avoid circular dependency
     try:
-        from infrastructure.observability.tracing import get_trace_context
+        from langgraph.infrastructure.observability.tracing import get_trace_context
 
         trace_ctx = get_trace_context()
         if trace_ctx:

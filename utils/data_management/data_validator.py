@@ -8,6 +8,7 @@
 """数据验证模块 - 检查回测所需数据是否完整"""
 
 import logging
+from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
 from typing import Optional
@@ -15,6 +16,8 @@ from typing import Optional
 import pandas as pd
 
 from backtest.tui_manager import get_tui, is_tui_enabled
+from utils.filename_parser import FilenameParser
+from utils.instrument_helpers import normalize_symbol_to_internal
 
 logger = logging.getLogger(__name__)
 
@@ -93,6 +96,8 @@ class DataValidator:
         """
         is_valid, error_msg = self._check_oi_validity(oi_value, logger)
         if not is_valid:
+            return False, error_msg
+        if oi_value is None:
             return False, error_msg
 
         is_valid, error_msg = self._check_oi_spike(oi_value, logger)
@@ -173,6 +178,8 @@ class DataValidator:
         # 检查 1: 数据有效性
         is_valid, error_msg = self._check_funding_none(funding_annual, logger)
         if not is_valid:
+            return False, error_msg
+        if funding_annual is None:
             return False, error_msg
 
         # 检查 2: 异常值检测
@@ -264,6 +271,8 @@ class DataValidator:
         # 检查 1: 数据有效性
         is_valid, error = self._check_price_validity(price, logger)
         if not is_valid:
+            return False, error
+        if price is None:
             return False, error
 
         # 检查 2: 价格最小范围
@@ -367,6 +376,90 @@ def _check_alignment_threshold(
     if logger:
         logger.info(f"✅ 数据对齐验证通过: {alignment_rate:.1%}")
     return True, None
+
+
+def _normalize_timeframe_for_filename(timeframe: str) -> str:
+    """将不同时间框架格式归一化为 CSV 文件命名使用的格式。"""
+    if not timeframe:
+        return "1d"
+
+    tf = timeframe.strip().lower()
+
+    # 已是常见格式: 1m / 1h / 1d
+    if "-" not in tf and tf[-1:] in {"m", "h", "d"}:
+        return tf
+
+    # 兼容 Nautilus 风格: 1-DAY / 4-HOUR / 15-MINUTE
+    if "-" in tf:
+        parts = [p for p in tf.split("-") if p]
+        if len(parts) >= 2 and parts[0].isdigit():
+            unit_map = {"minute": "m", "hour": "h", "day": "d"}
+            unit = unit_map.get(parts[1])
+            if unit:
+                return f"{parts[0]}{unit}"
+
+    return tf
+
+
+def _normalize_raw_symbol(symbol_or_instrument: str) -> str:
+    """将 symbol / instrument_id 归一化为 raw CSV 目录使用的 symbol。"""
+    raw = (symbol_or_instrument or "").strip().upper()
+    if "." in raw:
+        raw = raw.split(".", 1)[0]
+    if ":" in raw:
+        raw = raw.split(":", 1)[0]
+
+    try:
+        return normalize_symbol_to_internal(raw)
+    except Exception:
+        return raw.replace("/", "")
+
+
+def _resolve_alignment_csv_path(
+    base_dir: Path,
+    symbol_or_instrument: str,
+    venue: str,
+    timeframe: str,
+    start_date: str,
+    end_date: str,
+) -> Path:
+    """解析多标对齐检查所需 CSV 路径，优先精确匹配，其次选可覆盖区间文件。"""
+    normalized_tf = _normalize_timeframe_for_filename(timeframe)
+    symbol = _normalize_raw_symbol(symbol_or_instrument)
+
+    symbol_dir = Path(base_dir) / "data" / "raw" / symbol
+    expected = symbol_dir / f"{venue.lower()}-{symbol}-{normalized_tf}-{start_date}_{end_date}.csv"
+    if expected.exists():
+        return expected
+
+    # 回退：选择同 symbol/timeframe 下能覆盖目标日期区间的 CSV
+    candidates = sorted(symbol_dir.glob(f"{venue.lower()}-{symbol}-{normalized_tf}-*.csv"))
+    if not candidates:
+        return expected
+
+    req_start = datetime.strptime(start_date, "%Y-%m-%d").date()
+    req_end = datetime.strptime(end_date, "%Y-%m-%d").date()
+
+    covering_files = []
+    for candidate in candidates:
+        parsed = FilenameParser.parse(candidate.name)
+        if parsed is None:
+            continue
+        try:
+            file_start = datetime.strptime(parsed.start_date, "%Y-%m-%d").date()
+            file_end = datetime.strptime(parsed.end_date, "%Y-%m-%d").date()
+        except ValueError:
+            continue
+
+        if file_start <= req_start and file_end >= req_end:
+            range_days = (file_end - file_start).days
+            covering_files.append((range_days, candidate))
+
+    if covering_files:
+        covering_files.sort(key=lambda x: x[0])
+        return covering_files[0][1]
+
+    return expected
 
 
 def validate_multi_instrument_alignment(
@@ -553,10 +646,15 @@ def _check_multi_instrument_alignment(adapter, base_dir: Path, venue: str, timef
             return
         btc_symbol = btc_instrument_id.split(".")[0] if "." in btc_instrument_id else "BTCUSDT-PERP"
 
-        # 构建CSV文件路径
-        data_dir = Path(base_dir) / "data" / "raw"
-        primary_csv = data_dir / f"{primary_symbol}_{timeframe}.csv"
-        btc_csv = data_dir / f"{btc_symbol}_{timeframe}.csv"
+        # 构建 CSV 文件路径（遵循 data/raw/{symbol}/{exchange}-{symbol}-{tf}-{start}_{end}.csv）
+        start_date = adapter.get_start_date()
+        end_date = adapter.get_end_date()
+        primary_csv = _resolve_alignment_csv_path(
+            base_dir, primary_symbol, venue, timeframe, start_date, end_date
+        )
+        btc_csv = _resolve_alignment_csv_path(
+            base_dir, btc_symbol, venue, timeframe, start_date, end_date
+        )
 
         # 执行对齐检查
         tui = get_tui()

@@ -5,6 +5,7 @@
 """
 
 import asyncio
+import logging
 import os
 import sys
 from pathlib import Path
@@ -39,6 +40,8 @@ from nautilus_trader.model.identifiers import TraderId
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 sys.path.append(str(BASE_DIR))
+
+logger = logging.getLogger(__name__)
 
 from core.loader import load_config
 from utils.instrument_helpers import convert_to_exchange_format, format_aux_instrument_id
@@ -234,6 +237,44 @@ def _validate_live_config(env_config):
         raise ValueError("Environment does not have live trading configuration")
 
 
+def _resolve_instrument_ids(live_cfg, env_config, active_config) -> list[str]:
+    """解析 live 运行使用的标的列表
+
+    优先级：
+    1. live.instrument_ids（显式配置）
+    2. active.yaml.primary_symbol + trading.instrument_type（自动推导单标的）
+    """
+    configured_ids = list(getattr(live_cfg, "instrument_ids", []) or [])
+    if configured_ids:
+        return configured_ids
+
+    primary_symbol = getattr(active_config, "primary_symbol", "")
+    if not primary_symbol:
+        raise ValueError(
+            "No live.instrument_ids configured and active.primary_symbol is empty. "
+            "Please set one of them."
+        )
+
+    venue = str(getattr(live_cfg, "venue", "BINANCE")).upper()
+    inst_type = str(getattr(env_config.trading, "instrument_type", "SWAP")).upper()
+
+    # Binance SPOT 使用 "BTCUSDT.BINANCE" 形式；其余沿用统一 helper 格式化。
+    if venue == "BINANCE" and inst_type == "SPOT":
+        derived = f"{primary_symbol}.{venue}"
+    else:
+        derived = format_aux_instrument_id(
+            primary_symbol,
+            venue=venue,
+            inst_type=inst_type,
+        )
+
+    logger.warning(
+        "live.instrument_ids is empty; using derived instrument from active config: %s",
+        derived,
+    )
+    return [derived]
+
+
 def _create_trader_id(live_cfg, active_config) -> tuple:
     """创建交易者ID"""
     trader_name = f"{live_cfg.venue}_{active_config.primary_symbol}_LIVE"
@@ -337,7 +378,7 @@ async def run_live(env_name: Optional[str] = None):
     trader_name, trader_id = _create_trader_id(live_cfg, active_config)
     logging_config = _create_logging_config(env_config, trader_name)
 
-    instrument_ids = live_cfg.instrument_ids
+    instrument_ids = _resolve_instrument_ids(live_cfg, env_config, active_config)
     venue_configs = _build_venue_configs(live_cfg, instrument_ids)
 
     # Use converted IDs for strategy and instrument loading

@@ -3,7 +3,10 @@
 
 extends: base.yaml
 
-# 移除无用的 backtest 字段
+# 回测时间范围（sandbox 环境也支持回测）
+backtest:
+  start_date: "2024-01-01"
+  end_date: "2026-01-01"
 
 # 测试网特定配置
 sandbox:

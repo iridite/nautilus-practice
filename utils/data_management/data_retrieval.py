@@ -9,7 +9,7 @@ import os
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from typing import List, Literal
+from typing import Any, List, Literal
 
 import ccxt
 import pandas as pd
@@ -353,7 +353,7 @@ def _build_binance_oi_params(symbol: str, period: str) -> dict:
     }
 
 
-def _parse_binance_oi_item(item: dict, start_ms: int, end_ms: int) -> dict:
+def _parse_binance_oi_item(item: dict, start_ms: int, end_ms: int) -> dict[str, Any] | None:
     """解析单个Binance OI数据项"""
     ts = int(item["timestamp"])
     if start_ms <= ts <= end_ms:
@@ -441,7 +441,7 @@ def _build_okx_oi_params(inst_id: str, period: str, current_end: int) -> dict:
     }
 
 
-def _parse_okx_oi_item(item: dict, start_ms: int) -> dict:
+def _parse_okx_oi_item(item: dict, start_ms: int) -> dict[str, Any] | None:
     """解析单个OKX OI数据项"""
     ts = int(item["ts"])
     if ts >= start_ms:
@@ -607,7 +607,7 @@ def _build_okx_funding_params(inst_id: str, current_end: int) -> dict:
     }
 
 
-def _parse_okx_funding_item(item: dict, start_ms: int) -> dict:
+def _parse_okx_funding_item(item: dict, start_ms: int) -> dict[str, Any] | None:
     """解析单个OKX Funding Rate数据项"""
     ts = int(item["fundingTime"])
     if ts >= start_ms:
@@ -767,7 +767,7 @@ def _process_oi_data(
     end_ms: int,
     oi_period: str,
     base_dir: Path,
-    results: dict,
+    results: dict[str, list[str]],
     enable_oi: bool,
 ):
     """处理OI数据获取"""
@@ -793,7 +793,7 @@ def _process_funding_data(
     start_ms: int,
     end_ms: int,
     base_dir: Path,
-    results: dict,
+    results: dict[str, list[str]],
 ):
     """处理Funding Rate数据获取"""
     funding_filename = f"{exchange_id}-{safe_symbol}-funding-{start_date}_{end_date}.csv"
@@ -805,7 +805,7 @@ def _process_funding_data(
             _save_data_to_csv(funding_df, funding_path, "funding_files", results)
 
 
-def _print_fetch_results(results: dict, enable_oi: bool):
+def _print_fetch_results(results: dict[str, list[str]], enable_oi: bool):
     """打印获取结果"""
     if enable_oi:
         logger.info(
@@ -831,7 +831,7 @@ def _fetch_single_symbol_oi_funding(
     oi_period: str,
     base_dir: Path,
     enable_oi: bool,
-) -> dict:
+) -> dict[str, list[str]]:
     """
     获取单个交易对的 OI 和 Funding Rate 数据
 
@@ -840,7 +840,7 @@ def _fetch_single_symbol_oi_funding(
     """
     # 每个线程创建自己的 exchange 实例
     exchange = _initialize_exchange(exchange_id)
-    results = {"oi_files": [], "funding_files": []}
+    results: dict[str, list[str]] = {"oi_files": [], "funding_files": []}
 
     symbol_info = _resolve_and_validate_symbol(raw_symbol, exchange, exchange_id)
     if symbol_info is None:
@@ -890,7 +890,7 @@ def batch_fetch_oi_and_funding(
     base_dir: Path = Path("."),
     oi_period: str = "1h",
     max_workers: int = None,
-) -> dict:
+) -> dict[str, list[str]]:
     """
     批量获取 OI 和 Funding Rate 数据（支持并发）
 
@@ -908,7 +908,7 @@ def batch_fetch_oi_and_funding(
 
     start_ms = get_ms_timestamp(start_date)
     end_ms = get_ms_timestamp(end_date)
-    results = {"oi_files": [], "funding_files": []}
+    results: dict[str, list[str]] = {"oi_files": [], "funding_files": []}
 
     desc = (
         f"📊 Fetching Funding from {exchange_id.upper()}"
