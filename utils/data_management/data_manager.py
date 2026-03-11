@@ -15,7 +15,7 @@
 
 import logging
 from pathlib import Path
-from typing import List, Tuple
+from typing import List, Literal, Sequence, Tuple
 
 import pandas as pd
 
@@ -27,6 +27,7 @@ from utils.symbol_parser import convert_timeframe_to_seconds
 from .data_retrieval import batch_fetch_ohlcv, batch_fetch_oi_and_funding
 
 logger = logging.getLogger(__name__)
+ExchangeId = Literal["binance", "okx"]
 
 
 def run_batch_data_retrieval(
@@ -88,7 +89,7 @@ class DataQualityChecker:
         Returns:
             问题列表
         """
-        issues = []
+        issues: list[str] = []
         if df.isnull().any().any():
             null_cols = df.columns[df.isnull().any()].tolist()
             null_counts = {col: df[col].isnull().sum() for col in null_cols}
@@ -112,7 +113,7 @@ class DataQualityChecker:
         Returns:
             问题列表
         """
-        issues = []
+        issues: list[str] = []
         if "timestamp" not in df.columns:
             return issues
 
@@ -147,7 +148,7 @@ class DataQualityChecker:
         Returns:
             问题列表
         """
-        issues = []
+        issues: list[str] = []
         if "close" not in df.columns or len(df) < 10:
             return issues
 
@@ -190,7 +191,7 @@ class DataQualityChecker:
         Returns:
             问题列表
         """
-        issues = []
+        issues: list[str] = []
         if "volume" not in df.columns or len(df) == 0:
             return issues
 
@@ -222,7 +223,7 @@ class DataQualityChecker:
         Returns:
             问题列表
         """
-        issues = []
+        issues: list[str] = []
         if "timestamp" not in df.columns or len(df) == 0:
             return issues
 
@@ -273,7 +274,7 @@ class DataQualityChecker:
         Raises:
             DataValidationError: 当raise_on_error=True且发现问题时
         """
-        all_issues = []
+        all_issues: list[str] = []
 
         # 1. 检查缺失值
         all_issues.extend(self.check_missing_values(df, symbol))
@@ -400,7 +401,7 @@ class DataManager:
         start_date: str = None,
         end_date: str = None,
         raise_on_error: bool = False,
-    ) -> Tuple[bool, List[str]]:
+    ) -> tuple[bool, list[str]]:
         """
         验证数据文件质量
 
@@ -426,7 +427,10 @@ class DataManager:
 
         try:
             df = pd.read_csv(file_path)
-            return self.quality_checker.validate_data_quality(
+            checker = self.quality_checker
+            if checker is None:
+                return True, []
+            return checker.validate_data_quality(
                 df, symbol, timeframe, start_date, end_date, raise_on_error
             )
         except Exception as e:
@@ -486,7 +490,7 @@ class DataManager:
         return {"passed": passed, "failed": failed}
 
 
-def _get_current_exchange(attempt: int, supported_exchanges: list) -> str:
+def _get_current_exchange(attempt: int, supported_exchanges: Sequence[ExchangeId]) -> ExchangeId:
     """获取当前尝试使用的交易所"""
     return supported_exchanges[min(attempt, len(supported_exchanges) - 1)]
 
@@ -511,15 +515,15 @@ def _calculate_retry_stats(attempt: int, current_exchange: str, exchange: str) -
 
 def fetch_data_with_retry(
     data_type: str,
-    symbols: list,
-    exchange: str,
+    symbols: list[str],
+    exchange: ExchangeId,
     start_date: str,
     end_date: str,
     period: str,
     base_dir: Path,
     max_retries: int,
-    supported_exchanges: list,
-    max_workers: int = None,
+    supported_exchanges: Sequence[ExchangeId],
+    max_workers: int | None = None,
 ) -> tuple[int, int, int, str | None]:
     """带重试的数据获取"""
     files_count = 0

@@ -131,9 +131,9 @@ class FundingRateMonitor:
         tasks = [self._fetch_from_api(symbol) for symbol in symbols]
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
-        snapshots = {}
+        snapshots: dict[str, FundingRateSnapshot] = {}
         for symbol, result in zip(symbols, results):
-            if isinstance(result, Exception):
+            if isinstance(result, BaseException):
                 self.logger.error(f"Failed to fetch funding rate for {symbol}: {result}")
             else:
                 self._cache[symbol] = result

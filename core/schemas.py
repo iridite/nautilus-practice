@@ -98,6 +98,7 @@ class InstrumentConfig(BaseModel):
                 return f"{quote_currency}{base_currency}-PERP.{venue_name}"
             elif inst_type in (InstrumentType.FUTURES, InstrumentType.OPTION):
                 return f"{quote_currency}{base_currency}-{inst_type.value}.{venue_name}"
+            raise ValueError(f"Unsupported instrument type for BINANCE: {inst_type}")
         else:
             raise ValueError(f"Unsupported venue: {venue_name}")
 

@@ -1,9 +1,12 @@
 """Backtest engine wrapper for backtesting.py framework"""
 
 import ast
+import builtins
 from typing import Any, Tuple
+
 from backtesting import Backtest
 from backtesting.test import GOOG
+
 from langgraph.domain.models.strategy import Strategy
 
 
@@ -210,9 +213,18 @@ class BacktestEngine:
         # Validate code safety before execution
         self._validate_code_safety(code)
 
+        def _safe_import(name: str, globals_=None, locals_=None, fromlist=(), level=0):
+            """受限 import，仅允许策略运行所需的白名单模块。"""
+            allowed_roots = {"backtesting", "math", "numpy", "pandas"}
+            root = name.split(".", 1)[0]
+            if root not in allowed_roots:
+                raise ImportError(f"Import of module '{root}' is not allowed")
+            return builtins.__import__(name, globals_, locals_, fromlist, level)
+
         # Create restricted namespace for execution
         # Only allow safe builtins to prevent arbitrary code execution
         restricted_globals = {
+            "__name__": "strategy_module",
             "__builtins__": {
                 "range": range,
                 "len": len,
@@ -252,12 +264,16 @@ class BacktestEngine:
                 "KeyError": KeyError,
                 "IndexError": IndexError,
                 "RuntimeError": RuntimeError,
-            }
+                "__build_class__": builtins.__build_class__,
+                "__import__": _safe_import,
+                "object": object,
+            },
         }
-        namespace = {}
+        namespace = restricted_globals
 
-        # Execute code in restricted environment
-        exec(code, restricted_globals, namespace)
+        # Execute code in a single shared namespace so imported symbols
+        # (e.g. SMA/crossover) remain visible in strategy class methods.
+        exec(code, namespace, namespace)
 
         # Find Strategy subclass
         from backtesting import Strategy as BaseStrategy

@@ -9,7 +9,7 @@ import logging
 import re
 from copy import deepcopy
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, NoReturn
 
 from nautilus_trader.model import Money
 from nautilus_trader.model.currencies import USDT
@@ -406,7 +406,7 @@ class ConfigAdapter:
 
     def _raise_universe_not_found_error(
         self, universe_file: Path, universe_top_n: int, universe_freq: str
-    ):
+    ) -> NoReturn:
         """抛出universe文件不存在错误"""
         available_files = sorted(
             [f.stem for f in (project_root / "data" / "universe").glob("universe_*.json")]
@@ -439,6 +439,7 @@ class ConfigAdapter:
             return self._load_universe_from_file(universe_file)
         else:
             self._raise_universe_not_found_error(universe_file, universe_top_n, universe_freq)
+            return None
 
     def _load_universe_by_filename(self, params: dict) -> set[str] | None:
         """通过filename参数加载universe（兼容旧配置）"""
@@ -729,9 +730,10 @@ class ConfigAdapter:
                     data_feeds.append(feed_dict)
 
             # 从 data_feeds 中提取 instrument_ids 来创建 instruments
-            instrument_ids = set()
+            instrument_ids: set[str] = set()
             for feed in data_feeds:
-                instrument_ids.add(feed.instrument_id)
+                if feed.instrument_id:
+                    instrument_ids.add(feed.instrument_id)
 
             for inst_id in instrument_ids:
                 # 从 instrument_id 提取 symbol 和类型

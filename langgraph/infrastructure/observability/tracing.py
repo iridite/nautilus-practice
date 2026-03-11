@@ -10,7 +10,7 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable, TypeVar
 
-from shared.logging import get_logger
+from langgraph.shared.logging import get_logger
 
 logger = get_logger(__name__)
 T = TypeVar("T")

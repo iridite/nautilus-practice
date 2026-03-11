@@ -6,14 +6,14 @@ in LangGraph workflows.
 
 import asyncio
 
-from infrastructure.observability import (
+from langgraph.infrastructure.observability import (
     MetricsCollector,
     get_trace_context,
     with_metrics,
     with_tracing,
 )
-from shared.config import LangGraphConfig
-from shared.logging import get_logger, setup_logging
+from langgraph.shared.config import LangGraphConfig
+from langgraph.shared.logging import get_logger, setup_logging
 
 logger = get_logger(__name__)
 

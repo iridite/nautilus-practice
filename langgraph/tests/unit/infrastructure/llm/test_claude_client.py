@@ -1,15 +1,17 @@
 """Tests for Claude API client"""
 
-import pytest
 from unittest.mock import Mock, patch
-from infrastructure.llm.claude_client import ClaudeClient
-from shared.exceptions import LLMError
+
+import pytest
+
+from langgraph.infrastructure.llm.claude_client import ClaudeClient
+from langgraph.shared.exceptions import LLMError
 
 
 @pytest.fixture
 def mock_anthropic_client():
     """Mock Anthropic client"""
-    with patch("infrastructure.llm.claude_client.Anthropic") as mock:
+    with patch("langgraph.infrastructure.llm.claude_client.Anthropic") as mock:
         client = Mock()
         mock.return_value = client
         yield client
@@ -17,7 +19,7 @@ def mock_anthropic_client():
 
 def test_client_initialization(mock_anthropic_client):
     """测试客户端初始化"""
-    with patch("infrastructure.llm.claude_client.Anthropic") as mock_cls:
+    with patch("langgraph.infrastructure.llm.claude_client.Anthropic") as mock_cls:
         mock_cls.return_value = Mock()
         client = ClaudeClient(api_key="test-key", model="claude-opus-4-6")
 

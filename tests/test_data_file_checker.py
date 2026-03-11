@@ -2,15 +2,15 @@
 测试 utils/data_file_checker.py 数据文件检查模块
 """
 
+import os
+import tempfile
 import unittest
 from pathlib import Path
-import tempfile
-import os
 
 from utils.data_file_checker import (
-    check_single_data_file,
-    check_oi_data_exists,
     check_funding_data_exists,
+    check_oi_data_exists,
+    check_single_data_file,
 )
 
 
@@ -160,6 +160,80 @@ class TestCheckSingleDataFile(unittest.TestCase):
             min_size_bytes=10 * 1024,
         )
         self.assertFalse(exists2)
+
+    def test_parquet_new_layout_exists(self):
+        """测试新 parquet 目录结构可被识别"""
+        parquet_file = (
+            self.base_dir
+            / "data"
+            / "parquet"
+            / "KeltnerRSBreakoutStrategy"
+            / "data"
+            / "crypto_perpetual"
+            / "BTCUSDT-PERP.BINANCE"
+            / "2026-01-17T14-48-28-610629562Z_2026-01-17T14-48-28-610629562Z.parquet"
+        )
+        parquet_file.parent.mkdir(parents=True, exist_ok=True)
+        parquet_file.write_bytes(b"x" * 2048)
+
+        exists, path = check_single_data_file(
+            symbol="BTCUSDT",
+            start_date="2024-01-01",
+            end_date="2024-12-31",
+            timeframe="1d",
+            exchange="binance",
+            base_dir=self.base_dir,
+        )
+
+        self.assertTrue(exists)
+        self.assertTrue(path.endswith(".parquet"))
+
+    def test_parquet_old_layout_exists(self):
+        """测试旧 parquet 目录结构可被识别"""
+        parquet_file = (
+            self.base_dir
+            / "data"
+            / "parquet"
+            / "KeltnerRSBreakoutStrategy"
+            / "data"
+            / "bar"
+            / "ETHUSDT-PERP.OKX-1-HOUR-LAST-EXTERNAL"
+            / "2026-01-17T14-48-28-610629562Z_2026-01-17T14-48-28-610629562Z.parquet"
+        )
+        parquet_file.parent.mkdir(parents=True, exist_ok=True)
+        parquet_file.write_bytes(b"x" * 2048)
+
+        exists, path = check_single_data_file(
+            symbol="ETHUSDT",
+            start_date="2024-01-01",
+            end_date="2024-12-31",
+            timeframe="1h",
+            exchange="okx",
+            base_dir=self.base_dir,
+        )
+
+        self.assertTrue(exists)
+        self.assertIn("ETHUSDT", path)
+
+    def test_normalizes_symbol_and_timeframe_for_csv(self):
+        """测试 symbol/timeframe 归一化后仍能匹配 CSV 文件"""
+        safe_symbol = "BTCUSDT"
+        data_dir = self.base_dir / "data" / "raw" / safe_symbol
+        data_dir.mkdir(parents=True, exist_ok=True)
+        filepath = data_dir / "binance-BTCUSDT-1d-2024-01-01_2024-01-31.csv"
+        filepath.write_text("timestamp,open,high,low,close,volume\n" * 300, encoding="utf-8")
+
+        exists, path = check_single_data_file(
+            symbol="BTCUSDT-PERP.BINANCE",
+            start_date="2024-01-01",
+            end_date="2024-01-31",
+            timeframe="1-DAY",
+            exchange="binance",
+            base_dir=self.base_dir,
+        )
+
+        self.assertTrue(exists)
+        self.assertEqual(path, str(filepath))
 
 
 class TestCheckOiDataExists(unittest.TestCase):

@@ -97,6 +97,8 @@ class DataValidator:
         is_valid, error_msg = self._check_oi_validity(oi_value, logger)
         if not is_valid:
             return False, error_msg
+        if oi_value is None:
+            return False, error_msg
 
         is_valid, error_msg = self._check_oi_spike(oi_value, logger)
         if not is_valid:
@@ -176,6 +178,8 @@ class DataValidator:
         # 检查 1: 数据有效性
         is_valid, error_msg = self._check_funding_none(funding_annual, logger)
         if not is_valid:
+            return False, error_msg
+        if funding_annual is None:
             return False, error_msg
 
         # 检查 2: 异常值检测
@@ -267,6 +271,8 @@ class DataValidator:
         # 检查 1: 数据有效性
         is_valid, error = self._check_price_validity(price, logger)
         if not is_valid:
+            return False, error
+        if price is None:
             return False, error
 
         # 检查 2: 价格最小范围
