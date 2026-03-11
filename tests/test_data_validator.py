@@ -6,8 +6,10 @@ import tempfile
 import unittest
 from decimal import Decimal
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+from utils.data_management import data_validator as dv
 from utils.data_management.data_validator import (
     DataValidator,
     prepare_data_feeds,
@@ -379,6 +381,108 @@ class TestPrepareDataFeeds(unittest.TestCase):
 
         # 验证对齐检查仍然被调用（在数据获取之后）
         mock_alignment_check.assert_called_once_with(adapter, self.base_dir, "binance", "1-DAY")
+
+
+class TestCheckMultiInstrumentAlignmentPathResolution(unittest.TestCase):
+    """测试 _check_multi_instrument_alignment 的路径解析"""
+
+    def setUp(self):
+        self.temp_dir = tempfile.mkdtemp()
+        self.base_dir = Path(self.temp_dir)
+
+    def tearDown(self):
+        import shutil
+
+        shutil.rmtree(self.temp_dir, ignore_errors=True)
+
+    def _write_csv(self, path: Path):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            "timestamp,open,high,low,close,volume\n2024-01-01,1,1,1,1,1\n2024-01-02,1,1,1,1,1\n",
+            encoding="utf-8",
+        )
+
+    @patch("utils.data_management.data_validator.get_tui")
+    @patch("utils.data_management.data_validator.is_tui_enabled", return_value=False)
+    @patch("utils.data_management.data_validator.validate_multi_instrument_alignment")
+    def test_uses_raw_csv_naming(self, mock_validate, mock_tui_enabled, mock_get_tui):
+        mock_validate.return_value = (True, None)
+        mock_get_tui.return_value = MagicMock()
+
+        primary_path = (
+            self.base_dir
+            / "data"
+            / "raw"
+            / "ETHUSDT"
+            / "binance-ETHUSDT-1d-2024-01-01_2024-12-31.csv"
+        )
+        btc_path = (
+            self.base_dir
+            / "data"
+            / "raw"
+            / "BTCUSDT"
+            / "binance-BTCUSDT-1d-2024-01-01_2024-12-31.csv"
+        )
+        self._write_csv(primary_path)
+        self._write_csv(btc_path)
+
+        adapter = MagicMock()
+        adapter.build_backtest_config.return_value = SimpleNamespace(
+            strategy=SimpleNamespace(
+                params=SimpleNamespace(btc_instrument_id="BTCUSDT-PERP.BINANCE")
+            )
+        )
+        adapter._get_trading_symbols.return_value = ["ETHUSDT-PERP:BINANCE"]
+        adapter.get_start_date.return_value = "2024-01-01"
+        adapter.get_end_date.return_value = "2024-12-31"
+
+        dv._check_multi_instrument_alignment(adapter, self.base_dir, "binance", "1d")
+
+        called_primary, called_btc = mock_validate.call_args[0][0], mock_validate.call_args[0][1]
+        self.assertEqual(called_primary, primary_path)
+        self.assertEqual(called_btc, btc_path)
+
+    @patch("utils.data_management.data_validator.get_tui")
+    @patch("utils.data_management.data_validator.is_tui_enabled", return_value=False)
+    @patch("utils.data_management.data_validator.validate_multi_instrument_alignment")
+    def test_supports_nautilus_timeframe_and_range_fallback(
+        self, mock_validate, mock_tui_enabled, mock_get_tui
+    ):
+        mock_validate.return_value = (True, None)
+        mock_get_tui.return_value = MagicMock()
+
+        primary_cover_path = (
+            self.base_dir
+            / "data"
+            / "raw"
+            / "ETHUSDT"
+            / "binance-ETHUSDT-1d-2022-01-01_2026-01-01.csv"
+        )
+        btc_cover_path = (
+            self.base_dir
+            / "data"
+            / "raw"
+            / "BTCUSDT"
+            / "binance-BTCUSDT-1d-2022-01-01_2026-01-01.csv"
+        )
+        self._write_csv(primary_cover_path)
+        self._write_csv(btc_cover_path)
+
+        adapter = MagicMock()
+        adapter.build_backtest_config.return_value = SimpleNamespace(
+            strategy=SimpleNamespace(
+                params=SimpleNamespace(btc_instrument_id="BTCUSDT-PERP.BINANCE")
+            )
+        )
+        adapter._get_trading_symbols.return_value = ["ETHUSDT-PERP:BINANCE"]
+        adapter.get_start_date.return_value = "2024-01-01"
+        adapter.get_end_date.return_value = "2024-12-31"
+
+        dv._check_multi_instrument_alignment(adapter, self.base_dir, "binance", "1-DAY")
+
+        called_primary, called_btc = mock_validate.call_args[0][0], mock_validate.call_args[0][1]
+        self.assertEqual(called_primary, primary_cover_path)
+        self.assertEqual(called_btc, btc_cover_path)
 
 
 if __name__ == "__main__":

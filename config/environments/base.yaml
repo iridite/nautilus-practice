@@ -1,5 +1,11 @@
 # 基础环境配置 - 所有环境的共同配置
 
+# 回测时间范围（供继承环境作为默认值）
+# 注意：live 环境虽然不执行回测，但 EnvironmentConfig 当前要求存在 backtest 字段。
+backtest:
+  start_date: "2024-01-01"
+  end_date: "2024-12-31"
+
 trading:
   venue: "BINANCE"
   instrument_type: "SWAP"

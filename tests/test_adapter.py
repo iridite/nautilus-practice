@@ -3,8 +3,8 @@ Tests for Config Adapter
 """
 
 import unittest
-from unittest.mock import Mock, patch, MagicMock
 from pathlib import Path
+from unittest.mock import MagicMock, Mock, patch
 
 from core.adapter import ConfigAdapter
 
@@ -101,6 +101,59 @@ class TestConfigAdapter(unittest.TestCase):
         params = adapter.get_strategy_parameters()
         self.assertEqual(params["k1"], 0.5)
         self.assertEqual(params["k2"], 0.5)
+
+    @patch("core.adapter.ConfigLoader")
+    def test_use_environment_runtime_only(self, mock_loader):
+        adapter = ConfigAdapter()
+        adapter.active_config = Mock()
+        adapter.active_config.environment = "dev"
+        adapter.loader.load_environment_config = Mock(return_value=Mock())
+        adapter._apply_trading_overrides = Mock()
+        adapter._backtest_config_cache = object()
+
+        adapter.use_environment("live")
+
+        self.assertEqual(adapter.active_config.environment, "live")
+        self.assertIsNotNone(adapter.env_config)
+        self.assertIsNone(adapter._backtest_config_cache)
+        adapter._apply_trading_overrides.assert_called_once()
+
+    @patch("core.adapter.ConfigLoader")
+    def test_apply_runtime_symbol_override(self, mock_loader):
+        adapter = ConfigAdapter()
+        adapter.active_config = Mock()
+        adapter.active_config.primary_symbol = "BTCUSDT"
+        adapter.active_config.price_type = None
+        adapter.active_config.origination = None
+        adapter.strategy_config = Mock()
+        adapter.strategy_config.parameters = {
+            "timeframe": "1h",
+            "universe_top_n": 10,
+            "universe_freq": "W-MON",
+        }
+        adapter.env_config = Mock()
+        adapter._restore_instrument_id = Mock(return_value="ETHUSDT-PERP.BINANCE")
+        adapter._restore_bar_type = Mock(return_value="ETHUSDT-PERP.BINANCE-1-HOUR-LAST-EXTERNAL")
+        adapter._backtest_config_cache = object()
+
+        adapter.apply_runtime_symbol_override("ethusdt")
+        params = adapter.strategy_config.parameters
+
+        self.assertEqual(adapter.active_config.primary_symbol, "ETHUSDT")
+        self.assertEqual(params["symbol"], "ETHUSDT")
+        self.assertEqual(params["symbols"], ["ETHUSDT"])
+        self.assertEqual(params["instrument_id"], "ETHUSDT-PERP.BINANCE")
+        self.assertEqual(params["bar_type"], "ETHUSDT-PERP.BINANCE-1-HOUR-LAST-EXTERNAL")
+        self.assertEqual(getattr(adapter.env_config, "data_feeds"), [])
+        self.assertNotIn("universe_top_n", params)
+        self.assertNotIn("universe_freq", params)
+        self.assertIsNone(adapter._backtest_config_cache)
+
+    @patch("core.adapter.ConfigLoader")
+    def test_apply_runtime_symbol_override_invalid_symbol(self, mock_loader):
+        adapter = ConfigAdapter()
+        with self.assertRaises(ValueError):
+            adapter.apply_runtime_symbol_override("BTC-USDT")
 
 
 class TestAdapterHelperMethods(unittest.TestCase):

@@ -709,9 +709,15 @@ class LiveConfig(BaseModel):
     @field_validator("instrument_ids", mode="before")
     @classmethod
     def validate_instruments(cls, v):
-        """验证至少需要一个合约标识符"""
-        if not v:
-            raise ValueError("At least one instrument_id is required")
+        """验证合约标识符列表格式
+
+        Live 模式允许留空 instrument_ids，由运行时根据 active.yaml 的
+        primary_symbol 自动推导默认标的。
+        """
+        if v is None:
+            return []
+        if not isinstance(v, list):
+            raise ValueError("instrument_ids must be a list")
         return v
 
 

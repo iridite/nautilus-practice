@@ -2,25 +2,26 @@
 测试 core/schemas.py 配置数据模型
 """
 
-import pytest
 from decimal import Decimal
 from pathlib import Path
+
+import pytest
+from nautilus_trader.model.enums import BarAggregation, PriceType
 from pydantic import ValidationError
 
 from core.schemas import (
-    InstrumentType,
-    InstrumentConfig,
-    DataConfig,
-    TradingConfig,
-    BacktestPeriodConfig,
-    LoggingConfig,
-    FileCleanupConfig,
-    StrategyConfig,
-    SandboxConfig,
-    LiveConfig,
     ActiveConfig,
+    BacktestPeriodConfig,
+    DataConfig,
+    FileCleanupConfig,
+    InstrumentConfig,
+    InstrumentType,
+    LiveConfig,
+    LoggingConfig,
+    SandboxConfig,
+    StrategyConfig,
+    TradingConfig,
 )
-from nautilus_trader.model.enums import BarAggregation, PriceType
 
 
 class TestInstrumentType:
@@ -327,8 +328,8 @@ class TestLiveConfig:
 
     def test_validate_instruments(self):
         """测试合约验证"""
-        with pytest.raises(ValidationError):
-            LiveConfig(instrument_ids=[])
+        config = LiveConfig(instrument_ids=[])
+        assert config.instrument_ids == []
 
 
 class TestActiveConfig:

@@ -6,6 +6,7 @@
 
 import json
 import logging
+import re
 from copy import deepcopy
 from pathlib import Path
 from typing import Any, Dict, List
@@ -63,6 +64,49 @@ class ConfigAdapter:
 
         # 应用 active.yaml 中的 trading overrides
         self._apply_trading_overrides()
+
+    def use_environment(self, env_name: str) -> None:
+        """仅在内存中切换环境，不修改任何配置文件。"""
+        if not env_name or not isinstance(env_name, str):
+            raise ValueError("env_name must be a non-empty string")
+
+        env_name = env_name.strip()
+        self.active_config.environment = env_name
+        self.env_config = self.loader.load_environment_config(env_name)
+        self._apply_trading_overrides()
+        self._backtest_config_cache = None
+
+    def apply_runtime_symbol_override(self, symbol: str) -> None:
+        """仅在内存中覆盖回测 symbol，不修改任何配置文件。"""
+        if not symbol or not isinstance(symbol, str):
+            raise ValueError("symbol must be a non-empty string")
+
+        normalized_symbol = symbol.strip().upper()
+        if not re.match(r"^[A-Z0-9]+USDT$", normalized_symbol):
+            raise ValueError("symbol format invalid, expected e.g. BTCUSDT")
+
+        params = self.strategy_config.parameters
+
+        # 显式 symbol 覆盖时禁用 universe 自动选币，保证 --symbol 生效。
+        params.pop("universe_top_n", None)
+        params.pop("universe_freq", None)
+        params.pop("universe_filename", None)
+        params.pop("universe_filepath", None)
+
+        params["symbol"] = normalized_symbol
+        params["symbols"] = [normalized_symbol]
+        params["instrument_id"] = self._restore_instrument_id(normalized_symbol)
+        params["bar_type"] = self._restore_bar_type(
+            normalized_symbol,
+            params.get("timeframe") or self.get_main_timeframe(),
+            params.get("price_type") or self.active_config.price_type or "LAST",
+            params.get("origination") or self.active_config.origination or "EXTERNAL",
+        )
+
+        # 清空环境显式 data_feeds，回退到按 symbol 自动生成，避免旧配置残留。
+        setattr(self.env_config, "data_feeds", [])
+        self.active_config.primary_symbol = normalized_symbol
+        self._backtest_config_cache = None
 
     def get_venue(self) -> str:
         """
@@ -666,8 +710,9 @@ class ConfigAdapter:
         # 优先使用环境配置中的 data_feeds（如果存在）
         if hasattr(self.env_config, "data_feeds") and self.env_config.data_feeds:
             # 使用环境配置中的 data_feeds
-            from core.schemas import DataConfig
             from nautilus_trader.model.enums import BarAggregation, PriceType
+
+            from core.schemas import DataConfig
 
             for feed_dict in self.env_config.data_feeds:
                 if isinstance(feed_dict, dict):
