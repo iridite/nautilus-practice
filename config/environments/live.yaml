@@ -8,12 +8,15 @@ live:
   venue: "OKX"
   is_testnet: false
 
-  # 交易标的列表（根据策略动态调整）
-  instrument_ids:
-    - "ETH-USDT-SWAP.OKX"
-    - "SOL-USDT-SWAP.OKX"
-    - "BNB-USDT-SWAP.OKX"
-    - "DOGE-USDT-SWAP.OKX"
+  # 使用 Universe 动态生成标的（移除硬编码的 instrument_ids）
+  universe:
+    enabled: true
+    auto_generate: true
+    file: "data/universe/universe_15_W-MON.json"
+    freq: "W-MON"
+    top_n: 15
+    initial_period: null
+    strict_mode: false
 
   # 实盘环境不允许缺失 instrument json
   allow_missing_instruments: false

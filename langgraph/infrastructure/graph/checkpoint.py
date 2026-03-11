@@ -5,7 +5,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
 
-from shared.logging import get_logger
+from langgraph.shared.logging import get_logger
 
 logger = get_logger(__name__)
 

@@ -32,7 +32,25 @@ def _extract_symbol_from_instrument_id(strategy_config) -> set:
     symbols = set()
     if hasattr(strategy_config, "instrument_id") and strategy_config.instrument_id:
         try:
-            symbols.add(strategy_config.instrument_id.split(".")[1].split("-")[0])
+            # 支持多种 instrument_id 格式：
+            # - BNBUSDT-PERP.BINANCE -> BNBUSDT
+            # - BTC-USDT-SWAP.OKX -> BTCUSDT
+            # - BINANCE.BTCUSDT-PERP.BINANCE -> BTCUSDT (兼容历史格式)
+            inst_id = str(strategy_config.instrument_id)
+            parts = inst_id.split(".")
+
+            if len(parts) >= 3 and parts[0].isalpha():
+                core_part = parts[1]
+            else:
+                core_part = parts[0]
+
+            tokens = [t for t in core_part.split("-") if t]
+            if tokens and tokens[-1].upper() in {"PERP", "SWAP", "FUTURES", "OPTION", "SPOT"}:
+                tokens = tokens[:-1]
+
+            symbol = "".join(tokens) if tokens else core_part.replace("-", "")
+            if symbol:
+                symbols.add(symbol.upper())
         except Exception:
             pass
     return symbols

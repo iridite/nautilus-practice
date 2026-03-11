@@ -23,78 +23,10 @@ from core.adapter import get_adapter
 from utils.data_management import prepare_data_feeds
 
 
-def override_symbol_config(adapter, symbol: str, base_dir: Path):
-    """
-    动态覆盖配置中的交易对
-
-    Args:
-        adapter: 配置适配器
-        symbol: 交易对符号（如 BTCUSDT）
-        base_dir: 项目根目录
-    """
-    import yaml
-
-    # 1. 更新策略配置
-    strategy_file = base_dir / "config" / "strategies" / f"{adapter.active_config.strategy}.yaml"
-    with open(strategy_file, "r", encoding="utf-8") as f:
-        strategy_config = yaml.safe_load(f)
-
-    # 更新 symbols 和 instrument_id
-    strategy_config["parameters"]["symbols"] = [symbol]
-    strategy_config["parameters"]["instrument_id"] = f"{symbol}-PERP.BINANCE"
-    strategy_config["parameters"]["bar_type"] = f"{symbol}-PERP.BINANCE-1-HOUR-LAST-EXTERNAL"
-
-    with open(strategy_file, "w", encoding="utf-8") as f:
-        yaml.dump(strategy_config, f, default_flow_style=False, allow_unicode=True)
-
-    # 2. 更新环境配置
-    env_file = base_dir / "config" / "environments" / f"{adapter.active_config.environment}.yaml"
-    with open(env_file, "r", encoding="utf-8") as f:
-        env_config = yaml.safe_load(f)
-
-    # 获取时间范围
-    start_date = env_config.get("backtest", {}).get("start_date", "2024-01-01")
-    end_date = env_config.get("backtest", {}).get("end_date", "2024-12-31")
-
-    # 更新数据源配置（只更新 data_feeds，保留其他配置）
-    env_config["data_feeds"] = [
-        {
-            "instrument_id": f"{symbol}-PERP.BINANCE",
-            "bar_aggregation": "HOUR",
-            "bar_period": 1,
-            "price_type": "LAST",
-            "origination": "EXTERNAL",
-            "csv_file_name": f"{symbol}-PERP/binance-{symbol}-PERP-1h-{start_date}_{end_date}.csv",
-            "label": "main",
-        },
-        {
-            "instrument_id": f"{symbol}.BINANCE",
-            "bar_aggregation": "HOUR",
-            "bar_period": 1,
-            "price_type": "LAST",
-            "origination": "EXTERNAL",
-            "csv_file_name": f"{symbol}/binance-{symbol}-1h-{start_date}_{end_date}.csv",
-            "label": "main",
-        },
-    ]
-
-    with open(env_file, "w", encoding="utf-8") as f:
-        yaml.dump(env_config, f, default_flow_style=False, allow_unicode=True)
-
-    # 3. 更新 active.yaml 中的 overrides（移除 initial_balance 覆盖）
-    active_file = base_dir / "config" / "active.yaml"
-    with open(active_file, "r", encoding="utf-8") as f:
-        active_data = yaml.safe_load(f)
-
-    # 移除 overrides 中的 initial_balance，让环境配置生效
-    if "overrides" in active_data and "trading" in active_data["overrides"]:
-        if "initial_balance" in active_data["overrides"]["trading"]:
-            del active_data["overrides"]["trading"]["initial_balance"]
-
-    with open(active_file, "w", encoding="utf-8") as f:
-        yaml.dump(active_data, f, default_flow_style=False, allow_unicode=True)
-
-    logger.info(f"✅ 配置已更新为 {symbol}")
+def override_symbol_config(adapter, symbol: str):
+    """仅在内存中动态覆盖交易对，不写回配置文件。"""
+    adapter.apply_runtime_symbol_override(symbol)
+    logger.info(f"✅ Runtime symbol override applied: {symbol.upper()}")
 
 
 def load_universe_symbols(adapter, base_dir: Path) -> set:
@@ -167,38 +99,16 @@ def main():
         logger.info("请指定命令。使用 --help 查看可用命令。")
         sys.exit(1)
 
-    # 根据命令选择环境
+    adapter = get_adapter()
+
+    # 根据命令选择环境（只做内存覆盖，不修改 active.yaml）
     if args.command == "backtest":
-        # 回测默认使用 dev 环境（可通过 --env 覆盖）
         env_name = getattr(args, "env", "dev")
-        # 临时修改 active.yaml 的环境设置
-        import yaml
-
-        active_file = BASE_DIR / "config" / "active.yaml"
-        with open(active_file, "r") as f:
-            active_data = yaml.safe_load(f)
-        original_env = active_data.get("environment", "dev")
-        active_data["environment"] = env_name
-        with open(active_file, "w") as f:
-            yaml.dump(active_data, f, default_flow_style=False, allow_unicode=True)
-
-        try:
-            adapter = get_adapter()
-            adapter.reload()
-        finally:
-            # 恢复原始环境设置
-            active_data["environment"] = original_env
-            with open(active_file, "w") as f:
-                yaml.dump(active_data, f, default_flow_style=False, allow_unicode=True)
-    else:
-        # sandbox 和 live 使用 active.yaml 或 --env 参数
-        adapter = get_adapter()
+        adapter.use_environment(env_name)
 
     # 如果指定了 symbol，动态覆盖配置
     if args.command == "backtest" and hasattr(args, "symbol") and args.symbol:
-        override_symbol_config(adapter, args.symbol, BASE_DIR)
-        # 重新加载配置
-        adapter.reload()
+        override_symbol_config(adapter, args.symbol)
 
     universe_symbols = load_universe_symbols(adapter, BASE_DIR)
 

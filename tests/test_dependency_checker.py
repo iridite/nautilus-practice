@@ -56,6 +56,17 @@ class TestExtractStrategySymbols(unittest.TestCase):
         self.assertEqual(len(symbols), 1)
         self.assertIn("BTCUSDT", symbols)
 
+    def test_extract_from_standard_instrument_id(self):
+        """测试从标准 instrument_id 提取符号"""
+        strategy_config = MagicMock()
+        strategy_config.data_feeds = None
+        strategy_config.instrument_id = "BNBUSDT-PERP.BINANCE"
+
+        symbols = extract_strategy_symbols(strategy_config)
+
+        self.assertEqual(len(symbols), 1)
+        self.assertIn("BNBUSDT", symbols)
+
     def test_extract_combined_sources(self):
         """测试从多个来源提取符号"""
         strategy_config = MagicMock()

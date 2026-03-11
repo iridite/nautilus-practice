@@ -8,7 +8,7 @@
 import hashlib
 import logging
 from pathlib import Path
-from typing import Dict, Any
+from typing import Any, Dict
 
 import pandas as pd
 
@@ -19,8 +19,8 @@ class DataCache:
     """数据加载缓存管理器"""
 
     def __init__(self, max_size: int = 500):
-        self._cache = {}
-        self._metadata_cache = {}  # Parquet 元数据缓存
+        self._cache: dict[str, pd.DataFrame] = {}
+        self._metadata_cache: dict[str, Dict[str, Any]] = {}  # Parquet 元数据缓存
         self.max_size = max_size
         self.hits = 0
         self.misses = 0
@@ -116,7 +116,7 @@ class DataCache:
         self._metadata_cache[cache_key] = metadata
         logger.debug(f"Parquet 元数据已缓存: {path.name}")
 
-    def get_stats(self) -> dict:
+    def get_stats(self) -> dict[str, Any]:
         """获取缓存统计"""
         total = self.hits + self.misses
         hit_rate = self.hits / total if total > 0 else 0
