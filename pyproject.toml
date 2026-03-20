@@ -116,7 +116,7 @@ show_missing = true
 skip_covered = false
 
 [tool.coverage.html]
-directory = "output/htmlcov"
+directory = "output/coverage_html"
 
 [tool.mypy]
 python_version = "3.12"

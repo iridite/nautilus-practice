@@ -19,12 +19,14 @@ config.backup*/
 
 .langgraph_api/
 .aider*
+.claude/
 .env
 test.env
 .omc/
 
 # Coverage reports
 htmlcov/
+output/coverage_html/
 .coverage
 coverage.json
 coverage.xml
